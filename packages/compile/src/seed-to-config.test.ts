@@ -345,7 +345,7 @@ describe("what a shared configuration names that this install cannot", () => {
   })
 })
 
-describe("the sub-agents only a skipped skill carried", () => {
+describe("the sub-agents a skipped skill names", () => {
   const SKIPPED = "nope-skill"
   const onWebDeveloper = {
     install: "plugin",
@@ -385,15 +385,56 @@ describe("the sub-agents only a skipped skill carried", () => {
     ).toStrictEqual([{ skillId: SKIPPED, agentNames: ["web-tester", "pm"] }])
   })
 
-  it("decodes the install exactly as it would without the skipped skill", () => {
-    const without = buildSeedPayload({
-      skills: { [REACT]: onWebDeveloper },
-      agents,
-    })
-
+  it("installs each one it names without it, and none switched off or unknown", () => {
     expect(
       seedToInstallSelection(withSkipped, SEED_CATALOG).result
-    ).toStrictEqual(seedToInstallSelection(without, SEED_CATALOG).result)
+    ).toStrictEqual({
+      skills: [{ id: REACT, scope: "global", origin: "acme-market" }],
+      selectedAgents: [WEB_DEV, "reviewer", "web-tester", "pm"],
+      agentConfigs: [
+        { name: WEB_DEV, scope: "global" },
+        { name: "reviewer", scope: "global" },
+        { name: "web-tester", scope: "global" },
+        { name: "pm", scope: "global" },
+      ],
+      assignedStack: {
+        [WEB_DEV]: { "web-framework": [{ id: REACT, preloaded: false }] },
+      },
+      selectedStackId: null,
+      selectedDomains: ["web"],
+      validation: { valid: true, errors: [] },
+    })
+  })
+
+  it("installs the sub-agents it names when no skill in the configuration installs", () => {
+    const { result } = seedToInstallSelection(
+      buildSeedPayload({
+        skills: {
+          [SKIPPED]: {
+            install: "eject",
+            scope: "global",
+            assignments: { [WEB_DEV]: "lazy", "web-tester": "preloaded" },
+          },
+        },
+        agents: { "web-tester": { scope: "global", model: "haiku" } },
+      }),
+      SEED_CATALOG
+    )
+
+    expect({
+      skills: result.skills,
+      selectedAgents: result.selectedAgents,
+      agentConfigs: result.agentConfigs,
+      assignedStack: result.assignedStack,
+    }).toStrictEqual({
+      skills: [],
+      selectedAgents: [WEB_DEV, "web-tester"],
+      agentConfigs: [
+        { name: WEB_DEV, scope: "global" },
+        { name: "web-tester", scope: "global", model: "haiku" },
+      ],
+      assignedStack: {},
+    })
   })
 
   it("names nothing when every skill places", () => {

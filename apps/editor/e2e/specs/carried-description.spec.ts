@@ -1,10 +1,11 @@
 import {
   cliMintedPayload,
+  cliMintedStackPayload,
   freshlyPickedSkill,
 } from "@workspace/api-mocks/fixtures"
 
 import { expect, test } from "../fixtures"
-import { EXCLUSIVE_CATEGORY, STACKS } from "../support/catalog"
+import { EXCLUSIVE_CATEGORY, STACKS, stackIdOf } from "../support/catalog"
 import {
   STORED_ID,
   captureCreateConfig,
@@ -85,5 +86,47 @@ test.describe("a link that arrived with a description", () => {
 
     expect(posted.at(-1)).toBeDefined()
     expect(posted.at(-1)).not.toHaveProperty("description")
+  })
+})
+
+// Equal to a built-in stack, so it opens as that stack, applied; the words
+// are still the installation's own, not the stack's.
+test.describe("a link the CLI minted from a stack, with its own description", () => {
+  test.use({ permissions: ["clipboard-read", "clipboard-write"] })
+
+  test.beforeEach(({ page }) => {
+    stubGetConfig(page, LINK_ID, {
+      ...cliMintedStackPayload(stackIdOf(STACKS.nextjs)),
+      description: DESCRIPTION,
+    })
+  })
+
+  const openStackLink = async (configure: ConfigurePage) => {
+    await configure.page.goto(`/?fromId=${LINK_ID}`)
+    await expect(configure.stack(STACKS.nextjs)).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+  }
+
+  test("carries it on the id the Install dialog mints", async ({
+    configure,
+    page,
+  }) => {
+    const posted = captureCreateConfig(page)
+    await openStackLink(configure)
+
+    await mintFromInstallDialog(configure)
+
+    expect(posted.at(-1)?.description).toBe(DESCRIPTION)
+  })
+
+  test("carries it on the link Share copies", async ({ configure, page }) => {
+    const posted = captureCreateConfig(page)
+    await openStackLink(configure)
+
+    await configure.roster.shareLink()
+
+    expect(posted.at(-1)?.description).toBe(DESCRIPTION)
   })
 })

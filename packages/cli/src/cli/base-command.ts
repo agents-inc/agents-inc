@@ -5,7 +5,7 @@ import { unique } from "remeda";
 
 import { CLI_COLORS, DEFAULT_BRANDING, MIN_TERMINAL_SIZE } from "./consts.js";
 import { getErrorMessage } from "./utils/errors.js";
-import { stripTerminalControls } from "./utils/string.js";
+import { inertLine, stripTerminalControls } from "./utils/string.js";
 import { verbose } from "./utils/logger.js";
 import {
   completedWithFailures,
@@ -34,8 +34,10 @@ import { EXIT_CODES } from "./lib/exit-codes.js";
 import { isActiveAt } from "./lib/configuration/scope-predicates.js";
 import { resolveBranding } from "./lib/configuration/config.js";
 import { isHomeDirectory, refuseUnofferedStack } from "./lib/installation/index.js";
+import { providerInUse } from "./lib/installation/install-layout.js";
+import { providerToNameAt } from "./lib/installation/provider-to-name.js";
 import type { InstallSelection } from "@workspace/compile/seed-to-config";
-import { getStackSkillIds } from "./lib/stacks/index.js";
+import { getStackSkillIds, loadStackById } from "./lib/stacks/index.js";
 import type {
   AgentName,
   MergedSkillsMatrix,
@@ -53,11 +55,7 @@ import {
   refuseUncarriedDestinations,
   type ExternalSkillInstall,
 } from "./lib/seed/external-skills.js";
-import {
-  installsAtHome,
-  projectScopedContent,
-  skippedWithTheirSkills,
-} from "./lib/seed/seed-apply.js";
+import { installsAtHome, projectScopedContent } from "./lib/seed/seed-apply.js";
 import type { SeedMapping } from "./lib/seed/seed-to-selection.js";
 import { refuseUnwritableStack } from "@workspace/compile/config-source";
 import { requireMarketplace } from "./lib/operations/source/require-marketplace.js";
@@ -256,7 +254,7 @@ export abstract class BaseCommand extends Command {
     for (const warning of warnings) {
       this.warn(warning);
     }
-    this.log(propagatedRecompileSummary(rewrittenCount, unchangedCount, failedCount));
+    this.log(propagatedRecompileSummary(rewrittenCount + unchangedCount, failedCount));
   }
 
   protected reportUnassignedSkills(config: ProjectConfig, selected: readonly SkillConfig[]): void {
@@ -311,21 +309,41 @@ export abstract class BaseCommand extends Command {
   /**
    * The home directory is the global scope, so project-scoped content there would land in the
    * global config mislabelled. Needs the decoded selection; callers run it before any write.
+   * `installedHere`: the run applies to the global install rather than creating it.
    */
-  protected refuseProjectScopedContentAtHome(result: InstallSelection, projectDir: string): void {
+  protected refuseProjectScopedContentAtHome(
+    result: InstallSelection,
+    projectDir: string,
+    installedHere: boolean,
+  ): void {
     if (!isHomeDirectory(projectDir) || installsAtHome(result)) return;
 
     const { skillIds, agentNames } = projectScopedContent(result);
-    this.error(sharedConfigProjectScopeAtHome(skillIds, agentNames), { exit: EXIT_CODES.ERROR });
+    const provider = providerToNameAt(projectDir, providerInUse(projectDir));
+    this.error(sharedConfigProjectScopeAtHome(skillIds, agentNames, installedHere, provider), {
+      exit: EXIT_CODES.ERROR,
+    });
   }
 
-  /** Measured against the selection after its restores, so a sub-agent kept is not named skipped. */
-  protected warnOfSkippedEntries(mapping: SeedMapping, selectedAgents: readonly AgentName[]): void {
+  protected warnOfSkippedEntries(mapping: SeedMapping): void {
     const { skippedSkillIds, skippedAgentNames, agentsOnlySkippedSkillsCarried } = mapping;
-    const skippedWith = skippedWithTheirSkills(agentsOnlySkippedSkillsCarried, selectedAgents);
 
-    if (skippedSkillIds.length > 0) this.warn(skippedUnknownSkills(skippedSkillIds, skippedWith));
+    if (skippedSkillIds.length > 0) {
+      this.warn(skippedUnknownSkills(skippedSkillIds, agentsOnlySkippedSkillsCarried));
+    }
     if (skippedAgentNames.length > 0) this.warn(skippedUnknownAgents(skippedAgentNames));
+  }
+
+  /** For the panel's header; `undefined` for a configuration built from no stack. */
+  protected async stackNameOf(
+    stackId: InstallSelection["selectedStackId"],
+    sourceResult: SourceLoadResult,
+  ): Promise<string | undefined> {
+    if (!stackId) return undefined;
+
+    const { sourcePath, sourceConfig } = sourceResult;
+    const stack = await loadStackById(stackId, sourcePath, sourceConfig.source);
+    return stack === null ? undefined : inertLine(stack.name);
   }
 
   /** The `--from` refusals that need the decoded selection, asked before the confirm. */

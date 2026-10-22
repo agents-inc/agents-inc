@@ -58,6 +58,12 @@ export const HAND_WRITTEN_FIELDS = [
   "rulesFile",
 ] as const satisfies readonly (keyof ProjectConfig)[]
 
+/** What describes the global installation rather than any project under it. */
+export const GLOBAL_IDENTITY_FIELDS = [
+  ...HAND_WRITTEN_FIELDS,
+  "description",
+] as const satisfies readonly (keyof ProjectConfig)[]
+
 /** Emitted as typed named variables above the export default. */
 const EXTRACTED_FIELDS = new Set([
   "skills",
@@ -521,7 +527,7 @@ function stackOfAgents(
 
 /**
  * One canonically ordered sequence, project values winning, so a re-emit moves no line. The
- * global's {@link HAND_WRITTEN_FIELDS} stay in the global's file.
+ * global's {@link GLOBAL_IDENTITY_FIELDS} stay in the global's file.
  */
 function mergeInlinedScalarFields(
   cleaned: Record<string, unknown>,
@@ -529,7 +535,7 @@ function mergeInlinedScalarFields(
 ): [string, unknown][] {
   return Object.entries(
     canonicalizeFieldOrder({
-      ...omit(cleanedGlobal, HAND_WRITTEN_FIELDS),
+      ...omit(cleanedGlobal, GLOBAL_IDENTITY_FIELDS),
       ...cleaned,
     })
   ).filter(([key]) => isCopiedScalarField(key))

@@ -345,13 +345,14 @@ describe("writeExternalSkills", () => {
   async function install(
     external: SeedExternalSkill,
     scope: "project" | "global",
+    id: string = EXTERNAL_ID,
   ): Promise<string> {
     const payload = buildSeedPayload({
-      skills: { [EXTERNAL_ID]: buildSeedSkill({ scope }) },
-      external: { [EXTERNAL_ID]: external },
+      skills: { [id]: buildSeedSkill({ scope }) },
+      external: { [id]: external },
     });
     await writeExternalSkills(registerExternalSkills(payload, matrix, projectDir));
-    return path.join(resolveInstallPaths(projectDir, scope).skillsDir, EXTERNAL_ID);
+    return path.join(resolveInstallPaths(projectDir, scope).skillsDir, id);
   }
 
   async function standingSkillDir(id: SkillId, metadata: string | null): Promise<string> {
@@ -427,6 +428,24 @@ describe("writeExternalSkills", () => {
     const validated = validateSkillMetadata(metadata);
     expect(validated.success ? [] : validated.error.issues.map((issue) => issue.path.join("."))) //
       .toStrictEqual([]);
+  });
+
+  it("writes a long name whole, in a metadata.yaml this installation's own validator accepts", async () => {
+    const name = "observability-and-instrumentation";
+    const skillDir = await install(
+      buildSeedExternalSkill({ displayName: name }),
+      "project",
+      "external-web-framework-observability-and-instrumentation",
+    );
+
+    const metadata: LocalSkillMetadata = parseYaml(
+      await readFile(path.join(skillDir, STANDARD_FILES.METADATA_YAML), "utf8"),
+    );
+
+    const validated = validateSkillMetadata(metadata);
+    expect(validated.success ? [] : validated.error.issues.map((issue) => issue.path.join("."))) //
+      .toStrictEqual([]);
+    expect(metadata.displayName).toBe(name);
   });
 
   it("keeps what the repository shipped where the payload has nothing to say", async () => {

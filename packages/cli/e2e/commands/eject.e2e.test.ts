@@ -714,13 +714,9 @@ describe("eject command", () => {
       },
     );
 
-    /**
-     * KNOWN GAP: `discoverLocalSkills` finds local copies only under `<root>/.claude/skills`, so a
-     * Codex global copy in `$CODEX_HOME/skills` is not seen and React is copied into the project.
-     */
-    it.fails(
+    it(
       "leaves out the skill a Codex global already holds as its own copy",
-      { retry: 0, timeout: TIMEOUTS.LIFECYCLE },
+      { timeout: TIMEOUTS.LIFECYCLE },
       async () => {
         const env = await freshEnvironment();
         const project = { dir: env.projectDir, globalHome: env.fakeHome };

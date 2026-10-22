@@ -697,14 +697,14 @@ export type InstallSelection = {
   validation: SelectionValidation
 }
 
-/** A skipped skill and the sub-agents it alone brought in, so they go with it. */
+/** A skipped skill and the sub-agents it alone brought in, installed without it. */
 export type SkippedSkillAgents = { skillId: string; agentNames: AgentName[] }
 
 export type SeedMapping = {
   result: InstallSelection
   skippedSkillIds: string[]
   skippedAgentNames: string[]
-  /** Only skills naming such a sub-agent; `result` is the same with or without them. */
+  /** Only skills naming such a sub-agent. */
   agentsOnlySkippedSkillsCarried: SkippedSkillAgents[]
 }
 
@@ -737,9 +737,9 @@ type AssignmentRow =
 
 /**
  * A shared configuration in the shape `init --from` installs. Unknown ids are skipped, never
- * fatal, so a rename cannot break older links. Assignments become `assignedStack`, which replaces
- * the derived stack. An unwritable pair is the one fatal case: nothing downstream filters
- * `assignedStack`.
+ * fatal, so a rename cannot break older links; a sub-agent a skipped skill names is installed
+ * without it. Assignments become `assignedStack`, which replaces the derived stack. An unwritable
+ * pair is the one fatal case: nothing downstream filters `assignedStack`.
  */
 export function seedToInstallSelection(
   payload: SeedPayload,
@@ -747,14 +747,13 @@ export function seedToInstallSelection(
 ): SeedMapping {
   const agentMap = readAgentMap(payload.agents)
   const { installable, skipped } = resolveSeedSkills(payload.skills, catalog)
-  // An agent is not switched on by a skill this catalog cannot install.
   const rows = installable.flatMap((skill) => assignmentRows(skill, agentMap))
   refuseUnwritableAssignments(rows)
 
   const placed = rows.filter((row) => row.kind === "placed")
-  const selectedAgents = selectedAgentsOf(placed, agentMap)
+  const carried = new Set(agentsCarriedIn(placed, agentMap))
+  const selectedAgents = withAgentsSkippedSkillsName(carried, skipped, agentMap)
   const skills = installable.map(toSeedSkillConfig)
-  const selected = new Set(selectedAgents)
 
   return {
     result: {
@@ -781,7 +780,7 @@ export function seedToInstallSelection(
     skippedSkillIds: skipped.map(({ skillId }) => skillId),
     skippedAgentNames: skippedAgentNamesOf(agentMap, rows),
     agentsOnlySkippedSkillsCarried: skipped.flatMap((skill) =>
-      agentsOnlyItCarried(skill, agentMap, selected)
+      agentsOnlyItCarried(skill, agentMap, carried)
     ),
   }
 }
@@ -793,14 +792,24 @@ function refuseUnwritableAssignments(rows: AssignmentRow[]): void {
   }
 }
 
-function selectedAgentsOf(
+/** By a skill that installs, or switched on. */
+function agentsCarriedIn(
   placed: PlacedAssignment[],
+  agentMap: SeedAgentMap
+): AgentName[] {
+  return [...placed.map((row) => row.agent), ...agentsSwitchedOn(agentMap)]
+}
+
+/** A sub-agent never depends on a skill loading. */
+function withAgentsSkippedSkillsName(
+  carried: ReadonlySet<AgentName>,
+  skipped: SkippedSeedSkill[],
   agentMap: SeedAgentMap
 ): AgentName[] {
   return [
     ...new Set([
-      ...placed.map((row) => row.agent),
-      ...agentsSwitchedOn(agentMap),
+      ...carried,
+      ...skipped.flatMap((skill) => agentsNamedBy(skill, agentMap)),
     ]),
   ]
 }
@@ -818,17 +827,26 @@ function skippedAgentNamesOf(
 
 type SkippedSeedSkill = { skillId: string; seedSkill: SeedSkill }
 
-/** A sub-agent this catalog ships, not switched off, that nothing installed selects. */
-function agentsOnlyItCarried(
-  { skillId, seedSkill }: SkippedSeedSkill,
-  agentMap: SeedAgentMap,
-  selected: ReadonlySet<AgentName>
-): SkippedSkillAgents[] {
-  const agentNames = Object.keys(seedSkill.assignments)
+/** Each sub-agent this catalog ships that the skill names and the configuration leaves on. */
+function agentsNamedBy(
+  { seedSkill }: SkippedSeedSkill,
+  agentMap: SeedAgentMap
+): AgentName[] {
+  return Object.keys(seedSkill.assignments)
     .filter(isAgentName)
-    .filter((name) => !agentMap.switchedOff.has(name) && !selected.has(name))
+    .filter((name) => !agentMap.switchedOff.has(name))
+}
 
-  return agentNames.length === 0 ? [] : [{ skillId, agentNames }]
+function agentsOnlyItCarried(
+  skill: SkippedSeedSkill,
+  agentMap: SeedAgentMap,
+  carried: ReadonlySet<AgentName>
+): SkippedSkillAgents[] {
+  const agentNames = agentsNamedBy(skill, agentMap).filter(
+    (name) => !carried.has(name)
+  )
+
+  return agentNames.length === 0 ? [] : [{ skillId: skill.skillId, agentNames }]
 }
 
 function readAgentMap(agents: SeedPayload["agents"]): SeedAgentMap {

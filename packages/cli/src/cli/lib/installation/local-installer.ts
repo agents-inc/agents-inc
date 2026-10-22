@@ -45,12 +45,12 @@ function resolveStackProperty(
   return generated === undefined ? undefined : assigned;
 }
 
-/** A loaded stack wins over a carried description (`init --from` with `stackId: null`). */
+/** The link's own description wins over the stack it applies, whose words are the fallback. */
 function resolveDescription(
   loadedStack: Stack | null,
   shared: InstallSelection["description"],
 ): string | undefined {
-  return loadedStack === null ? shared : loadedStack.description;
+  return shared ?? loadedStack?.description;
 }
 
 /** At `$HOME` the basename is the account name, so the global config takes the product name. */

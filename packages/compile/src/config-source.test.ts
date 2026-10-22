@@ -335,6 +335,26 @@ export default {
 } satisfies ProjectConfig
 `
 
+const DESCRIBED_GLOBAL = buildProjectConfig({
+  ...BARE_GLOBAL,
+  description: "The global install",
+})
+
+const DESCRIBED_PROJECT = buildProjectConfig({
+  ...BARE_PROJECT,
+  description: "My app",
+})
+
+const OWN_DESCRIPTION_INLINED_SOURCE = `import type { ProjectConfig } from './config-types'
+
+export default {
+  name: 'my-app',
+  description: 'My app',
+  skills: [],
+  agents: [],
+} satisfies ProjectConfig
+`
+
 const ONLY_GLOBAL_ENTRIES_INLINED_SOURCE = `import type { ProjectConfig, AgentScopeConfig, SkillConfig } from './config-types'
 
 const skills: SkillConfig[] = [
@@ -520,6 +540,24 @@ describe("a project config that inlines its global config", () => {
       })
     ).toBe(ONLY_PROJECT_ENTRIES_INLINED_SOURCE)
   })
+
+  it("takes none of the global config's description when the project has none", () => {
+    expect(
+      generateConfigSource(BARE_PROJECT, CATALOG, {
+        isProjectConfig: true,
+        globalConfig: DESCRIBED_GLOBAL,
+      })
+    ).toBe(NOTHING_INLINED_SOURCE)
+  })
+
+  it("keeps the project's own description over the global config's", () => {
+    expect(
+      generateConfigSource(DESCRIBED_PROJECT, CATALOG, {
+        isProjectConfig: true,
+        globalConfig: DESCRIBED_GLOBAL,
+      })
+    ).toBe(OWN_DESCRIPTION_INLINED_SOURCE)
+  })
 })
 
 describe("a project config given no global config", () => {
@@ -574,6 +612,7 @@ const EXPECTED_SOURCES = {
   BARE_PROJECT_WITH_GLOBAL_IMPORT_SOURCE,
   PROJECT_WITH_INLINED_GLOBAL_SOURCE,
   NOTHING_INLINED_SOURCE,
+  OWN_DESCRIPTION_INLINED_SOURCE,
   ONLY_GLOBAL_ENTRIES_INLINED_SOURCE,
   ONLY_PROJECT_ENTRIES_INLINED_SOURCE,
 }

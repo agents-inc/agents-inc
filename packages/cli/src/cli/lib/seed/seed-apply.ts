@@ -5,16 +5,12 @@ import { isDeepEqual, omit, partition, pick } from "remeda";
 import { loadProjectConfigFromDir } from "../configuration/project-config.js";
 import { isActiveAt } from "../configuration/scope-predicates.js";
 import { providerInUse } from "../installation/install-layout.js";
-import { getCategoryDomain, getSkillDisplayName, matrix } from "../matrix/matrix-provider.js";
+import { getCategoryDomain, matrix } from "../matrix/matrix-provider.js";
 import { orderDomains } from "@workspace/compile";
-import {
-  SHARED_CONFIG_APPLY,
-  SHARED_CONFIG_ARRIVALS,
-  addedToGlobalSubAgents,
-} from "../../utils/messages.js";
-import { typedEntries, typedKeys, typedValues } from "../../utils/typed-object.js";
+import { addedToGlobalSubAgents } from "../../utils/messages.js";
+import { typedEntries, typedValues } from "../../utils/typed-object.js";
 
-import type { InstallSelection, SkippedSkillAgents } from "@workspace/compile/seed-to-config";
+import type { InstallSelection } from "@workspace/compile/seed-to-config";
 import type { AgentName } from "../../types/agents.js";
 import type {
   AgentScopeConfig,
@@ -25,7 +21,6 @@ import type {
 import type { Category, Domain } from "../../types/matrix.js";
 import type { SkillAssignment, SkillId } from "../../types/skills.js";
 import type { StackAgentConfig } from "../../types/stacks.js";
-import type { SeedPayload, SeedSkill } from "@workspace/matrix/seed";
 
 /** What applying a shared configuration may not take away, split by reason. */
 export type KeptFromRoundTrip = {
@@ -187,51 +182,6 @@ function withAgentKeptRows(
       ...displaced.map(([category, row]) => ({ skillId: row.id, agentName: agent, category })),
     ],
   };
-}
-
-/** The decode carries sub-agents only through placed skills, so an unplaceable skill's assignees return. */
-export function withUnplaceableAssignees(
-  decoded: InstallSelection,
-  installed: ProjectConfig | null,
-  payload: SeedPayload,
-  unplaceable: ReadonlySet<string>,
-): InstallSelection {
-  if (!installed) return decoded;
-
-  const assigned = assigneesOfHeld(payload, installed, unplaceable);
-  const selected = new Set(decoded.selectedAgents);
-  const leftOutThoughAssigned = (agent: AgentScopeConfig): boolean =>
-    !agent.excluded && assigned.has(agent.name) && !selected.has(agent.name);
-
-  const assignees = installed.agents.filter(leftOutThoughAssigned);
-  if (assignees.length === 0) return decoded;
-
-  return {
-    ...decoded,
-    selectedAgents: [...decoded.selectedAgents, ...assignees.map((agent) => agent.name)],
-    agentConfigs: [...decoded.agentConfigs, ...assignees],
-  };
-}
-
-/** Less any the payload switches off. */
-function assigneesOfHeld(
-  payload: SeedPayload,
-  installed: ProjectConfig,
-  unplaceable: ReadonlySet<string>,
-): Set<string> {
-  const held = new Set<string>(
-    installed.skills.filter((skill) => !skill.excluded).map((skill) => skill.id),
-  );
-  const isHeldUnplaceable = ([id]: [string, SeedSkill]): boolean =>
-    unplaceable.has(id) && held.has(id);
-  const isNotSwitchedOff = (name: string): boolean => payload.agents[name]?.on !== false;
-
-  return new Set(
-    typedEntries<string, SeedSkill>(payload.skills)
-      .filter(isHeldUnplaceable)
-      .flatMap(([, skill]) => typedKeys<string>(skill.assignments))
-      .filter(isNotSwitchedOff),
-  );
 }
 
 export type InstalledGlobal = Pick<ProjectConfig, "skills" | "agents" | "stack">;
@@ -539,15 +489,6 @@ export function notInstalledGlobally<Entry extends { id: SkillId }>(
   return entries.filter((entry) => !installed.has(entry.id));
 }
 
-export type Arrivals = Record<SkillScope, Entries>;
-
-export function arrivalsByScope(skills: SkillConfig[], agents: AgentScopeConfig[]): Arrivals {
-  return {
-    project: entriesActiveAt(skills, agents, "project"),
-    global: entriesActiveAt(skills, agents, "global"),
-  };
-}
-
 function entriesActiveAt(
   skills: SkillConfig[],
   agents: AgentScopeConfig[],
@@ -559,59 +500,8 @@ function entriesActiveAt(
   };
 }
 
-function installArrivals(held: HeldGlobal): Arrivals {
-  const installedSkillIds = new Set(held.installed.skillIds);
-  const installedAgentNames = new Set(held.installed.agentNames);
-  return arrivalsByScope(
-    held.result.skills.filter((skill) => !installedSkillIds.has(skill.id)),
-    held.result.agentConfigs.filter((agent) => !installedAgentNames.has(agent.name)),
-  );
-}
-
-export function installPlanLines(held: HeldGlobal): string[] {
-  return [
-    ...arrivalLines(installArrivals(held)),
-    ...scopeLines(SHARED_CONFIG_ARRIVALS.SKIPPED_HEADING, skippedAsInstalled(held)),
-    ...joinedStatement(held),
-  ];
-}
-
-/** A sub-agent a row joins is changed, so it is named as added to rather than as skipped. */
-function skippedAsInstalled({ installed, joined }: HeldGlobal): Entries {
-  const joinedNames = new Set(joined.map(({ agentName }) => agentName));
-  return {
-    skillIds: installed.skillIds,
-    agentNames: installed.agentNames.filter((name) => !joinedNames.has(name)),
-  };
-}
-
 export function joinedStatement(held: HeldGlobal): string[] {
   return held.joined.length === 0 ? [] : [addedToGlobalSubAgents(held.joined)];
-}
-
-export function skillLabel(skillId: SkillId): string {
-  const displayName = getSkillDisplayName(skillId);
-  return displayName === skillId ? skillId : `${displayName} (${skillId})`;
-}
-
-export function arrivalLines(arrivals: Arrivals): string[] {
-  return [
-    ...scopeLines(SHARED_CONFIG_ARRIVALS.PROJECT_HEADING, arrivals.project),
-    ...scopeLines(SHARED_CONFIG_ARRIVALS.GLOBAL_HEADING, arrivals.global),
-  ];
-}
-
-function scopeLines(heading: string, entries: Entries): string[] {
-  const groups = [
-    { label: SHARED_CONFIG_APPLY.SKILLS_HEADING, items: entries.skillIds.map(skillLabel) },
-    { label: SHARED_CONFIG_APPLY.AGENTS_HEADING, items: entries.agentNames },
-  ].filter((group) => group.items.length > 0);
-  if (groups.length === 0) return [];
-
-  return [
-    heading,
-    ...groups.flatMap((group) => [`  ${group.label}`, ...group.items.map((item) => `    ${item}`)]),
-  ];
 }
 
 /** Split by kind: skill and sub-agent scopes are independent, so a refusal names each. */
@@ -623,16 +513,4 @@ export function projectScopedContent(result: InstallSelection): Entries {
 export function installsAtHome(result: InstallSelection): boolean {
   const { skillIds, agentNames } = projectScopedContent(result);
   return skillIds.length === 0 && agentNames.length === 0;
-}
-
-/** Less any sub-agent the run installs after all, as `edit` keeps one already installed. */
-export function skippedWithTheirSkills(
-  skipped: readonly SkippedSkillAgents[],
-  selectedAgents: readonly AgentName[],
-): SkippedSkillAgents[] {
-  const selected = new Set(selectedAgents);
-  return skipped.flatMap(({ skillId, agentNames }) => {
-    const left = agentNames.filter((name) => !selected.has(name));
-    return left.length === 0 ? [] : [{ skillId, agentNames: left }];
-  });
 }

@@ -26,6 +26,7 @@ import { stackSelection, useConfigStore } from "@/stores/config-store"
 import {
   AGENT_MODELS,
   DEFAULT_SKILL_OPTIONS,
+  isAgentOn,
   restingAgentOptions,
   type PersistedConfig,
 } from "@/stores/persisted-schema"
@@ -347,6 +348,92 @@ describe("fromSeedPayload", () => {
     }
 
     expect(Object.keys(fromSeedPayload(drifted).agents)).toStrictEqual([AGENT])
+  })
+
+  // As `init --from` installs it: a sub-agent never depends on a skill loading.
+  describe("a sub-agent only a skill the catalog does not know reached", () => {
+    const UNKNOWN_SKILL = "skill-from-the-future"
+
+    const reachedOnlyByUnknown = (agents: SeedPayload["agents"] = {}) => {
+      const payload = toSeedPayload(config())
+      return {
+        ...payload,
+        skills: {
+          ...payload.skills,
+          [UNKNOWN_SKILL]: {
+            ...payload.skills[SKILL]!,
+            assignments: { [OTHER_AGENT]: "lazy" as const },
+          },
+        },
+        agents: { ...payload.agents, ...agents },
+      }
+    }
+
+    it("stays on without it", () => {
+      expect(
+        isAgentOn(fromSeedPayload(reachedOnlyByUnknown()), OTHER_AGENT)
+      ).toBe(true)
+    })
+
+    it("travels on the next mint", () => {
+      const restored = fromSeedPayload(reachedOnlyByUnknown())
+
+      expect(toSeedPayload(restored).agents[OTHER_AGENT]).toStrictEqual({
+        on: true,
+      })
+    })
+
+    it("stays off when the payload switches it off", () => {
+      const restored = fromSeedPayload(
+        reachedOnlyByUnknown({ [OTHER_AGENT]: { on: false } })
+      )
+
+      expect(isAgentOn(restored, OTHER_AGENT)).toBe(false)
+    })
+
+    it("keeps its other choices", () => {
+      const restored = fromSeedPayload(
+        reachedOnlyByUnknown({ [OTHER_AGENT]: { model: "haiku" } })
+      )
+
+      expect(restored.agents[OTHER_AGENT]).toStrictEqual({
+        on: true,
+        model: "haiku",
+      })
+    })
+
+    it("gains no pin when a skill the catalog knows reaches it too", () => {
+      const payload = reachedOnlyByUnknown()
+      const alsoReachedByKnown = {
+        ...payload,
+        skills: {
+          ...payload.skills,
+          [UNKNOWN_SKILL]: {
+            ...payload.skills[UNKNOWN_SKILL],
+            assignments: { [AGENT]: "lazy" as const },
+          },
+        },
+        agents: {},
+      }
+
+      expect(fromSeedPayload(alsoReachedByKnown).agents).toStrictEqual({})
+    })
+
+    it("is not invented for an agent the catalog does not have", () => {
+      const payload = reachedOnlyByUnknown()
+      const restored = fromSeedPayload({
+        ...payload,
+        skills: {
+          ...payload.skills,
+          [UNKNOWN_SKILL]: {
+            ...payload.skills[UNKNOWN_SKILL],
+            assignments: { [GONE_AGENT]: "lazy" as const },
+          },
+        },
+      })
+
+      expect(restored.agents).not.toHaveProperty(GONE_AGENT)
+    })
   })
 })
 
@@ -703,6 +790,15 @@ describe("recogniseStack", () => {
     })
 
     expect(opened(payload)).toStrictEqual(stackSelection(STACK_WITH_PINS))
+  })
+
+  it("keeps the description the link arrived with", () => {
+    const DESCRIPTION = "The house web app, as installed."
+
+    expect(opened({ ...minted(), description: DESCRIPTION })).toStrictEqual({
+      ...stackSelection(STACK_WITH_PINS),
+      description: DESCRIPTION,
+    })
   })
 
   it("leaves a link that names a stack on the stack it names", () => {

@@ -1,3 +1,4 @@
+import os from "os";
 import React from "react";
 
 import { Flags, type Interfaces } from "@oclif/core";
@@ -32,13 +33,16 @@ import {
 import { seedToInstallSelection, type SeedMapping } from "../lib/seed/seed-to-selection.js";
 import {
   holdInstalledGlobal,
-  installPlanLines,
   installsAtHome,
+  joinedStatement,
   notInstalledGlobally,
   readInstalledGlobal,
   type HeldGlobal,
   type InstalledGlobal,
 } from "../lib/seed/seed-apply.js";
+import { agentChangesAmong, type AgentChange } from "../lib/configuration/scope-diff.js";
+import { isActiveAt } from "../lib/configuration/scope-predicates.js";
+import { summaryPanelBlock, type SummaryPanelProps } from "../components/common/summary-panel.js";
 import {
   getInstallationsByProvider,
   type ProviderInstallation,
@@ -71,6 +75,7 @@ import {
 import { providerToNameAt } from "../lib/installation/provider-to-name.js";
 import { hostCompileNotices } from "../lib/hosts/host-compile-notices.js";
 import {
+  installationToName,
   providerFlag,
   providerNamedBy,
   providerNeedsAConfigurationToInstall,
@@ -80,6 +85,7 @@ import {
   ASCII_LOGO,
   CLI_INVOKE_COMMAND,
   DEFAULT_BRANDING,
+  EDITOR_ADDRESS,
   EDITOR_URL,
   EJECT_SOURCE,
   editorConfigUrl,
@@ -93,7 +99,14 @@ import { getErrorMessage } from "../utils/errors.js";
 import { EXIT_CODES } from "../lib/exit-codes.js";
 import { openUrl } from "../utils/open-url.js";
 import { plural } from "../utils/string.js";
-import type { AgentName, MergedSkillsMatrix, SkillId, SkillScope } from "../types/index.js";
+import type {
+  AgentName,
+  AgentScopeConfig,
+  MergedSkillsMatrix,
+  SkillConfig,
+  SkillId,
+  SkillScope,
+} from "../types/index.js";
 import { type StartupMessage } from "../utils/logger.js";
 import {
   ERROR_MESSAGES,
@@ -108,6 +121,7 @@ import {
   initSucceeded,
   keptAsInstalledGlobally,
   sharedConfigExistingInstall,
+  subAgentChanged,
 } from "../utils/messages.js";
 import type { SeedPayload } from "@workspace/matrix/seed";
 
@@ -268,8 +282,7 @@ export default class Init extends BaseCommand {
   private brandingName: string = DEFAULT_BRANDING.NAME;
 
   static summary = `Initialize ${DEFAULT_BRANDING.NAME} in this project`;
-  static description =
-    "Build a configuration in agentsinc.sh/editor, or install one by id with --from. Over an existing installation, shows its dashboard.";
+  static description = `Build a configuration in ${EDITOR_ADDRESS}, or install one by id with --from. Over an existing installation, shows its dashboard.`;
 
   static examples = [
     {
@@ -298,8 +311,7 @@ export default class Init extends BaseCommand {
       helpValue: "<id>",
     }),
     ui: Flags.boolean({
-      description:
-        "Open agentsinc.sh/editor on the id --from names, or on the catalogue — what a bare init does where nothing is installed",
+      description: `Open ${EDITOR_ADDRESS} on the id --from names, or on the catalogue — what a bare init does where nothing is installed`,
       default: false,
     }),
     provider: providerFlag(),
@@ -323,9 +335,12 @@ export default class Init extends BaseCommand {
     const marketplaceLine =
       marketplace === undefined ? undefined : this.addMarketplaceLineOrFail(marketplace);
 
+    const installedHere = await holdsItsOwnInstallation(projectDir);
+    const toName = installedHere ? await installationToName(projectDir, provider) : provider;
+
     this.log(id === undefined ? `Build it at ${url}` : `Open it at ${url}`);
     if (marketplaceLine !== undefined) this.log(marketplaceLine);
-    this.log(applySharedConfigHere(id, await holdsItsOwnInstallation(projectDir), provider));
+    this.log(applySharedConfigHere(id, installedHere, toName));
 
     if (!process.stdin.isTTY) return;
 
@@ -414,9 +429,11 @@ export default class Init extends BaseCommand {
     const mapping = this.decodeSeedOrFail(payload, sourceResult.matrix);
     const { result } = mapping;
 
-    this.refuseProjectScopedContentAtHome(result, projectDir);
+    // Nothing is installed here: `refuseInstalledProject` has already refused a home that holds one.
+    this.refuseProjectScopedContentAtHome(result, projectDir, false);
 
-    const held = holdInstalledGlobal(result, await installedGlobalToHold(projectDir));
+    const installedGlobal = await installedGlobalToHold(projectDir);
+    const held = holdInstalledGlobal(result, installedGlobal);
     const arrivingCarried = notInstalledGlobally(carriedSkills, held);
 
     // Above the lists: a yes installs what was listed, so nothing listed may then be refused.
@@ -429,10 +446,14 @@ export default class Init extends BaseCommand {
 
     // Above the skips: an "unknown" skill is often one whose file failed to parse.
     sayCapturedWarnings(startupMessages);
-    this.warnOfSkippedEntries(mapping, held.result.selectedAgents);
+    this.warnOfSkippedEntries(mapping);
     this.refuseAnEmptySelection(held.result, id);
 
-    this.logWhatGoesWhere(held, installsAtHome(result) ? id : undefined);
+    const stackName = await this.stackNameOf(result.selectedStackId, sourceResult);
+    this.logWhatGoesWhere(held, installedGlobal, stackName, {
+      id: installsAtHome(result) ? id : undefined,
+      provider: providerToNameAt(os.homedir(), providerInUse(projectDir)),
+    });
     if (process.stdin.isTTY && !(await this.confirmInstall())) {
       this.log("Setup cancelled");
       return null;
@@ -450,17 +471,25 @@ export default class Init extends BaseCommand {
     };
   }
 
-  /** `idAppliedAtHome` is the id only where a run from home would take the configuration. */
-  private logWhatGoesWhere(held: HeldGlobal, idAppliedAtHome: string | undefined): void {
-    for (const line of installPlanLines(held)) {
+  /**
+   * The panel where the question is asked, or where it would be: the project against the whole
+   * global install it inherits. `runFromHome.id` is the id only where home would take it.
+   */
+  private logWhatGoesWhere(
+    held: HeldGlobal,
+    installedGlobal: InstalledGlobal | null,
+    stackName: string | undefined,
+    runFromHome: RunFromHome,
+  ): void {
+    const joined = joinedGlobalAgents(held, installedGlobal);
+    const lines = summaryPanelBlock(
+      installPanel(held, installedGlobal, joined, stackName),
+      joined.map(subAgentChanged),
+      [...joinedStatement(held), ...keptAsInstalledStatement(held, runFromHome)],
+    );
+    for (const line of lines) {
       this.log(line);
     }
-
-    const { skillIds, agentNames } = held.keptAsInstalled;
-    if (skillIds.length > 0 || agentNames.length > 0) {
-      this.log(keptAsInstalledGlobally(skillIds, agentNames, idAppliedAtHome));
-    }
-    this.log("");
   }
 
   private refuseAnEmptySelection(result: InstallSelection, id: string): void {
@@ -800,6 +829,68 @@ function selectsNothing(result: InstallSelection): boolean {
 async function installedGlobalToHold(projectDir: string): Promise<InstalledGlobal | null> {
   if (isHomeDirectory(projectDir)) return null;
   return await readInstalledGlobal(projectDir);
+}
+
+/** The run from home that changes what a project run keeps, where home would take it. */
+type RunFromHome = { id: string | undefined; provider: Provider | undefined };
+
+function keptAsInstalledStatement(held: HeldGlobal, runFromHome: RunFromHome): string[] {
+  const { skillIds, agentNames } = held.keptAsInstalled;
+  if (skillIds.length === 0 && agentNames.length === 0) return [];
+  return [keptAsInstalledGlobally(skillIds, agentNames, runFromHome.id, runFromHome.provider)];
+}
+
+type GlobalEntries = { skills: SkillConfig[]; agents: AgentScopeConfig[] };
+
+/** What the project inherits that the configuration leaves unnamed: a project config copies it all. */
+function inheritedGlobal(held: HeldGlobal, installedGlobal: InstalledGlobal | null): GlobalEntries {
+  if (installedGlobal === null) return { skills: [], agents: [] };
+
+  const namedSkills = new Set(held.result.skills.filter(isGlobal).map(({ id }) => id));
+  const namedAgents = new Set(held.result.agentConfigs.filter(isGlobal).map(({ name }) => name));
+  return {
+    skills: installedGlobal.skills.filter((skill) => isGlobal(skill) && !namedSkills.has(skill.id)),
+    agents: installedGlobal.agents.filter(
+      (agent) => isGlobal(agent) && !namedAgents.has(agent.name),
+    ),
+  };
+}
+
+function isGlobal(entry: SkillConfig | AgentScopeConfig): boolean {
+  return isActiveAt(entry, "global");
+}
+
+/** Measured against the global install: the project changes nothing else of it. */
+function installPanel(
+  held: HeldGlobal,
+  installedGlobal: InstalledGlobal | null,
+  joined: AgentChange[],
+  stackName: string | undefined,
+): SummaryPanelProps {
+  const inherited = inheritedGlobal(held, installedGlobal);
+  return {
+    skillConfigs: [...held.result.skills, ...inherited.skills],
+    agentConfigs: [...held.result.agentConfigs, ...inherited.agents],
+    installedSkillConfigs: installedGlobal?.skills ?? null,
+    installedAgentConfigs: installedGlobal?.agents ?? null,
+    isInitMode: true,
+    changedAgentNames: new Set(joined.map(({ name }) => name)),
+    stackName,
+  };
+}
+
+/** The held global sub-agents an arriving skill's row joins, against their installed rows. */
+function joinedGlobalAgents(
+  held: HeldGlobal,
+  installedGlobal: InstalledGlobal | null,
+): AgentChange[] {
+  if (installedGlobal === null) return [];
+
+  return agentChangesAmong(
+    held.joined.map(({ agentName }) => agentName),
+    installedGlobal,
+    { agents: held.result.agentConfigs, stack: held.result.assignedStack },
+  );
 }
 
 type InstallPlan = {

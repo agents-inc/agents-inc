@@ -10,6 +10,7 @@ import {
   STANDARD_FILES,
 } from "../../consts";
 import { METADATA_KEYS } from "../metadata-keys";
+import { skillsDir, skillsPathPrefix, sourceDir } from "../installation/install-layout";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { renderMetadataYaml, renderSkillMd } from "../__tests__/content-generators";
 import { silenceConsole } from "../__tests__/helpers/silence-console";
@@ -343,6 +344,42 @@ describe("local-skill-loader", () => {
       const result = await discoverLocalSkills(tempDir);
 
       expect(result?.skills).toStrictEqual([]);
+    });
+  });
+
+  describe("on a Codex installation", () => {
+    it("reads the skills Codex copied in, where Codex keeps them", async () => {
+      const codexSkills = skillsDir("codex", "project", tempDir);
+      const skillDir = path.join(codexSkills, "codex-skill");
+      await mkdir(sourceDir(tempDir, "codex"), { recursive: true });
+      await writeFile(path.join(sourceDir(tempDir, "codex"), STANDARD_FILES.CONFIG_TS), "");
+      await mkdir(skillDir, { recursive: true });
+      await writeFile(
+        path.join(skillDir, STANDARD_FILES.METADATA_YAML),
+        renderMetadataYaml({
+          contentHash: "abc123",
+          category: "web-framework",
+          displayName: "Codex Skill",
+          slug: "codex-skill",
+        }),
+      );
+      await writeFile(
+        path.join(skillDir, STANDARD_FILES.SKILL_MD),
+        renderSkillMd("codex-skill", "Copied in by Codex"),
+      );
+
+      const result = await discoverLocalSkills(tempDir);
+
+      expect(result?.localSkillsPath).toBe(codexSkills);
+      expect(
+        result?.skills.map(({ id, path: at, localPath }) => ({ id, at, localPath })),
+      ).toStrictEqual([
+        {
+          id: "codex-skill",
+          at: `${skillsPathPrefix("codex", "project", tempDir)}/codex-skill/`,
+          localPath: skillDir + path.sep,
+        },
+      ]);
     });
   });
 

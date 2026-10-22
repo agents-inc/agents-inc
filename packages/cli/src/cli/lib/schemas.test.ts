@@ -1337,6 +1337,67 @@ describe("which schema judges a skill's metadata", () => {
   it("refuses metadata that is not an object, rather than throwing", () => {
     expect(validateSkillMetadata(null).success).toBe(false);
   });
+
+  describe("a directory a shared configuration carried", () => {
+    /** 32 characters: a name the editor showed whole. */
+    const LONG_DISPLAY_NAME = "Web Application Security Testing";
+    /** 51 characters: the id the editor mints for a 30-character name under `web-tooling`. */
+    const LONG_SLUG = "external-web-tooling-verification-before-completion";
+    /** An ejected copy's provenance: no directory inside its source. */
+    const EJECTED_FROM = {
+      skillId: LONG_SLUG,
+      contentHash: "abc1234",
+      date: "2026-10-21",
+      source: "github:obra/superpowers",
+    };
+    const CARRIED_FROM = { ...EJECTED_FROM, path: "skills/verification-before-completion" };
+    const CUSTOM_METADATA = { ...VALID_EMBEDDED_SKILL_METADATA_FILE, custom: true };
+    const CARRIED_METADATA = { ...CUSTOM_METADATA, forkedFrom: CARRIED_FROM };
+
+    it("is judged without a maximum on its display name", () => {
+      const judged = validateSkillMetadata({ ...CARRIED_METADATA, displayName: LONG_DISPLAY_NAME });
+
+      expect(judged.error?.issues.map((issue) => issue.path.join(".")) ?? []).toStrictEqual([]);
+    });
+
+    it("is judged without a maximum on its slug", () => {
+      const judged = validateSkillMetadata({ ...CARRIED_METADATA, slug: LONG_SLUG });
+
+      expect(judged.error?.issues.map((issue) => issue.path.join(".")) ?? []).toStrictEqual([]);
+    });
+
+    it.each([
+      ["a custom skill with no provenance", CUSTOM_METADATA],
+      [
+        "an ejected copy, whose provenance names no directory",
+        { ...CUSTOM_METADATA, forkedFrom: EJECTED_FROM },
+      ],
+    ])("keeps both maximums for %s", (_subject, metadata) => {
+      const judged = validateSkillMetadata({
+        ...metadata,
+        displayName: LONG_DISPLAY_NAME,
+        slug: LONG_SLUG,
+      });
+
+      expect(judged.error?.issues.map((issue) => issue.path.join("."))).toStrictEqual([
+        "displayName",
+        "slug",
+      ]);
+    });
+
+    it("still refuses an empty display name and a slug that is not kebab-case", () => {
+      const judged = validateSkillMetadata({
+        ...CARRIED_METADATA,
+        displayName: "",
+        slug: "External_Thing",
+      });
+
+      expect(judged.error?.issues.map((issue) => issue.path.join("."))).toStrictEqual([
+        "displayName",
+        "slug",
+      ]);
+    });
+  });
 });
 
 describe("relationship rules naming more than one skill", () => {

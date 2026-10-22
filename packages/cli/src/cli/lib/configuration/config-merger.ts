@@ -1,5 +1,5 @@
 import { indexBy, omit, pick, uniqueBy } from "remeda";
-import { HAND_WRITTEN_FIELDS } from "@workspace/compile/config-source";
+import { GLOBAL_IDENTITY_FIELDS, HAND_WRITTEN_FIELDS } from "@workspace/compile/config-source";
 
 import type { ProjectConfig } from "../../types";
 import type { AgentScopeConfig, SkillConfig } from "../../types/config";
@@ -154,9 +154,6 @@ export function mergeConfigs(
 
   return merged;
 }
-
-/** What describes the global installation rather than any project under it. */
-const GLOBAL_IDENTITY_FIELDS = [...HAND_WRITTEN_FIELDS, "description"] as const;
 
 /**
  * A config from the home fallback lends every field except its name, its description and the

@@ -139,7 +139,7 @@ const BASE_COMMAND_ADVISORY_WARNS = [
     why: "The reason behind the line above, and advisory for the same reason.",
   },
   {
-    line: "if (skippedSkillIds.length > 0) this.warn(skippedUnknownSkills(skippedSkillIds, skippedWith));",
+    line: "this.warn(skippedUnknownSkills(skippedSkillIds, agentsOnlySkippedSkillsCarried));",
     why: "`warnOfSkippedEntries`, which `init --from` and `edit --from` share. A fact about the PAYLOAD, not a failure of this run: an id no catalogue seats describes no work that could have been attempted. From `edit --from` the ids reach `reconcileSharedConfig` as `unplaceable`, so the entries stay installed and the confirm discloses them through `unplaceableKept`.",
   },
   {

@@ -187,6 +187,24 @@ describe("buildAndMergeConfig", () => {
     }
   });
 
+  it("keeps the sharer's own description over the stack it applies", async () => {
+    const offered = firstElement(CUSTOM_TEST_STACKS);
+    const marketplace = await createTestSource({ stacks: CUSTOM_TEST_STACKS });
+    try {
+      const { config } = await buildAndMergeConfig(
+        selectionWithAgent({ selectedStackId: offered.id, description: SHARED_DESCRIPTION }),
+        buildSourceResult(FULLSTACK_PAIR_MATRIX, marketplace.sourceDir, {
+          sourceConfig: { source: marketplace.sourceDir, sourceOrigin: "flag" },
+        }),
+        tempDir,
+      );
+
+      expect(config.description).toBe(SHARED_DESCRIPTION);
+    } finally {
+      await cleanupTestSource(marketplace);
+    }
+  });
+
   it("records no marketplace for a load that names none", async () => {
     const { config } = await buildAndMergeConfig(
       buildInstallSelection([]),

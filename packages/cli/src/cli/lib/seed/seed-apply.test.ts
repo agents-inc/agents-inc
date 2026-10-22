@@ -2,16 +2,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   holdInstalledGlobal,
-  installPlanLines,
   installsAtHome,
   joinedStatement,
   notInstalledGlobally,
   projectScopedContent,
   reconcileSharedConfig,
   restoreInstalledGlobal,
-  skillLabel,
-  skippedWithTheirSkills,
-  withUnplaceableAssignees,
   type InstalledGlobal,
   type KeptFromRoundTrip,
 } from "./seed-apply";
@@ -548,7 +544,7 @@ describe("reconcileSharedConfig", () => {
 });
 
 /** A sub-agent carried in only by a skipped skill is kept, unless unnamed or switched off. */
-describe("withUnplaceableAssignees", () => {
+describe("an installed sub-agent whose only skill this catalogue cannot place", () => {
   beforeEach(() => {
     initializeMatrix(REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX);
   });
@@ -586,10 +582,15 @@ describe("withUnplaceableAssignees", () => {
       payload,
       REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX,
     );
-    return withUnplaceableAssignees(result, installed, payload, new Set(skippedSkillIds));
+    return reconcileSharedConfig({
+      decoded: result,
+      installed,
+      authoredHere: new Set(),
+      unplaceable: new Set(skippedSkillIds),
+    }).result;
   }
 
-  it("keeps an installed sub-agent the payload assigns an unplaceable skill to", () => {
+  it("is kept where the payload assigns that skill to it", () => {
     const kept = decodeAndKeep(payloadAssigningUnplaceableTo([API_DEV]));
 
     expect(kept.selectedAgents).toStrictEqual([WEB_DEV, API_DEV]);
@@ -854,44 +855,13 @@ describe("holding the global install as installed", () => {
     ]);
   });
 
-  it("lists what arrives where, then the global skills and sub-agents it skips as already installed", () => {
-    const held = holdInstalledGlobal(
-      decodedWithGlobal({ [ZUSTAND]: onApiDeveloper() }),
-      installedGlobal,
-    );
-
-    expect(installPlanLines(held)).toStrictEqual([
-      "Into this project:",
-      "  Skills:",
-      `    ${SKILLS.react.displayName} (${REACT})`,
-      "  Sub-agents:",
-      `    ${WEB_DEV}`,
-      "Skipped, already in the global install:",
-      "  Skills:",
-      `    ${SKILLS.zustand.displayName} (${ZUSTAND})`,
-      "  Sub-agents:",
-      `    ${API_DEV}`,
-    ]);
-  });
-
-  it("names a held sub-agent a new row joins only as added to, never also as skipped", () => {
+  it("names a held sub-agent a new row joins as added to, with the skill it gains", () => {
     const held = holdInstalledGlobal(
       decodedWithGlobal({ [ZUSTAND]: onApiDeveloper(), [HONO]: onApiDeveloper() }),
       installedGlobal,
     );
 
-    expect(installPlanLines(held)).toStrictEqual([
-      "Into this project:",
-      "  Skills:",
-      `    ${SKILLS.react.displayName} (${REACT})`,
-      "  Sub-agents:",
-      `    ${WEB_DEV}`,
-      "Into the global install:",
-      "  Skills:",
-      `    ${SKILLS.hono.displayName} (${HONO})`,
-      "Skipped, already in the global install:",
-      "  Skills:",
-      `    ${SKILLS.zustand.displayName} (${ZUSTAND})`,
+    expect(joinedStatement(held)).toStrictEqual([
       [
         "Added to sub-agents in the global install — each keeps everything it already has, since a project run only adds to the global install:",
         `  sub-agent ${API_DEV}: + ${HONO}`,
@@ -940,7 +910,8 @@ describe("reconcileSharedConfig — what it hands back beside the result", () =>
   });
 });
 
-describe("withUnplaceableAssignees — which unplaceable skills bring their sub-agents back", () => {
+/** A sub-agent never depends on a skill loading, so whether the installation holds it is moot. */
+describe("a sub-agent an unplaceable skill names, whatever the installation holds of it", () => {
   beforeEach(() => {
     initializeMatrix(REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX);
   });
@@ -962,22 +933,27 @@ describe("withUnplaceableAssignees — which unplaceable skills bring their sub-
       skills: installedSkills,
       agents: buildAgentConfigs([WEB_DEV, API_DEV], { scope: "project" }),
     });
-    return withUnplaceableAssignees(result, installed, payload, new Set(skippedSkillIds));
+    return reconcileSharedConfig({
+      decoded: result,
+      installed,
+      authoredHere: new Set(),
+      unplaceable: new Set(skippedSkillIds),
+    }).result;
   }
 
-  it("brings none back for an unplaceable skill the installation does not hold", () => {
+  it("is kept where the installation does not hold the skill", () => {
     expect(
       keptAgainst(buildSkillConfigs([REACT], { scope: "project" })).selectedAgents,
-    ).toStrictEqual([WEB_DEV]);
+    ).toStrictEqual([WEB_DEV, API_DEV]);
   });
 
-  it("brings none back for an unplaceable skill the installation has only masked", () => {
+  it("is kept where the installation has only masked the skill", () => {
     const kept = keptAgainst([
       buildSkillConfig(REACT, { scope: "project" }),
       buildSkillConfig(UNPLACEABLE, { scope: "global", excluded: true }),
     ]);
 
-    expect(kept.selectedAgents).toStrictEqual([WEB_DEV]);
+    expect(kept.selectedAgents).toStrictEqual([WEB_DEV, API_DEV]);
   });
 });
 
@@ -1118,7 +1094,7 @@ describe("holdInstalledGlobal — which rows join a held sub-agent", () => {
   });
 });
 
-describe("restoreInstalledGlobal and the plan lines", () => {
+describe("restoreInstalledGlobal and the joined line", () => {
   beforeEach(() => {
     initializeMatrix(REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX);
   });
@@ -1138,22 +1114,10 @@ describe("restoreInstalledGlobal and the plan lines", () => {
     expect(restored.result.skills.map((skill) => skill.id)).toStrictEqual([ZUSTAND]);
   });
 
-  it("prints no global heading and no joined line when nothing arrives there", () => {
+  it("names no joined line when nothing arrives in the global install", () => {
     const held = holdInstalledGlobal(decodedFor(REACT), null);
 
-    expect(installPlanLines(held)).toStrictEqual([
-      "Into this project:",
-      "  Skills:",
-      `    ${SKILLS.react.displayName} (${REACT})`,
-      "  Sub-agents:",
-      `    ${WEB_DEV}`,
-    ]);
     expect(joinedStatement(held)).toStrictEqual([]);
-  });
-
-  it("labels a skill by its id alone when its display name is that id", () => {
-    expect(skillLabel(UNPLACEABLE)).toBe(UNPLACEABLE);
-    expect(skillLabel(REACT)).toBe(`${SKILLS.react.displayName} (${REACT})`);
   });
 });
 
@@ -1190,19 +1154,5 @@ describe("what a run from the home directory may install", () => {
 
     expect(projectScopedContent(decoded)).toStrictEqual({ skillIds: [], agentNames: [] });
     expect(installsAtHome(decoded)).toBe(true);
-  });
-});
-
-describe("skippedWithTheirSkills", () => {
-  it("leaves out a sub-agent the run installs after all, and a skipped skill left with none", () => {
-    const skippedWith = skippedWithTheirSkills(
-      [
-        { skillId: "web-unknown-one", agentNames: [WEB_DEV, API_DEV] },
-        { skillId: "web-unknown-two", agentNames: [API_DEV] },
-      ],
-      [API_DEV],
-    );
-
-    expect(skippedWith).toStrictEqual([{ skillId: "web-unknown-one", agentNames: [WEB_DEV] }]);
   });
 });

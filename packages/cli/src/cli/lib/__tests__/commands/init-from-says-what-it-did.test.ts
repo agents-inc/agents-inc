@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { SeedPayload } from "@workspace/matrix/seed";
 
 import { runCliCommand } from "../helpers/cli-runner.js";
-import { standAtTerminal } from "../helpers/terminal-input.js";
+import { printAtWidth, standAtTerminal } from "../helpers/terminal-input.js";
 import { fileExists } from "../test-fs-utils";
 import { CONFIRM_INPUT_DELAY_MS, delay, KEY_N, KEY_Y } from "../test-constants";
 import { useMockWorker } from "../helpers/mock-worker.js";
@@ -35,6 +35,9 @@ import { EXIT_CODES } from "../../exit-codes";
 import type { ProjectConfig } from "../../../types";
 
 const SEED_ID = "Seed1";
+
+/** Wide enough that no test-marketplace id wraps inside the panel, whose rows these specs pin. */
+const PANEL_COLUMNS = 160;
 const REACT = testMarketplaceSkillId("web-framework-react");
 const HONO = testMarketplaceSkillId("api-framework-hono");
 const VITEST = testMarketplaceSkillId("web-testing-vitest");
@@ -45,6 +48,7 @@ const VITEST = testMarketplaceSkillId("web-testing-vitest");
  */
 describe("what init --from says", () => {
   useMockWorker();
+  printAtWidth(PANEL_COLUMNS);
   let projectDir: string;
   let fakeHome: string;
   let cleanup: () => Promise<void>;
@@ -82,7 +86,10 @@ describe("what init --from says", () => {
     return runCliCommand(["init", "--from", SEED_ID, "--marketplace", dirs.sourceDir, ...extra]);
   }
 
-  it("narrates an install split across both scopes, then where each part went", async () => {
+  const projectConfigPath = () =>
+    path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS);
+
+  it("shows the panel of what it installs where, then narrates the install and where each part went", async () => {
     serve(
       buildSeedPayload({
         skills: {
@@ -96,19 +103,15 @@ describe("what init --from says", () => {
     const { stdout, error } = await initFrom();
 
     expect(error).toBeUndefined();
-    expect(stdout).toBe(
+    expect(stdout.startsWith(`Fetching configuration ${SEED_ID}...\n┌`)).toBe(true);
+    expect(stdout).toContain(`│  + ${REACT} ⏏ `);
+    expect(stdout).toContain(`│  + ${HONO} ⏏ `);
+    expect(stdout).toContain("│  + web-developer ");
+    expect(stdout).toContain("│  + api-developer ");
+    expect(stdout).not.toContain("Into this project:");
+    expect(stdout).toContain(
       [
-        `Fetching configuration ${SEED_ID}...`,
-        "Into this project:",
-        "  Skills:",
-        `    ${REACT}`,
-        "  Sub-agents:",
-        "    web-developer",
-        "Into the global install:",
-        "  Skills:",
-        `    ${HONO}`,
-        "  Sub-agents:",
-        "    api-developer",
+        "┘",
         "",
         "Installing 2 skill(s) across 2 sub-agent(s)",
         "",
@@ -155,6 +158,7 @@ describe("what init --from says", () => {
         "",
       ].join("\n"),
     );
+    expect(stdout.endsWith("recompile it.\n\n")).toBe(true);
   });
 
   it("names the one folder a project-only install landed in, and both configs it wrote, with no global step", async () => {
@@ -277,13 +281,13 @@ describe("what init --from says", () => {
     expect(error).toBeUndefined();
     expect(
       flattenCliOutput(stderr),
-      "web-developer carries a skill the catalogue knows, so it is not skipped with the other",
+      "web-developer carries a skill the catalogue knows, so the warning does not name it",
     ).toBe(
       "Warning: Skipped 1 skill(s) this catalog does not know: web-framework-angular-standalone",
     );
   });
 
-  it("names the sub-agents it skips with a skill the catalogue does not know, which carried only that skill", async () => {
+  it("names the sub-agents it installs without a skill the catalogue does not know, which carried only that skill", async () => {
     const unknown = "web-framework-angular-standalone";
     serve(
       buildSeedPayload({
@@ -302,20 +306,59 @@ describe("what init --from says", () => {
       flattenCliOutput(
         [
           `Warning: Skipped 1 skill(s) this catalog does not know: ${unknown}`,
-          `  sub-agent(s) skipped with ${unknown}, carrying nothing else this catalog knows: api-developer`,
+          `  sub-agent(s) installed without ${unknown}, carrying nothing else this catalog knows: api-developer`,
         ].join("\n"),
       ),
     );
     expect(
-      await fileExists(path.join(projectDir, CLAUDE_DIR, "agents", "api-developer.md")),
-      "a sub-agent the run says it skipped must not be compiled",
-    ).toBe(false);
+      (await readTestTsConfig<ProjectConfig>(projectConfigPath())).agents,
+      "a sub-agent the configuration names stays though its only skill did not load",
+    ).toStrictEqual(buildAgentConfigs(["api-developer", "web-developer"], { scope: "project" }));
+    expect(await fileExists(path.join(projectDir, CLAUDE_DIR, "agents", "api-developer.md"))).toBe(
+      true,
+    );
+  });
+
+  it("installs the sub-agents a configuration names when none of its skills installs, with the warning", async () => {
+    const unknown = "web-framework-angular-standalone";
+    serve(
+      buildSeedPayload({
+        skills: { [unknown]: ejected("project", "web-developer") },
+        agents: { "web-developer": { scope: "project" } },
+      }),
+    );
+
+    const { stderr, error } = await initFrom();
+
+    expect(error).toBeUndefined();
+    expect(flattenCliOutput(stderr)).toBe(
+      flattenCliOutput(
+        [
+          `Warning: Skipped 1 skill(s) this catalog does not know: ${unknown}`,
+          `  sub-agent(s) installed without ${unknown}, carrying nothing else this catalog knows: web-developer`,
+        ].join("\n"),
+      ),
+    );
+    const config = await readTestTsConfig<ProjectConfig>(projectConfigPath());
+    expect({ skills: config.skills, agents: config.agents }).toStrictEqual({
+      skills: [],
+      agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+    });
+    expect(await fileExists(path.join(projectDir, CLAUDE_DIR, "agents", "web-developer.md"))).toBe(
+      true,
+    );
   });
 
   it("refuses a configuration that names nothing this catalogue can install", async () => {
     serve(
       buildSeedPayload({
-        skills: { "web-framework-angular-standalone": ejected("project", "web-developer") },
+        skills: {
+          "web-framework-angular-standalone": buildSeedSkill({
+            install: "eject",
+            scope: "project",
+            assignments: {},
+          }),
+        },
       }),
     );
 
@@ -325,6 +368,7 @@ describe("what init --from says", () => {
       `Configuration '${SEED_ID}' contains no skills this catalog can install.`,
     );
     expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+    expect(await fileExists(projectConfigPath()), "a refusal writes nothing").toBe(false);
   });
 
   it("refuses to install over this project's own installation, naming it", async () => {
@@ -392,6 +436,8 @@ describe("what init --from says", () => {
   });
 
   it("shows the permission notice to a project that grants no permissions", async () => {
+    // The notice is drawn at the width a headless run measures, not the panel's.
+    Reflect.deleteProperty(process.stdout, "columns");
     await writeFile(path.join(projectDir, CLAUDE_DIR, STANDARD_FILES.SETTINGS_JSON), "{}");
     serve(
       buildSeedPayload({
@@ -436,18 +482,84 @@ describe("what init --from says", () => {
 
     const { stdout } = await initFrom();
 
+    expect(stdout).toContain(`│  • ${HONO} ⏏ `);
+    expect(stdout).toContain("│  • api-developer ");
     expect(stdout).toContain(
       [
-        "Skipped, already in the global install:",
-        "  Skills:",
-        `    ${HONO}`,
-        "  Sub-agents:",
-        "    api-developer",
+        "┘",
+        "",
         "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
         `  skill ${HONO}`,
         "  sub-agent api-developer",
         "",
         "Installing 1 skill(s) across 2 sub-agent(s)",
+      ].join("\n"),
+    );
+  });
+
+  it("lists the whole global install the project inherits, each entry unchanged under Global", async () => {
+    await writeTestTsConfig(
+      fakeHome,
+      buildProjectConfig({
+        name: "global",
+        skills: buildSkillConfigs([HONO, VITEST], { scope: "global", origin: "eject" }),
+        agents: buildAgentConfigs(["api-developer", "web-tester"], { scope: "global" }),
+      }),
+    );
+    serve(
+      buildSeedPayload({
+        skills: { [REACT]: ejected("project", "web-developer") },
+        agents: { "web-developer": { scope: "project" } },
+      }),
+    );
+
+    const { stdout, error } = await initFrom();
+
+    expect(error).toBeUndefined();
+    expect(stdout).toContain(`│  + ${REACT} ⏏ `);
+    expect(stdout).toContain(`│  • ${HONO} ⏏ `);
+    expect(stdout).toContain(` • ${VITEST} ⏏ `);
+    expect(stdout).toContain("│  + web-developer ");
+    expect(stdout).toContain("│  • api-developer ");
+    expect(stdout).toContain("│  • web-tester ");
+    expect(stdout).not.toContain(`+ ${HONO}`);
+  });
+
+  it("marks a global sub-agent an arriving skill joins ~, with a line saying what it gains", async () => {
+    await writeTestTsConfig(
+      fakeHome,
+      buildProjectConfig({
+        name: "global",
+        skills: buildSkillConfigs([HONO], { scope: "global", origin: "eject" }),
+        agents: buildAgentConfigs(["api-developer"], { scope: "global" }),
+        stack: { "api-developer": { "api-api": [sa(HONO)] } },
+      }),
+    );
+    serve(
+      buildSeedPayload({
+        skills: {
+          [HONO]: ejected("global", "api-developer"),
+          [VITEST]: ejected("global", "api-developer"),
+        },
+        agents: { "api-developer": { scope: "global" } },
+      }),
+    );
+
+    const { stdout, error } = await initFrom();
+
+    expect(error).toBeUndefined();
+    expect(stdout).toContain(`│  • ${HONO} ⏏ `);
+    expect(stdout).toContain(` + ${VITEST} ⏏ `);
+    expect(stdout).toContain("│  ~ api-developer ");
+    expect(stdout).toContain(
+      [
+        "┘",
+        `~ api-developer (global): gains ${VITEST}`,
+        "",
+        "Added to sub-agents in the global install — each keeps everything it already has, since a project run only adds to the global install:",
+        `  sub-agent api-developer: + ${VITEST}`,
+        "",
+        "Installing 1 skill(s) across 1 sub-agent(s)",
       ].join("\n"),
     );
   });
@@ -472,11 +584,8 @@ describe("what init --from says", () => {
 
     expect(stdout).toContain(
       [
-        "Skipped, already in the global install:",
-        "  Skills:",
-        `    ${HONO}`,
-        "  Sub-agents:",
-        "    api-developer",
+        "┘",
+        "",
         "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
         "  sub-agent api-developer",
         `Change them with 'npx agents-inc edit --from ${SEED_ID}' from your home directory.`,
@@ -485,6 +594,34 @@ describe("what init --from says", () => {
       ].join("\n"),
     );
     expect(stdout).not.toContain("Installing ");
+  });
+
+  it("names Claude in the run from home that changes what it keeps, where home holds Codex beside it", async () => {
+    await writeTestTsConfig(
+      fakeHome,
+      buildProjectConfig({
+        name: "global",
+        skills: buildSkillConfigs([HONO], { scope: "global", origin: "eject" }),
+        agents: buildAgentConfigs(["api-developer"], { scope: "global" }),
+      }),
+    );
+    await writeTestTsConfig(fakeHome, buildProjectConfig({ name: "codex" }), ".agents-inc/codex");
+    serve(
+      buildSeedPayload({
+        skills: { [HONO]: ejected("global", "api-developer") },
+        agents: { "api-developer": { scope: "global" } },
+      }),
+    );
+
+    const { stdout } = await initFrom();
+
+    expect(stdout).toContain(
+      [
+        `Change them with 'npx agents-inc edit --from ${SEED_ID} --provider claude' from your home directory.`,
+        "",
+        "",
+      ].join("\n"),
+    );
   });
 
   it("names a global skill it kept as installed, and no sub-agent when each is restated", async () => {
@@ -516,9 +653,8 @@ describe("what init --from says", () => {
     expect(error).toBeUndefined();
     expect(stdout).toContain(
       [
-        `    ${HONO}`,
-        "  Sub-agents:",
-        "    api-developer",
+        "┘",
+        "",
         "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
         `  skill ${HONO}`,
         "",
@@ -551,9 +687,8 @@ describe("what init --from says", () => {
     expect(error).toBeUndefined();
     expect(stdout).toContain(
       [
-        `    ${HONO}`,
-        "  Sub-agents:",
-        "    api-developer",
+        "┘",
+        "",
         "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
         "  sub-agent api-developer",
         "",
@@ -647,7 +782,7 @@ describe("what init --from says", () => {
     const { stdout, error } = await initFrom();
 
     expect(error).toBeUndefined();
-    expect(stdout).toContain("\nRegistered projects: 1 rewritten, 0 unchanged\n");
+    expect(stdout).toContain("\nRegistered projects: 1 recompiled\n");
   });
 
   it("installs a sub-agent on its own, with no skill", async () => {
@@ -918,7 +1053,7 @@ describe("what init says on its way to the editor", () => {
     expect(error).toBeUndefined();
     expect(stdout).toBe(
       [
-        "Build it at https://agentsinc.sh/editor",
+        "Build it at http://localhost:5173/editor",
         "Then install what it gives you with 'npx agents-inc init --from <id>'.",
         "",
       ].join("\n"),
@@ -930,7 +1065,7 @@ describe("what init says on its way to the editor", () => {
 
     expect(stdout).toBe(
       [
-        "Open it at https://agentsinc.sh/editor/?fromId=Abc123",
+        "Open it at http://localhost:5173/editor/?fromId=Abc123",
         "To install it here instead, run 'npx agents-inc init --from Abc123'.",
         "",
       ].join("\n"),
@@ -952,7 +1087,7 @@ describe("what init says on its way to the editor", () => {
 
     expect(stdout).toBe(
       [
-        "Build it at https://agentsinc.sh/editor",
+        "Build it at http://localhost:5173/editor",
         "Add github:acme/skills from the editor's Marketplace button.",
         "Then install what it gives you with 'npx agents-inc init --from <id>'.",
         "",
@@ -978,7 +1113,7 @@ describe("what init says on its way to the editor", () => {
     expect(error).toBeUndefined();
     expect(stdout).toBe(
       [
-        "Build it at https://agentsinc.sh/editor",
+        "Build it at http://localhost:5173/editor",
         "Add https://github.com/acme/skills from the editor's Marketplace button.",
         "Then install what it gives you with 'npx agents-inc init --from <id>'.",
         "",
@@ -1049,7 +1184,7 @@ describe("what init says on its way to the editor", () => {
     const { error } = await runCliCommand(["init", "--provider", "codex"]);
 
     expect(error?.message).toBe(
-      "--provider names which installation to create and needs the configuration to create it from, so it is only meaningful beside --from. Build one at https://agentsinc.sh/editor, then run 'npx agents-inc init --from <id> --provider <provider>'.",
+      "--provider names which installation to create and needs the configuration to create it from, so it is only meaningful beside --from. Build one at http://localhost:5173/editor, then run 'npx agents-inc init --from <id> --provider <provider>'.",
     );
     expect(error?.oclif?.exit).toBe(EXIT_CODES.INVALID_ARGS);
   });

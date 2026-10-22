@@ -136,7 +136,7 @@ describe("--from runs say what the marketplace load raised", () => {
   );
 
   it(
-    "init --from names the sub-agents it skipped with that skill, which carried nothing else",
+    "init --from installs the sub-agents that skill named without it, naming those it alone brought",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       tempDir = await createTempDir();
@@ -168,14 +168,58 @@ describe("--from runs say what the marketplace load raised", () => {
       expect(exitCode, `init --from output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
       expect(
         flattenCliOutput(stderr),
-        "web-developer carries React too, so only the other two go with the skipped skill",
+        "web-developer carries React too, so only the other two are named under the skipped skill",
       ).toContain(
-        `${EFFECT} sub-agent(s) skipped with ${BROKEN_SKILL_ID}, ${STEP_TEXT.SKIPPED_WITH_THE_SKILL} ${API_DEV}, ${WEB_TESTER}`,
+        `${EFFECT} sub-agent(s) installed without ${BROKEN_SKILL_ID}, ${STEP_TEXT.INSTALLED_WITHOUT_THE_SKILL} ${API_DEV}, ${WEB_TESTER}`,
       );
       expect(
-        await listFiles(agentsPath(tempDir)),
-        "what the run says it skipped, it did not compile",
-      ).toStrictEqual([`${WEB_DEV}.md`]);
+        (await loadConfigOrFail(tempDir)).agents.map((agent) => agent.name).sort(),
+        "a sub-agent never depends on a skill loading",
+      ).toStrictEqual([API_DEV, WEB_DEV, WEB_TESTER].sort());
+      expect(await listFiles(agentsPath(tempDir))).toStrictEqual(
+        [`${API_DEV}.md`, `${WEB_DEV}.md`, `${WEB_TESTER}.md`].sort(),
+      );
+    },
+  );
+
+  it(
+    "init --from installs the sub-agents empty when no skill loads, with the warning",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async () => {
+      tempDir = await createTempDir();
+      store.publish(
+        "Broken04",
+        buildSeedPayload({
+          v: PINNED_WIRE_VERSION,
+          skills: {
+            [BROKEN_SKILL_ID]: ejectedGlobalSkill({
+              assignments: { [WEB_DEV]: "lazy", [API_DEV]: "preloaded" },
+            }),
+          },
+          agents: { [WEB_DEV]: { scope: "global" }, [API_DEV]: { scope: "global" } },
+        }),
+      );
+
+      const { exitCode, output, stderr } = await runInitFrom(
+        store,
+        "Broken04",
+        { dir: tempDir },
+        broken.sourceDir,
+      );
+
+      expect(exitCode, `init --from output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
+      expect(flattenCliOutput(stderr)).toContain(
+        `${EFFECT} sub-agent(s) installed without ${BROKEN_SKILL_ID}, ${STEP_TEXT.INSTALLED_WITHOUT_THE_SKILL} ${WEB_DEV}, ${API_DEV}`,
+      );
+      expect(output).toContain(STEP_TEXT.INIT_SUCCESS);
+      const config = await loadConfigOrFail(tempDir);
+      expect({
+        skills: config.skills,
+        agents: config.agents.map((agent) => agent.name).sort(),
+      }).toStrictEqual({ skills: [], agents: [API_DEV, WEB_DEV].sort() });
+      expect(await listFiles(agentsPath(tempDir))).toStrictEqual(
+        [`${API_DEV}.md`, `${WEB_DEV}.md`].sort(),
+      );
     },
   );
 

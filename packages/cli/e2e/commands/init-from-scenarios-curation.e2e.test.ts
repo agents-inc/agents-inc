@@ -145,6 +145,39 @@ describe("init --from <id>: per-sub-agent curation", () => {
     ]);
   });
 
+  // The editor mints a link it opened as a stack with that stack's id and the link's own words.
+  it("records the description a stack payload carries over the stack's own", async () => {
+    env = await createTestEnvironment({ permissions: false });
+    const ownDescription = "The house web app, as installed";
+    store.publish(
+      "StackOwn",
+      buildSeedPayload({
+        stackId: E2E_STACK_ID,
+        description: ownDescription,
+        skills: {
+          [E2E_SKILL.react.id]: buildSeedSkill({
+            scope: "project",
+            assignments: { [WEB_DEV]: "preloaded" },
+          }),
+        },
+        agents: { [WEB_DEV]: PINNED_TO_PROJECT },
+      }),
+    );
+
+    const { exitCode, output } = await runInitFrom(
+      store,
+      "StackOwn",
+      { dir: env.projectDir, globalHome: env.fakeHome },
+      sourceDir,
+    );
+    expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+
+    expect(
+      (await loadConfigOrFail(env.projectDir)).description,
+      "the stack's own words were written over the link's",
+    ).toBe(ownDescription);
+  });
+
   it("gives each sub-agent only its assigned skills, at the load state it was assigned", async () => {
     env = await createTestEnvironment({ permissions: false });
     store.publish(

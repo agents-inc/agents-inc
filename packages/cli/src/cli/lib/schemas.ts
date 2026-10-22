@@ -572,7 +572,7 @@ const forkedFromSchema = z.object({
 /** Advisory: over-length is a warning; empty stays an error. */
 const CLI_DESCRIPTION_MAX_LENGTH = 60;
 
-/** Shared by the strict and custom metadata schemas, which differ only in `category`/`slug`. */
+/** Shared by the strict and custom metadata schemas. */
 const skillMetadataBaseSchema = z.object({
   author: z.string().regex(AUTHOR_HANDLE_PATTERN),
   displayName: z.string().min(1).max(30),
@@ -668,12 +668,23 @@ export function formatZodIssues(issues: z.ZodIssue[]): string {
   return issues.map(formatZodIssue).join("; ");
 }
 
-/** The one place the custom-vs-strict schema choice lives. */
+/**
+ * A directory a shared configuration carried keeps the name the editor showed, at any length: its
+ * file is rewritten on every apply, so a cap there would be an error nobody could clear.
+ */
+const carriedMetadataValidationSchema = customMetadataValidationSchema.extend({
+  displayName: z.string().min(1),
+  slug: z.string().regex(KEBAB_CASE_PATTERN).min(1),
+});
+
+/** The one place the schema choice lives. */
 export function validateSkillMetadata(rawMetadata: unknown) {
-  const schema = isCustomMetadata(rawMetadata)
-    ? customMetadataValidationSchema
-    : metadataValidationSchema;
-  return schema.safeParse(rawMetadata);
+  return metadataSchemaFor(rawMetadata).safeParse(rawMetadata);
+}
+
+function metadataSchemaFor(raw: unknown) {
+  if (!isCustomMetadata(raw)) return metadataValidationSchema;
+  return isCarriedMetadata(raw) ? carriedMetadataValidationSchema : customMetadataValidationSchema;
 }
 
 /**
@@ -749,6 +760,11 @@ export function validateNestingDepth(value: unknown, maxDepth: number): boolean 
 
 function isCustomMetadata(raw: unknown): boolean {
   return isRecord(raw) && raw.custom === true;
+}
+
+/** Only a carried install records the directory inside its source; an ejected copy does not. */
+function isCarriedMetadata(raw: unknown): boolean {
+  return isRecord(raw) && isRecord(raw.forkedFrom) && typeof raw.forkedFrom.path === "string";
 }
 
 /**

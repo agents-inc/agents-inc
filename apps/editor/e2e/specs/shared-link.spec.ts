@@ -1,6 +1,7 @@
 import {
   MARKETPLACE_CANONICAL_REF,
   MARKETPLACE_REF,
+  seedPayload,
 } from "@workspace/api-mocks/fixtures"
 
 import { expect, test } from "../fixtures"
@@ -10,6 +11,7 @@ import {
   MARKETPLACE_IMPORT_ID,
   MARKETPLACE_PAYLOAD,
   STORED_ID,
+  captureCreateConfig,
   stubGetConfig,
 } from "../support/sharing"
 
@@ -323,5 +325,63 @@ test.describe("editing someone else's configuration", () => {
     await expect(own.root).toHaveAttribute("aria-pressed", "true")
     await expect(shared.root).toHaveAttribute("aria-pressed", "false")
     await expect(edited.root).toHaveAttribute("aria-pressed", "false")
+  })
+})
+
+// As `init --from` installs it: a sub-agent never depends on a skill loading.
+test.describe("a shared link whose only skill for a sub-agent this catalogue does not carry", () => {
+  const LINK_ID = "Unknown1"
+  const UNKNOWN_SKILL_ID = "web-framework-gone-from-catalogue"
+
+  // As the editor mints: no sub-agent pinned, each reached by its skills.
+  test.beforeEach(({ page }) => {
+    stubGetConfig(
+      page,
+      LINK_ID,
+      seedPayload({
+        skills: {
+          [SHARED_SKILL_ID]: {
+            install: "plugin",
+            scope: "global",
+            assignments: { "web-developer": "preloaded" },
+          },
+          [UNKNOWN_SKILL_ID]: {
+            install: "plugin",
+            scope: "global",
+            assignments: { "web-tester": "lazy" },
+          },
+        },
+        agents: {},
+      })
+    )
+  })
+
+  test("names the skill and keeps that sub-agent on without it", async ({
+    configure,
+    page,
+  }) => {
+    await page.goto(`/?fromId=${LINK_ID}`)
+
+    await expect(configure.importNotice).toContainText(UNKNOWN_SKILL_ID)
+    await expect(configure.roster.agentButton("web", "tester")).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+  })
+
+  test("mints that sub-agent on, so the install keeps it too", async ({
+    configure,
+    page,
+  }) => {
+    const posted = captureCreateConfig(page)
+    await page.goto(`/?fromId=${LINK_ID}`)
+    await expect(configure.importNotice).toContainText(UNKNOWN_SKILL_ID)
+
+    await configure.roster.installButton.click()
+    await expect(
+      configure.installDialog.command(`npx agents-inc init --from ${STORED_ID}`)
+    ).toBeVisible()
+
+    expect(posted.at(-1)).toHaveProperty(["agents", "web-tester"], { on: true })
   })
 })
