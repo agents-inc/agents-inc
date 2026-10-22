@@ -13,6 +13,7 @@ const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..");
 const E2E_CONSTANTS = "e2e/pages/constants.ts";
 const EXIT_CODES_MODULE = "src/cli/lib/exit-codes.ts";
 const CONSTS = "src/cli/consts.ts";
+const INSTALL_LAYOUT = "src/cli/lib/installation/install-layout.ts";
 /** consts.ts only re-exports the path names; this declares them. */
 const COMPILE_PATHS = "../compile/src/paths.ts";
 
@@ -21,26 +22,26 @@ export const NO_SYMBOL = "names a symbol its source file does not declare";
 export const NO_KEY = "names a key its symbol does not hold";
 export const NOT_A_LITERAL = "names a key holding something other than a string or a number";
 
-export type ValueAddress = {
+type ValueAddress = {
   file: string;
   symbol: string;
   /** Empty for a bare `const NAME = <literal>`. */
   path: readonly string[];
 };
 
-export type RecordAddress = { file: string; symbol: string };
+type RecordAddress = { file: string; symbol: string };
 
 export type Mirror =
   | { name: string; kind: "value"; e2e: ValueAddress; product: ValueAddress }
   | { name: string; kind: "record"; e2e: RecordAddress; product: RecordAddress };
 
-export type MirrorVerdict =
+type MirrorVerdict =
   { name: string; outcome: "agrees" } | { name: string; outcome: "drifted"; detail: string };
 
 export type CheckResult = { clean: boolean; verdicts: MirrorVerdict[] };
 
 /** `TERMINAL_SIZE.SHORT.cols` is deliberately wider than the gate, so only `rows` is mirrored. */
-export const MIRRORS: Mirror[] = [
+const MIRRORS: Mirror[] = [
   {
     name: "EXIT_CODES",
     kind: "record",
@@ -70,7 +71,49 @@ export const MIRRORS: Mirror[] = [
     name: "STEP_TEXT.EDITOR_URL",
     kind: "value",
     e2e: { file: E2E_CONSTANTS, symbol: "STEP_TEXT", path: ["EDITOR_URL"] },
-    product: { file: CONSTS, symbol: "EDITOR_URL", path: [] },
+    product: { file: CONSTS, symbol: "DEFAULT_EDITOR_URL", path: [] },
+  },
+  {
+    name: "STEP_TEXT.DOCTOR_STATUS_FAIL",
+    kind: "value",
+    e2e: { file: E2E_CONSTANTS, symbol: "STEP_TEXT", path: ["DOCTOR_STATUS_FAIL"] },
+    product: { file: CONSTS, symbol: "UI_SYMBOLS", path: ["CROSS"] },
+  },
+  {
+    name: "DIRS.RETIRED_SOURCE",
+    kind: "value",
+    e2e: { file: E2E_CONSTANTS, symbol: "DIRS", path: ["RETIRED_SOURCE"] },
+    product: { file: INSTALL_LAYOUT, symbol: "RETIRED_SOURCE_FOLDER", path: [] },
+  },
+  {
+    name: "PUBLIC_MARKETPLACE_NAME",
+    kind: "value",
+    e2e: { file: E2E_CONSTANTS, symbol: "PUBLIC_MARKETPLACE_NAME", path: [] },
+    product: { file: COMPILE_PATHS, symbol: "DEFAULT_PUBLIC_SOURCE_NAME", path: [] },
+  },
+  {
+    name: "DIRS.EXAMPLES",
+    kind: "value",
+    e2e: { file: E2E_CONSTANTS, symbol: "DIRS", path: ["EXAMPLES"] },
+    product: { file: COMPILE_PATHS, symbol: "STANDARD_DIRS", path: ["EXAMPLES"] },
+  },
+  {
+    name: "FILES.REFERENCE_MD",
+    kind: "value",
+    e2e: { file: E2E_CONSTANTS, symbol: "FILES", path: ["REFERENCE_MD"] },
+    product: { file: COMPILE_PATHS, symbol: "STANDARD_FILES", path: ["REFERENCE_MD"] },
+  },
+  {
+    name: "SOURCE_PATHS.AGENTS_DIR",
+    kind: "value",
+    e2e: { file: E2E_CONSTANTS, symbol: "SOURCE_PATHS", path: ["AGENTS_DIR"] },
+    product: { file: COMPILE_PATHS, symbol: "DIRS", path: ["agents"] },
+  },
+  {
+    name: "EJECT_SOURCE_NAME",
+    kind: "value",
+    e2e: { file: E2E_CONSTANTS, symbol: "EJECT_SOURCE_NAME", path: [] },
+    product: { file: COMPILE_PATHS, symbol: "EJECT_SOURCE", path: [] },
   },
 ];
 

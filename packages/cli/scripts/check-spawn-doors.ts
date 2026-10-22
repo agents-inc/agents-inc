@@ -42,15 +42,9 @@ export type DoorVerdict = {
   outcome: "guarded" | "unguarded";
 };
 
-export type DoorClearance = {
-  file: string;
-  spawnedBy: string;
-  clears: string[];
-};
-
 export type CheckResult = { clean: boolean; doors: DoorVerdict[] };
 
-type Door = DoorClearance & { guarded: boolean };
+type Door = { file: string; spawnedBy: string; guarded: boolean };
 
 export function check({ packageRoot = PACKAGE_ROOT }: { packageRoot?: string } = {}): CheckResult {
   const doors = doorsUnder(packageRoot).map(verdictOf);
@@ -60,17 +54,6 @@ export function check({ packageRoot = PACKAGE_ROOT }: { packageRoot?: string } =
 
 function verdictOf({ file, spawnedBy, guarded }: Door): DoorVerdict {
   return { file, spawnedBy, outcome: guarded ? "guarded" : "unguarded" };
-}
-
-/** Each door with the variables it sets to `undefined`, read from syntax so a comment cannot. */
-export function clearances({
-  packageRoot = PACKAGE_ROOT,
-}: { packageRoot?: string } = {}): DoorClearance[] {
-  return doorsUnder(packageRoot).map(clearanceOf);
-}
-
-function clearanceOf({ file, spawnedBy, clears }: Door): DoorClearance {
-  return { file, spawnedBy, clears };
 }
 
 /** A tree holding no door has not been scanned. */
@@ -114,7 +97,6 @@ function doorsIn(packageRoot: string, module: string): Door[] {
       file: module.split(path.sep).join("/"),
       spawnedBy: calleeNameOf(call.expression),
       guarded: reachesGuard(env, file),
-      clears: clearedIn(env, file),
     };
   });
 }
@@ -213,30 +195,6 @@ function reachesGuard(env: ts.Expression | undefined, file: ts.SourceFile): bool
   const named = envSourcesOf(env, file).flatMap(valueIdentifiersIn);
 
   return GUARD_CONSTANTS.every((guard) => named.includes(guard));
-}
-
-function clearedIn(env: ts.Expression | undefined, file: ts.SourceFile): string[] {
-  if (env === undefined) return [];
-
-  return envSourcesOf(env, file).flatMap(clearedPropertiesIn);
-}
-
-function clearedPropertiesIn(source: ts.Expression): string[] {
-  const cleared: string[] = [];
-
-  const collect = (node: ts.Node): void => {
-    if (ts.isPropertyAssignment(node) && isUndefined(node.initializer)) {
-      cleared.push(nameOf(node.name));
-    }
-    node.forEachChild(collect);
-  };
-  collect(source);
-
-  return cleared;
-}
-
-function isUndefined(node: ts.Expression): boolean {
-  return ts.isIdentifier(node) && node.text === "undefined";
 }
 
 /**

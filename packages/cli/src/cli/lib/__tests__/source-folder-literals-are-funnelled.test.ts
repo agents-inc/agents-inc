@@ -1,9 +1,6 @@
 /**
- * The source folder's name may be written only in the funnel; one half-routed literal writes where
- * the CLI no longer reads. A mutation proof of the `no-restricted-syntax` pair: banned spellings
- * must report, near misses must stay silent. Options don't merge across blocks, so every zone is
- * linted, derived via `lintZonesIn`. Composition (`path.join(root, SOURCE_ROOT_DIR)`) is held by a
- * `no-restricted-imports` group with its own zones. `packages/compile` has its own config.
+ * The source folder's name may be written only in the funnel. Rule options don't merge across
+ * blocks, so every zone is linted.
  */
 
 import path from "path";
@@ -21,7 +18,6 @@ const RESTRICTED_SYNTAX = "no-restricted-syntax";
  */
 const SOURCE_FOLDER_REPORT = "The source folder's name is resolved, not written";
 
-/** A different rule, with a different set of zones. */
 const RESTRICTED_IMPORTS = "no-restricted-imports";
 
 const ESLINT_CONFIG_PATH = path.join(CLI_ROOT, "eslint.config.js");
@@ -53,7 +49,6 @@ function isMeasurable(zone: LintZone): zone is LintZone & { subject: string } {
   return zone.subject !== null;
 }
 
-/** Partitioned by the block's own `files` patterns, which are what the config actually says. */
 function zonesFor(rule: string, exemptPatterns: readonly string[]) {
   const zones = lintZonesIn(ESLINT_CONFIG, rule, CLI_ROOT);
 
@@ -73,12 +68,12 @@ const IMPORT_ZONES = zonesFor(RESTRICTED_IMPORTS, IMPORT_EXEMPT_PATTERNS);
  */
 const STILL_REFUSED_IN_THE_MIRROR = [
   {
-    name: "a task ID in a test name",
-    source: `describe("CLI-715 holds the roster", () => {});\n`,
+    name: "a length compared as if it could be negative",
+    source: `export const holds = (items: string[]): boolean => items.length >= 0;\n`,
   },
   {
-    name: "a task ID in an assertion message",
-    source: `expect(1, "CLI-715 must hold").toBe(1);\n`,
+    name: "a size compared from the other side",
+    source: `export const holds = (items: Set<string>): boolean => 0 <= items.size;\n`,
   },
 ] as const;
 
@@ -123,7 +118,6 @@ const BANNED_TIMEOUT_MS = LITERAL_ZONES.all.length * BANNED_SPELLINGS.length * L
 const ALLOWED_TIMEOUT_MS =
   LITERAL_ZONES.all.length * ALLOWED_SPELLINGS.length * LINT_PASS_BUDGET_MS;
 
-/** The repository's own config, loaded rather than restated. */
 async function rulesReportedAgainst(
   eslint: ESLint,
   source: string,
@@ -136,7 +130,6 @@ async function rulesReportedAgainst(
     .filter((ruleId): ruleId is string => ruleId !== null);
 }
 
-/** Whether this ban named itself, per {@link SOURCE_FOLDER_REPORT}. */
 async function sourceFolderReportedAgainst(
   eslint: ESLint,
   source: string,

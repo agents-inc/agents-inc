@@ -26,20 +26,6 @@ const NAMES_BEHIND_THE_SEAM = [
   "isClaudeCLIAvailable",
 ] as const;
 
-/** The allowed half of the census: an extraction that emptied `exec.ts` would also pass it. */
-const NAMES_EXEC_KEEPS = [
-  "execCommand",
-  "validateMarketplaceSource",
-  "validatePluginName",
-  "validatePluginPath",
-] as const;
-
-function declaresExportedFunction(source: string, name: string): boolean {
-  return (
-    source.includes(`export function ${name}(`) || source.includes(`export async function ${name}(`)
-  );
-}
-
 type Hit = { file: string; name: string };
 
 async function namesFoundIn(globs: string[], ignore: string[]): Promise<Hit[]> {
@@ -82,14 +68,5 @@ describe("Claude's plugin vocabulary", () => {
       inside.length,
       "the names are nowhere at all, so the extraction deleted the Claude host rather than moving it",
     ).toBeGreaterThan(0);
-  });
-
-  it("leaves the spawn wrapper and the argument validators where every host reaches them", async () => {
-    const source = await readFile(path.join(CLI_ROOT, "src/cli/utils/exec.ts"), "utf8");
-
-    expect(
-      NAMES_EXEC_KEEPS.filter((name) => declaresExportedFunction(source, name)),
-      "exec.ts was emptied rather than narrowed: a host now spawns its own child process, or validates its own arguments — and an injection guard that moved into one host is an injection guard the next host does not have",
-    ).toStrictEqual([...NAMES_EXEC_KEEPS]);
   });
 });

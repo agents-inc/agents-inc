@@ -9,6 +9,9 @@ const ROOT_TOOL_CONFIGS = [
   "tsup.config.ts",
   "vitest.config.ts",
   "vitest.global-setup.ts",
+  "vitest.loadtime.config.ts",
+  "vitest.loadtime.preload.setup.ts",
+  "vitest.mutation.config.ts",
   "vitest.setup.ts",
 ];
 
@@ -53,6 +56,13 @@ const FS_WRITE_PATHS = ["fs", "node:fs", "fs/promises", "node:fs/promises", "fs-
   (name) => ({ name, importNames: FS_WRITE_NAMES, message: FS_WRITE_MESSAGE }),
 );
 
+/** Every CLI scan goes through glob() from src/cli/utils/fs.ts, which sorts what it found. */
+const FAST_GLOB_IMPORT = {
+  name: "fast-glob",
+  message:
+    "Scan through glob() from src/cli/utils/fs.ts — fast-glob lists matches as each directory's read finishes, so one unchanged tree answers in a different order from run to run, and glob() sorts them bytewise.",
+};
+
 /** The pair renderers and the types writer, importable only by the gate. */
 const CONFIG_WRITER_MESSAGE =
   "Config pair sources are rendered and written by src/cli/lib/config-gate/ — call its entry points instead.";
@@ -88,27 +98,6 @@ const NEVER_NEGATIVE_COUNT = "/^(length|size|byteLength)$/";
 
 const VACUOUS_COUNT_MESSAGE =
   "A length, a size and a byteLength are never negative, so this comparison holds for every input. Assert the count the change should produce. See .ai-docs/standards/e2e/README.md.";
-
-/** Task IDs in test names and assertion messages. */
-const TASK_ID_SHAPES = [
-  {
-    selector:
-      "CallExpression[callee.name=/^(describe|it|test)$/] > Literal[value=/\\b(D|R|P\\d*|CLI|REPO|WWW|ED|SRV)-\\d+\\b/]",
-    message:
-      "Task IDs do not belong in test names — describe the behaviour instead. IDs go in file-level JSDoc only.",
-  },
-  {
-    selector:
-      "CallExpression[callee.name=/^(describe|it|test)$/] > TemplateLiteral TemplateElement[value.raw=/\\b(D|R|P\\d*|CLI|REPO|WWW|ED|SRV)-\\d+\\b/]",
-    message:
-      "Task IDs do not belong in test names — describe the behaviour instead. IDs go in file-level JSDoc only.",
-  },
-  {
-    selector:
-      "CallExpression[callee.name='expect'] > Literal[value=/\\b(D|R|P\\d*|CLI|REPO|WWW|ED|SRV)-\\d+\\b/]",
-    message: "Task IDs do not belong in assertion messages — state the invariant instead.",
-  },
-];
 
 /**
  * The source folder's name, written anywhere but install-layout.ts. Bounded on both sides so
@@ -300,12 +289,7 @@ export default defineConfig(
     // `HOST_PATH_LITERALS` is not applied: fixtures record the hosts' fixed directory names.
     files: TEST_FILES,
     rules: {
-      "no-restricted-syntax": [
-        "error",
-        ...TASK_ID_SHAPES,
-        ...VACUOUS_COMPARISONS,
-        ...SOURCE_FOLDER_LITERALS,
-      ],
+      "no-restricted-syntax": ["error", ...VACUOUS_COMPARISONS, ...SOURCE_FOLDER_LITERALS],
     },
   },
 
@@ -365,7 +349,7 @@ export default defineConfig(
     files: CLI_SOURCES,
     ignores: [...TEST_FILES, "src/cli/lib/config-gate/**"],
     rules: restrictedImports({
-      paths: FS_WRITE_PATHS,
+      paths: [...FS_WRITE_PATHS, FAST_GLOB_IMPORT],
       patterns: [
         CONFIG_GATE_PRIVATE_IMPORTS,
         ...CONFIG_WRITER_IMPORTS,
@@ -394,7 +378,7 @@ export default defineConfig(
       "src/cli/utils/messages.ts",
     ],
     rules: restrictedImports({
-      paths: FS_WRITE_PATHS,
+      paths: [...FS_WRITE_PATHS, FAST_GLOB_IMPORT],
       patterns: [
         CONFIG_GATE_PRIVATE_IMPORTS,
         ...CONFIG_WRITER_IMPORTS,
@@ -409,7 +393,7 @@ export default defineConfig(
     files: ["src/cli/lib/configuration/**/*.ts"],
     ignores: TEST_FILES,
     rules: restrictedImports({
-      paths: FS_WRITE_PATHS,
+      paths: [...FS_WRITE_PATHS, FAST_GLOB_IMPORT],
       patterns: [
         CONFIG_GATE_PRIVATE_IMPORTS,
         SOURCE_FOLDER_SYMBOL_IMPORTS,
@@ -423,7 +407,7 @@ export default defineConfig(
     // Uses the gate's error class; gate-token.ts is a dependency-free leaf, so no cycle.
     files: ["src/cli/lib/configuration/config-types-io.ts"],
     rules: restrictedImports({
-      paths: FS_WRITE_PATHS,
+      paths: [...FS_WRITE_PATHS, FAST_GLOB_IMPORT],
       patterns: [SOURCE_FOLDER_SYMBOL_IMPORTS, HOST_PATH_SYMBOL_IMPORTS, CLAUDE_HOST_IMPORTS],
     }),
   },
@@ -434,7 +418,7 @@ export default defineConfig(
     ignores: TEST_FILES,
     rules: {
       ...restrictedImports({
-        paths: FS_WRITE_PATHS,
+        paths: [...FS_WRITE_PATHS, FAST_GLOB_IMPORT],
         patterns: [SOURCE_FOLDER_SYMBOL_IMPORTS, HOST_PATH_SYMBOL_IMPORTS, CLAUDE_HOST_IMPORTS],
       }),
       "no-restricted-syntax": [
@@ -447,9 +431,25 @@ export default defineConfig(
   },
 
   {
-    // The single write choke point; its tripwire needs the gate's token.
+    // The single write and scan choke point; its tripwire needs the gate's token.
     files: ["src/cli/utils/fs.ts"],
     rules: { "no-restricted-imports": "off" },
+  },
+
+  {
+    // A globalSetup loads it, so it imports only builtins and fast-glob; its scans reduce to a
+    // newest mtime and a count, so their order reaches nothing.
+    files: ["src/cli/lib/testing/dist-staleness.ts"],
+    rules: restrictedImports({
+      paths: FS_WRITE_PATHS,
+      patterns: [
+        CONFIG_GATE_PRIVATE_IMPORTS,
+        ...CONFIG_WRITER_IMPORTS,
+        SOURCE_FOLDER_SYMBOL_IMPORTS,
+        HOST_PATH_SYMBOL_IMPORTS,
+        CLAUDE_HOST_IMPORTS,
+      ],
+    }),
   },
 
   {
@@ -457,7 +457,7 @@ export default defineConfig(
     files: ["src/cli/lib/hosts/**/*.ts"],
     ignores: TEST_FILES,
     rules: restrictedImports({
-      paths: FS_WRITE_PATHS,
+      paths: [...FS_WRITE_PATHS, FAST_GLOB_IMPORT],
       patterns: [
         CONFIG_GATE_PRIVATE_IMPORTS,
         ...CONFIG_WRITER_IMPORTS,
@@ -471,7 +471,7 @@ export default defineConfig(
     // Specs may write folder names, since an imported constant would move with the product.
     files: ["**/*.test.ts", "**/*.test.tsx"],
     rules: {
-      "no-restricted-syntax": ["error", ...TASK_ID_SHAPES, ...VACUOUS_COMPARISONS],
+      "no-restricted-syntax": ["error", ...VACUOUS_COMPARISONS],
     },
   },
 
@@ -480,7 +480,7 @@ export default defineConfig(
     files: ["src/cli/lib/installation/install-layout.ts"],
     rules: {
       ...restrictedImports({
-        paths: FS_WRITE_PATHS,
+        paths: [...FS_WRITE_PATHS, FAST_GLOB_IMPORT],
         patterns: [CONFIG_GATE_PRIVATE_IMPORTS, ...CONFIG_WRITER_IMPORTS, CLAUDE_HOST_IMPORTS],
       }),
       "no-restricted-syntax": ["error", CONFIG_GATE_PRIVATE_DYNAMIC_IMPORT, ...VACUOUS_COMPARISONS],
@@ -491,7 +491,7 @@ export default defineConfig(
     // Re-exports the path symbols; the literal ban still applies.
     files: ["src/cli/consts.ts"],
     rules: restrictedImports({
-      paths: FS_WRITE_PATHS,
+      paths: [...FS_WRITE_PATHS, FAST_GLOB_IMPORT],
       patterns: [CONFIG_GATE_PRIVATE_IMPORTS, ...CONFIG_WRITER_IMPORTS, CLAUDE_HOST_IMPORTS],
     }),
   },
@@ -500,7 +500,7 @@ export default defineConfig(
     // Reads a marketplace repo's provider-neutral `.agents-inc/` layout.
     files: ["src/cli/lib/configuration/config.ts"],
     rules: restrictedImports({
-      paths: FS_WRITE_PATHS,
+      paths: [...FS_WRITE_PATHS, FAST_GLOB_IMPORT],
       patterns: [CONFIG_GATE_PRIVATE_IMPORTS, HOST_PATH_SYMBOL_IMPORTS, CLAUDE_HOST_IMPORTS],
     }),
   },
@@ -509,7 +509,7 @@ export default defineConfig(
     // The e2e mirror of product path strings: the spec zone's set minus the folder-name selectors.
     files: ["e2e/pages/constants.ts"],
     rules: {
-      "no-restricted-syntax": ["error", ...TASK_ID_SHAPES, ...VACUOUS_COMPARISONS],
+      "no-restricted-syntax": ["error", ...VACUOUS_COMPARISONS],
     },
   },
 

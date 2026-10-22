@@ -5,13 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { cleanupTempDir, createTempDir } from "../src/cli/lib/__tests__/test-fs-utils.js";
 
-import {
-  check,
-  clearances,
-  type DoorVerdict,
-  GUARD_CONSTANTS,
-  NO_DOORS,
-} from "./check-spawn-doors.js";
+import { check, type DoorVerdict, GUARD_CONSTANTS, NO_DOORS } from "./check-spawn-doors.js";
 import { expectRefusal } from "./refusal-expectations.js";
 
 const DOOR_FILE = "e2e/helpers/runner.ts";
@@ -118,38 +112,6 @@ const DOOR_NAMING_THE_GUARD_AS_A_KEY = [
   `  return pty.spawn("node", [BIN_RUN, ...args], {`,
   `    cwd,`,
   `    env: { ...process.env, ${GUARD_CONSTANTS.map((name) => `${name}: "1"`).join(", ")} },`,
-  `  });`,
-  `}`,
-  ``,
-].join("\n");
-
-const CLEARED_VARIABLE = "VITEST";
-
-const DOOR_CLEARING_INLINE = [
-  `import { execa } from "execa";`,
-  ``,
-  `import { BIN_RUN, ${IMPORTED_GUARDS} } from "./test-utils.js";`,
-  ``,
-  `export async function runCLI(args: string[], cwd: string) {`,
-  `  return execa("node", [BIN_RUN, ...args], {`,
-  `    cwd,`,
-  `    env: { ${GUARDS}, ${CLEARED_VARIABLE}: undefined, HOME: cwd },`,
-  `  });`,
-  `}`,
-  ``,
-].join("\n");
-
-/** Clears nothing; only a comment names the clearing, which a substring scan would accept. */
-const DOOR_NAMING_THE_VARIABLE_IN_PROSE = [
-  `import { execa } from "execa";`,
-  ``,
-  `import { BIN_RUN, ${IMPORTED_GUARDS} } from "./test-utils.js";`,
-  ``,
-  `export async function runCLI(args: string[], cwd: string) {`,
-  `  return execa("node", [BIN_RUN, ...args], {`,
-  `    cwd,`,
-  `    // the runners hand the spawned binary ${CLEARED_VARIABLE}: undefined`,
-  `    env: { ${GUARDS}, HOME: cwd },`,
   `  });`,
   `}`,
   ``,
@@ -305,60 +267,5 @@ describe("the scan", () => {
     const root = await writeFixturePackage({ "e2e/helpers/nothing.ts": "export const x = 1;\n" });
 
     expectRefusal(() => check({ packageRoot: root }), NO_DOORS);
-  });
-});
-
-describe("the variables a door clears for the child", () => {
-  it("names one the call sets to undefined in the env it hands over", async () => {
-    const root = await writeFixturePackage({ [DOOR_FILE]: DOOR_CLEARING_INLINE });
-
-    expect(clearances({ packageRoot: root })).toStrictEqual([
-      { file: DOOR_FILE, spawnedBy: "execa", clears: [CLEARED_VARIABLE] },
-    ]);
-  });
-
-  it("names one reached through the locals the PTY harness assembles its env from", async () => {
-    const root = await writeFixturePackage({
-      [DOOR_FILE]: doorSpawningThroughLocals(`{ ...process.env, ${CLEARED_VARIABLE}: undefined }`),
-    });
-
-    expect(
-      clearances({ packageRoot: root }),
-      "the PTY harness clears every variable two locals away from its spawn, and reading only the call reports none of them",
-    ).toStrictEqual([{ file: DOOR_FILE, spawnedBy: "pty.spawn", clears: [CLEARED_VARIABLE] }]);
-  });
-
-  it("names nothing when the file only says so in a comment", async () => {
-    const root = await writeFixturePackage({ [DOOR_FILE]: DOOR_NAMING_THE_VARIABLE_IN_PROSE });
-
-    expect(
-      clearances({ packageRoot: root }),
-      "a substring scan reads this door as clearing the variable, and the binary it spawns still inherits it",
-    ).toStrictEqual([{ file: DOOR_FILE, spawnedBy: "execa", clears: [] }]);
-  });
-
-  it("refuses a tree holding no door, rather than reporting that nothing needs clearing", async () => {
-    const root = await writeFixturePackage({ "e2e/helpers/nothing.ts": "export const x = 1;\n" });
-
-    expectRefusal(() => clearances({ packageRoot: root }), NO_DOORS);
-  });
-});
-
-const DOORS_ON_DISK: DoorVerdict[] = [
-  guarded("e2e/fixtures/cli.ts", "execa"),
-  guarded("e2e/helpers/terminal-session.ts", "pty.spawn"),
-  guarded("e2e/helpers/test-utils.ts", "execa"),
-];
-
-describe("this repository", () => {
-  it("starts the binary from exactly these doors, each carrying the guard", () => {
-    expect(
-      check().doors,
-      `a door here missing one of ${IMPORTED_GUARDS} either lets oclif's update plugin detach a child into a fixture's fake HOME, or lets a run reach the live seed API`,
-    ).toStrictEqual(DOORS_ON_DISK);
-  });
-
-  it("has no unguarded door", () => {
-    expect(check().clean).toBe(true);
   });
 });

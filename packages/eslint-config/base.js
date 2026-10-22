@@ -3,6 +3,16 @@ import eslintConfigPrettier from "eslint-config-prettier"
 import tseslint from "typescript-eslint"
 import { defineConfig, globalIgnores } from "eslint/config"
 
+import { noMatcherCast } from "./no-matcher-cast.js"
+import { noTaskIdInTestText } from "./no-task-id-in-test-text.js"
+
+const workspacePlugin = {
+  rules: {
+    "no-matcher-cast": noMatcherCast,
+    "no-task-id-in-test-text": noTaskIdInTestText,
+  },
+}
+
 /** Formatting is Prettier's job, so eslintConfigPrettier goes last. */
 export const baseConfig = defineConfig([
   globalIgnores(["dist", "node_modules"]),
@@ -13,7 +23,11 @@ export const baseConfig = defineConfig([
       tseslint.configs.recommended,
       eslintConfigPrettier,
     ],
+    plugins: { workspace: workspacePlugin },
     rules: {
+      "workspace/no-matcher-cast": "error",
+      "workspace/no-task-id-in-test-text": "error",
+
       // `const { [id]: _removed, ...rest } = obj` is the idiomatic way to drop a key.
       "@typescript-eslint/no-unused-vars": [
         "error",

@@ -92,6 +92,7 @@ import {
 } from "./handlers"
 
 import type { MockedAnswer } from "./answer"
+import type { SavedStack } from "./fixtures"
 import type { RequestHandler } from "msw"
 
 const jsonOf = (answer: MockedAnswer): unknown => {
@@ -636,15 +637,16 @@ describe("a signed-in browser", () => {
         configId: STORED_ID,
       })
     )
-
-    expect(response.status).toBe(201)
-    expect(await response.json()).toStrictEqual({
-      id: expect.any(String) as unknown,
+    const minted: Record<keyof SavedStack, unknown> = {
+      id: expect.any(String),
       name: "Side project",
       configId: STORED_ID,
-      createdAt: expect.any(String) as unknown,
-      updatedAt: expect.any(String) as unknown,
-    })
+      createdAt: expect.any(String),
+      updatedAt: expect.any(String),
+    }
+
+    expect(response.status).toBe(201)
+    expect(await response.json()).toStrictEqual(minted)
   })
 
   it("renames a stack in place, changing only its name and when it was updated", async () => {

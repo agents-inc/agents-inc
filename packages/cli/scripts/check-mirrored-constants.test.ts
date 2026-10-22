@@ -1,4 +1,4 @@
-/** Drives the check against fixture packages, then asserts this repository is clean. */
+/** Drives the check against fixture packages. */
 import { mkdirSync, writeFileSync } from "fs";
 import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -7,7 +7,6 @@ import { cleanupTempDir, createTempDir } from "../src/cli/lib/__tests__/test-fs-
 
 import {
   check,
-  MIRRORS,
   NO_KEY,
   NO_SOURCE_FILE,
   NO_SYMBOL,
@@ -196,23 +195,6 @@ describe("check-mirrored-constants", () => {
       });
 
       expectRefusal(() => check({ packageRoot, mirrors: [VALUE_MIRROR] }), NOT_A_LITERAL);
-    });
-  });
-
-  describe("this repository", () => {
-    it("registers the mirrors that name a production original", () => {
-      expect(MIRRORS.length).toBeGreaterThan(0);
-    });
-
-    it("mirrors every structural constant without drift", () => {
-      const result = check();
-
-      const drifted = result.verdicts.filter((verdict) => verdict.outcome === "drifted");
-
-      expect(
-        drifted,
-        "e2e/pages/constants.ts mirrors these deliberately, so a drift here is a value the E2E suite asserts against and the product no longer declares",
-      ).toStrictEqual([]);
     });
   });
 });

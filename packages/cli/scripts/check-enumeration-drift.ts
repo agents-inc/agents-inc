@@ -23,10 +23,7 @@ const CODE_SPAN = /`[^`]+`/g;
 const TABLE_CELL_DELIMITER = "|";
 const CODE_SPAN_DELIMITER = "`";
 
-/**
- * An unescaped `|`; Markdown resolves `\|` before inline markup, even in code spans. Held equal to
- * journey-page.ts's copy by the test beside this file.
- */
+/** An unescaped `|`; Markdown resolves `\|` before inline markup, even in code spans. */
 const CELL_SEPARATOR = /(?<!\\)\|/;
 
 const ESCAPED_PIPE = "\\|";
@@ -61,7 +58,7 @@ const COMMAND_TOPIC_SEPARATOR = " ";
  * `entries` reads `key = value` pairs, so a swapped value is visible. `reexports` includes type-only
  * re-exports, unlike the directory reader.
  */
-export type SourceEnumeration =
+type SourceEnumeration =
   | { file: string; symbol: string }
   | { file: string; entries: string }
   | { file: string; exports: "const" | "function" }
@@ -86,7 +83,7 @@ export type RegistryEntry = {
   document: DocumentClaim;
 };
 
-export type EnumerationVerdict =
+type EnumerationVerdict =
   | { claim: string; outcome: "agrees"; members: number }
   | {
       claim: string;
@@ -98,7 +95,7 @@ export type EnumerationVerdict =
 export type CheckResult = { clean: boolean; verdicts: EnumerationVerdict[] };
 
 /** One row per claim; a claim spanning two documents is two rows. */
-export const REGISTRY: RegistryEntry[] = [
+const REGISTRY: RegistryEntry[] = [
   {
     claim: "STEP_TEXT in standards/e2e/README.md",
     source: { file: E2E_CONSTANTS, symbol: "STEP_TEXT" },

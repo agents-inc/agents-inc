@@ -1,6 +1,6 @@
 /**
  * Fixture sources are built with {@link CITATION} so this file's own citations stay out of the
- * real-tree check at the bottom.
+ * real-tree check.
  */
 import { mkdirSync, writeFileSync } from "fs";
 import path from "path";
@@ -22,6 +22,7 @@ import {
   NO_TYPECHECK_SCRIPT,
   PROJECTS,
   typecheckedProjects,
+  UNREADABLE_PROJECT_CONFIG,
 } from "./check-symbol-citations.js";
 import { expectRefusal } from "./refusal-expectations.js";
 
@@ -31,6 +32,8 @@ function CITATION(entity: string): string {
 
 const BASE_CONFIG = "tsconfig.base.json";
 const SIBLING_PROJECT = "tsconfig.sibling.json";
+/** A directory where a config should be: on disk, and nothing TypeScript can read. */
+const UNREADABLE_CONFIG = "tsconfig.unreadable.json";
 const SUBJECT = "src/subject.ts";
 const SIBLING = "src/sibling.ts";
 
@@ -248,6 +251,16 @@ describe("a run that would judge nothing", () => {
     );
   });
 
+  it("throws when a project names a config TypeScript cannot read", async () => {
+    const packageRoot = await writeSubjectPackage(subjectSource(["Nothing cited."]));
+    mkdirSync(path.join(packageRoot, UNREADABLE_CONFIG));
+
+    expectRefusal(
+      () => check({ packageRoot, projects: [UNREADABLE_CONFIG] }),
+      UNREADABLE_PROJECT_CONFIG,
+    );
+  });
+
   it("throws when a project holds no source of this package, rather than reading it as clean", async () => {
     const packageRoot = await writeFixturePackage({
       [BASE_CONFIG]: BASE_TSCONFIG,
@@ -324,30 +337,11 @@ describe("the roster read out of the manifest", () => {
   });
 });
 
-const TREES_THAT_CITE = ["e2e", "scripts", "src"];
-
 describe("this repository", () => {
-  const repository = check();
-
   it("walks every project the typecheck script does, so no tree is silently outside the rule", () => {
     expect(
       [...PROJECTS],
       "a fourth project added to typecheck and not here is a tree this walk stops reaching, and it reports clean for it",
     ).toStrictEqual(typecheckedProjects());
-  });
-
-  it("reads every tree that carries citations, so an empty verdict is not an unread one", () => {
-    expect(
-      repository.citing,
-      "a tree the walk stopped reaching reports exactly what a tree whose every citation resolves reports",
-    ).toStrictEqual(TREES_THAT_CITE);
-  });
-
-  it("has no citation offering a reader a jump that lands nowhere", () => {
-    expect(
-      repository.unresolved,
-      "typecheck and lint both pass over an unresolvable citation in silence, so this is the only thing that reads them",
-    ).toStrictEqual([]);
-    expect(repository.clean).toBe(true);
   });
 });

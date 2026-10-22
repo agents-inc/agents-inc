@@ -14,9 +14,8 @@ vi.mock("msw/node", () => {
 })
 
 // Vitest wraps a factory's throw, so the reason arrives as `cause`.
-// `as unknown` contains the matcher's `any`.
-const because = (message: string) => ({
-  cause: expect.objectContaining({ message }) as unknown,
+const because = (message: string): Pick<Error, "cause"> => ({
+  cause: expect.objectContaining({ message }),
 })
 
 describe("what ./fixtures costs a consumer", () => {
