@@ -8,6 +8,7 @@ import { expect, test } from "../fixtures"
 import {
   DOMAINS,
   EXCLUSIVE_CATEGORY,
+  MULTI_CATEGORY,
   SINGLE_AGENT_SKILL,
   STACKS,
   STACK_MEMBER_SKILL,
@@ -17,14 +18,22 @@ import {
   OUT_OF_DATE,
   STORED_ID,
   STORE_UNAVAILABLE,
+  captureCreateConfig,
+  holdCreateConfig,
   stubCreateConfig,
   stubCreateConfigRefusal,
+  stubCreateConfigRefusalOnce,
 } from "../support/sharing"
 
 import type { ConfigurePage } from "../pages/configure-page"
 
 const { web } = DOMAINS
 const { name: CATEGORY, first: REACT } = EXCLUSIVE_CATEGORY
+const { name: STYLING, first: TAILWIND } = MULTI_CATEGORY
+
+// Written out: a payload names skills by id.
+const REACT_ID = "web-framework-react"
+const TAILWIND_ID = "web-styling-tailwind"
 
 // `ref` is typed; `stored` is what the install command must name.
 const ACME = {
@@ -52,7 +61,7 @@ test.describe("install dialog", () => {
     await expect(configure.installDialog.root).toBeVisible()
   })
 
-  // Wrapped, `edit` sat alone and the footer read as naming `npx agents-inc`.
+  // Wrapped, `edit` sits alone and the footer reads as naming `npx agents-inc`.
   test("keeps the footer's edit command on one line", async ({ configure }) => {
     const lines = await configure.installDialog.footerCommand.evaluate(linesOf)
 
@@ -162,7 +171,7 @@ test.describe("install dialog when the id cannot be minted", () => {
     await expect(configure.installDialog.root).not.toContainText("out of date")
   })
 
-  // Every open mints, so 21 opens in a minute reach the write limit.
+  // Opening on a new selection mints, so the dialog meets the write limit too.
   test("a rate-limited mint says when to try again", async ({
     configure,
     page,
@@ -378,6 +387,88 @@ test.describe("install dialog on a loaded marketplace", () => {
     await configure.roster.installButton.click()
 
     await expect(configure.installDialog.header).toContainText(ACME.ref)
+  })
+})
+
+// The dialog stays mounted, so a reopening finds the last answer.
+test.describe("install dialog, opened again", () => {
+  const MINTED_COMMAND = `npx agents-inc init --from ${STORED_ID}`
+
+  const skillsPosted = (posted: Record<string, unknown>[]) =>
+    posted.map((body) => Object.keys(body.skills as object).sort())
+
+  const reopen = async (configure: ConfigurePage) => {
+    await configure.installDialog.close()
+    await configure.roster.installButton.click()
+  }
+
+  test("keeps the id it minted while the selection is unchanged", async ({
+    configure,
+    page,
+  }) => {
+    const posted = captureCreateConfig(page)
+    await configure.skillIn(web, CATEGORY, REACT).toggle()
+    await configure.roster.installButton.click()
+    await expect(configure.installDialog.command(MINTED_COMMAND)).toBeVisible()
+
+    await reopen(configure)
+    await expect(configure.installDialog.command(MINTED_COMMAND)).toBeVisible()
+
+    // The channel: a changed selection posts, after anything the reopening
+    // sent.
+    await configure.installDialog.close()
+    await configure.skillIn(web, STYLING, TAILWIND).toggle()
+    await configure.roster.installButton.click()
+    await expect
+      .poll(() => skillsPosted(posted).some((ids) => ids.includes(TAILWIND_ID)))
+      .toBe(true)
+
+    expect(skillsPosted(posted)).toStrictEqual([
+      [REACT_ID],
+      [REACT_ID, TAILWIND_ID],
+    ])
+  })
+
+  for (const [label, status, said] of [
+    ["a refusal", STORE_UNAVAILABLE, "id unavailable"],
+    ["the rate limit", TOO_MANY, "rate limit reached"],
+  ] as const) {
+    test(`asks again after ${label}`, async ({ configure, page }) => {
+      stubCreateConfig(page)
+      stubCreateConfigRefusalOnce(page, status)
+      await configure.skillIn(web, CATEGORY, REACT).toggle()
+      await configure.roster.installButton.click()
+      await expect(configure.installDialog.root).toContainText(said)
+
+      await reopen(configure)
+
+      await expect(
+        configure.installDialog.command(MINTED_COMMAND)
+      ).toBeVisible()
+    })
+  }
+
+  test("says nothing of a refusal an earlier opening met", async ({
+    configure,
+    page,
+  }) => {
+    stubCreateConfig(page)
+    const release = holdCreateConfig(page)
+    stubCreateConfigRefusalOnce(page, STORE_UNAVAILABLE)
+    await configure.skillIn(web, CATEGORY, REACT).toggle()
+    await configure.roster.installButton.click()
+    await expect(configure.installDialog.root).toContainText("id unavailable")
+
+    await reopen(configure)
+
+    await expect(configure.installDialog.root).toContainText(
+      "preparing your id"
+    )
+    await expect(configure.installDialog.root).not.toContainText(
+      "id unavailable"
+    )
+    release()
+    await expect(configure.installDialog.command(MINTED_COMMAND)).toBeVisible()
   })
 })
 

@@ -88,9 +88,6 @@ export type ProjectConfig = {
    */
   marketplaceName?: string;
 
-  /** Defaults to the skills source. */
-  agentsSource?: string;
-
   /** Persisted so edit mode restores the selection; omitted when empty. */
   selectedDomains?: Domain[];
 
@@ -98,9 +95,6 @@ export type ProjectConfig = {
 
   /** Default: "src/skills" */
   skillsDir?: string;
-
-  /** Default: "src/agents" */
-  agentsDir?: string;
 
   /** Default: "config/stacks.ts" */
   stacksFile?: string;

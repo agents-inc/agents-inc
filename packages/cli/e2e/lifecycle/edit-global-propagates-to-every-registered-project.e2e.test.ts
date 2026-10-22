@@ -17,6 +17,7 @@ import {
   cleanupTempDir,
   configTypesTsPath,
   createPermissionsFile,
+  flattenCliOutput,
   listFiles,
   loadConfigOrFail,
   readTestFile,
@@ -26,11 +27,7 @@ import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { readGeneratedUnion } from "../../src/cli/lib/__tests__/helpers/generated-types.js";
 import type { AgentName } from "../../src/cli/types/index.js";
 
-/**
- * Journey 7 from an empty tree: a global `edit --from` removing a sub-agent propagates to BOTH
- * registered projects' agents[], SelectedAgentName and compiled files. Two projects, so a fan-out
- * that stops after the first is caught.
- */
+/** Two projects, so a fan-out that stops after the first is caught. */
 
 /** Its skills stay installed; only the sub-agent goes. */
 const REMOVED_GLOBAL_AGENT = E2E_AGENT["web-developer"];
@@ -189,11 +186,24 @@ describe("a global edit propagates to every registered project, from nothing", (
     expect(editExitCode, `the global edit must succeed: ${editOutput}`).toBe(EXIT_CODES.SUCCESS);
   });
 
-  // Both projects come back unchanged; a fan-out that stopped after the first would say
-  // "1 unchanged".
-  it("reports the fan-out visiting both registered projects", () => {
+  // Each project's config pair drops the sub-agent, so both are rewritten though their compiled
+  // agents come back the same; a fan-out that stopped after the first would say "1 rewritten".
+  it("reports the fan-out rewriting both registered projects", () => {
     expect(editOutput, "the edit must account for both registered projects").toContain(
-      `${STEP_TEXT.PROPAGATED_RECOMPILE} 0 registered projects, 2 ${STEP_TEXT.UNCHANGED}`,
+      `${STEP_TEXT.PROPAGATED_RECOMPILE} 2 rewritten, 0 ${STEP_TEXT.UNCHANGED}`,
+    );
+  });
+
+  it("names both registered projects the run rewrites", () => {
+    const said = flattenCliOutput(editOutput);
+    const named = (dir: string): RegExp =>
+      new RegExp(`${STEP_TEXT.SHARED_CONFIG_REGISTERED_REWRITTEN}[\\s\\S]*${realpathSync(dir)}`);
+
+    expect(said, "the confirm must name the first registered project").toMatch(
+      named(firstProjectDir),
+    );
+    expect(said, "the confirm must name the second registered project").toMatch(
+      named(secondProjectDir),
     );
   });
 

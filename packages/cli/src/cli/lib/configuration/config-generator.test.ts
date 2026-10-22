@@ -60,10 +60,9 @@ import {
   MULTI_STYLING_MATRIX,
 } from "../__tests__/mock-data/mock-matrices.js";
 
-/** The five fields a source repository declares its own layout with, each set off its default. */
+/** The four fields a source repository declares its own layout with, each set off its default. */
 const SOURCE_LAYOUT = {
   skillsDir: "catalogue/skills",
-  agentsDir: "catalogue/agents",
   stacksFile: "catalogue/stacks.ts",
   categoriesFile: "catalogue/skill-categories.ts",
   rulesFile: "catalogue/skill-rules.ts",
@@ -1914,7 +1913,7 @@ describe("config-generator", () => {
       ).not.toHaveProperty("branding");
     });
 
-    /** Likewise the five source-layout fields. */
+    /** Likewise the four source-layout fields. */
     it("keeps a project's source-layout fields on the project partition and off the global one", () => {
       const config = buildProjectConfig({
         skills: [

@@ -10,17 +10,13 @@ import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { readSkillEntries, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
 import {
   applyFromSeed,
+  applyUnchangedFromSeed,
   createDualScopeEnvFromSeed,
   createGlobalOnlyEnvFromSeed,
   e2eStackPayload,
 } from "../fixtures/e2e-stack-seed.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import "../matchers/setup.js";
-
-/**
- * Deselecting a skill from project scope, after a scope toggle, must not remove it from the
- * global config.
- */
 
 describe("scope change deselect integrity", () => {
   let store: SeedConfigStore;
@@ -48,7 +44,7 @@ describe("scope change deselect integrity", () => {
       const globalConfigPath = configTsPath(env.fakeHome);
       const globalConfigBefore = await readTestFile(globalConfigPath);
 
-      await applyFromSeed(store, "Unchanged1", e2eStackPayload(), {
+      await applyUnchangedFromSeed(store, "Unchanged1", e2eStackPayload(), {
         dir: env.projectDir,
         home: env.fakeHome,
       });

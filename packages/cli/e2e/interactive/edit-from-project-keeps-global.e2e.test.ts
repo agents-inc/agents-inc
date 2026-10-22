@@ -13,12 +13,13 @@ import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
+  flattenCliOutput,
   listFiles,
   loadConfigOrFail,
   readTreeSnapshot,
   skillsPath,
 } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { CLI_INVOKE_COMMAND, DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
@@ -29,9 +30,10 @@ import type { TreeSnapshotEntry } from "../helpers/test-utils.js";
 
 /**
  * `edit --from` inside a project never removes or changes anything in the global install, though it
- * may add what the global install lacks. One leg per shape that used to reach it; each adds a
- * project skill to prove the apply ran and compares a whole-tree snapshot. Controls: global entries
- * carried as installed, an allowed global addition, and the same removal at home.
+ * may add what the global install lacks. One leg per shape; each adds a project skill to prove the
+ * apply ran and compares a whole-tree snapshot. Controls: global entries carried as installed, an
+ * allowed global addition, and the same removal at home. What it keeps, it names with the run from
+ * home that would change it — only where home would take that configuration.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -107,8 +109,7 @@ describe("edit --from <id> in a project keeps the global install as it is", () =
         agents: bothAgents,
       }),
     );
-    // No row joins the global skills to the global sub-agent: what a project-minted share used to
-    // carry.
+    // No row joins the global skills to the global sub-agent.
     store.publish(
       NO_GLOBAL_ROWS_ID,
       buildSeedPayload({
@@ -366,6 +367,55 @@ describe("edit --from <id> in a project keeps the global install as it is", () =
       const globalAfter = await loadConfigOrFail(environment.fakeHome);
       expect(globalAfter.skills.map((skill) => skill.id)).toStrictEqual([GLOBAL_SKILL]);
       expect(await listFiles(skillsPath(environment.fakeHome))).toStrictEqual([GLOBAL_SKILL]);
+    },
+  );
+
+  async function planFromProject(id: string): Promise<string> {
+    const environment = await installFrom(INSTALLED_ID, "project");
+    prompt = new InteractivePrompt(["edit", "--from", id], environment.projectDir, {
+      env: { AGENTS_INC_API_URL: store.url, HOME: environment.fakeHome },
+    });
+    await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM, TIMEOUTS.WIZARD_LOAD);
+    const planned = flattenCliOutput(prompt.getOutput());
+    await prompt.deny();
+    expect(await prompt.waitForExit(TIMEOUTS.EXIT_WAIT)).toBe(EXIT_CODES.CANCELLED);
+    return planned;
+  }
+
+  it(
+    "names the run from home that changes the global skill it keeps, for a configuration home takes",
+    { timeout: TIMEOUTS.INTERACTIVE },
+    async () => {
+      const planned = await planFromProject(HOME_REMOVES_ID);
+
+      expect(planned).toMatch(
+        new RegExp(
+          `${STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED}[\\s\\S]*skill ${OTHER_GLOBAL_SKILL}`,
+        ),
+      );
+      expect(
+        planned,
+        "the configuration is all global, so the same id applied from home changes what is kept",
+      ).toContain(`${CLI_INVOKE_COMMAND} edit --from ${HOME_REMOVES_ID}`);
+    },
+  );
+
+  it(
+    "names no run from home for a configuration home would refuse",
+    { timeout: TIMEOUTS.INTERACTIVE },
+    async () => {
+      const planned = await planFromProject(SOME_GLOBAL_ID);
+
+      // Subject guard: something is kept, so a route could have been named.
+      expect(planned).toMatch(
+        new RegExp(
+          `${STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED}[\\s\\S]*skill ${OTHER_GLOBAL_SKILL}`,
+        ),
+      );
+      expect(
+        planned,
+        "the configuration carries project-scoped skills, which home refuses, so no run there is named",
+      ).not.toContain(`${CLI_INVOKE_COMMAND} edit`);
     },
   );
 });

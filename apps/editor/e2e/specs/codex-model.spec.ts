@@ -80,6 +80,9 @@ test.describe("a stored Codex model", () => {
     await configure.installDialog.close()
     expect(bodies[0]).toContain(`"codexModel":"${CODEX_MODEL}"`)
 
+    // A mounted dialog keeps its id for an unchanged selection, so only a
+    // fresh page posts the payload again.
+    await configure.goto()
     await configure.provider.choose("codex")
     await configure.roster.installButton.click()
     await expect(configure.installDialog.command(CODEX_COMMAND)).toBeVisible()

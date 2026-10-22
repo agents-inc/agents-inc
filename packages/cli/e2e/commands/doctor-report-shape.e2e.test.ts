@@ -18,6 +18,8 @@ const EMPTY_CONTENT_SECTION = [
   "    Plugins                 ✓  No plugins to validate",
   "    Skills                  ✓  No skills to validate",
   "    Agents                  ✓  No agents to validate",
+  "",
+  "  Operational checks",
 ].join("\n");
 
 /**

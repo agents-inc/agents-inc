@@ -197,6 +197,14 @@ describe("what init --from says of plugin installs", () => {
         "Installing skill plugins...",
       ].join("\n"),
     );
-    expect(stdout).not.toContain("Skills copied to:");
+    expect(stdout).toContain(
+      [
+        "Skills copied to:",
+        `  ${path.join(projectDir, CLAUDE_DIR, "skills")}`,
+        `    ${REACT}/`,
+        "",
+        "",
+      ].join("\n"),
+    );
   });
 });

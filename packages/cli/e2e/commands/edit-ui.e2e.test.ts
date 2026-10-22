@@ -84,6 +84,33 @@ describe("edit --ui", () => {
       expect(await readTreeSnapshot(project)).toStrictEqual(before);
     });
 
+    it("says the store's rate limit was reached and when to try again, and writes nothing", async () => {
+      const project = await takeTempDir();
+      store.publish(
+        "UiLimit1",
+        buildSeedPayload({
+          v: PINNED_WIRE_VERSION,
+          skills: { [E2E_SKILL.react.id]: ejectedGlobalSkill() },
+        }),
+      );
+      const installed = await runInitFrom(store, "UiLimit1", { dir: project }, sourceDir);
+      expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
+      store.reset();
+      store.limitMints();
+      const before = await readTreeSnapshot(project);
+
+      const { exitCode, output } = await runAgainst(project);
+
+      expect(exitCode, output).toBe(EXIT_CODES.ERROR);
+      expect(flattenCliOutput(output)).toContain(
+        "Sharing this configuration failed (HTTP 429): rate limit reached — try again in 1 minute.",
+      );
+      expect(output, "no id came back, so there is no editor link to print").not.toContain(
+        STEP_TEXT.EDITOR_URL,
+      );
+      expect(await readTreeSnapshot(project)).toStrictEqual(before);
+    });
+
     it("refuses a directory with nothing installed, without spending a write", async () => {
       const empty = await takeTempDir();
 

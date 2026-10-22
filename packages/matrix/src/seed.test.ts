@@ -4,6 +4,7 @@ import { DEFAULT_SELECTION_OPTIONS } from "./read-model/selection-defaults"
 import {
   MAX_EXTERNAL_SKILL_BYTES,
   SEED_VERSION,
+  externalIdsNamingNoDirectory,
   installableSeedPayloadSchema,
   seedExternalSkillSchema,
   seedPayloadSchema,
@@ -366,6 +367,74 @@ describe("the read schema is deliberately lenient about the same pair", () => {
   })
 })
 
+const MINTED_EXTERNAL_ID = "external-web-framework-house-react"
+const PARENT_ESCAPING_ID = "../victim"
+
+const carrying = (ids: readonly string[]) =>
+  payload({
+    external: Object.fromEntries(ids.map((id) => [id, external()])),
+  })
+
+// The id is the directory a carried skill is written into; refusal and permission pinned together.
+describe("a carried skill's id", () => {
+  it.each([
+    ["the parent directory's child", PARENT_ESCAPING_ID],
+    ["a path climbing out through a child", "skills/../../escaped"],
+    ["a nested path", "house/react"],
+    ["a Windows nested path", "house\\react"],
+    ["the directory itself", "."],
+    ["the parent directory", ".."],
+    ["nothing", ""],
+    ["a null byte", "house\0react"],
+    ["an escape sequence", "external-x\u001b]0;PWNED\u0007\u001b[31mred"],
+    ["a line break", "house\nreact"],
+    ["a tab", "house\treact"],
+    ["a delete", "house\u007freact"],
+    ["an eight-bit control", "house\u009breact"],
+  ])("refuses an id naming %s rather than one directory", (_, id) => {
+    expect(installableSeedPayloadSchema.safeParse(carrying([id])).success).toBe(
+      false
+    )
+  })
+
+  it("accepts the id intake mints", () => {
+    expect(
+      installableSeedPayloadSchema.safeParse(carrying([MINTED_EXTERNAL_ID]))
+        .success
+    ).toBe(true)
+  })
+
+  it("accepts an id holding dots that still names one directory", () => {
+    expect(
+      installableSeedPayloadSchema.safeParse(carrying(["house.react..v2"]))
+        .success
+    ).toBe(true)
+  })
+
+  // Just past the eight-bit controls, so the refusal is not of every byte above ASCII.
+  it("accepts an id holding a letter beyond ASCII", () => {
+    expect(
+      installableSeedPayloadSchema.safeParse(carrying(["house-café"])).success
+    ).toBe(true)
+  })
+
+  it("names only the ids naming no single directory", () => {
+    expect(
+      externalIdsNamingNoDirectory(
+        seedPayloadSchema.parse(
+          carrying([MINTED_EXTERNAL_ID, PARENT_ESCAPING_ID, ".."])
+        )
+      )
+    ).toStrictEqual([PARENT_ESCAPING_ID, ".."])
+  })
+
+  it("finds nothing to name in a payload carrying nothing", () => {
+    expect(
+      externalIdsNamingNoDirectory(seedPayloadSchema.parse(payload()))
+    ).toStrictEqual([])
+  })
+})
+
 describe("the vocabularies a payload speaks", () => {
   it.each(["opus", "fable", "sonnet", "haiku"])(
     "accepts a sub-agent on the %s model",
@@ -463,6 +532,20 @@ describe("what a refusal says", () => {
         path: ["skills", REACT, "assignments", AGENT_ID],
         message:
           "a project-scoped skill has nowhere to be written on 'web-developer', which rests at global scope",
+      },
+    ])
+  })
+
+  it("names the carried skill whose id names no single directory", () => {
+    expect(
+      refusalsOf(
+        installableSeedPayloadSchema.safeParse(carrying([PARENT_ESCAPING_ID]))
+      )
+    ).toStrictEqual([
+      {
+        path: ["external", PARENT_ESCAPING_ID],
+        message:
+          "a carried skill's id is the directory it is written into, so it must name exactly one directory and hold no control character",
       },
     ])
   })

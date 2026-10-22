@@ -21,8 +21,6 @@ import {
 } from "../helpers/test-utils.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 
-/** `doctor` blind spots that only appear with agents and skills installed at global scope. */
-
 let source: E2ESource;
 
 beforeAll(async () => {
@@ -95,7 +93,7 @@ describe("doctor global-scope diagnostics", () => {
         stdout,
         "a global agent declared in config.ts is not an orphan just because doctor ran at home scope",
       ).not.toContain("not in config");
-      expect(stdout).toContain("No orphaned agent files");
+      expect(stdout).toContain("No orphaned skills or agent files");
     },
   );
 

@@ -1,5 +1,5 @@
 import path from "path";
-import { chmod, mkdir, readFile, writeFile } from "fs/promises";
+import { chmod, mkdir, readFile, stat, writeFile } from "fs/promises";
 import { STORED_ID, storedConfigHandlerFor } from "@workspace/api-mocks";
 import { configMockServer } from "@workspace/api-mocks/node";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -17,6 +17,7 @@ import {
   buildSeedSkill,
 } from "../factories/seed-factories.js";
 import {
+  renderAgentYaml,
   renderMetadataYaml,
   renderSkillMd,
   renderUnparseableMetadataYaml,
@@ -32,7 +33,7 @@ import {
   type TestDirs,
 } from "../fixtures/create-test-source";
 import { DEFAULT_TEST_SKILLS, EXTRA_DOMAIN_TEST_SKILLS } from "../mock-data/mock-skills";
-import { CLAUDE_DIR, STANDARD_FILES } from "../../../consts";
+import { CLAUDE_DIR, STANDARD_DIRS, STANDARD_FILES } from "../../../consts";
 import { EXIT_CODES } from "../../exit-codes";
 import { delay, KEY_N, KEY_Y } from "../test-constants";
 import type { ProjectConfig } from "../../../types";
@@ -40,6 +41,8 @@ import type { ProjectConfig } from "../../../types";
 const REACT = testMarketplaceSkillId("web-framework-react");
 const HONO = testMarketplaceSkillId("api-framework-hono");
 const VITEST = testMarketplaceSkillId("web-testing-vitest");
+
+const A_STOP_HOOK = { Stop: [{ hooks: [{ type: "command", command: "make check" }] }] };
 
 /** Long enough for a load and the first frame of the confirm. */
 const PROMPT_READY_MS = 600;
@@ -109,7 +112,20 @@ describe("what edit --from says", () => {
 
   const configPath = () => path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS);
 
+  /** The project's own web-developer, which wins over the built-in one. */
+  async function declareAStopHookOnWebDeveloper(): Promise<void> {
+    const agentDir = path.join(path.dirname(configPath()), STANDARD_DIRS.AGENTS, "web-developer");
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(
+      path.join(agentDir, STANDARD_FILES.AGENT_METADATA_YAML),
+      renderAgentYaml("web-developer", undefined, { hooks: A_STOP_HOOK }),
+    );
+    await writeFile(path.join(agentDir, STANDARD_FILES.IDENTITY_MD), "# web-developer\n");
+    await writeFile(path.join(agentDir, STANDARD_FILES.PLAYBOOK_MD), "## Workflow\n");
+  }
+
   it("lists what arrives and what goes, asks, then names each change it made", async () => {
+    await declareAStopHookOnWebDeveloper();
     await installReact();
     serve(
       "Next",
@@ -148,7 +164,7 @@ describe("what edit --from says", () => {
         "",
         "Copied 1 local skill(s)",
         "1 agent rewritten, 0 unchanged",
-        `Claude Code runs a project sub-agent's completion gate (its Stop hook — the project's typecheck, unless the sub-agent declares its own) only once you trust the folder: open Claude Code in ${projectDir} and accept the trust prompt. Until then, 1 sub-agent's completion gate will not run, and nothing will say so.`,
+        `Claude Code runs a project sub-agent's hooks only once you trust the folder: open Claude Code in ${projectDir} and accept the trust prompt. Until then, 1 sub-agent's hooks will not run, and nothing will say so.`,
         "",
         "✓ Done",
         "",
@@ -156,26 +172,73 @@ describe("what edit --from says", () => {
       ].join("\n"),
     );
     expect(await readFile(configPath(), "utf-8")).toContain(HONO);
+    expect(
+      await fileExists(path.join(projectDir, CLAUDE_DIR, "skills", HONO, STANDARD_FILES.SKILL_MD)),
+    ).toBe(true);
+    expect(
+      await fileExists(path.join(projectDir, CLAUDE_DIR, "skills", REACT, STANDARD_FILES.SKILL_MD)),
+    ).toBe(false);
   });
 
-  it("says nothing is removed, and that nothing changed, for the configuration already installed", async () => {
+  it("says nothing changed for the configuration already installed, without asking or writing", async () => {
     await installReact();
+    const agentFile = path.join(projectDir, CLAUDE_DIR, "agents", "web-developer.md");
+    const before = {
+      config: await readFile(configPath(), "utf-8"),
+      configWritten: (await stat(configPath())).mtimeMs,
+      agentWritten: (await stat(agentFile)).mtimeMs,
+    };
 
-    const { stdout, error } = await answered(["edit", "--from", "Installed"], KEY_Y);
+    // A no: had the run asked, it would end cancelled rather than unchanged.
+    const { stdout, error } = await answered(["edit", "--from", "Installed"], KEY_N);
 
     expect(error).toBeUndefined();
     expect(stdout).toBe(
-      [
-        "Fetching configuration Installed...",
-        "Loading skills...",
-        "Nothing is removed — this configuration only adds and re-tunes.",
-        "",
-        "",
-        "Apply this configuration?",
-        "y/N",
-        "No changes made.",
-        "",
-      ].join("\n"),
+      ["Fetching configuration Installed...", "Loading skills...", "No changes made.", ""].join(
+        "\n",
+      ),
+    );
+    expect({
+      config: await readFile(configPath(), "utf-8"),
+      configWritten: (await stat(configPath())).mtimeMs,
+      agentWritten: (await stat(agentFile)).mtimeMs,
+    }).toStrictEqual(before);
+  });
+
+  it("says nothing changed, without asking or writing, when the skill it carries is as installed", async () => {
+    const carried = "external-web-testing-brainstorming";
+    const carrying = buildSeedPayload({
+      marketplace: dirs.sourceDir,
+      skills: { ...ejected(REACT), ...ejected(carried) },
+      external: {
+        [carried]: buildSeedExternalSkill({
+          categoryId: "web-testing",
+          files: { [STANDARD_FILES.SKILL_MD]: renderSkillMd(carried, "The one version") },
+        }),
+      },
+      agents: { "web-developer": { scope: "project" } },
+    });
+    serve("Installed", carrying);
+    expect((await answered(["init", "--from", "Installed"], KEY_Y)).error).toBeUndefined();
+    const carriedManifest = path.join(
+      projectDir,
+      CLAUDE_DIR,
+      "skills",
+      carried,
+      STANDARD_FILES.SKILL_MD,
+    );
+    const writtenBefore = (await stat(carriedManifest)).mtimeMs;
+
+    const { stdout, error } = await answered(["edit", "--from", "Installed"], KEY_N);
+
+    expect(error).toBeUndefined();
+    expect(stdout).toBe(
+      ["Fetching configuration Installed...", "Loading skills...", "No changes made.", ""].join(
+        "\n",
+      ),
+    );
+    expect((await stat(carriedManifest)).mtimeMs, "the carried files must not be rewritten").toBe(
+      writtenBefore,
     );
   });
 
@@ -253,51 +316,112 @@ describe("what edit --from says", () => {
 
     const { stderr } = await answered(["edit", "--from", "Next"], KEY_Y);
 
-    expect(flattenCliOutput(stderr)).toContain(
+    expect(
+      flattenCliOutput(stderr),
+      "web-developer carries a skill the catalogue knows, so it is not skipped with the other",
+    ).toBe(
       "Warning: Skipped 1 skill(s) this catalog does not know: web-framework-angular-standalone",
     );
   });
 
-  it("says it keeps an installed skill it names but this catalogue cannot place, and how to place it", async () => {
-    const unplaceable = "web-framework-angular-standalone";
+  it("names the sub-agents it skips with a skill the catalogue does not know, which carried only that skill", async () => {
+    const unknown = "web-framework-angular-standalone";
     await installReact();
-    const installedConfig = await readTestTsConfig<ProjectConfig>(configPath());
-    await writeTestTsConfig(projectDir, {
-      ...installedConfig,
-      skills: [
-        ...installedConfig.skills,
-        ...buildSkillConfigs([unplaceable], { scope: "project", origin: "eject" }),
-      ],
-    });
     serve(
       "Next",
       buildSeedPayload({
         marketplace: dirs.sourceDir,
-        skills: { ...ejected(REACT), ...ejected(unplaceable) },
-        agents: { "web-developer": { scope: "project" } },
+        skills: { ...ejected(REACT), ...ejected(unknown, "api-developer") },
+        agents: { "web-developer": { scope: "project" }, "api-developer": { scope: "project" } },
       }),
     );
 
-    const { stdout, error } = await answered(["edit", "--from", "Next"], KEY_Y);
+    const { stderr } = await answered(["edit", "--from", "Next"], KEY_N);
 
-    expect(error).toBeUndefined();
-    expect(flattenCliOutput(stdout)).toContain(
+    expect(flattenCliOutput(stderr)).toBe(
       flattenCliOutput(
         [
-          "Nothing is removed — this configuration only adds and re-tunes.",
-          "Kept — named by this configuration, and this catalogue cannot place them:",
-          `  skill ${unplaceable}`,
-          "Run 'npx agents-inc update' to refresh this installation's marketplace, then apply the configuration again.",
-          "Apply this configuration?",
+          `Warning: Skipped 1 skill(s) this catalog does not know: ${unknown}`,
+          `  sub-agent(s) skipped with ${unknown}, carrying nothing else this catalog knows: api-developer`,
         ].join("\n"),
       ),
     );
-    expect(
-      (await readTestTsConfig<ProjectConfig>(configPath())).skills.map((skill) => skill.id),
-    ).toStrictEqual([REACT, unplaceable]);
   });
 
-  it("says it keeps the global sub-agent this configuration leaves out, naming nothing else", async () => {
+  describe("an installed skill it names but this catalogue cannot place", () => {
+    const unplaceable = "web-framework-angular-standalone";
+
+    async function installReactAndTheUnplaceable(): Promise<void> {
+      await installReact();
+      const installedConfig = await readTestTsConfig<ProjectConfig>(configPath());
+      await writeTestTsConfig(projectDir, {
+        ...installedConfig,
+        skills: [
+          ...installedConfig.skills,
+          ...buildSkillConfigs([unplaceable], { scope: "project", origin: "eject" }),
+        ],
+      });
+    }
+
+    function servingNext(skills: SeedPayload["skills"]): void {
+      serve(
+        "Next",
+        buildSeedPayload({
+          marketplace: dirs.sourceDir,
+          skills,
+          agents: { "web-developer": { scope: "project" } },
+        }),
+      );
+    }
+
+    it("says it keeps it, and how to place it, before asking", async () => {
+      await installReactAndTheUnplaceable();
+      servingNext({ ...ejected(REACT), ...ejected(HONO), ...ejected(unplaceable) });
+
+      const { stdout, error } = await answered(["edit", "--from", "Next"], KEY_Y);
+
+      expect(error).toBeUndefined();
+      expect(flattenCliOutput(stdout)).toContain(
+        flattenCliOutput(
+          [
+            "Nothing is removed — this configuration only adds and re-tunes.",
+            "Kept — named by this configuration, and this catalogue cannot place them:",
+            `  skill ${unplaceable}`,
+            "Run 'npx agents-inc update' to refresh this installation's marketplace, then apply the configuration again.",
+            "Apply this configuration?",
+          ].join("\n"),
+        ),
+      );
+      expect(
+        (await readTestTsConfig<ProjectConfig>(configPath())).skills.map((skill) => skill.id),
+      ).toStrictEqual([REACT, unplaceable, HONO]);
+    });
+
+    it("says it keeps it, and how to place it, where nothing else changes and nothing is asked", async () => {
+      await installReactAndTheUnplaceable();
+      const before = await readFile(configPath(), "utf-8");
+      servingNext({ ...ejected(REACT), ...ejected(unplaceable) });
+
+      const { stdout, error } = await answered(["edit", "--from", "Next"], KEY_N);
+
+      expect(error).toBeUndefined();
+      expect(flattenCliOutput(stdout)).toBe(
+        flattenCliOutput(
+          [
+            "Fetching configuration Next...",
+            "Loading skills...",
+            "Kept — named by this configuration, and this catalogue cannot place them:",
+            `  skill ${unplaceable}`,
+            "Run 'npx agents-inc update' to refresh this installation's marketplace, then apply the configuration again.",
+            "No changes made.",
+          ].join("\n"),
+        ),
+      );
+      expect(await readFile(configPath(), "utf-8")).toBe(before);
+    });
+  });
+
+  it("says it keeps the global sub-agent this configuration leaves out, naming no run from home that would refuse it", async () => {
     await writeTestTsConfig(
       fakeHome,
       buildProjectConfig({
@@ -325,7 +449,47 @@ describe("what edit --from says", () => {
           "Nothing is removed — this configuration only adds and re-tunes.",
           "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
           "  sub-agent api-developer",
-          "Change them with 'npx agents-inc edit' from your home directory.",
+          "Apply this configuration?",
+        ].join("\n"),
+      ),
+    );
+  });
+
+  it("names the run from home that changes what it keeps, for a configuration home would take", async () => {
+    await writeTestTsConfig(
+      fakeHome,
+      buildProjectConfig({
+        name: "global",
+        skills: buildSkillConfigs([HONO], { scope: "global", origin: "eject" }),
+        agents: buildAgentConfigs(["api-developer"], { scope: "global" }),
+        stack: { "api-developer": { "api-api": [{ id: HONO, preloaded: false }] } },
+      }),
+    );
+    await installReact();
+    serve(
+      "Next",
+      buildSeedPayload({
+        marketplace: dirs.sourceDir,
+        skills: {
+          [HONO]: buildSeedSkill({
+            install: "plugin",
+            scope: "global",
+            assignments: { "api-developer": "lazy" },
+          }),
+        },
+        agents: { "api-developer": { scope: "global" } },
+      }),
+    );
+
+    const { stdout, error } = await answered(["edit", "--from", "Next"], KEY_N);
+
+    expect(error?.oclif?.exit).toBe(EXIT_CODES.CANCELLED);
+    expect(flattenCliOutput(stdout)).toContain(
+      flattenCliOutput(
+        [
+          "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
+          `  skill ${HONO}`,
+          "Change them with 'npx agents-inc edit --from Next' from your home directory.",
           "Apply this configuration?",
         ].join("\n"),
       ),
@@ -416,6 +580,19 @@ describe("what edit --from says", () => {
     const { stdout, error } = await answered(["edit", "--from", "Next"], KEY_Y);
 
     expect(error).toBeUndefined();
+    // Flattened: the skill's line is long enough to wrap.
+    expect(flattenCliOutput(stdout)).toContain(
+      flattenCliOutput(
+        [
+          "Applying this configuration will remove:",
+          " Skills:",
+          `   ${REACT}: moves to the global install, so this project's copy is removed`,
+          " Sub-agents:",
+          "   web-developer: moves to the global install, so this project's copy is removed",
+          "Apply this configuration?",
+        ].join("\n"),
+      ),
+    );
     expect(stdout).toContain(
       [
         "Changes:",
@@ -475,7 +652,7 @@ describe("what edit --from says", () => {
     const { stdout, error } = await answered(["edit", "--from", "Next"], KEY_Y);
 
     expect(error).toBeUndefined();
-    expect(stdout).toContain(["Changes:", "  + web-developer [P] (agent)", ""].join("\n"));
+    expect(stdout).toContain(["Changes:", "  + web-developer [P] (agent)", "", ""].join("\n"));
     expect(await fileExists(path.join(projectDir, CLAUDE_DIR, "agents", "web-developer.md"))).toBe(
       true,
     );
@@ -634,6 +811,26 @@ describe("what edit --from says", () => {
       ]);
     });
 
+    it("names a retune of a project copy tuned apart from the global one", async () => {
+      await installReactGlobally();
+      const tunedTo = (model: "opus" | "sonnet") =>
+        buildSeedPayload({
+          marketplace: dirs.sourceDir,
+          skills: reactForWebDeveloper("global"),
+          agents: { "web-developer": { scope: "project", model } },
+        });
+      serve("Tuned", tunedTo("opus"));
+      expect((await answered(["edit", "--from", "Tuned"], KEY_Y)).error).toBeUndefined();
+      serve("Retuned", tunedTo("sonnet"));
+
+      const { stdout, error } = await answered(["edit", "--from", "Retuned"], KEY_Y);
+
+      expect(error).toBeUndefined();
+      expect(stdout).toContain(
+        ["Changes:", "  ~ web-developer (agent: model opus → model sonnet)", "", ""].join("\n"),
+      );
+    });
+
     it("names a carried skill whose project copy it wrote beside the global one once, as a project add", async () => {
       const carried = "external-web-testing-brainstorming";
       const carrying = (scope: "project" | "global", agent: "web-developer" | "api-developer") =>
@@ -771,7 +968,6 @@ describe("what edit --from says", () => {
           `  sub-agent api-developer: + ${VITEST}`,
           "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
           `  skill ${HONO}`,
-          "Change them with 'npx agents-inc edit' from your home directory.",
           "Apply this configuration?",
         ].join("\n"),
       ),
@@ -783,7 +979,7 @@ describe("what edit --from says", () => {
     );
   });
 
-  it("names a carried skill whose files it rewrote, when nothing else changed", async () => {
+  it("names a carried skill whose files it rewrites before asking, and once it has, when nothing else changed", async () => {
     const carried = "external-web-testing-brainstorming";
     const carrying = (content: string) =>
       buildSeedPayload({
@@ -806,6 +1002,15 @@ describe("what edit --from says", () => {
     expect(error).toBeUndefined();
     expect(stdout).toContain(
       [
+        "Loading skills...",
+        "Will be overwritten:",
+        `   Brainstorming (${carried})`,
+        "",
+        "Apply this configuration?",
+      ].join("\n"),
+    );
+    expect(stdout).toContain(
+      [
         `Wrote 1 skill(s) this configuration carries: ${carried}`,
         "",
         "Changes:",
@@ -815,6 +1020,47 @@ describe("what edit --from says", () => {
       ].join("\n"),
     );
     expect(stdout).not.toContain("No changes made.");
+  });
+
+  it("says nothing is removed when it only takes a skill off one sub-agent, and removes no file", async () => {
+    const onBoth = (assignees: string[]) =>
+      buildSeedPayload({
+        marketplace: dirs.sourceDir,
+        skills: {
+          ...ejected(HONO, "api-developer"),
+          [REACT]: buildSeedSkill({
+            install: "eject",
+            scope: "project",
+            assignments: Object.fromEntries(assignees.map((agent) => [agent, "lazy"])),
+          }),
+        },
+        agents: { "web-developer": { scope: "project" }, "api-developer": { scope: "project" } },
+      });
+    serve("Installed", onBoth(["web-developer", "api-developer"]));
+    expect((await answered(["init", "--from", "Installed"], KEY_Y)).error).toBeUndefined();
+    serve("Next", onBoth(["web-developer"]));
+    const onDisk = [
+      path.join(projectDir, CLAUDE_DIR, "skills", REACT, STANDARD_FILES.SKILL_MD),
+      path.join(projectDir, CLAUDE_DIR, "skills", HONO, STANDARD_FILES.SKILL_MD),
+      path.join(projectDir, CLAUDE_DIR, "agents", "web-developer.md"),
+      path.join(projectDir, CLAUDE_DIR, "agents", "api-developer.md"),
+    ];
+
+    const { stdout, error } = await answered(["edit", "--from", "Next"], KEY_Y);
+
+    expect(error).toBeUndefined();
+    expect(stdout).toContain(
+      [
+        "Nothing is removed — this configuration only adds and re-tunes.",
+        "",
+        "",
+        "Apply this configuration?",
+      ].join("\n"),
+    );
+    expect(stdout).toContain(
+      ["Changes:", "  ~ api-developer (agent: skills reassigned)", "", ""].join("\n"),
+    );
+    expect(await Promise.all(onDisk.map(fileExists))).toStrictEqual(onDisk.map(() => true));
   });
 
   it("swaps one sub-agent for another, removing the one it dropped from disk", async () => {
@@ -847,8 +1093,13 @@ describe("what edit --from says", () => {
   // Root writes through the mode bits, so the failures under test cannot happen there.
   describe.skipIf(process.getuid?.() === 0)("a write the file system refuses", () => {
     it("names the agents it could not compile or remove, withholds the done line, and exits with failures", async () => {
+      await declareAStopHookOnWebDeveloper();
       await installReact();
       const agentsDir = path.join(projectDir, CLAUDE_DIR, "agents");
+      expect(
+        await readFile(path.join(agentsDir, "web-developer.md"), "utf-8"),
+        "the trust notice speaks only for a compiled hook",
+      ).toContain(`hooks: ${JSON.stringify(A_STOP_HOOK)}`);
       await chmod(agentsDir, 0o555);
       serve(
         "Next",
@@ -876,7 +1127,7 @@ describe("what edit --from says", () => {
           ].join("\n"),
         );
         expect(stdout).not.toContain("✓ Done");
-        expect(stdout).not.toContain("Claude Code runs a project sub-agent's completion gate");
+        expect(stdout).not.toContain("only once you trust the folder");
         expect(error?.oclif?.exit).toBe(EXIT_CODES.COMPLETED_WITH_FAILURES);
       } finally {
         await chmod(agentsDir, 0o755);
@@ -957,23 +1208,77 @@ describe("what edit --from says", () => {
       expect((await answered(["init", "--from", "Global"], KEY_Y)).error).toBeUndefined();
     });
 
-    it("recompiles each registered project the global change reaches, and says so", async () => {
+    it("names each registered project it will rewrite before asking, then counts each it rewrote, sub-agents or none", async () => {
       const globalConfig = await readTestTsConfig<ProjectConfig>(globalConfigPath());
+      const agentless = path.join(path.dirname(projectDir), "agentless");
       await writeTestTsConfig(projectDir, buildProjectConfig({ name: "registered" }));
-      await writeTestTsConfig(fakeHome, { ...globalConfig, projects: [projectDir] });
+      await writeTestTsConfig(
+        agentless,
+        buildProjectConfig({ name: "agentless", skills: [], agents: [] }),
+      );
+      await writeTestTsConfig(fakeHome, { ...globalConfig, projects: [projectDir, agentless] });
       serve("Next", onWebDeveloper([REACT, HONO], "global"));
 
       const { stdout, error } = await answered(["edit", "--from", "Next"], KEY_Y);
 
       expect(error).toBeUndefined();
+      expect(flattenCliOutput(stdout)).toContain(
+        flattenCliOutput(
+          [
+            "Each project registered with this global install is rewritten to match:",
+            `  ${projectDir}`,
+            `  ${agentless}`,
+            "Apply this configuration?",
+          ].join("\n"),
+        ),
+      );
       expect(stdout).toContain(
         [
           "1 agent rewritten, 0 unchanged",
-          "Recompiled agents in 1 registered project, 0 unchanged",
+          "Registered projects: 2 rewritten, 0 unchanged",
           "",
           "✓ Done",
         ].join("\n"),
       );
+    });
+
+    it("names no registered project when the only change is a carried skill's files", async () => {
+      const carried = "external-web-testing-brainstorming";
+      const carrying = (content: string) =>
+        buildSeedPayload({
+          marketplace: dirs.sourceDir,
+          skills: {
+            [REACT]: buildSeedSkill({
+              install: "eject",
+              scope: "global",
+              assignments: { "web-developer": "lazy" },
+            }),
+            [carried]: buildSeedSkill({
+              install: "eject",
+              scope: "global",
+              assignments: { "web-developer": "lazy" },
+            }),
+          },
+          external: {
+            [carried]: buildSeedExternalSkill({
+              categoryId: "web-testing",
+              files: { [STANDARD_FILES.SKILL_MD]: renderSkillMd(carried, content) },
+            }),
+          },
+          agents: { "web-developer": { scope: "global" } },
+        });
+      serve("Carrying", carrying("The first version"));
+      expect((await answered(["edit", "--from", "Carrying"], KEY_Y)).error).toBeUndefined();
+      const globalConfig = await readTestTsConfig<ProjectConfig>(globalConfigPath());
+      await writeTestTsConfig(projectDir, buildProjectConfig({ name: "registered" }));
+      await writeTestTsConfig(fakeHome, { ...globalConfig, projects: [projectDir] });
+      serve("Next", carrying("The second version"));
+
+      const { stdout, error } = await answered(["edit", "--from", "Next"], KEY_N);
+
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.CANCELLED);
+      expect(stdout).toContain("Will be overwritten:");
+      expect(stdout).not.toContain("Each project registered with this global install");
     });
 
     // Root writes through the mode bits, so the refusal under test cannot happen there.

@@ -1,6 +1,6 @@
 import os from "os";
 import path from "path";
-import { mkdir, readdir, readFile, writeFile } from "fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "fs/promises";
 import { parse as parseYaml } from "yaml";
 
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
@@ -48,6 +48,12 @@ import type { SeedExternalSkill } from "@workspace/matrix/seed";
 const EXTERNAL_ID = "external-web-framework-brainstorming" as SkillId;
 const SECOND_EXTERNAL_ID = "external-web-framework-worktrees" as SkillId;
 const WEB_DEV = "web-developer";
+
+/** Payload keys a hostile link can carry: one climbs out of the skills folder, one nests in it. */
+const PARENT_ESCAPING_ID = "../victim";
+const NESTED_ID = "house/react";
+/** Sets the window title, which a terminal does wherever the directory is named. */
+const TERMINAL_CONTROL_ID = "external-x\u001b]0;PWNED\u0007";
 
 const PINNED_TO_PROJECT = { scope: "project" } as const;
 
@@ -268,6 +274,53 @@ describe("registerExternalSkills", () => {
     );
     expect(matrix.skills[EXTERNAL_ID]).toBeUndefined();
   });
+
+  it("refuses a carried skill whose id names no single directory, naming every one, before seating any", () => {
+    const payload = buildSeedPayload({
+      skills: {
+        [EXTERNAL_ID]: buildSeedSkill(),
+        [PARENT_ESCAPING_ID]: buildSeedSkill(),
+        [NESTED_ID]: buildSeedSkill(),
+      },
+      external: {
+        [EXTERNAL_ID]: buildSeedExternalSkill(),
+        [PARENT_ESCAPING_ID]: buildSeedExternalSkill(),
+        [NESTED_ID]: buildSeedExternalSkill(),
+      },
+    });
+
+    expect(() => registerExternalSkills(payload, matrix, projectDir)).toThrow(
+      new RegExp(`${JSON.stringify(PARENT_ESCAPING_ID)}[\\s\\S]*${JSON.stringify(NESTED_ID)}`),
+    );
+    // The well-named one is refused with them, so nothing reaches the decode.
+    expect(matrix.skills[EXTERNAL_ID]).toBeUndefined();
+  });
+
+  it("refuses a carried skill whose id holds a terminal control, naming it with the control spelled out", () => {
+    const payload = buildSeedPayload({
+      skills: { [TERMINAL_CONTROL_ID]: buildSeedSkill() },
+      external: { [TERMINAL_CONTROL_ID]: buildSeedExternalSkill() },
+    });
+
+    expect(() => registerExternalSkills(payload, matrix, projectDir)).toThrow(
+      `  "external-x\\u001b]0;PWNED\\u0007"\n`,
+    );
+    expect(matrix.skills).not.toHaveProperty([TERMINAL_CONTROL_ID]);
+  });
+
+  it("refuses such an id where no skill row selects it, as minting a link refuses it", () => {
+    const payload = buildSeedPayload({
+      skills: { [EXTERNAL_ID]: buildSeedSkill() },
+      external: {
+        [EXTERNAL_ID]: buildSeedExternalSkill(),
+        [PARENT_ESCAPING_ID]: buildSeedExternalSkill(),
+      },
+    });
+
+    expect(() => registerExternalSkills(payload, matrix, projectDir)).toThrow(
+      JSON.stringify(PARENT_ESCAPING_ID),
+    );
+  });
 });
 
 describe("writeExternalSkills", () => {
@@ -481,7 +534,7 @@ describe("writeExternalSkills", () => {
 
     vi.setSystemTime(new Date("2026-10-01T12:00:00Z"));
     const first = await write(buildSeedExternalSkill());
-    // A later write moves the stamp's date and position; neither is something a load reads.
+    // A day later, so a write that moved the stamp's date would show.
     vi.setSystemTime(new Date("2026-10-02T12:00:00Z"));
     const same = await write(buildSeedExternalSkill());
     const revised = await write(
@@ -493,6 +546,83 @@ describe("writeExternalSkills", () => {
     expect(first).toStrictEqual([EXTERNAL_ID]);
     expect(same).toStrictEqual([]);
     expect(revised).toStrictEqual([EXTERNAL_ID]);
+  });
+
+  /** A file's bytes and when they were written, so a rewrite of identical bytes shows too. */
+  async function asWritten(file: string) {
+    return { content: await readFile(file, "utf8"), modifiedAtMs: (await stat(file)).mtimeMs };
+  }
+
+  /** The two files a default carried skill installs as. */
+  async function manifestAndMetadata(skillDir: string) {
+    return {
+      manifest: await asWritten(path.join(skillDir, STANDARD_FILES.SKILL_MD)),
+      metadata: await asWritten(path.join(skillDir, STANDARD_FILES.METADATA_YAML)),
+    };
+  }
+
+  describe("a carried skill written again", () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-10-01T12:00:00Z"));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("touches no file, and keeps the date its stamp records, when nothing about it changed", async () => {
+      const skillDir = await install(buildSeedExternalSkill(), "project");
+      expect((await readdir(skillDir)).sort()).toStrictEqual(
+        [STANDARD_FILES.SKILL_MD, STANDARD_FILES.METADATA_YAML].sort(),
+      );
+      const before = await manifestAndMetadata(skillDir);
+      vi.setSystemTime(new Date("2026-10-02T12:00:00Z"));
+
+      await install(buildSeedExternalSkill(), "project");
+
+      expect(await manifestAndMetadata(skillDir)).toStrictEqual(before);
+      expect((await readForkedFromMetadata(skillDir))?.date).toBe("2026-10-01");
+    });
+
+    it("writes its metadata in the order of the first write when the share it came back in carries the installed copy", async () => {
+      // As its SKILL.md describes it, which is the description a share reads back.
+      const skillDir = await install(
+        buildSeedExternalSkill({ description: "Structured brainstorming" }),
+        "project",
+      );
+      const firstWrite = await readFile(path.join(skillDir, STANDARD_FILES.METADATA_YAML), "utf8");
+      const provenance = await readForkedFromMetadata(skillDir);
+      if (provenance === null) throw new Error(`no provenance written into ${skillDir}`);
+      const shared = await readCarriedSkills([{ id: EXTERNAL_ID, skillDir, provenance }]);
+      const reshared = shared.external[EXTERNAL_ID];
+      if (reshared === undefined) throw new Error(`${EXTERNAL_ID} did not read back as shareable`);
+      vi.setSystemTime(new Date("2026-10-02T12:00:00Z"));
+
+      await install(reshared, "project");
+
+      expect(await readFile(path.join(skillDir, STANDARD_FILES.METADATA_YAML), "utf8")).toBe(
+        firstWrite,
+      );
+    });
+
+    it("rewrites only the file whose content changed, and dates the stamp anew", async () => {
+      const skillDir = await install(buildSeedExternalSkill(), "project");
+      const before = await manifestAndMetadata(skillDir);
+      vi.setSystemTime(new Date("2026-10-02T12:00:00Z"));
+
+      await install(
+        buildSeedExternalSkill({
+          files: { "SKILL.md": renderSkillMd(UPSTREAM_SKILL_NAME, "Revised upstream") },
+        }),
+        "project",
+      );
+
+      const after = await manifestAndMetadata(skillDir);
+      expect(after.manifest.content).toContain("Revised upstream");
+      expect(after.metadata.content).not.toBe(before.metadata.content);
+      expect((await readForkedFromMetadata(skillDir))?.date).toBe("2026-10-02");
+    });
   });
 
   it("refuses a file path that escapes the skill's own directory", async () => {
@@ -655,6 +785,23 @@ describe("carried skills — refusals, seats and reads", () => {
     );
   });
 
+  it("refuses an id naming no single directory in these words", () => {
+    const payload = buildSeedPayload({
+      skills: { [PARENT_ESCAPING_ID]: buildSeedSkill() },
+      external: { [PARENT_ESCAPING_ID]: buildSeedExternalSkill() },
+    });
+
+    expect(() => registerExternalSkills(payload, matrix, projectDir)).toThrow(
+      new Error(
+        [
+          "This configuration cannot be installed: these skills travel inside it under ids that are not a single directory name:",
+          '  "../victim"',
+          "A skill id is the directory the skill is written into, so an id holding a path separator, or naming '.' or '..', would be written somewhere other than a directory of its own, and one holding a control character would hand it to the terminal wherever that directory is named. Re-share it with each skill above added again, which mints an id — 'external-<category>-<name>' — that names one directory.",
+        ].join("\n"),
+      ),
+    );
+  });
+
   it("seats a carried skill under the skills folder and reachable by its own id as slug", () => {
     installsFor(buildSeedExternalSkill());
 
@@ -703,6 +850,12 @@ describe("carried skills — refusals, seats and reads", () => {
   });
 
   it("answers nothing for no carried skills", async () => {
+    expect(await carriedSkillsThatDiffer([])).toStrictEqual([]);
+  });
+
+  it("makes no scratch folder for no carried skills, so a temp folder it cannot use costs nothing", async () => {
+    vi.spyOn(os, "tmpdir").mockReturnValue(path.join(tempDir, "no-such-temp-folder"));
+
     expect(await carriedSkillsThatDiffer([])).toStrictEqual([]);
   });
 

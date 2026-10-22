@@ -1,28 +1,11 @@
-export {
-  loadSource,
-  sayCapturedWarnings,
-  type LoadSourceOptions,
-  type LoadedSource,
-  ensureMarketplace,
-  type MarketplaceResult,
-  requireMarketplace,
-  type MarketplaceRequirement,
-} from "./source/index.js";
+export { loadSource, sayCapturedWarnings, type LoadedSource } from "./source/index.js";
 
 export {
   discoverInstalledSkills,
-  discoverLocalProjectSkills,
-  mergeSkills,
   type DiscoveredSkills,
   copyLocalSkills,
   type SkillCopyResult,
-  installPluginSkills,
-  type PluginInstallResult,
-  pluginInstallFailureError,
-  unbackedPluginInstallError,
-  unbackedPluginSkillIds,
   uninstallPluginSkills,
-  type PluginUninstallResult,
 } from "./skills/index.js";
 
 export {
@@ -31,22 +14,13 @@ export {
   detectBothInstallations,
   type BothInstallations,
   writeProjectConfig,
-  type ConfigWriteOptions,
   type ConfigWriteResult,
   compileAgents,
-  type CompileAgentsOptions,
   type CompilationResult,
   removeCompiledAgents,
   type RemoveCompiledAgentsOptions,
-  type RemoveCompiledAgentsResult,
-  pruneCompiledAgents,
-  type PruneCompiledAgentsOptions,
   compileAgentsAllScopes,
   compileProjectScope,
-  type CompileAllScopesOptions,
-  recompileRegisteredProjectAgents,
-  recompilePropagatedProjectAgents,
-  type PropagatedRecompileSummary,
   loadAgentDefs,
   type AgentDefs,
 } from "./project/index.js";

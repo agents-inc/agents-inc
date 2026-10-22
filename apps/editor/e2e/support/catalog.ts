@@ -1,6 +1,8 @@
 // Fixed points in the generated catalogue that the specs rely on.
 // `catalog.spec.ts` asserts each still exists, so drift fails in one place.
 
+import { STACKS as CATALOGUE_STACKS } from "@workspace/matrix"
+
 export const STACKS = {
   scratch: "Start from scratch",
   // The scratch cell's words once anything is selected.
@@ -9,6 +11,14 @@ export const STACKS = {
   t3: "Next.js T3 Stack",
   remix: "Remix Full-Stack",
 } as const
+
+/** The id a payload names the stack the grid shows as `name` by. */
+export const stackIdOf = (name: string) => {
+  const stack = CATALOGUE_STACKS.find((candidate) => candidate.name === name)
+  if (!stack) throw new Error(`The vendored catalogue has no stack ${name}`)
+
+  return stack.id
+}
 
 export const DOMAINS = {
   web: "Web",

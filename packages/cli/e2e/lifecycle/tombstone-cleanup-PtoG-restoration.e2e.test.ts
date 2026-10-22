@@ -8,15 +8,11 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { readSkillEntries, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
 import {
   applyFromSeed,
+  applyUnchangedFromSeed,
   createGlobalOnlyEnvFromSeed,
   e2eStackPayload,
 } from "../fixtures/e2e-stack-seed.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
-
-/**
- * A skill moved G->P (project entry plus global tombstone) and then P->G again must end at pure
- * global scope: one global entry, no tombstone, files only at the global path.
- */
 
 describe("edit — tombstone cleanup after P→G restoration", () => {
   let store: SeedConfigStore;
@@ -35,14 +31,15 @@ describe("edit — tombstone cleanup after P→G restoration", () => {
     env = undefined;
   });
 
+  const reactInProject = () =>
+    e2eStackPayload({ projectSkills: [E2E_SKILL.react.id], unassigned: [E2E_SKILL.react.id] });
+
   function moveReactIntoProject(): Promise<unknown> {
     if (!env) throw new Error("no environment to edit");
-    return applyFromSeed(
-      store,
-      "ReactProject1",
-      e2eStackPayload({ projectSkills: [E2E_SKILL.react.id], unassigned: [E2E_SKILL.react.id] }),
-      { dir: env.projectDir, home: env.fakeHome },
-    );
+    return applyFromSeed(store, "ReactProject1", reactInProject(), {
+      dir: env.projectDir,
+      home: env.fakeHome,
+    });
   }
 
   function applyAllGlobal(id: string): Promise<unknown> {
@@ -115,7 +112,10 @@ describe("edit — tombstone cleanup after P→G restoration", () => {
       await moveReactIntoProject();
 
       // A no-op edit must leave no orphaned state that would interfere with the P->G move.
-      await moveReactIntoProject();
+      await applyUnchangedFromSeed(store, "ReactProject1", reactInProject(), {
+        dir: projectDir,
+        home: fakeHome,
+      });
 
       await applyAllGlobal("AllGlobal2");
 

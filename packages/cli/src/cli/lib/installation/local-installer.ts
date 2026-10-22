@@ -25,64 +25,14 @@ import { type SourceLoadResult } from "../loading";
 import { loadStackById, stackNotOfferedMessage } from "../stacks";
 import { buildSkillRefsFromConfig } from "../resolver";
 import { generateProjectConfigFromSkills, buildStackProperty } from "../configuration";
-import { scopeEligibilityKey, isScopePairCompatible } from "../configuration/config-generator";
 import {
   isActiveAt,
-  activeSkillScopeMap,
   activeAgentScopeMap,
   effectivelyExcludedSkillIds,
 } from "../configuration/scope-predicates";
 import { verbose } from "../../utils/logger";
 import { typedFromEntries } from "../../utils/typed-object";
 import { DEFAULT_PLUGIN_NAME } from "../../consts";
-
-/**
- * Excluded entries do not count, so un-excluding a skill makes it new. With no prior config
- * (first init) every current skill is new, which the generator's seeding branch handles.
- */
-function computeNewlyAddedSkillIds(
-  currentSkills: readonly SkillConfig[],
-  priorSkills: readonly SkillConfig[] | undefined,
-): readonly SkillId[] {
-  const priorActiveIds = new Set((priorSkills ?? []).filter((s) => !s.excluded).map((s) => s.id));
-  const currentActiveIds = currentSkills.filter((s) => !s.excluded).map((s) => s.id);
-  return unique(currentActiveIds.filter((id) => !priorActiveIds.has(id)));
-}
-
-/** Admits scope flips `computeNewlyAddedSkillIds` cannot see; keys from `scopeEligibilityKey`. */
-function computeScopeEligibilityGained(
-  currentSkills: readonly SkillConfig[],
-  currentAgents: readonly AgentScopeConfig[],
-  priorSkills: readonly SkillConfig[] | undefined,
-  priorAgents: readonly AgentScopeConfig[] | undefined,
-): ReadonlySet<string> {
-  const priorSkillScope = activeSkillScopeMap(priorSkills);
-  const priorAgentScope = activeAgentScopeMap(priorAgents);
-  const gainedCompatibility = (skill: SkillConfig, agent: AgentScopeConfig): boolean =>
-    isScopePairCompatible(skill.scope, agent.scope) &&
-    !wereScopeCompatible(priorSkillScope.get(skill.id), priorAgentScope.get(agent.name));
-
-  const activeCurrentSkills = currentSkills.filter((s) => !s.excluded);
-  const activeCurrentAgents = currentAgents.filter((a) => !a.excluded);
-
-  const gainedKeys = activeCurrentAgents.flatMap((agent) =>
-    activeCurrentSkills
-      .filter((skill) => gainedCompatibility(skill, agent))
-      .map((skill) => scopeEligibilityKey(agent.name, skill.id)),
-  );
-  return new Set(gainedKeys);
-}
-
-function wereScopeCompatible(
-  priorSkillScope: SkillScope | undefined,
-  priorAgentScope: SkillScope | undefined,
-): boolean {
-  return (
-    priorSkillScope !== undefined &&
-    priorAgentScope !== undefined &&
-    isScopePairCompatible(priorSkillScope, priorAgentScope)
-  );
-}
 
 /**
  * Assigned `(skill, agent)` pairs replace the ownership-derived stack so the sharer's curation
@@ -132,36 +82,49 @@ async function buildInstallConfig(
   projectDir: string,
 ): Promise<{ config: ProjectConfig; loadedStack: Stack | null }> {
   const skillIds = unique(selection.skills.map((s) => s.id));
-  verbose(
-    `buildInstallConfig: selectedStackId='${selection.selectedStackId}', ` +
-      `skills=[${skillIds.join(", ")}], ` +
-      `selectedAgents=[${selection.selectedAgents.join(", ")}]`,
-  );
+  verbose(selectionForLog(selection, skillIds));
 
   const loadedStack = await loadSelectedStack(selection.selectedStackId, sourceResult);
   const existing = await loadProjectConfig(projectDir);
   const existingStack = await loadCuratedStack(projectDir, existing?.config.stack);
 
-  const options = generatorOptionsFor(
-    selection,
-    existing?.config,
-    stackToPreserve(loadedStack, existingStack),
-  );
+  const options = generatorOptionsFor(selection, stackToPreserve(loadedStack, existingStack));
   const generated = generateProjectConfigFromSkills(configNameFor(projectDir), skillIds, options);
+  const localConfig = withSelectionCuration(generated, selection, loadedStack);
+
+  verbose(installConfigForLog(localConfig));
+
+  return { config: localConfig, loadedStack };
+}
+
+function withSelectionCuration(
+  generated: ProjectConfig,
+  selection: InstallSelection,
+  loadedStack: Stack | null,
+): ProjectConfig {
   const stack = resolveStackProperty(generated.stack, selection.assignedStack);
   const description = resolveDescription(loadedStack, selection.description);
-  const localConfig: ProjectConfig = {
+
+  return {
     ...generated,
     ...(stack && { stack }),
     ...(description !== undefined && { description }),
   };
+}
 
-  verbose(
-    `buildInstallConfig result: stack=${stackSizeForLog(localConfig.stack)}, ` +
-      `agents=[${localConfig.agents.map((a) => a.name).join(", ")}], skills=${localConfig.skills.length}`,
+function selectionForLog(selection: InstallSelection, skillIds: SkillId[]): string {
+  return (
+    `buildInstallConfig: selectedStackId='${selection.selectedStackId}', ` +
+    `skills=[${skillIds.join(", ")}], ` +
+    `selectedAgents=[${selection.selectedAgents.join(", ")}]`
   );
+}
 
-  return { config: localConfig, loadedStack };
+function installConfigForLog(config: ProjectConfig): string {
+  return (
+    `buildInstallConfig result: stack=${stackSizeForLog(config.stack)}, ` +
+    `agents=[${config.agents.map((a) => a.name).join(", ")}], skills=${config.skills.length}`
+  );
 }
 
 /**
@@ -200,30 +163,19 @@ function stackToPreserve(
   return { ...buildStackProperty(loadedStack), ...curatedStack };
 }
 
-/** With no persisted config, both deltas mean "everything is new". */
 function generatorOptionsFor(
   selection: InstallSelection,
-  persisted: ProjectConfig | undefined,
   existingStack: Partial<Record<AgentName, StackAgentConfig>>,
 ): {
   selectedAgents?: AgentName[];
   skillConfigs: SkillConfig[];
   agentConfigs: AgentScopeConfig[];
   existingStack: Partial<Record<AgentName, StackAgentConfig>>;
-  newlyAddedSkillIds: readonly SkillId[];
-  scopeEligibilityGained: ReadonlySet<string>;
 } {
   return {
     skillConfigs: selection.skills,
     agentConfigs: selection.agentConfigs,
     existingStack,
-    newlyAddedSkillIds: computeNewlyAddedSkillIds(selection.skills, persisted?.skills),
-    scopeEligibilityGained: computeScopeEligibilityGained(
-      selection.skills,
-      selection.agentConfigs,
-      persisted?.skills,
-      persisted?.agents,
-    ),
     ...(selection.selectedAgents.length > 0 && {
       selectedAgents: selection.selectedAgents,
     }),
@@ -234,7 +186,7 @@ function stackSizeForLog(stack: ProjectConfig["stack"]): string {
   return stack ? `${Object.keys(stack).length} agents` : "UNDEFINED";
 }
 
-export function setConfigMetadata(
+function setConfigMetadata(
   config: ProjectConfig,
   selection: InstallSelection,
   sourceResult: SourceLoadResult,
@@ -288,7 +240,9 @@ export function buildCompileAgents(
   const globalSkillIds = new Set(
     config.skills.filter((s) => isActiveAt(s, "global")).map((s) => s.id),
   );
-  const sourceById = new Map<SkillId, string>(config.skills.map((s) => [s.id, s.origin]));
+  const sourceById = new Map<SkillId, string>(
+    config.skills.filter((s) => !s.excluded).map((s) => [s.id, s.origin]),
+  );
 
   // A global agent takes only the skills active at global scope.
   const compilesInto = (ref: SkillReference, agentConfig: AgentScopeConfig): boolean => {

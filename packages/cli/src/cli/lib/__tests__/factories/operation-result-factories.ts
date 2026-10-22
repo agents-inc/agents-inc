@@ -22,7 +22,6 @@ export function buildDiscoveredSkills(overrides?: Partial<DiscoveredSkills>): Di
     allSkills: {},
     totalSkillCount: 0,
     pluginSkillCount: 0,
-    localSkillCount: 0,
     globalPluginSkillCount: 0,
     globalLocalSkillCount: 0,
     unusableMetadata: [],

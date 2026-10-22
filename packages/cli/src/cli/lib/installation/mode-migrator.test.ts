@@ -1,28 +1,28 @@
-import os from "os";
 import path from "path";
+import { chmod, mkdir } from "fs/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SourceLoadResult } from "../loading/source-loader";
-import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
-import { buildSourceResult } from "../__tests__/factories/config-factories";
-import { createMockCopiedSkill } from "../__tests__/factories/skill-factories";
+import type { SkillId, SkillScope } from "../../types";
+import { initMatrixAndSource } from "../__tests__/factories/config-factories";
+import { createMatrixFromTestSkills } from "../__tests__/factories/matrix-factories";
+import {
+  cleanupTestSource,
+  createTestSource,
+  type TestDirs,
+} from "../__tests__/fixtures/create-test-source";
+import { writeTestSkill } from "../__tests__/helpers/disk-writers";
+import { useFakeHome } from "../__tests__/helpers/isolated-home";
+import { silenceConsole } from "../__tests__/helpers/silence-console";
 import { buildSkillConfigs } from "../__tests__/helpers/skill-config-builders";
-import { WEB_PAIR_MATRIX } from "../__tests__/mock-data/mock-matrices";
-import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE } from "../../consts";
+import { INSTALL_MODE_SKILLS } from "../__tests__/mock-data/mock-skills";
+import { directoryExists, fileExists } from "../__tests__/test-fs-utils";
+import { CLAUDE_DIR, DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE, STANDARD_FILES } from "../../consts";
+import { resolveInstallPaths } from "./install-base-dir";
 import {
   buildMigrationPlan,
   toEjectMigration,
   toPluginMigration,
 } from "./__tests__/helpers/migration-plans";
-
-// Typed against the functions they replace, so a stale default is a compile error.
-vi.mock("../skills", () => ({
-  deleteLocalSkill: vi
-    .fn<(typeof import("../skills"))["deleteLocalSkill"]>()
-    .mockResolvedValue(undefined),
-  copySkillsToLocalFlattened: vi
-    .fn<(typeof import("../skills"))["copySkillsToLocalFlattened"]>()
-    .mockResolvedValue([]),
-}));
 
 vi.mock("../hosts/host-for.js", async () => {
   const { createMockPluginHost } = await import("../__tests__/helpers/mock-plugin-host.js");
@@ -30,17 +30,88 @@ vi.mock("../hosts/host-for.js", async () => {
   return { hostAt: () => host, hostFor: () => host };
 });
 
-vi.mock("../../utils/logger");
-
-import { detectMigrations, ejectCopyFailureError, executeMigration } from "./mode-migrator";
-import { verbose } from "../../utils/logger";
-import { deleteLocalSkill, copySkillsToLocalFlattened } from "../skills";
+import {
+  copyingBesideGlobalPlugins,
+  detectMigrations,
+  ejectCopyFailureError,
+  executeMigration,
+  installingBesideGlobalCopies,
+  keepsGlobalInstall,
+} from "./mode-migrator";
+import { setVerbose } from "../../utils/logger";
 import { firstElement } from "../__tests__/helpers/element-at.js";
 import { hostAt } from "../hosts/host-for.js";
 
-// `hostAt` answers one shared host, so these are the spies called.
+// `hostAt` answers one shared host: the seam to the coding agent's plugin CLI.
 const installPlugin = hostAt("/any-root").installPlugin;
 const uninstallPlugin = hostAt("/any-root").uninstallPlugin;
+
+const MARKETPLACE = "https://marketplace.example.com";
+const REACT: SkillId = "web-framework-react";
+const ZUSTAND: SkillId = "web-state-zustand";
+const VITEST: SkillId = "web-testing-vitest";
+
+/** No write bit, so creating a skills folder under it is refused; cleanup can still remove it. */
+const UNWRITABLE_DIR = 0o555;
+const WRITABLE_DIR = 0o755;
+
+/**
+ * Copies and deletes for real, between a source on disk, a project and a fake home; the plugin
+ * host is the only double.
+ */
+function useMigrationDisk() {
+  let dirs: TestDirs;
+  let withMarketplace: SourceLoadResult;
+  let withoutMarketplace: SourceLoadResult;
+
+  beforeEach(async () => {
+    dirs = await createTestSource({ skills: INSTALL_MODE_SKILLS });
+    const matrix = createMatrixFromTestSkills(INSTALL_MODE_SKILLS);
+    withoutMarketplace = initMatrixAndSource(matrix, dirs.sourceDir);
+    withMarketplace = initMatrixAndSource(matrix, dirs.sourceDir, { marketplace: MARKETPLACE });
+    vi.mocked(installPlugin).mockResolvedValue(undefined);
+    vi.mocked(uninstallPlugin).mockResolvedValue("removed");
+  });
+
+  afterEach(async () => {
+    const claudeDir = path.join(dirs.projectDir, CLAUDE_DIR);
+    if (await directoryExists(claudeDir)) await chmod(claudeDir, WRITABLE_DIR);
+    await cleanupTestSource(dirs);
+  });
+
+  const home = useFakeHome(() => dirs.tempDir);
+
+  const rootOf = (scope: SkillScope): string => (scope === "global" ? home.dir : dirs.projectDir);
+  const skillDirAt = (scope: SkillScope, id: SkillId): string =>
+    path.join(resolveInstallPaths(rootOf(scope), scope).skillsDir, id);
+
+  return {
+    get dirs() {
+      return dirs;
+    },
+    get projectDir() {
+      return dirs.projectDir;
+    },
+    get withMarketplace() {
+      return withMarketplace;
+    },
+    get withoutMarketplace() {
+      return withoutMarketplace;
+    },
+    /** A skill's ejected working copy, as an earlier eject left it. */
+    seedWorkingCopy: (scope: SkillScope, id: SkillId): Promise<string> =>
+      writeTestSkill(resolveInstallPaths(rootOf(scope), scope).skillsDir, id),
+    hasWorkingCopy: (scope: SkillScope, id: SkillId): Promise<boolean> =>
+      fileExists(path.join(skillDirAt(scope, id), STANDARD_FILES.SKILL_MD)),
+    skillsFolderExists: (scope: SkillScope): Promise<boolean> =>
+      directoryExists(resolveInstallPaths(rootOf(scope), scope).skillsDir),
+    refuseProjectSkillsFolder: async (): Promise<void> => {
+      const claudeDir = path.join(dirs.projectDir, CLAUDE_DIR);
+      await mkdir(claudeDir, { recursive: true });
+      await chmod(claudeDir, UNWRITABLE_DIR);
+    },
+  };
+}
 
 describe("mode-migrator", () => {
   describe("detectMigrations", () => {
@@ -155,310 +226,250 @@ describe("mode-migrator", () => {
   });
 
   describe("executeMigration", () => {
-    let tempDir: string;
-    let sourceResult: SourceLoadResult;
+    const disk = useMigrationDisk();
 
-    beforeEach(async () => {
-      tempDir = await createTempDir("mode-migrator-test-");
-
-      const matrix = WEB_PAIR_MATRIX;
-      sourceResult = buildSourceResult(matrix, "/test/source", {
-        marketplace: "https://marketplace.example.com",
-      });
-    });
-
-    afterEach(async () => {
-      await cleanupTempDir(tempDir);
-    });
-
-    it("should copy skills to local and uninstall plugins for toEject skills", async () => {
-      vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([
-        createMockCopiedSkill("web-framework-react"),
-      ]);
-
+    it("copies the skill into the project and uninstalls its plugin, for a skill ejected in place", async () => {
       const plan = buildMigrationPlan({
-        toEject: [toEjectMigration("web-framework-react", { from: "project", to: "project" })],
+        toEject: [toEjectMigration(REACT, { from: "project", to: "project" })],
       });
 
-      const result = await executeMigration(plan, tempDir, sourceResult);
+      const result = await executeMigration(plan, disk.projectDir, disk.withMarketplace);
 
-      expect(copySkillsToLocalFlattened).toHaveBeenCalledWith(
-        ["web-framework-react"],
-        expect.stringContaining(".claude/skills"),
-        sourceResult,
-      );
+      expect(await disk.hasWorkingCopy("project", REACT)).toBe(true);
       expect(uninstallPlugin).toHaveBeenCalledWith(
-        "web-framework-react@https://marketplace.example.com",
+        `${REACT}@${MARKETPLACE}`,
         "project",
-        tempDir,
+        disk.projectDir,
       );
-      expect(result.ejectCopies.copied).toStrictEqual(["web-framework-react"]);
+      expect(result.ejectCopies.copied).toStrictEqual([REACT]);
       expect(result.warnings).toStrictEqual([]);
     });
 
-    it("should archive and install plugins for toPlugin skills", async () => {
+    it("installs the plugin and deletes the ejected working copy, for a skill switched to a plugin in place", async () => {
+      await disk.seedWorkingCopy("project", ZUSTAND);
       const plan = buildMigrationPlan({
-        toPlugin: [toPluginMigration("web-state-zustand", { from: "project", to: "project" })],
+        toPlugin: [toPluginMigration(ZUSTAND, { from: "project", to: "project" })],
       });
 
-      const result = await executeMigration(plan, tempDir, sourceResult);
+      const result = await executeMigration(plan, disk.projectDir, disk.withMarketplace);
 
-      expect(deleteLocalSkill).toHaveBeenCalledWith(tempDir, "web-state-zustand", "project");
+      expect(await disk.hasWorkingCopy("project", ZUSTAND)).toBe(false);
       expect(installPlugin).toHaveBeenCalledWith(
-        "web-state-zustand@https://marketplace.example.com",
+        `${ZUSTAND}@${MARKETPLACE}`,
         "project",
-        tempDir,
+        disk.projectDir,
       );
-      expect(result.pluginInstalls.installed).toStrictEqual([
-        {
-          id: "web-state-zustand",
-          ref: "web-state-zustand@https://marketplace.example.com",
-        },
-      ]);
-      expect(result.pluginInstalls.failed).toStrictEqual([]);
+      expect(result.pluginInstalls).toStrictEqual({
+        installed: [{ id: ZUSTAND, ref: `${ZUSTAND}@${MARKETPLACE}` }],
+        failed: [],
+      });
       expect(result.warnings).toStrictEqual([]);
     });
 
-    it("should handle empty migration plan", async () => {
-      const plan = buildMigrationPlan({ toEject: [], toPlugin: [], scopeChanges: [] });
+    it("touches neither disk nor host for an empty plan", async () => {
+      const result = await executeMigration(
+        buildMigrationPlan({ toEject: [], toPlugin: [], scopeChanges: [] }),
+        disk.projectDir,
+        disk.withMarketplace,
+      );
 
-      const result = await executeMigration(plan, tempDir, sourceResult);
-
-      expect(copySkillsToLocalFlattened).not.toHaveBeenCalled();
-      expect(deleteLocalSkill).not.toHaveBeenCalled();
+      expect(await disk.skillsFolderExists("project")).toBe(false);
+      expect(await disk.skillsFolderExists("global")).toBe(false);
       expect(installPlugin).not.toHaveBeenCalled();
       expect(uninstallPlugin).not.toHaveBeenCalled();
-      expect(result.ejectCopies.copied).toStrictEqual([]);
-      expect(result.pluginInstalls.installed).toStrictEqual([]);
-      expect(result.warnings).toStrictEqual([]);
+      expect(result).toStrictEqual({
+        ejectCopies: { copied: [], failed: [] },
+        pluginInstalls: { installed: [], failed: [] },
+        warnings: [],
+      });
     });
 
-    it("should report a failed plugin install and preserve the ejected working copy", async () => {
+    it("reports a failed plugin install and keeps the ejected working copy", async () => {
+      await disk.seedWorkingCopy("project", ZUSTAND);
       vi.mocked(installPlugin).mockRejectedValue(new Error("install failed"));
-
       const plan = buildMigrationPlan({
-        toPlugin: [toPluginMigration("web-state-zustand", { from: "project", to: "project" })],
+        toPlugin: [toPluginMigration(ZUSTAND, { from: "project", to: "project" })],
       });
 
-      const result = await executeMigration(plan, tempDir, sourceResult);
+      const result = await executeMigration(plan, disk.projectDir, disk.withMarketplace);
 
       expect(
-        deleteLocalSkill,
+        await disk.hasWorkingCopy("project", ZUSTAND),
         "the ejected working copy must survive a migration whose plugin install failed",
-      ).not.toHaveBeenCalled();
-      expect(result.pluginInstalls.installed).toStrictEqual([]);
+      ).toBe(true);
       expect(
-        result.pluginInstalls.failed,
+        result.pluginInstalls,
         "a failed install must be reported structurally so the caller can hard-error before writing config",
-      ).toStrictEqual([{ id: "web-state-zustand", error: "install failed" }]);
+      ).toStrictEqual({ installed: [], failed: [{ id: ZUSTAND, error: "install failed" }] });
       expect(result.warnings).toStrictEqual([]);
     });
 
-    it("should keep the working copy of the failed skill while migrating the successful one", async () => {
+    it("keeps the working copy of the failed skill while migrating the successful one", async () => {
+      await disk.seedWorkingCopy("project", ZUSTAND);
+      await disk.seedWorkingCopy("project", REACT);
       vi.mocked(installPlugin)
         .mockRejectedValueOnce(new Error("install failed"))
         .mockResolvedValue(undefined);
-
       const plan = buildMigrationPlan({
         toPlugin: [
-          toPluginMigration("web-state-zustand", { from: "project", to: "project" }),
-          toPluginMigration("web-framework-react", { from: "project", to: "project" }),
+          toPluginMigration(ZUSTAND, { from: "project", to: "project" }),
+          toPluginMigration(REACT, { from: "project", to: "project" }),
         ],
       });
 
-      const result = await executeMigration(plan, tempDir, sourceResult);
+      const result = await executeMigration(plan, disk.projectDir, disk.withMarketplace);
 
-      expect(result.pluginInstalls.installed).toStrictEqual([
-        {
-          id: "web-framework-react",
-          ref: "web-framework-react@https://marketplace.example.com",
-        },
-      ]);
-      expect(result.pluginInstalls.failed).toStrictEqual([
-        { id: "web-state-zustand", error: "install failed" },
-      ]);
-      expect(deleteLocalSkill).toHaveBeenCalledOnce();
-      expect(deleteLocalSkill).toHaveBeenCalledWith(tempDir, "web-framework-react", "project");
+      expect(result.pluginInstalls).toStrictEqual({
+        installed: [{ id: REACT, ref: `${REACT}@${MARKETPLACE}` }],
+        failed: [{ id: ZUSTAND, error: "install failed" }],
+      });
+      expect(await disk.hasWorkingCopy("project", ZUSTAND)).toBe(true);
+      expect(await disk.hasWorkingCopy("project", REACT)).toBe(false);
     });
 
-    it("should reject a plugin migration when no marketplace is configured, before deleting anything", async () => {
-      const noMarketplaceSource = buildSourceResult(sourceResult.matrix, "/test/source");
-
+    it("refuses a plugin migration with no marketplace before deleting anything", async () => {
+      await disk.seedWorkingCopy("project", ZUSTAND);
       const plan = buildMigrationPlan({
-        toPlugin: [toPluginMigration("web-state-zustand", { from: "project", to: "project" })],
+        toPlugin: [toPluginMigration(ZUSTAND, { from: "project", to: "project" })],
       });
 
-      await expect(executeMigration(plan, tempDir, noMarketplaceSource)).rejects.toThrow(
-        /marketplace could not be resolved/,
-      );
+      await expect(
+        executeMigration(plan, disk.projectDir, disk.withoutMarketplace),
+      ).rejects.toThrow(/marketplace could not be resolved/);
 
       expect(
-        deleteLocalSkill,
+        await disk.hasWorkingCopy("project", ZUSTAND),
         "the ejected working copy must survive a migration that cannot install it as a plugin",
-      ).not.toHaveBeenCalled();
+      ).toBe(true);
       expect(installPlugin).not.toHaveBeenCalled();
     });
 
-    it("should reject before deleting even when a migration skips the delete step", async () => {
-      const noMarketplaceSource = buildSourceResult(sourceResult.matrix, "/test/source");
-
+    it("refuses before deleting even when the first migration would keep its working copy", async () => {
+      await disk.seedWorkingCopy("global", REACT);
+      await disk.seedWorkingCopy("project", ZUSTAND);
       const plan = buildMigrationPlan({
         toPlugin: [
-          toPluginMigration("web-framework-react", { from: "global", to: "project" }),
-          toPluginMigration("web-state-zustand", { from: "project", to: "project" }),
+          toPluginMigration(REACT, { from: "global", to: "project" }),
+          toPluginMigration(ZUSTAND, { from: "project", to: "project" }),
         ],
       });
 
-      await expect(executeMigration(plan, tempDir, noMarketplaceSource)).rejects.toThrow(
-        /marketplace could not be resolved/,
-      );
+      await expect(
+        executeMigration(plan, disk.projectDir, disk.withoutMarketplace),
+      ).rejects.toThrow(/marketplace could not be resolved/);
 
-      expect(deleteLocalSkill).not.toHaveBeenCalled();
+      expect(await disk.hasWorkingCopy("global", REACT)).toBe(true);
+      expect(await disk.hasWorkingCopy("project", ZUSTAND)).toBe(true);
       expect(installPlugin).not.toHaveBeenCalled();
     });
 
     describe("global→project scope migration", () => {
-      it("should NOT uninstall global plugin when ejecting to project scope", async () => {
-        vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([
-          createMockCopiedSkill("web-framework-react"),
-        ]);
-
+      it("keeps the global plugin when ejecting into the project", async () => {
         const plan = buildMigrationPlan({
-          toEject: [toEjectMigration("web-framework-react", { from: "global", to: "project" })],
+          toEject: [toEjectMigration(REACT, { from: "global", to: "project" })],
         });
 
-        const result = await executeMigration(plan, tempDir, sourceResult);
+        const result = await executeMigration(plan, disk.projectDir, disk.withMarketplace);
 
-        expect(copySkillsToLocalFlattened).toHaveBeenCalled();
+        expect(await disk.hasWorkingCopy("project", REACT)).toBe(true);
         expect(uninstallPlugin).not.toHaveBeenCalled();
-        expect(result.ejectCopies.copied).toStrictEqual(["web-framework-react"]);
+        expect(result.ejectCopies.copied).toStrictEqual([REACT]);
         expect(result.warnings).toStrictEqual([]);
       });
 
-      it("should NOT delete global local skill when switching to project plugin", async () => {
-        vi.mocked(installPlugin).mockResolvedValue(undefined);
-
+      it("keeps the global working copy when switching to a project plugin", async () => {
+        await disk.seedWorkingCopy("global", ZUSTAND);
         const plan = buildMigrationPlan({
-          toPlugin: [toPluginMigration("web-state-zustand", { from: "global", to: "project" })],
+          toPlugin: [toPluginMigration(ZUSTAND, { from: "global", to: "project" })],
         });
 
-        const result = await executeMigration(plan, tempDir, sourceResult);
+        const result = await executeMigration(plan, disk.projectDir, disk.withMarketplace);
 
-        expect(deleteLocalSkill).not.toHaveBeenCalled();
+        expect(await disk.hasWorkingCopy("global", ZUSTAND)).toBe(true);
         expect(installPlugin).toHaveBeenCalledWith(
-          "web-state-zustand@https://marketplace.example.com",
+          `${ZUSTAND}@${MARKETPLACE}`,
           "project",
-          tempDir,
+          disk.projectDir,
         );
         expect(result.pluginInstalls.installed).toStrictEqual([
-          {
-            id: "web-state-zustand",
-            ref: "web-state-zustand@https://marketplace.example.com",
-          },
+          { id: ZUSTAND, ref: `${ZUSTAND}@${MARKETPLACE}` },
         ]);
         expect(result.warnings).toStrictEqual([]);
       });
     });
 
     describe("same-scope migrations", () => {
-      it("should uninstall project plugin when ejecting to project scope", async () => {
-        vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([
-          createMockCopiedSkill("web-framework-react"),
-        ]);
-
+      it("uninstalls the project plugin only, when ejecting at project scope", async () => {
         const plan = buildMigrationPlan({
-          toEject: [toEjectMigration("web-framework-react", { from: "project", to: "project" })],
+          toEject: [toEjectMigration(REACT, { from: "project", to: "project" })],
         });
 
-        const result = await executeMigration(plan, tempDir, sourceResult);
+        const result = await executeMigration(plan, disk.projectDir, disk.withMarketplace);
 
-        expect(uninstallPlugin).toHaveBeenCalledWith(
-          "web-framework-react@https://marketplace.example.com",
-          "project",
-          tempDir,
-        );
         expect(
           uninstallPlugin,
           "the migration's own scope is unambiguous here, so a second call would be a both-scopes sweep dropping a registration the other scope still needs",
-        ).toHaveBeenCalledTimes(1);
-        expect(result.ejectCopies.copied).toStrictEqual(["web-framework-react"]);
+        ).toHaveBeenCalledExactlyOnceWith(`${REACT}@${MARKETPLACE}`, "project", disk.projectDir);
+        expect(result.ejectCopies.copied).toStrictEqual([REACT]);
       });
 
-      it("should uninstall global plugin when ejecting to global scope", async () => {
-        vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([
-          createMockCopiedSkill("web-framework-react"),
-        ]);
-
+      it("copies into the home folder and uninstalls the global plugin only, when ejecting at global scope", async () => {
         const plan = buildMigrationPlan({
-          toEject: [toEjectMigration("web-framework-react", { from: "global", to: "global" })],
+          toEject: [toEjectMigration(REACT, { from: "global", to: "global" })],
         });
 
-        const result = await executeMigration(plan, tempDir, sourceResult);
+        const result = await executeMigration(plan, disk.projectDir, disk.withMarketplace);
 
-        expect(uninstallPlugin).toHaveBeenCalledWith(
-          "web-framework-react@https://marketplace.example.com",
-          "global",
-          tempDir,
-        );
+        expect(await disk.hasWorkingCopy("global", REACT)).toBe(true);
+        expect(await disk.skillsFolderExists("project")).toBe(false);
         expect(
           uninstallPlugin,
           "the migration's own scope is unambiguous here, so a second call would be a both-scopes sweep dropping the project registration another scope still needs",
-        ).toHaveBeenCalledTimes(1);
-        expect(result.ejectCopies.copied).toStrictEqual(["web-framework-react"]);
+        ).toHaveBeenCalledExactlyOnceWith(`${REACT}@${MARKETPLACE}`, "global", disk.projectDir);
+        expect(result.ejectCopies.copied).toStrictEqual([REACT]);
       });
 
-      it("should delete project local skill when switching to project plugin", async () => {
-        vi.mocked(installPlugin).mockResolvedValue(undefined);
-
+      it("deletes the project working copy when switching to a project plugin", async () => {
+        await disk.seedWorkingCopy("project", ZUSTAND);
         const plan = buildMigrationPlan({
-          toPlugin: [toPluginMigration("web-state-zustand", { from: "project", to: "project" })],
+          toPlugin: [toPluginMigration(ZUSTAND, { from: "project", to: "project" })],
         });
 
-        const result = await executeMigration(plan, tempDir, sourceResult);
+        const result = await executeMigration(plan, disk.projectDir, disk.withMarketplace);
 
-        expect(deleteLocalSkill).toHaveBeenCalledWith(tempDir, "web-state-zustand", "project");
+        expect(await disk.hasWorkingCopy("project", ZUSTAND)).toBe(false);
         expect(result.pluginInstalls.installed).toStrictEqual([
-          {
-            id: "web-state-zustand",
-            ref: "web-state-zustand@https://marketplace.example.com",
-          },
+          { id: ZUSTAND, ref: `${ZUSTAND}@${MARKETPLACE}` },
         ]);
       });
     });
 
     describe("a copy the destination refused", () => {
-      const UNWRITABLE = "EACCES: permission denied, mkdir";
-
-      afterEach(() => {
-        vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([]);
-        vi.mocked(uninstallPlugin).mockResolvedValue("removed");
-      });
-
       it("reports the failure structurally rather than as a warning nobody can act on", async () => {
-        vi.mocked(copySkillsToLocalFlattened).mockRejectedValue(new Error(UNWRITABLE));
-
+        await disk.refuseProjectSkillsFolder();
         const plan = buildMigrationPlan({
-          toEject: [toEjectMigration("web-framework-react", { from: "project", to: "project" })],
+          toEject: [toEjectMigration(REACT, { from: "project", to: "project" })],
         });
 
-        const result = await executeMigration(plan, tempDir, sourceResult);
+        const result = await executeMigration(plan, disk.projectDir, disk.withMarketplace);
 
         expect(
-          result.ejectCopies.failed,
+          result.ejectCopies,
           "a failed copy must be reported structurally so the caller can hard-error before any config records the eject",
-        ).toStrictEqual([{ id: "web-framework-react", error: UNWRITABLE }]);
-        expect(result.ejectCopies.copied).toStrictEqual([]);
+        ).toStrictEqual({
+          copied: [],
+          failed: [{ id: REACT, error: expect.stringContaining("EACCES: permission denied") }],
+        });
         expect(result.warnings).toStrictEqual([]);
       });
 
       it("leaves the plugin registered for a skill whose copy never landed", async () => {
-        vi.mocked(copySkillsToLocalFlattened).mockRejectedValue(new Error(UNWRITABLE));
-
+        await disk.refuseProjectSkillsFolder();
         const plan = buildMigrationPlan({
-          toEject: [toEjectMigration("web-framework-react", { from: "project", to: "project" })],
+          toEject: [toEjectMigration(REACT, { from: "project", to: "project" })],
         });
 
-        await executeMigration(plan, tempDir, sourceResult);
+        await executeMigration(plan, disk.projectDir, disk.withMarketplace);
 
         expect(
           uninstallPlugin,
@@ -467,51 +478,41 @@ describe("mode-migrator", () => {
       });
 
       it("still copies the global-scoped skill when the project-scoped one fails", async () => {
-        vi.mocked(copySkillsToLocalFlattened).mockImplementation(async (skillIds) => {
-          if (skillIds.includes("web-framework-react")) throw new Error(UNWRITABLE);
-          return skillIds.map((id) => createMockCopiedSkill(id));
-        });
-
+        await disk.refuseProjectSkillsFolder();
         const plan = buildMigrationPlan({
           toEject: [
-            toEjectMigration("web-framework-react", { from: "project", to: "project" }),
-            toEjectMigration("web-state-zustand", { from: "global", to: "global" }),
+            toEjectMigration(REACT, { from: "project", to: "project" }),
+            toEjectMigration(ZUSTAND, { from: "global", to: "global" }),
           ],
         });
 
-        const result = await executeMigration(plan, tempDir, sourceResult);
+        const result = await executeMigration(plan, disk.projectDir, disk.withMarketplace);
 
-        // Read here, not at describe time: the isolated-home spy is installed per test.
-        const globalSkillsDir = path.join(os.homedir(), ".claude", "skills");
         expect(
-          copySkillsToLocalFlattened,
+          await disk.hasWorkingCopy("global", ZUSTAND),
           "the global destination must still be attempted after a project-scope refusal — they are separate directories",
-        ).toHaveBeenCalledWith(["web-state-zustand"], globalSkillsDir, sourceResult);
-        expect(result.ejectCopies.copied).toStrictEqual(["web-state-zustand"]);
-        expect(result.ejectCopies.failed).toStrictEqual([
-          { id: "web-framework-react", error: UNWRITABLE },
-        ]);
+        ).toBe(true);
+        expect(result.ejectCopies).toStrictEqual({
+          copied: [ZUSTAND],
+          failed: [{ id: REACT, error: expect.stringContaining("EACCES: permission denied") }],
+        });
       });
 
       it("names a failed plugin uninstall as an uninstall, not as a failed copy", async () => {
-        vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([
-          createMockCopiedSkill("web-framework-react"),
-        ]);
         vi.mocked(uninstallPlugin).mockRejectedValue(new Error("spawn claude ENOENT"));
-
         const plan = buildMigrationPlan({
-          toEject: [toEjectMigration("web-framework-react", { from: "project", to: "project" })],
+          toEject: [toEjectMigration(REACT, { from: "project", to: "project" })],
         });
 
-        const result = await executeMigration(plan, tempDir, sourceResult);
+        const result = await executeMigration(plan, disk.projectDir, disk.withMarketplace);
 
-        expect(result.ejectCopies.copied).toStrictEqual(["web-framework-react"]);
+        expect(result.ejectCopies.copied).toStrictEqual([REACT]);
         expect(
           result.ejectCopies.failed,
           "an uninstall is diagnostic-only and must never be reported as work the migration failed to do",
         ).toStrictEqual([]);
         expect(result.warnings).toStrictEqual([
-          "Could not uninstall plugin for web-framework-react: spawn claude ENOENT",
+          `Could not uninstall plugin for ${REACT}: spawn claude ENOENT`,
         ]);
       });
     });
@@ -519,27 +520,14 @@ describe("mode-migrator", () => {
 });
 
 describe("mode-migrator, what it says", () => {
-  const MARKETPLACE = "https://marketplace.example.com";
-  let tempDir: string;
+  silenceConsole(["log", "warn"]);
+  const disk = useMigrationDisk();
 
-  beforeEach(async () => {
-    vi.clearAllMocks();
-    tempDir = await createTempDir("mode-migrator-said-");
-  });
-
-  afterEach(async () => {
-    await cleanupTempDir(tempDir);
-  });
-
-  const withMarketplace = () =>
-    buildSourceResult(WEB_PAIR_MATRIX, "/test/source", { marketplace: MARKETPLACE });
-  const withoutMarketplace = () => buildSourceResult(WEB_PAIR_MATRIX, "/test/source");
+  beforeEach(() => setVerbose(true));
+  afterEach(() => setVerbose(false));
 
   it("plans no scope change for a skill that stayed where it was", () => {
-    const unchanged = buildSkillConfigs(["web-framework-react"], {
-      scope: "project",
-      origin: EJECT_SOURCE,
-    });
+    const unchanged = buildSkillConfigs([REACT], { scope: "project", origin: EJECT_SOURCE });
 
     expect(detectMigrations(unchanged, unchanged)).toStrictEqual(buildMigrationPlan({}));
   });
@@ -550,68 +538,87 @@ describe("mode-migrator, what it says", () => {
     );
   });
 
+  it("says a skill copied into the project keeps its global plugin, one skill or several", () => {
+    expect([copyingBesideGlobalPlugins(1), copyingBesideGlobalPlugins(2)]).toStrictEqual([
+      "Copying 1 skill into this project (the global plugin stays)",
+      "Copying 2 skills into this project (the global plugins stay)",
+    ]);
+  });
+
+  it("says a skill installed as a plugin in the project keeps its global copy, one skill or several", () => {
+    expect([installingBesideGlobalCopies(1), installingBesideGlobalCopies(2)]).toStrictEqual([
+      "Installing 1 skill as a plugin in this project (the global copy stays)",
+      "Installing 2 skills as plugins in this project (the global copies stay)",
+    ]);
+  });
+
+  it("keeps the global install only for a skill moved from the global install into the project, as a copy or a plugin", () => {
+    expect(
+      [
+        toEjectMigration(REACT, { from: "global", to: "project" }),
+        toEjectMigration(REACT, { from: "project", to: "project" }),
+        toEjectMigration(REACT, { from: "global", to: "global" }),
+        toEjectMigration(REACT, { from: "project", to: "global" }),
+        toPluginMigration(REACT, { from: "global", to: "project" }),
+        toPluginMigration(REACT, { from: "project", to: "project" }),
+        toPluginMigration(REACT, { from: "global", to: "global" }),
+        toPluginMigration(REACT, { from: "project", to: "global" }),
+      ].map(keepsGlobalInstall),
+    ).toStrictEqual([true, false, false, false, true, false, false, false]);
+  });
+
   it("names the source a plugin install found no marketplace in, and the two ways out", async () => {
     const plan = buildMigrationPlan({
-      toPlugin: [toPluginMigration("web-state-zustand", { from: "project", to: "project" })],
+      toPlugin: [toPluginMigration(ZUSTAND, { from: "project", to: "project" })],
     });
 
-    await expect(executeMigration(plan, tempDir, withoutMarketplace())).rejects.toThrow(
-      "Cannot install skills as plugins: marketplace could not be resolved from '/test/source'. Plugin install mode requires a marketplace — fix the marketplace or switch the affected skills to eject mode.",
+    await expect(executeMigration(plan, disk.projectDir, disk.withoutMarketplace)).rejects.toThrow(
+      `Cannot install skills as plugins: marketplace could not be resolved from '${disk.dirs.sourceDir}'. Plugin install mode requires a marketplace — fix the marketplace or switch the affected skills to eject mode.`,
     );
   });
 
   it("ejects without a marketplace, warning only that it could not uninstall the plugin", async () => {
-    vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([
-      createMockCopiedSkill("web-framework-react"),
-    ]);
     const plan = buildMigrationPlan({
-      toEject: [toEjectMigration("web-framework-react", { from: "project", to: "project" })],
+      toEject: [toEjectMigration(REACT, { from: "project", to: "project" })],
     });
 
-    const result = await executeMigration(plan, tempDir, withoutMarketplace());
+    const result = await executeMigration(plan, disk.projectDir, disk.withoutMarketplace);
 
+    expect(await disk.hasWorkingCopy("project", REACT)).toBe(true);
     expect(result.warnings).toStrictEqual([
-      "Could not uninstall plugin for web-framework-react: no marketplace configured",
+      `Could not uninstall plugin for ${REACT}: no marketplace configured`,
     ]);
     expect(uninstallPlugin).not.toHaveBeenCalled();
   });
 
   it("says each plugin it installed or uninstalled, and each global one it kept", async () => {
-    vi.mocked(copySkillsToLocalFlattened).mockImplementation(async (ids) =>
-      ids.map((id) => createMockCopiedSkill(id)),
-    );
-    vi.mocked(uninstallPlugin).mockResolvedValue("removed");
-    vi.mocked(installPlugin).mockResolvedValue(undefined);
+    await disk.seedWorkingCopy("global", VITEST);
     const plan = buildMigrationPlan({
       toEject: [
-        toEjectMigration("web-framework-react", { from: "project", to: "project" }),
-        toEjectMigration("web-state-zustand", { from: "global", to: "project" }),
+        toEjectMigration(REACT, { from: "project", to: "project" }),
+        toEjectMigration(ZUSTAND, { from: "global", to: "project" }),
       ],
-      toPlugin: [toPluginMigration("web-testing-vitest", { from: "global", to: "project" })],
+      toPlugin: [toPluginMigration(VITEST, { from: "global", to: "project" })],
     });
 
-    await executeMigration(plan, tempDir, withMarketplace());
+    await executeMigration(plan, disk.projectDir, disk.withMarketplace);
 
-    expect(vi.mocked(verbose).mock.calls).toStrictEqual([
-      ["Uninstalled plugin for web-framework-react"],
-      ["Keeping global plugin for web-state-zustand (migrated to project-eject)"],
-      ["Installed plugin for web-testing-vitest"],
-      ["Keeping global local skill for web-testing-vitest (migrated to project-plugin)"],
+    expect(vi.mocked(console.log).mock.calls).toStrictEqual([
+      [`  Uninstalled plugin for ${REACT}`],
+      [`  Keeping global plugin for ${ZUSTAND} (migrated to project-eject)`],
+      [`  Installed plugin for ${VITEST}`],
+      [`  Keeping global local skill for ${VITEST} (migrated to project-plugin)`],
     ]);
   });
 
   it("deletes the global working copy of a skill that became a global plugin", async () => {
-    vi.mocked(installPlugin).mockResolvedValue(undefined);
+    await disk.seedWorkingCopy("global", ZUSTAND);
     const plan = buildMigrationPlan({
-      toPlugin: [toPluginMigration("web-state-zustand", { from: "global", to: "global" })],
+      toPlugin: [toPluginMigration(ZUSTAND, { from: "global", to: "global" })],
     });
 
-    await executeMigration(plan, tempDir, withMarketplace());
+    await executeMigration(plan, disk.projectDir, disk.withMarketplace);
 
-    expect(deleteLocalSkill).toHaveBeenCalledExactlyOnceWith(
-      tempDir,
-      "web-state-zustand",
-      "global",
-    );
+    expect(await disk.hasWorkingCopy("global", ZUSTAND)).toBe(false);
   });
 });

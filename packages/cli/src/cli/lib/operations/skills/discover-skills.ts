@@ -22,7 +22,6 @@ export type DiscoveredSkills = {
   allSkills: SkillDefinitionMap;
   totalSkillCount: number;
   pluginSkillCount: number;
-  localSkillCount: number;
   globalPluginSkillCount: number;
   globalLocalSkillCount: number;
   /** Skills whose metadata.yaml describes no skill; `compile` refuses over any entry. */
@@ -35,7 +34,7 @@ const NO_LOCAL_SKILLS: LoadedSkills = { skills: {}, unusableMetadata: [] };
  * Discovers copied-in (not plugin) skills at one scope. A global scan's warnings are said once per
  * run, since the fan-out asks for that one directory once per registered project.
  */
-export async function discoverLocalProjectSkills(
+async function discoverLocalProjectSkills(
   projectDir: string,
   scope: SkillScope,
 ): Promise<LoadedSkills> {
@@ -59,7 +58,7 @@ function projectSkillsRoot(projectDir: string, scope: SkillScope): string {
 }
 
 /** Later sources win. */
-export function mergeSkills(...skillSources: SkillDefinitionMap[]): SkillDefinitionMap {
+function mergeSkills(...skillSources: SkillDefinitionMap[]): SkillDefinitionMap {
   const merged: SkillDefinitionMap = {};
 
   for (const source of skillSources) {
@@ -77,48 +76,74 @@ export function mergeSkills(...skillSources: SkillDefinitionMap[]): SkillDefinit
 export async function discoverInstalledSkills(projectDir: string): Promise<DiscoveredSkills> {
   const isGlobalProject = isHomeDirectory(projectDir);
 
-  const globalPluginSkills = isGlobalProject
-    ? {}
-    : await discoverAllPluginSkills(globalInstallRoot());
-  const globalPluginSkillCount = typedKeys<SkillId>(globalPluginSkills).length;
-  if (globalPluginSkillCount > 0) {
-    verbose(`  Found ${globalPluginSkillCount} skills from global plugins`);
-  }
-
+  const globalPlugins = isGlobalProject ? {} : await discoverGlobalPluginSkills();
   const globalLocal = isGlobalProject
     ? NO_LOCAL_SKILLS
-    : await discoverLocalProjectSkills(projectDir, "global");
-  const globalLocalSkillCount = typedKeys<SkillId>(globalLocal.skills).length;
-  if (globalLocalSkillCount > 0) {
-    verbose(`  Found ${globalLocalSkillCount} global local skills from ${globalSkillsRoot()}`);
-  }
-
-  const pluginSkills = await discoverAllPluginSkills(projectDir);
-  const pluginSkillCount = typedKeys<SkillId>(pluginSkills).length;
-  verbose(`  Found ${pluginSkillCount} skills from installed plugins`);
-
+    : await discoverGlobalLocalSkills(projectDir);
+  const projectPlugins = await discoverProjectPluginSkills(projectDir);
   // At the home root both scopes are one installation, so ask the global scope only.
   const localScope: SkillScope = isGlobalProject ? "global" : "project";
-  const local = await discoverLocalProjectSkills(projectDir, localScope);
-  const localSkillCount = typedKeys<SkillId>(local.skills).length;
-  verbose(
-    `  Found ${localSkillCount} local skills from ${projectSkillsRoot(projectDir, localScope)}`,
-  );
+  const projectLocal = await discoverLocalSkillsAt(projectDir, localScope);
 
-  const allSkills = mergeSkills(globalPluginSkills, globalLocal.skills, pluginSkills, local.skills);
-  const totalSkillCount = typedKeys<SkillId>(allSkills).length;
+  return assembleDiscoveredSkills({ globalPlugins, globalLocal, projectPlugins, projectLocal });
+}
+
+async function discoverGlobalPluginSkills(): Promise<SkillDefinitionMap> {
+  const skills = await discoverAllPluginSkills(globalInstallRoot());
+  const count = skillCount(skills);
+  if (count > 0) verbose(`  Found ${count} skills from global plugins`);
+  return skills;
+}
+
+async function discoverGlobalLocalSkills(projectDir: string): Promise<LoadedSkills> {
+  const loaded = await discoverLocalProjectSkills(projectDir, "global");
+  const count = skillCount(loaded.skills);
+  if (count > 0) verbose(`  Found ${count} global local skills from ${globalSkillsRoot()}`);
+  return loaded;
+}
+
+async function discoverProjectPluginSkills(projectDir: string): Promise<SkillDefinitionMap> {
+  const skills = await discoverAllPluginSkills(projectDir);
+  verbose(`  Found ${skillCount(skills)} skills from installed plugins`);
+  return skills;
+}
+
+async function discoverLocalSkillsAt(projectDir: string, scope: SkillScope): Promise<LoadedSkills> {
+  const loaded = await discoverLocalProjectSkills(projectDir, scope);
+  verbose(
+    `  Found ${skillCount(loaded.skills)} local skills from ${projectSkillsRoot(projectDir, scope)}`,
+  );
+  return loaded;
+}
+
+type SkillsByOrigin = {
+  globalPlugins: SkillDefinitionMap;
+  globalLocal: LoadedSkills;
+  projectPlugins: SkillDefinitionMap;
+  projectLocal: LoadedSkills;
+};
+
+function assembleDiscoveredSkills(found: SkillsByOrigin): DiscoveredSkills {
+  const { globalPlugins, globalLocal, projectPlugins, projectLocal } = found;
+  const allSkills = mergeSkills(
+    globalPlugins,
+    globalLocal.skills,
+    projectPlugins,
+    projectLocal.skills,
+  );
   // A plugin installed at both scopes is listed by both, but is one skill.
-  const distinctPluginSkillCount = typedKeys<SkillId>(
-    mergeSkills(globalPluginSkills, pluginSkills),
-  ).length;
+  const distinctPluginSkills = mergeSkills(globalPlugins, projectPlugins);
 
   return {
     allSkills,
-    totalSkillCount,
-    pluginSkillCount: distinctPluginSkillCount,
-    localSkillCount: globalLocalSkillCount + localSkillCount,
-    globalPluginSkillCount,
-    globalLocalSkillCount,
-    unusableMetadata: [...globalLocal.unusableMetadata, ...local.unusableMetadata],
+    totalSkillCount: skillCount(allSkills),
+    pluginSkillCount: skillCount(distinctPluginSkills),
+    globalPluginSkillCount: skillCount(globalPlugins),
+    globalLocalSkillCount: skillCount(globalLocal.skills),
+    unusableMetadata: [...globalLocal.unusableMetadata, ...projectLocal.unusableMetadata],
   };
+}
+
+function skillCount(skills: SkillDefinitionMap): number {
+  return typedKeys<SkillId>(skills).length;
 }

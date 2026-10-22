@@ -75,7 +75,6 @@ describe("uninstall command", () => {
 
     await addForkedFromMetadata(projectDir, E2E_SKILL.react.id);
 
-    // Source field so skills match.
     await writeProjectConfig(
       projectDir,
       buildProjectConfig({
@@ -147,8 +146,7 @@ describe("uninstall command", () => {
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-    expect(output).toContain("Skipping");
-    expect(output).toContain("my-custom-skill");
+    expect(output).not.toContain("Skipping");
 
     await expectCleanUninstall(projectDir, {
       preservedSkills: ["my-custom-skill"],
@@ -172,8 +170,8 @@ describe("uninstall command", () => {
     const { exitCode, output } = await CLI.run(["uninstall", "--yes"], { dir: projectDir });
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(output).toContain("Skipping");
-    expect(output).toContain("my-custom-skill");
+    expect(output).not.toContain("Skipping");
+    expect(output).toContain(STEP_TEXT.UNINSTALL_NOTHING_TO_UNINSTALL);
     expect(await directoryExists(userSkillDir)).toBe(true);
   });
 

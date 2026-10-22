@@ -6,44 +6,50 @@ import { EXIT_CODES } from "../lib/exit-codes";
 import {
   effectivelyExcludedSkillIds,
   findConfigLoadFailures,
-  loadInstalledConfig,
+  MarketplaceRefusedError,
   validateProjectConfig,
   SOURCE_ENV_VAR,
   type ResolvedConfig,
 } from "../lib/configuration";
-import { loadSource, detectProject, type DetectedProject } from "../lib/operations";
+import { loadSkillsMatrixFromSource, type SourceLoadResult } from "../lib/loading";
 import { matrix } from "../lib/matrix/matrix-provider";
-import { discoverLocalSkills } from "../lib/skills";
 import { getStackSkillIds } from "../lib/stacks";
-import { filterExcludedEntries, listAgentFilesOf } from "../lib/agents";
-import { getVerifiedPluginInstallPaths, parseMarketplacePluginRef } from "../lib/plugins";
-import {
-  declaresNoContent,
-  isHomeDirectory,
-  installBaseDir,
-  resolveInstallPaths,
-} from "../lib/installation";
+import { filterExcludedEntries } from "../lib/agents";
+import { isHomeDirectory, installBaseDir } from "../lib/installation";
 import {
   agentCodec,
-  type AgentCodec,
+  agentsDir,
   hostCompilesAgent,
-  providerInUse,
   relativeConfigPath,
   skillsDir,
   skillsPathPrefix,
 } from "../lib/installation/install-layout";
 import { ambiguityFinding } from "../lib/installation/provider-flag";
-import { unofferablePlacementsFound } from "../lib/hosts/configured-placements";
 import {
   sourceScopesInPlay,
   type ScopeKind,
   type SourceScope,
 } from "../lib/installation/source-scopes";
-import { layoutIsCurrent, recreateConfigFrom, scopeLabel, scopeNoun } from "../utils/messages";
-import { getInstalledConfigPath } from "../lib/installation/install-base-dir";
+import {
+  hostsOf,
+  hostsOnDisk,
+  installedPluginSkillIds,
+  providersInPlay,
+  resolveConfigState,
+  unofferablePlacements,
+  type CheckedInstallation,
+  type ConfigState,
+} from "../lib/doctor/installation-reads";
+import { judgeOwnership, type Orphans, type Ownership } from "../lib/doctor/ownership";
+import {
+  layoutIsCurrent,
+  providerArgument,
+  recreateConfigFrom,
+  scopeLabel,
+  scopeNoun,
+} from "../utils/messages";
 import { isSourceRepo } from "../lib/source-validator";
 import {
-  listInstalledArtifacts,
   validateInstalledAgents,
   validateInstalledPlugins,
   validateInstalledSkills,
@@ -52,7 +58,6 @@ import {
   type ContentIssue,
   type ContentValidation,
 } from "../lib/content-validator";
-import type { SourceLoadResult } from "../lib/loading";
 import type {
   AgentName,
   AgentScopeConfig,
@@ -62,7 +67,7 @@ import type {
   SkillId,
   SkillScope,
 } from "../types";
-import { fileExists, directoryExists } from "../utils/fs";
+import { fileExists } from "../utils/fs";
 import { plural } from "../utils/string";
 import {
   CLI_INVOKE_COMMAND,
@@ -77,6 +82,8 @@ import { countBy, unique } from "remeda";
 type CheckKind =
   | "config"
   | "config-empty"
+  | "installations"
+  | "source-repo"
   | "layout"
   | "placements"
   | "skills"
@@ -97,6 +104,8 @@ type CheckResult = {
   status: "pass" | "fail" | "warn" | "skip";
   message: string;
   details?: string[];
+  /** The installation a block's row is about, where the scope holds two. */
+  provider?: Provider;
 };
 
 type ConfigCheckOutput = {
@@ -104,40 +113,11 @@ type ConfigCheckOutput = {
   config: ProjectConfig | null;
 };
 
-/** An unreadable config never reaches here: the content layer reports it and skips this one. */
-type ConfigState =
-  | { kind: "absent" }
-  | { kind: "declares-nothing"; config: ProjectConfig }
-  | { kind: "loaded"; config: ProjectConfig; inherited: boolean };
-
-/** This directory's config only; the global fallback is already `detectInstallation`'s. */
-async function resolveConfigState(
-  detected: DetectedProject | null,
-  projectDir: string,
-): Promise<ConfigState> {
-  if (detected?.config) {
-    return {
-      kind: "loaded",
-      config: detected.config,
-      inherited: inheritsTheGlobalConfig(detected.installation.projectDir, projectDir),
-    };
-  }
-
-  // Cannot throw: an unreadable config already skipped this layer.
-  const loaded = await loadInstalledConfig(projectDir);
-  if (!loaded) return { kind: "absent" };
-
-  return declaresNoContent(loaded.config)
-    ? { kind: "declares-nothing", config: loaded.config }
-    : { kind: "loaded", config: loaded.config, inherited: false };
-}
-
-function inheritsTheGlobalConfig(readFrom: string, projectDir: string): boolean {
-  return isHomeDirectory(readFrom) && !isHomeDirectory(projectDir);
-}
-
-function checkConfigValid(state: ConfigState, projectDir: string): ConfigCheckOutput {
-  const theConfig = (verdict: string) => configRowMessage(state, projectDir, verdict);
+function checkConfigValid(
+  state: ConfigState,
+  installation: CheckedInstallation,
+): ConfigCheckOutput {
+  const theConfig = (verdict: string) => configRowMessage(state, installation, verdict);
   if (state.kind === "absent") {
     return {
       result: {
@@ -145,6 +125,18 @@ function checkConfigValid(state: ConfigState, projectDir: string): ConfigCheckOu
         status: "fail",
         message: theConfig("not found"),
         details: [`Run '${CLI_INVOKE_COMMAND} init' to create a configuration`],
+      },
+      config: null,
+    };
+  }
+
+  if (state.kind === "unreadable") {
+    return {
+      result: {
+        kind: "config",
+        status: "fail",
+        message: theConfig("exists but could not be loaded"),
+        details: [state.failure.reason],
       },
       config: null,
     };
@@ -200,40 +192,40 @@ function checkConfigValid(state: ConfigState, projectDir: string): ConfigCheckOu
 }
 
 /** Names the file actually read: the global config when this directory inherits it. */
-function configRowMessage(state: ConfigState, projectDir: string, verdict: string): string {
+function configRowMessage(
+  state: ConfigState,
+  { projectDir, hosts }: CheckedInstallation,
+  verdict: string,
+): string {
   if (state.kind === "loaded" && state.inherited)
-    return `${theInheritedConfig()}, which ${verdict}`;
-  return `${theOwnConfig(projectDir)} ${verdict}`;
+    return `${theInheritedConfig(hosts.global)}, which ${verdict}`;
+  if (state.kind === "unreadable") {
+    const { scopeRoot, scope } = state.failure;
+    return `${theConfigAt(scopeRoot, hosts[scope])} ${verdict}`;
+  }
+  return `${theConfigAt(projectDir, hosts.project)} ${verdict}`;
 }
 
-function theOwnConfig(projectDir: string): string {
-  return `${scopeLabel(scopeOf(projectDir))}: ${configNamedFrom(projectDir)}`;
+function theConfigAt(root: string, provider: Provider): string {
+  return `${scopeLabel(scopeOf(root))}: ${configNamedFrom(root, provider)}`;
 }
 
-function theInheritedConfig(): string {
-  return `${scopeLabel("project")}: no ${STANDARD_FILES.CONFIG_TS}, using ${scopeNoun("global")}'s (${configNamedFrom(os.homedir())})`;
+function theInheritedConfig(provider: Provider): string {
+  return `${scopeLabel("project")}: no ${STANDARD_FILES.CONFIG_TS}, using ${scopeNoun("global")}'s (${configNamedFrom(os.homedir(), provider)})`;
 }
 
 function scopeOf(dir: string): ScopeKind {
   return isHomeDirectory(dir) ? "global" : "project";
 }
 
-function configNamedFrom(root: string): string {
-  const relPath = relativeConfigPath(root, providerInUse(root));
+function configNamedFrom(root: string, provider: Provider): string {
+  const relPath = relativeConfigPath(root, provider);
   return isHomeDirectory(root) ? `~/${relPath}` : relPath;
 }
 
-async function checkSkillsResolved(
-  config: ProjectConfig,
-  matrix: MergedSkillsMatrix,
-  projectDir: string,
-): Promise<CheckResult> {
-  // Both sources: a global-only install has skills but no stack.
-  const excludedIds = effectivelyExcludedSkillIds(config.skills);
-  const stackIds = config.stack ? getStackSkillIds(config.stack) : [];
-  const uniqueSkills = unique([...stackIds, ...config.skills.map((s) => s.id)]).filter(
-    (id) => !excludedIds.has(id),
-  );
+/** The loader has already merged in every local skill it accepts, from both scopes. */
+function checkSkillsResolved(config: ProjectConfig, matrix: MergedSkillsMatrix): CheckResult {
+  const uniqueSkills = skillIdsToResolve(config);
 
   if (uniqueSkills.length === 0) {
     return {
@@ -243,18 +235,7 @@ async function checkSkillsResolved(
     };
   }
 
-  const [localResult, globalResult] = await Promise.all([
-    discoverLocalSkills(projectDir),
-    !isHomeDirectory(projectDir) ? discoverLocalSkills(os.homedir()) : null,
-  ]);
-  const localSkillIds = new Set([
-    ...(localResult?.skills.map((s) => s.id) ?? []),
-    ...(globalResult?.skills.map((s) => s.id) ?? []),
-  ]);
-
-  const missingSkills = uniqueSkills.filter(
-    (skillId) => !(skillId in matrix.skills) && !localSkillIds.has(skillId),
-  );
+  const missingSkills = uniqueSkills.filter((skillId) => !(skillId in matrix.skills));
 
   if (missingSkills.length > 0) {
     return {
@@ -272,14 +253,20 @@ async function checkSkillsResolved(
   };
 }
 
-/** Host read per scope: two scopes can be on two providers. */
+/** Both sources: a global-only install has skills but no stack. */
+function skillIdsToResolve(config: ProjectConfig): SkillId[] {
+  const excludedIds = effectivelyExcludedSkillIds(config.skills);
+  const stackIds = config.stack ? getStackSkillIds(config.stack) : [];
+  return unique([...stackIds, ...config.skills.map((s) => s.id)]).filter(
+    (id) => !excludedIds.has(id),
+  );
+}
+
 async function checkAgentsCompiled(
   config: ProjectConfig,
-  projectDir: string,
+  installation: CheckedInstallation,
 ): Promise<CheckResult> {
-  const agents = config.agents;
-
-  if (agents.length === 0) {
+  if (config.agents.length === 0) {
     return {
       kind: "agents",
       status: "pass",
@@ -287,24 +274,14 @@ async function checkAgentsCompiled(
     };
   }
 
-  const hosts = {
-    global: providerInUse(installBaseDir(projectDir, "global")),
-    project: providerInUse(installBaseDir(projectDir, "project")),
-  };
-  const dirs = {
-    global: resolveInstallPaths(projectDir, "global").agentsDir,
-    project: resolveInstallPaths(projectDir, "project").agentsDir,
-  };
-
   const agentChecks = await Promise.all(
-    agents.map((agent) => agentCompileCheck(agent, hosts, dirs)),
+    config.agents.map((agent) => agentCompileCheck(agent, installation)),
   );
-
   const unrenderable = agentChecks.filter((c) => c.state === "unrenderable");
   const missingAgents = agentChecks.filter((c) => c.state === "missing").map((c) => c.name);
 
   // A sub-agent the host leaves out by design is a pass, not a recompile warning.
-  if (unrenderable.length === agents.length) {
+  if (unrenderable.length === config.agents.length) {
     const hostsLeavingThemOut = unique(unrenderable.map((a) => a.provider)).join(" or ");
     return {
       kind: "agents",
@@ -318,17 +295,21 @@ async function checkAgentsCompiled(
     return {
       kind: "agents",
       status: "warn",
-      message: `${missingAgents.length} agent${missingAgents.length === 1 ? "" : "s"} need${missingAgents.length === 1 ? "s" : ""} recompilation`,
+      message: needRecompilation(missingAgents.length),
       details: missingAgents.map((a) => `- ${a} (missing)`),
     };
   }
 
-  const renderable = agents.length - unrenderable.length;
+  const renderable = config.agents.length - unrenderable.length;
   return {
     kind: "agents",
     status: "pass",
     message: `${ratio(renderable, renderable, "agent")} compiled`,
   };
+}
+
+function needRecompilation(count: number): string {
+  return `${plural(count, "agent")} ${count === 1 ? "needs" : "need"} recompilation`;
 }
 
 type AgentCompileCheck = {
@@ -337,10 +318,10 @@ type AgentCompileCheck = {
   state: "unrenderable" | "compiled" | "missing";
 };
 
+/** Host read per scope: two scopes can be on two providers. */
 async function agentCompileCheck(
   agent: AgentScopeConfig,
-  hosts: Record<SkillScope, Provider>,
-  agentsDirs: Record<SkillScope, string>,
+  { projectDir, hosts }: CheckedInstallation,
 ): Promise<AgentCompileCheck> {
   const provider = hosts[agent.scope];
   if (!hostCompilesAgent(provider, agent.name)) {
@@ -348,91 +329,51 @@ async function agentCompileCheck(
   }
 
   const file = `${agent.name}${agentCodec(provider).extension}`;
-  const compiled = await fileExists(path.join(agentsDirs[agent.scope], file));
+  const compiled = await fileExists(path.join(agentsDir(provider, agent.scope, projectDir), file));
   return { name: agent.name, provider, state: compiled ? "compiled" : "missing" };
 }
 
-async function checkNoOrphans(config: ProjectConfig, projectDir: string): Promise<CheckResult> {
-  const codec = agentCodec(providerInUse(projectDir));
-  const projectAgentsDir = resolveInstallPaths(projectDir, "project").agentsDir;
-  const globalAgentsDir = resolveInstallPaths(projectDir, "global").agentsDir;
+async function checkNoOrphans(
+  state: ConfigState,
+  config: ProjectConfig | null,
+  installation: CheckedInstallation,
+): Promise<CheckResult> {
+  return ownershipResult(state, await judgeOwnership(state, config, installation));
+}
 
-  // At home both scopes share one agents directory.
-  const scopesShareAgentsDir = isHomeDirectory(projectDir);
-
-  const [projectExists, globalExists] = await Promise.all([
-    directoryExists(projectAgentsDir),
-    !scopesShareAgentsDir ? directoryExists(globalAgentsDir) : false,
-  ]);
-
-  if (!projectExists && !globalExists) {
+function ownershipResult(state: ConfigState, { unowned, orphans }: Ownership): CheckResult {
+  if (unowned.skills.length > 0 || unowned.agents.length > 0) {
     return {
-      kind: "orphans",
-      status: "pass",
-      message: "No agents directory",
+      kind: "orphans-unowned",
+      status: "fail",
+      message: `${countedArtifacts(unowned.skills, unowned.agents)} installed here, and no configuration declares them`,
+      details: [...unowned.skills, ...unowned.agents, ...orphanLines(orphans)].map(
+        (line) => `- ${line}`,
+      ),
     };
   }
 
-  const projectMdFiles = projectExists ? await listAgentFilesOf(projectAgentsDir, codec) : [];
-  const globalMdFiles = globalExists ? await listAgentFilesOf(globalAgentsDir, codec) : [];
-
-  const activeProjectAgents: Set<string> = new Set(
-    config.agents.filter((a) => a.scope === "project" && !a.excluded).map((a) => a.name),
-  );
-  // Excluded global agents still serve other projects.
-  const knownGlobalAgents: Set<string> = new Set(
-    config.agents.filter((a) => a.scope === "global").map((a) => a.name),
-  );
-
-  const knownProjectDirAgents = scopesShareAgentsDir
-    ? new Set([...activeProjectAgents, ...knownGlobalAgents])
-    : activeProjectAgents;
-
-  const orphanedFiles = [
-    ...orphanedAgentNames(projectMdFiles, knownProjectDirAgents, codec),
-    ...orphanedAgentNames(globalMdFiles, knownGlobalAgents, codec),
-  ];
-
-  if (orphanedFiles.length > 0) {
+  if (orphans.skills.length > 0 || orphans.agents.length > 0) {
     return {
       kind: "orphans",
       status: "warn",
-      message: plural(orphanedFiles.length, "orphaned agent file"),
-      details: orphanedFiles.map((f) => `- ${f}.md (not in config)`),
+      message: countedOrphans(orphans),
+      details: orphanLines(orphans).map((line) => `- ${line}`),
     };
   }
 
-  return {
-    kind: "orphans",
-    status: "pass",
-    message: "No orphaned agent files",
-  };
+  // With no configuration and nothing this CLI wrote, there is nothing to own: `init`'s state.
+  if (state.kind === "absent") return skippedResult("orphans");
+
+  return { kind: "orphans", status: "pass", message: "No orphaned skills or agent files" };
 }
 
-function orphanedAgentNames(
-  mdFiles: string[],
-  knownAgents: ReadonlySet<string>,
-  codec: AgentCodec,
-): string[] {
-  return mdFiles
-    .map((fileName) => path.basename(fileName, codec.extension))
-    .filter((agentName) => !knownAgents.has(agentName));
+function orphanLines({ skills, agents }: Orphans): string[] {
+  return [...skills, ...agents].map((name) => `${name} (not in config)`);
 }
 
-/**
- * With no config, every artefact this CLI provably wrote is an orphan. A `fail`, not a `warn`:
- * nothing prunes these unattended, unlike strays beside a config that `compile` removes.
- */
-async function checkUnownedInstallation(projectDir: string): Promise<CheckResult> {
-  const { skills, agents } = await listInstalledArtifacts(projectDir);
-  if (skills.length === 0 && agents.length === 0) return skippedResult("orphans");
-
-  return {
-    kind: "orphans-unowned",
-    status: "fail",
-    message: `${countedArtifacts(skills, agents)} installed here, and no configuration declares them`,
-    details: [...skills, ...agents].map((artifact) => `- ${artifact}`),
-  };
+function countedOrphans({ skills, agents }: Orphans): string {
+  return nonZeroCounts([skills.length, "orphaned skill"], [agents.length, "orphaned agent file"]);
 }
 
 function ratio(found: number, total: number, noun: string): string {
@@ -440,19 +381,25 @@ function ratio(found: number, total: number, noun: string): string {
 }
 
 function countedArtifacts(skills: string[], agents: string[]): string {
-  return [
-    ...(skills.length > 0 ? [plural(skills.length, "skill")] : []),
-    ...(agents.length > 0 ? [plural(agents.length, "agent")] : []),
-  ].join(" and ");
+  return nonZeroCounts([skills.length, "skill"], [agents.length, "agent"]);
+}
+
+type Count = [count: number, noun: string];
+
+/** `2 skills and 1 agent`: a zero is left out rather than counted. */
+function nonZeroCounts(...counts: Count[]): string {
+  return counts
+    .filter(([count]) => count > 0)
+    .map(([count, noun]) => plural(count, noun))
+    .join(" and ");
 }
 
 /** The directory is resolved per skill, since scope (and so host) varies within one config. */
 async function checkSkillsInstalled(
   config: ProjectConfig,
-  projectDir: string,
+  installation: CheckedInstallation,
 ): Promise<CheckResult> {
-  const skills: SkillConfig[] = config.skills;
-  const ejectSkills = skills.filter((s) => s.origin === EJECT_SOURCE);
+  const ejectSkills = config.skills.filter((s) => s.origin === EJECT_SOURCE);
 
   if (ejectSkills.length === 0) {
     return {
@@ -463,7 +410,7 @@ async function checkSkillsInstalled(
   }
 
   const skillChecks = await Promise.all(
-    ejectSkills.map((skill) => ejectedSkillCheck(skill, projectDir)),
+    ejectSkills.map((skill) => ejectedSkillCheck(skill, installation)),
   );
   const missingSkills = skillChecks.filter((c) => !c.installed);
 
@@ -487,9 +434,9 @@ type EjectedSkillCheck = { id: SkillId; installed: boolean; lookedIn: string };
 
 async function ejectedSkillCheck(
   skill: SkillConfig,
-  projectDir: string,
+  { projectDir, hosts }: CheckedInstallation,
 ): Promise<EjectedSkillCheck> {
-  const provider = providerInUse(installBaseDir(projectDir, skill.scope));
+  const provider = hosts[skill.scope];
   const dir = skillsDir(provider, skill.scope, projectDir);
   const installed = await fileExists(path.join(dir, skill.id, STANDARD_FILES.SKILL_MD));
 
@@ -503,9 +450,9 @@ async function ejectedSkillCheck(
 /** Plugin-mode skills are checked against the plugin registry per scope, not on disk. */
 async function checkPluginSkillsInstalled(
   config: ProjectConfig,
-  projectDir: string,
+  installation: CheckedInstallation,
 ): Promise<CheckResult> {
-  const pluginSkills: SkillConfig[] = config.skills.filter((s) => s.origin !== EJECT_SOURCE);
+  const pluginSkills = config.skills.filter((s) => s.origin !== EJECT_SOURCE);
 
   if (pluginSkills.length === 0) {
     return {
@@ -515,21 +462,11 @@ async function checkPluginSkillsInstalled(
     };
   }
 
-  const baseDirs = unique(pluginSkills.map((s) => installBaseDir(projectDir, s.scope)));
-  const missingPerBaseDir = await Promise.all(
-    baseDirs.map(async (baseDir) => {
-      const installedIds = new Set(
-        (await getVerifiedPluginInstallPaths(baseDir)).map((plugin) =>
-          parseMarketplacePluginRef(plugin.pluginKey),
-        ),
-      );
-      return pluginSkills
-        .filter((skill) => installBaseDir(projectDir, skill.scope) === baseDir)
-        .filter((skill) => !installedIds.has(skill.id))
-        .map((skill) => skill.id);
-    }),
+  const scopes = unique(pluginSkills.map((s) => s.scope));
+  const missingPerScope = await Promise.all(
+    scopes.map((scope) => pluginSkillsMissingAt(scope, pluginSkills, installation)),
   );
-  const missingSkills = missingPerBaseDir.flat();
+  const missingSkills = missingPerScope.flat();
 
   if (missingSkills.length > 0) {
     return {
@@ -547,6 +484,21 @@ async function checkPluginSkillsInstalled(
   };
 }
 
+async function pluginSkillsMissingAt(
+  scope: SkillScope,
+  pluginSkills: SkillConfig[],
+  { projectDir, hosts }: CheckedInstallation,
+): Promise<SkillId[]> {
+  const installedIds = await installedPluginSkillIds(
+    installBaseDir(projectDir, scope),
+    hosts[scope],
+  );
+  return pluginSkills
+    .filter((skill) => skill.scope === scope)
+    .filter((skill) => !installedIds.has(skill.id))
+    .map((skill) => skill.id);
+}
+
 const MARKETPLACE_CHOSEN_BY = {
   flag: "named by this run",
   env: `named by ${SOURCE_ENV_VAR}`,
@@ -562,31 +514,40 @@ function howItWasReached(source: string, isLocal: boolean): string {
 /** Counts the marketplace's own skills, not the loaded matrix, which also holds local ones. */
 function reachedMarketplace(result: SourceLoadResult): CheckResult {
   const { source, sourceOrigin } = result.sourceConfig;
-  const skillCount = result.marketplaceSkillIds.size;
-  const sourceLabel = result.isLocal ? "local" : "remote";
+  const available = `${plural(result.marketplaceSkillIds.size, "skill")} available`;
+  const chosenBy = MARKETPLACE_CHOSEN_BY[sourceOrigin];
+
+  if (result.unreachable) {
+    return {
+      kind: "source",
+      status: "warn",
+      message: `Could not reach ${source} — read its cached copy instead`,
+      details: [available, `The copy at ${result.sourcePath} may be out of date — ${chosenBy}`],
+    };
+  }
 
   return {
     kind: "source",
     status: "pass",
-    message: `Connected to ${sourceLabel}: ${result.sourcePath}`,
-    details: [
-      `${plural(skillCount, "skill")} available`,
-      `${howItWasReached(source, result.isLocal)} — ${MARKETPLACE_CHOSEN_BY[sourceOrigin]}`,
-    ],
+    message: `Connected to ${result.isLocal ? "local" : "remote"}: ${result.sourcePath}`,
+    details: [available, `${howItWasReached(source, result.isLocal)} — ${chosenBy}`],
   };
 }
 
-async function checkSourceReachable(projectDir: string): Promise<CheckResult> {
+async function checkSourceReachable({
+  projectDir,
+  hosts,
+}: CheckedInstallation): Promise<CheckResult> {
   try {
-    const { sourceResult } = await loadSource({ projectDir });
-    return reachedMarketplace(sourceResult);
+    return reachedMarketplace(
+      await loadSkillsMatrixFromSource({ projectDir, provider: hosts.project }),
+    );
   } catch (error) {
-    const message = getErrorMessage(error);
     return {
       kind: "source",
       status: "fail",
-      message: "Failed to load marketplace",
-      details: [message],
+      message: refusedOr(error, "Failed to load marketplace"),
+      details: [getErrorMessage(error)],
     };
   }
 }
@@ -687,7 +648,7 @@ function toContentResult(check: ContentCheck, validation: ContentValidation): Ch
   };
 }
 
-/** Must clear the longest row name ("Marketplace Reachable"). */
+/** Must clear the longest row name ("Marketplace Repository"). */
 const CHECK_WIDTH = 24;
 
 const SECTION_INDENT = "  ";
@@ -753,44 +714,67 @@ function formatSummary(results: CheckResult[]): string {
   return `${SECTION_INDENT}Summary: ${parts.join(", ")}`;
 }
 
-const TIPS: Array<{ kind: CheckKind; status: CheckResult["status"]; tip: string }> = [
+type Tip = {
+  kind: CheckKind;
+  status: CheckResult["status"];
+  /** Handed the installation the finding is about, which a command acting on it must be told. */
+  line: (provider: Provider | undefined) => string;
+};
+
+const TIPS: Tip[] = [
   {
     kind: "agents",
     status: "warn",
-    tip: `  Tip: Run '${CLI_INVOKE_COMMAND} compile' to generate missing agent files`,
+    line: (provider) =>
+      `  Tip: Run '${commandActingOn(provider, "compile")}' to generate missing agent files`,
   },
   {
     kind: "config",
     status: "fail",
-    tip: `  Tip: Run '${CLI_INVOKE_COMMAND} init' to create or fix configuration`,
+    line: () => `  Tip: Run '${CLI_INVOKE_COMMAND} init' to create or fix configuration`,
   },
   {
     kind: "config-empty",
     status: "warn",
-    tip: `  Tip: Nothing is configured yet — run '${CLI_INVOKE_COMMAND} init' to choose skills and sub-agents`,
+    line: () =>
+      `  Tip: Nothing is configured yet — run '${CLI_INVOKE_COMMAND} init' to choose skills and sub-agents`,
   },
   {
     kind: "orphans-unowned",
     status: "fail",
-    tip: `  Tip: Nothing declares the files above — '${CLI_INVOKE_COMMAND} init --from <id>' writes a configuration that can own them again, or '${CLI_INVOKE_COMMAND} uninstall' removes them, the compiled agents included: each file listed carries this CLI's own provenance, which is what that command reads when there is no configuration left`,
+    line: (provider) =>
+      `  Tip: Nothing declares the files above — '${commandActingOn(provider, "init --from <id>")}' writes a configuration that can own them again, or '${commandActingOn(provider, "uninstall")}' removes them, the compiled agents included: each file listed carries this CLI's own provenance, which is what that command reads when there is no configuration left`,
   },
   {
     kind: "skills",
     status: "fail",
-    tip: "  Tip: Check skill IDs in config match available skills",
+    line: () => "  Tip: Check skill IDs in config match available skills",
   },
   {
     kind: "installed",
     status: "warn",
     // No command named: `eject skills --force` copies every skill, and only at project scope.
-    tip: "  Tip: Re-eject the missing skills from the marketplace to restore their files",
+    line: () => "  Tip: Re-eject the missing skills from the marketplace to restore their files",
   },
 ];
 
+function commandActingOn(provider: Provider | undefined, command: string): string {
+  return `${CLI_INVOKE_COMMAND} ${command}${providerArgument(provider)}`;
+}
+
+/** Once per installation a finding names, and once only where the tip names none. */
 function formatTips(results: CheckResult[]): string[] {
-  return TIPS.filter((t) => results.some((r) => r.kind === t.kind && r.status === t.status)).map(
-    (t) => t.tip,
-  );
+  return unique(TIPS.flatMap((tip) => linesOf(tip, results)));
+}
+
+function linesOf(tip: Tip, results: CheckResult[]): string[] {
+  return results
+    .filter((result) => answers(tip, result))
+    .map((result) => tip.line(result.provider));
+}
+
+function answers(tip: Tip, result: CheckResult): boolean {
+  return result.kind === tip.kind && result.status === tip.status;
 }
 
 /** `init` refuses an unreadable config, so the remedy is recreating it, once per such config. */
@@ -803,11 +787,46 @@ async function recreateConfigTips(
   const failures = await findConfigLoadFailures(projectDir).catch(() => []);
   return failures.map(
     (failure) =>
-      `  Tip: There is no automatic repair — recreate the configuration by running ${recreateConfigFrom(failure.scopeRoot)}`,
+      `  Tip: There is no automatic repair — recreate the configuration by running ${recreateConfigFrom(failure)}`,
   );
 }
 
+const INSTALLATIONS_ROW_NAME = "Installations";
+
+/** Still a finding beside the blocks below: every acting command refuses to guess between them. */
+async function checkInstallationsInPlay(
+  projectDir: string,
+  providers: Provider[],
+): Promise<CheckResult> {
+  const finding = await ambiguityFinding(projectDir);
+  return {
+    kind: "installations",
+    status: "fail",
+    message: `${providers.length} installations here, each checked below`,
+    details: finding === null ? [] : [`- ${finding}`],
+  };
+}
+
+function installationHeading(provider: Provider): string {
+  return `${SECTION_INDENT}The ${provider} installation`;
+}
+
+const SOURCE_REPO_ROW_NAME = "Marketplace Repository";
+
+/** A skip for a marketplace repository nothing is installed in, `null` for any other directory. */
+async function uninstalledSourceRepo(projectDir: string): Promise<CheckResult | null> {
+  // Aborts on the repository's own unreadable config, which `safeCheck` makes this row's finding.
+  if (!(await isSourceRepo(projectDir))) return null;
+  return { kind: "source-repo", status: "skip", message: SKIP_NO_INSTALLATION };
+}
+
 const LAYOUT_ROW_NAME = "Layout";
+
+/** Each scope with this installation's source folder on disk, global first. */
+async function checkLayout({ projectDir, hosts }: CheckedInstallation): Promise<CheckResult[]> {
+  const scopes = await sourceScopesInPlay(projectDir, ({ kind }) => hosts[kind]);
+  return scopes.map(toLayoutResult);
+}
 
 function toLayoutResult(scope: SourceScope): CheckResult {
   return {
@@ -820,8 +839,8 @@ function toLayoutResult(scope: SourceScope): CheckResult {
 const PLACEMENTS_ROW_NAME = "Placements Offered";
 
 /** Reports, as a row, the refusals other commands would stop on; never refuses itself. */
-async function checkOfferedPlacements(projectDir: string): Promise<CheckResult> {
-  const findings = await everythingThatWouldStopACommandActing(projectDir);
+async function checkOfferedPlacements(installation: CheckedInstallation): Promise<CheckResult> {
+  const findings = await unofferablePlacements(installation);
 
   if (findings.length === 0) {
     return { kind: "placements", status: "pass", message: "Every configured skill is placeable" };
@@ -833,15 +852,6 @@ async function checkOfferedPlacements(projectDir: string): Promise<CheckResult> 
     message: `${plural(findings.length, "finding")} would stop a command acting here`,
     details: findings.map((finding) => `- ${finding}`),
   };
-}
-
-async function everythingThatWouldStopACommandActing(projectDir: string): Promise<string[]> {
-  const [unofferable, ambiguous] = await Promise.all([
-    unofferablePlacementsFound(projectDir),
-    ambiguityFinding(projectDir),
-  ]);
-
-  return ambiguous === null ? unofferable : [...unofferable, ambiguous];
 }
 
 function skippedResult(kind: CheckKind): CheckResult {
@@ -878,13 +888,46 @@ function runContentCheck(check: ContentCheck, projectDir: string): Promise<Check
   return safeCheck(check.kind, async () => toContentResult(check, await check.run(projectDir)));
 }
 
+async function runGatedContentCheck(
+  check: GatedContentCheck,
+  projectDir: string,
+  configUnreadable: boolean,
+): Promise<CheckResult> {
+  if (check.readsConfig && configUnreadable) return skippedContentResult(check.kind);
+  return runContentCheck(check, projectDir);
+}
+
+/** One item after another, each step's results after the last's. */
+async function flatMapInTurn<Item, Result>(
+  items: readonly Item[],
+  step: (item: Item) => Promise<Result[]>,
+): Promise<Result[]> {
+  return items.reduce<Promise<Result[]>>(
+    async (earlier, item) => [...(await earlier), ...(await step(item))],
+    Promise.resolve([]),
+  );
+}
+
 /** A throw becomes that row's `fail`, so one broken check can't abort the run. */
-async function safeCheck(kind: CheckKind, fn: () => Promise<CheckResult>): Promise<CheckResult> {
+async function safeCheck<Result extends CheckResult | null>(
+  kind: CheckKind,
+  fn: () => Result | Promise<Result>,
+): Promise<Result | CheckResult> {
   try {
     return await fn();
   } catch (error) {
-    return { kind, status: "fail", message: "Check threw", details: [getErrorMessage(error)] };
+    return {
+      kind,
+      status: "fail",
+      message: refusedOr(error, "Check threw"),
+      details: [getErrorMessage(error)],
+    };
   }
+}
+
+/** A marketplace the check refused is a finding about the config, not a fault in the check. */
+function refusedOr(error: unknown, otherwise: string): string {
+  return error instanceof MarketplaceRefusedError ? "Refused" : otherwise;
 }
 
 export default class Doctor extends BaseCommand {
@@ -921,7 +964,6 @@ export default class Doctor extends BaseCommand {
     this.log("");
   }
 
-  /** Config first; checks that read it skip when it is unreadable, the rest still run. */
   private async runContentChecks(projectDir: string): Promise<CheckResult[]> {
     this.log(`${SECTION_INDENT}${SECTION_CONTENT}`);
 
@@ -931,10 +973,7 @@ export default class Doctor extends BaseCommand {
     const rows = await Promise.all(
       CONTENT_CHECKS.map(async (check) => ({
         name: check.name,
-        result:
-          check.readsConfig && configUnreadable
-            ? skippedContentResult(check.kind)
-            : await runContentCheck(check, projectDir),
+        result: await runGatedContentCheck(check, projectDir, configUnreadable),
       })),
     );
 
@@ -947,7 +986,6 @@ export default class Doctor extends BaseCommand {
     return allRows.map((row) => row.result);
   }
 
-  /** Skipped whole for an unreadable config or an uninstalled marketplace repository. */
   private async runOperationalChecks(
     projectDir: string,
     contentResults: CheckResult[],
@@ -961,64 +999,110 @@ export default class Doctor extends BaseCommand {
       return [];
     }
 
-    const detected = await detectProject(projectDir);
-    if (!detected && (await this.isUninstalledSourceRepo(projectDir))) {
-      this.log(`${ROW_INDENT}${SKIP_NO_INSTALLATION}`);
+    const providers = await providersInPlay(projectDir);
+    if (providers.length > 1) {
+      return this.checkEachInstallation(projectDir, providers, failedContent);
+    }
+    return this.checkTheInstallation(projectDir, failedContent);
+  }
+
+  private async checkTheInstallation(
+    projectDir: string,
+    failedContent: ReadonlySet<CheckKind>,
+  ): Promise<CheckResult[]> {
+    const installation = { projectDir, hosts: hostsOnDisk(projectDir) };
+    const configState = await resolveConfigState(installation);
+
+    if (configState.kind === "absent") {
+      const sourceRepo = await safeCheck("source-repo", () => uninstalledSourceRepo(projectDir));
+      if (sourceRepo !== null) return this.reportSourceRepo(sourceRepo);
+    }
+
+    return this.runAllChecks(installation, configState, failedContent);
+  }
+
+  /** A repository nothing is installed in skips the layer; one whose own config breaks is a row. */
+  private reportSourceRepo(sourceRepo: CheckResult): CheckResult[] {
+    if (sourceRepo.status === "skip") {
+      this.log(`${ROW_INDENT}${sourceRepo.message}`);
       return [];
     }
 
-    const configState = await resolveConfigState(detected, projectDir);
-    return this.runAllChecks(projectDir, configState, failedContent);
+    this.logCheck(SOURCE_REPO_ROW_NAME, sourceRepo);
+    return [sourceRepo];
   }
 
-  /** Requires no config file at all: an unloadable one is a finding, not an absence. */
-  private async isUninstalledSourceRepo(projectDir: string): Promise<boolean> {
-    if (await fileExists(getInstalledConfigPath(projectDir))) return false;
-    return isSourceRepo(projectDir);
+  /** In turn rather than at once: each block prints as it runs, and each load seats the matrix. */
+  private async checkEachInstallation(
+    projectDir: string,
+    providers: Provider[],
+    failedContent: ReadonlySet<CheckKind>,
+  ): Promise<CheckResult[]> {
+    const installations = await safeCheck("installations", () =>
+      checkInstallationsInPlay(projectDir, providers),
+    );
+    this.logCheck(INSTALLATIONS_ROW_NAME, installations);
+
+    const blocks = await flatMapInTurn(providers, (provider) =>
+      this.checkOneOf(projectDir, provider, failedContent),
+    );
+    return [installations, ...blocks];
+  }
+
+  private async checkOneOf(
+    projectDir: string,
+    provider: Provider,
+    failedContent: ReadonlySet<CheckKind>,
+  ): Promise<CheckResult[]> {
+    this.log("");
+    this.log(installationHeading(provider));
+
+    const installation = { projectDir, hosts: hostsOf(provider) };
+    const results = await this.runAllChecks(
+      installation,
+      await resolveConfigState(installation),
+      failedContent,
+    );
+    return results.map((result) => ({ ...result, provider }));
   }
 
   private async runAllChecks(
-    projectDir: string,
+    installation: CheckedInstallation,
     configState: ConfigState,
     failedContent: ReadonlySet<CheckKind>,
   ): Promise<CheckResult[]> {
-    const { result: configResult, config } = checkConfigValid(configState, projectDir);
+    const { result: configResult, config } = checkConfigValid(configState, installation);
     this.logCheck("Config Valid", configResult);
 
-    const layoutResults = await this.reportLayout(projectDir);
+    const layoutResults = await this.reportLayout(installation);
 
     const placementsResult = await safeCheck("placements", () =>
-      checkOfferedPlacements(projectDir),
+      checkOfferedPlacements(installation),
     );
     this.logCheck(PLACEMENTS_ROW_NAME, placementsResult);
 
     // Populates the matrix that the skills check reads, so it runs first.
-    const sourceResult = await safeCheck("source", () => checkSourceReachable(projectDir));
+    const sourceResult = await safeCheck("source", () => checkSourceReachable(installation));
 
     const filteredConfig = config ? filterExcludedEntries(config) : null;
 
-    const skillsResult = await this.resolveSkillsCheck(
-      config,
-      sourceResult,
-      projectDir,
-      failedContent,
-    );
+    const skillsResult = await this.resolveSkillsCheck(config, sourceResult, failedContent);
     this.logCheck("Skills Resolved", skillsResult);
 
-    const agentsResult = filteredConfig
-      ? await safeCheck("agents", () => checkAgentsCompiled(filteredConfig, projectDir))
-      : skippedResult("agents");
+    const agentsResult = await this.resolveAgentsCheck(filteredConfig, installation);
     this.logCheck("Agents Compiled", agentsResult);
 
-    const orphansResult = await this.resolveOrphansCheck(config, configState, projectDir);
+    const orphansResult = await this.resolveOrphansCheck(config, configState, installation);
     this.logCheck("No Orphans", orphansResult);
 
-    const installedResult = filteredConfig
-      ? await safeCheck("installed", () => checkSkillsInstalled(filteredConfig, projectDir))
-      : skippedResult("installed");
+    const installedResult = await this.resolveInstalledCheck(filteredConfig, installation);
     this.logCheck("Skills Installed", installedResult);
 
-    const pluginsResult = await this.resolvePluginsCheck(filteredConfig, projectDir, failedContent);
+    const pluginsResult = await this.resolvePluginsCheck(
+      filteredConfig,
+      installation,
+      failedContent,
+    );
     this.logCheck("Plugins Installed", pluginsResult);
 
     this.logCheck("Marketplace Reachable", sourceResult);
@@ -1036,8 +1120,8 @@ export default class Doctor extends BaseCommand {
     ];
   }
 
-  private async reportLayout(projectDir: string): Promise<CheckResult[]> {
-    const rows = (await sourceScopesInPlay(projectDir)).map(toLayoutResult);
+  private async reportLayout(installation: CheckedInstallation): Promise<CheckResult[]> {
+    const rows = await checkLayout(installation);
 
     for (const row of rows) {
       this.logCheck(LAYOUT_ROW_NAME, row);
@@ -1045,23 +1129,19 @@ export default class Doctor extends BaseCommand {
     return rows;
   }
 
-  /** Skips on an invalid config: ownership can't be judged from a rejected file. */
+  /** Skips on a config the checks rejected: ownership can't be judged from a rejected file. */
   private async resolveOrphansCheck(
     config: ProjectConfig | null,
     configState: ConfigState,
-    projectDir: string,
+    installation: CheckedInstallation,
   ): Promise<CheckResult> {
-    if (config) return safeCheck("orphans", () => checkNoOrphans(config, projectDir));
-    if (configState.kind === "absent") {
-      return safeCheck("orphans", () => checkUnownedInstallation(projectDir));
-    }
-    return skippedResult("orphans");
+    if (!config && configState.kind !== "absent") return skippedResult("orphans");
+    return safeCheck("orphans", () => checkNoOrphans(configState, config, installation));
   }
 
   private async resolveSkillsCheck(
     config: ProjectConfig | null,
     sourceResult: CheckResult,
-    projectDir: string,
     failedContent: ReadonlySet<CheckKind>,
   ): Promise<CheckResult> {
     if (!config) return skippedResult("skills");
@@ -1070,12 +1150,28 @@ export default class Doctor extends BaseCommand {
     if (blocked) return blocked;
     if (sourceResult.status === "fail") return sourceUnreachableSkillsResult();
 
-    return safeCheck("skills", () => checkSkillsResolved(config, matrix, projectDir));
+    return safeCheck("skills", () => checkSkillsResolved(config, matrix));
+  }
+
+  private async resolveAgentsCheck(
+    config: ProjectConfig | null,
+    installation: CheckedInstallation,
+  ): Promise<CheckResult> {
+    if (!config) return skippedResult("agents");
+    return safeCheck("agents", () => checkAgentsCompiled(config, installation));
+  }
+
+  private async resolveInstalledCheck(
+    config: ProjectConfig | null,
+    installation: CheckedInstallation,
+  ): Promise<CheckResult> {
+    if (!config) return skippedResult("installed");
+    return safeCheck("installed", () => checkSkillsInstalled(config, installation));
   }
 
   private async resolvePluginsCheck(
     config: ProjectConfig | null,
-    projectDir: string,
+    installation: CheckedInstallation,
     failedContent: ReadonlySet<CheckKind>,
   ): Promise<CheckResult> {
     if (!config) return skippedResult("plugins");
@@ -1083,7 +1179,7 @@ export default class Doctor extends BaseCommand {
     const blocked = contentBlockedResult("plugins", failedContent);
     if (blocked) return blocked;
 
-    return safeCheck("plugins", () => checkPluginSkillsInstalled(config, projectDir));
+    return safeCheck("plugins", () => checkPluginSkillsInstalled(config, installation));
   }
 
   private logCheck(name: string, result: CheckResult): void {

@@ -25,10 +25,8 @@ import {
 import {
   agentFrontmatterValidationSchema,
   agentYamlConfigSchema,
-  categoryPathSchema,
   describeMetadataSchemaFailure,
   formatZodIssues,
-  isCustomMetadata,
   localRawMetadataSchema,
   marketplaceSchema,
   metadataValidationSchema,
@@ -39,6 +37,7 @@ import {
   skillRulesFileSchema,
   splitMetadataValidationIssues,
   validateNestingDepth,
+  validateSkillMetadata,
   warnUnknownFields,
 } from "./schemas";
 
@@ -53,6 +52,12 @@ import { warn } from "../utils/logger";
 const PRE_RENAME_CONFIG_KEY = "source";
 const RENAMED_CONFIG_KEY = "marketplace";
 const MARKETPLACE_NAME_KEY = "marketplaceName";
+/** A sub-agent source no config may name: definitions ship with the CLI, so nothing reads it. */
+const REMOVED_AGENTS_SOURCE_KEY = "agentsSource";
+/** A sub-agent partials folder no config may name: the partials ship with the CLI too. */
+const REMOVED_AGENTS_DIR_KEY = "agentsDir";
+/** The source-layout key a marketplace repository's skills are loaded through. */
+const SKILLS_DIR_KEY = "skillsDir";
 const RENAMED_SKILL_KEY = "origin";
 
 /** Rejected by a declared `z.string()` field and accepted by `.passthrough()` — the difference. */
@@ -289,7 +294,6 @@ describe("projectConfigLoaderSchema", () => {
         },
       };
 
-      // Lenient loader; strict validation happens at build time.
       const result = projectConfigLoaderSchema.safeParse(config);
       expect(result.success).toBe(true);
     });
@@ -519,6 +523,31 @@ describe("a config carrying a field name from before the rename", () => {
   });
 });
 
+/** The same discriminator: a declared `z.string()` refuses the number `.passthrough()` admits. */
+describe("the source-layout fields the source config schema names", () => {
+  it("types skillsDir, which the source loader reads a marketplace's skills through", () => {
+    const result = projectSourceConfigSchema.safeParse(
+      buildSourceConfig({ [SKILLS_DIR_KEY]: NON_STRING_FIELD_VALUE }),
+    );
+
+    expect(
+      result.success,
+      "a declared string field must reject a number; passthrough would accept it",
+    ).toBe(false);
+  });
+
+  it("declares no agentsDir, so a config still naming one loads it as an unread passthrough key", () => {
+    const result = projectSourceConfigSchema.safeParse(
+      buildSourceConfig({ [REMOVED_AGENTS_DIR_KEY]: NON_STRING_FIELD_VALUE }),
+    );
+
+    expect(
+      result.success,
+      "sub-agent partials ship with the CLI, so the schema types no folder for them",
+    ).toBe(true);
+  });
+});
+
 describe("the hand-maintained JSON schemas", () => {
   it("names marketplace and marketplaceName on the project config schema, and no source", async () => {
     const schema = await readTestJson<JsonSchemaFile>(PROJECT_CONFIG_SCHEMA_PATH);
@@ -541,6 +570,28 @@ describe("the hand-maintained JSON schemas", () => {
     expect(Object.keys(schema.properties)).toContain(RENAMED_CONFIG_KEY);
     expect(Object.keys(schema.properties)).toContain(MARKETPLACE_NAME_KEY);
     expect(Object.keys(schema.properties)).not.toContain(PRE_RENAME_CONFIG_KEY);
+  });
+
+  it("declares no agentsSource on either config schema, beside the marketplace they declare", async () => {
+    for (const schemaPath of [PROJECT_CONFIG_SCHEMA_PATH, PROJECT_SOURCE_CONFIG_SCHEMA_PATH]) {
+      const declared = Object.keys((await readTestJson<JsonSchemaFile>(schemaPath)).properties);
+
+      expect(declared, `${path.basename(schemaPath)} declares the marketplace`).toContain(
+        RENAMED_CONFIG_KEY,
+      );
+      expect(declared, `${path.basename(schemaPath)} names no sub-agent source`).not.toContain(
+        REMOVED_AGENTS_SOURCE_KEY,
+      );
+    }
+  });
+
+  it("declares no agentsDir on the source config schema, beside the skillsDir it declares", async () => {
+    const declared = Object.keys(
+      (await readTestJson<JsonSchemaFile>(PROJECT_SOURCE_CONFIG_SCHEMA_PATH)).properties,
+    );
+
+    expect(declared).toContain(SKILLS_DIR_KEY);
+    expect(declared, "sub-agent partials ship with the CLI").not.toContain(REMOVED_AGENTS_DIR_KEY);
   });
 });
 
@@ -946,11 +997,6 @@ describe("skillCategoriesFileSchema", () => {
 });
 
 describe("lenient schemas accept custom values without pre-registration", () => {
-  it("should accept custom categories in categoryPathSchema via kebab-case fallback", () => {
-    const result = categoryPathSchema.safeParse("acme-pipeline");
-    expect(result.success).toBe(true);
-  });
-
   it("should accept custom agent names in agentYamlConfigSchema", () => {
     const result = agentYamlConfigSchema.safeParse({
       id: "acme-deployer",
@@ -981,10 +1027,6 @@ describe("lenient schemas accept custom values without pre-registration", () => 
       domains: ["web", "acme"],
     });
     expect(result.success).toBe(true);
-  });
-
-  it("should still reject uppercase categories", () => {
-    expect(categoryPathSchema.safeParse("Acme-Pipeline").success).toBe(false);
   });
 });
 
@@ -1282,12 +1324,18 @@ describe("the nesting check over an array", () => {
   });
 });
 
-describe("isCustomMetadata", () => {
-  it("reads custom metadata only from custom: true", () => {
-    expect(isCustomMetadata({ custom: true })).toBe(true);
-    expect(isCustomMetadata({ custom: false })).toBe(false);
-    expect(isCustomMetadata({ slug: "react" })).toBe(false);
-    expect(isCustomMetadata(null)).toBe(false);
+describe("which schema judges a skill's metadata", () => {
+  /** A slug no catalogue carries: only the relaxed schema accepts it. */
+  const OWN_SLUG_METADATA = { ...VALID_EMBEDDED_SKILL_METADATA_FILE, slug: "acme-react" };
+
+  it("judges metadata by the relaxed schema only when it says custom: true", () => {
+    expect(validateSkillMetadata({ ...OWN_SLUG_METADATA, custom: true }).success).toBe(true);
+    expect(validateSkillMetadata({ ...OWN_SLUG_METADATA, custom: false }).success).toBe(false);
+    expect(validateSkillMetadata(OWN_SLUG_METADATA).success).toBe(false);
+  });
+
+  it("refuses metadata that is not an object, rather than throwing", () => {
+    expect(validateSkillMetadata(null).success).toBe(false);
   });
 });
 

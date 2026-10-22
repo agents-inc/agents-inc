@@ -8,13 +8,13 @@ import ts from "typescript";
  * {@link GENERATED_DIRS}, outside {@link PARSE_BOUNDARIES}. Scoped by directory, never by an
  * on-site comment.
  */
-export const GENERATED_DIRS: readonly string[] = [
+const GENERATED_DIRS: readonly string[] = [
   path.join("types", "generated"),
   path.join("vendor", "generated"),
 ];
 
 /** Package-relative directories whose job is reading unvalidated bytes. */
-export const PARSE_BOUNDARIES: readonly string[] = [path.join("src", "cli", "lib", "loading")];
+const PARSE_BOUNDARIES: readonly string[] = [path.join("src", "cli", "lib", "loading")];
 
 export const NO_PACKAGE_ROOT = "names a package root that does not exist";
 export const NO_PROJECT_CONFIG = "names a project config that does not exist";
@@ -25,7 +25,7 @@ export type WideningCast = { file: string; line: number; target: string };
 
 export type CheckResult = { widening: WideningCast[] };
 
-export const PROJECTS: readonly string[] = ["tsconfig.json"];
+const PROJECTS: readonly string[] = ["tsconfig.json"];
 
 export function check({
   packageRoot,

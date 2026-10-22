@@ -5,4 +5,4 @@ export {
   expectAgentConfigs,
 } from "./config-assertions.js";
 
-export { expectAgentCompilation, expectValidAgentMarkdown } from "./agent-assertions.js";
+export { expectValidAgentMarkdown } from "./agent-assertions.js";

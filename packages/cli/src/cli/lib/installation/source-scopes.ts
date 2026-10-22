@@ -17,11 +17,17 @@ export type SourceScope = {
   relName: string;
 };
 
-/** Scopes with a source folder on disk, global first. */
-export async function sourceScopesInPlay(cwd: string): Promise<SourceScope[]> {
+/**
+ * Scopes with a source folder on disk, global first. Each is read with the provider `providerOf`
+ * names, off its folder by default; `doctor` names one installation's for both.
+ */
+export async function sourceScopesInPlay(
+  cwd: string,
+  providerOf: (scope: ScopeRoot) => Provider = ({ root }) => providerInUse(root),
+): Promise<SourceScope[]> {
   const scopes = await Promise.all(
-    scopeRootsInPlay(cwd).map(async ({ kind, root }) =>
-      describeScope(kind, root, providerInUse(root)),
+    scopeRootsInPlay(cwd).map(async (scope) =>
+      describeScope(scope.kind, scope.root, providerOf(scope)),
     ),
   );
   return scopes.filter((scope): scope is SourceScope => scope !== null);
@@ -34,7 +40,7 @@ export function scopeRootsInPlay(cwd: string): ScopeRoot[] {
   return [global, { kind: "project", root: cwd }];
 }
 
-export async function describeScope(
+async function describeScope(
   kind: ScopeKind,
   root: string,
   provider: Provider,

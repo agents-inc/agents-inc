@@ -194,14 +194,12 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
       await createProjectConfig(projectDir, {
         marketplace: "github:project/source",
         marketplaceName: "https://marketplace.example.com",
-        agentsSource: "https://agents.example.com",
       });
 
       const config = await loadProjectSourceConfig(projectDir);
 
       expect(config?.marketplace).toBe("github:project/source");
       expect(config?.marketplaceName).toBe("https://marketplace.example.com");
-      expect(config?.agentsSource).toBe("https://agents.example.com");
     });
 
     it("should return null for missing project config", async () => {
@@ -368,7 +366,7 @@ describe("User Journey: Project Config Save and Load", () => {
     await cleanupTempDir(tempDir);
   });
 
-  /** Overlays the source via `writeProjectPartial`, as `recordSource` in `eject.ts` does. */
+  /** Overlays the source via `writeProjectPartial`. */
   async function saveSourceToProjectConfig(
     dir: string,
     source: string,
@@ -415,7 +413,7 @@ describe("User Journey: Project Config Save and Load", () => {
       expect(config?.marketplaceName).toBe("https://internal-marketplace.company.com");
     });
 
-    // A literal: a folder name is text on disk. With neither folder present, the new one is used.
+    // A literal: a folder name is text on disk.
     it("should return config path from getProjectConfigPath", () => {
       const configPath = getProjectConfigPath(projectDir, "claude");
       expect(configPath).toBe(

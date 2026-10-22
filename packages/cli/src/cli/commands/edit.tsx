@@ -3,7 +3,7 @@ import path from "path";
 import chalk from "chalk";
 import { Flags } from "@oclif/core";
 
-import { difference, indexBy, partition } from "remeda";
+import { difference, indexBy, partition, unique } from "remeda";
 
 import { BaseCommand } from "../base-command.js";
 import type { InstallSelection } from "@workspace/compile/seed-to-config";
@@ -13,6 +13,7 @@ import {
   EJECT_SOURCE,
   editorConfigUrl,
   formatSourceDisplayName,
+  type Provider,
 } from "../consts.js";
 import {
   detectProject,
@@ -26,6 +27,7 @@ import {
   type ConfigWriteResult,
   compileAgentsAllScopes,
   compileProjectScope,
+  type CompilationResult,
   discoverInstalledSkills,
   removeCompiledAgents,
   type RemoveCompiledAgentsOptions,
@@ -35,6 +37,7 @@ import { EXIT_CODES } from "../lib/exit-codes.js";
 import {
   type EjectCopyResult,
   type Installation,
+  type MigrationPlan,
   detectMigrations,
   ejectCopyFailureError,
   executeMigration,
@@ -43,7 +46,16 @@ import {
   resolveInstallPaths,
   INSTALL_MODE_DESCRIPTIONS,
 } from "../lib/installation/index.js";
-import { movedGlobalAgentInputs, type GateReport } from "../lib/config-gate/index.js";
+import {
+  movedGlobalAgentInputs,
+  projectsAFanOutReaches,
+  type GateReport,
+} from "../lib/config-gate/index.js";
+import {
+  copyingBesideGlobalPlugins,
+  installingBesideGlobalCopies,
+  keepsGlobalInstall,
+} from "../lib/installation/mode-migrator.js";
 import { getSkillById, getSkillDisplayName } from "../lib/matrix/matrix-provider";
 import { type AuthoritativeScope, loadProjectConfig } from "../lib/configuration/index.js";
 import {
@@ -79,6 +91,7 @@ import { seedToInstallSelection, type SeedMapping } from "../lib/seed/seed-to-se
 import {
   arrivalLines,
   arrivalsByScope,
+  installsAtHome,
   joinedStatement,
   notInstalledGlobally,
   readInstalledGlobal,
@@ -91,6 +104,7 @@ import {
   type HeldGlobal,
   type InstalledGlobal,
   type KeptFromRoundTrip,
+  type ReconciledSharedConfig,
   type UnassignedRow,
 } from "../lib/seed/seed-apply.js";
 import {
@@ -109,6 +123,7 @@ import {
 } from "../lib/installation/provider-flag.js";
 import { openUrl } from "../utils/open-url.js";
 import { getErrorMessage } from "../utils/errors.js";
+import { stripTerminalControls } from "../utils/string.js";
 import { type StartupMessage } from "../utils/logger.js";
 import {
   INCOMPLETE_WORK_RECOVERY,
@@ -125,12 +140,12 @@ import {
   keptUnassigned,
   localSkillsCopied,
   nothingInstalledToApplyTo,
+  projectCopyMovedToGlobal,
   projectCopyRemoved,
   recompileSummary,
+  registeredProjectsRewritten,
   sharedConfigDestinations,
   sharedConfigNeedsTerminal,
-  skippedUnknownAgents,
-  skippedUnknownSkills,
   unplaceableKept,
 } from "../utils/messages.js";
 import { formatScopeTag } from "../lib/configuration/scope-diff.js";
@@ -141,12 +156,25 @@ type ScopeChange = { from: SkillScope; to: SkillScope };
 /** `edit` recompiles every scope it owns in one pass, so its summary has no scope word. */
 const RECOMPILE_SUBJECT = "agent";
 
+const CHANGE_MARKER_COLORS = {
+  "+": CLI_COLORS.SUCCESS,
+  "-": CLI_COLORS.ERROR,
+  "~": CLI_COLORS.WARNING,
+} as const;
+
+type ChangeMarker = keyof typeof CHANGE_MARKER_COLORS;
+
+const AGENT_DETAIL = " (agent)";
+
+/** The marker and subject take the marker's colour; the detail after them is neutral. */
+function changeLine(marker: ChangeMarker, subject: string, detail?: string): string {
+  const head = chalk.hex(CHANGE_MARKER_COLORS[marker])(`  ${marker} ${subject}`);
+  return detail === undefined ? head : head + chalk.hex(CLI_COLORS.NEUTRAL)(detail);
+}
+
 /** A `[P][G]` pair's project half toggled: an arrow line would claim the global install moved. */
-function formatDualScopeTransition(displayName: string, to: SkillScope): string {
-  const isAdd = to === "project";
-  const prefix = isAdd ? "+" : "-";
-  const color = isAdd ? CLI_COLORS.SUCCESS : CLI_COLORS.ERROR;
-  return chalk.hex(color)(`  ${prefix} ${displayName} [P]`);
+function dualScopeTransitionLine(subject: string, to: SkillScope, detail?: string): string {
+  return changeLine(to === "project" ? "+" : "-", `${subject} [P]`, detail);
 }
 
 /** A genuine `[G] → [P]` reads as an addition: the skill arrives in this project. */
@@ -157,16 +185,11 @@ function formatSkillScopeChangeLine(
 ): string {
   const displayName = getSkillDisplayName(skillId);
   if (dualScopeSkillTransitions.has(skillId)) {
-    return formatDualScopeTransition(displayName, change.to);
+    return dualScopeTransitionLine(displayName, change.to);
   }
 
   const isGlobalToProject = change.from === "global" && change.to === "project";
-  const prefix = isGlobalToProject ? "+" : "~";
-  const color = isGlobalToProject ? CLI_COLORS.SUCCESS : CLI_COLORS.WARNING;
-  return (
-    chalk.hex(color)(`  ${prefix} ${displayName}`) +
-    chalk.hex(CLI_COLORS.NEUTRAL)(scopeArrow(change))
-  );
+  return changeLine(isGlobalToProject ? "+" : "~", displayName, scopeArrow(change));
 }
 
 /** Unlike a skill, a moved agent is always a move, and only the dual-scope arm says `(agent)`. */
@@ -175,15 +198,11 @@ function formatAgentScopeChangeLine(
   change: ScopeChange,
   dualScopeAgentTransitions: ReadonlySet<AgentName>,
 ): string {
-  const agentSuffix = chalk.hex(CLI_COLORS.NEUTRAL)(" (agent)");
   if (dualScopeAgentTransitions.has(agentName)) {
-    return formatDualScopeTransition(agentName, change.to) + agentSuffix;
+    return dualScopeTransitionLine(agentName, change.to, AGENT_DETAIL);
   }
 
-  return (
-    chalk.hex(CLI_COLORS.WARNING)(`  ~ ${agentName}`) +
-    chalk.hex(CLI_COLORS.NEUTRAL)(scopeArrow(change))
-  );
+  return changeLine("~", agentName, scopeArrow(change));
 }
 
 function scopeArrow(change: ScopeChange): string {
@@ -192,10 +211,60 @@ function scopeArrow(change: ScopeChange): string {
 
 /** Prints both values: a retune leaves nothing on disk to compare against. */
 function formatValueChangeLine(subject: string, change: ValueChange, kind: string): string {
-  return (
-    chalk.hex(CLI_COLORS.WARNING)(`  ~ ${subject}`) +
-    chalk.hex(CLI_COLORS.NEUTRAL)(` (${kind}: ${change.from} \u2192 ${change.to})`)
-  );
+  return changeLine("~", subject, ` (${kind}: ${change.from} \u2192 ${change.to})`);
+}
+
+function sourceChangeLine(skillId: SkillId, change: ValueChange): string {
+  const from = formatSourceDisplayName(change.from);
+  const to = formatSourceDisplayName(change.to);
+  return changeLine("~", getSkillDisplayName(skillId), ` (${from} \u2192 ${to})`);
+}
+
+/** Empty for an id the list does not hold. */
+function scopeLabelOf(skillId: SkillId, skills: SkillConfig[]): string {
+  const skill = skills.find((s) => s.id === skillId);
+  return skill === undefined ? "" : ` ${formatScopeTag(skill.scope)}`;
+}
+
+/**
+ * A retune, a re-assignment, rows joining a held global sub-agent and rewritten files move no
+ * entry, so each needs its own line or the run reads as a no-op.
+ */
+function changeSummaryLines(
+  changes: AppliedChanges,
+  newSkills: SkillConfig[],
+  oldSkills: SkillConfig[],
+): string[] {
+  const addedSkill = (id: SkillId): string =>
+    changeLine(
+      "+",
+      `${stripTerminalControls(getSkillById(id).displayName)}${scopeLabelOf(id, newSkills)}`,
+    );
+  const removedSkill = (id: SkillId): string =>
+    changeLine("-", `${getSkillDisplayName(id)}${scopeLabelOf(id, oldSkills)}`);
+  const joinedGlobalDetail = ` ${formatScopeTag("global")} (agent: skills added)`;
+
+  return [
+    ...changes.addedSkills.map(addedSkill),
+    ...changes.removedSkills.map(removedSkill),
+    ...changes.addedAgents.map((name) => changeLine("+", name, AGENT_DETAIL)),
+    ...changes.removedAgents.map((name) => changeLine("-", name, AGENT_DETAIL)),
+    ...[...changes.sourceChanges].map(([id, change]) => sourceChangeLine(id, change)),
+    ...[...changes.scopeChanges].map(([id, change]) =>
+      formatSkillScopeChangeLine(id, change, changes.dualScopeSkillTransitions),
+    ),
+    ...[...changes.agentScopeChanges].map(([name, change]) =>
+      formatAgentScopeChangeLine(name, change, changes.dualScopeAgentTransitions),
+    ),
+    ...[...changes.tuningChanges].map(([name, change]) =>
+      formatValueChangeLine(name, change, "agent"),
+    ),
+    ...changes.reassignedAgents.map((name) => changeLine("~", name, " (agent: skills reassigned)")),
+    ...changes.joinedGlobalAgents.map((name) => changeLine("~", name, joinedGlobalDetail)),
+    ...changes.rewrittenSkills.map((id) =>
+      changeLine("~", getSkillDisplayName(id), " (skill: files rewritten)"),
+    ),
+  ];
 }
 
 type EditContext = {
@@ -207,9 +276,7 @@ type EditContext = {
 
 /** The one directory an `edit` run acts on, decided once and handed to every layer. */
 type EditRoot = {
-  /** Where this run reads its saved skills from, writes, registers plugins and compiles into. */
   dir: string;
-  /** {@link EditRoot.dir} IS the global installation. */
   isGlobal: boolean;
 };
 
@@ -222,10 +289,6 @@ function resolveEditRoot(installation: Installation): EditRoot {
   return { dir, isGlobal: isHomeDirectory(dir) };
 }
 
-/**
- * A shared configuration, as one sequence applies it. It destroys whatever it leaves out, so its
- * removals are confirmed first.
- */
 type EditSelection = {
   result: InstallSelection;
   /**
@@ -242,30 +305,42 @@ type EditSelection = {
 };
 
 type SharedConfigPlan = {
-  heading: string;
+  heading?: string;
   sections: RemovalPlanSection[];
+  overwritten: RemovalPlanSection;
   statements: string[];
 };
 
 /**
- * From a project the global install is restored before the diff (`restoreInstalledGlobal`), so
- * every listed removal is the project's own; a `[P][G]` pair's id survives at global scope and is
- * not listed.
+ * Names every change that deletes files. From a project the global install is restored before the
+ * diff (`restoreInstalledGlobal`), so every listed removal is the project's own: a dropped `[P][G]`
+ * half, whose id survives at global scope, or an entry moved to the global install. Files written
+ * over in place are named apart, under their own heading.
  */
-function sharedConfigPlan(changes: ConfigChanges, kept: string[]): SharedConfigPlan {
+function sharedConfigPlan(
+  changes: ConfigChanges,
+  overwrittenSkillIds: SkillId[],
+  statements: string[],
+): SharedConfigPlan {
   const dropped = droppedProjectHalves(changes);
+  const moved = movedToGlobal(changes);
   const skillLines = [
     ...changes.removedSkills.map(skillLabel),
-    ...dropped.skillIds.map(droppedSkillLine),
+    ...dropped.skillIds.map((id) => projectCopyRemoved(skillLabel(id))),
+    ...moved.skillIds.map((id) => projectCopyMovedToGlobal(skillLabel(id))),
   ];
-  const agentLines = [...changes.removedAgents, ...dropped.agentNames.map(projectCopyRemoved)];
+  const agentLines = [
+    ...changes.removedAgents,
+    ...dropped.agentNames.map(projectCopyRemoved),
+    ...moved.agentNames.map(projectCopyMovedToGlobal),
+  ];
 
   const sections = removalSections(skillLines, agentLines);
-  return { heading: planHeading(sections), sections, statements: kept };
-}
-
-function droppedSkillLine(skillId: SkillId): string {
-  return projectCopyRemoved(skillLabel(skillId));
+  const overwritten = {
+    label: SHARED_CONFIG_APPLY.OVERWRITTEN_HEADING,
+    items: overwrittenSkillIds.map(skillLabel),
+  };
+  return { ...planHeading(sections, overwritten), sections, overwritten, statements };
 }
 
 function removalSections(skills: string[], agents: string[]): RemovalPlanSection[] {
@@ -275,13 +350,14 @@ function removalSections(skills: string[], agents: string[]): RemovalPlanSection
   ].filter((section) => section.items.length > 0);
 }
 
-type DroppedHalves = { skillIds: SkillId[]; agentNames: AgentName[] };
+/** Entries whose project copy an apply deletes. */
+type ProjectCopies = { skillIds: SkillId[]; agentNames: AgentName[] };
 
 /**
  * The diff records these as project-to-global scope changes, since the id survives at global
  * scope.
  */
-function droppedProjectHalves(changes: ConfigChanges): DroppedHalves {
+function droppedProjectHalves(changes: ConfigChanges): ProjectCopies {
   const droppedAgents = [...changes.agentScopeChanges].filter(
     ([name, change]) => change.to === "global" && changes.dualScopeAgentTransitions.has(name),
   );
@@ -292,10 +368,68 @@ function droppedProjectHalves(changes: ConfigChanges): DroppedHalves {
   };
 }
 
-/** A configuration that only adds says so, and is still confirmed: it is applied whole. */
-function planHeading(sections: RemovalPlanSection[]): string {
-  if (sections.length === 0) return SHARED_CONFIG_APPLY.NOTHING_REMOVED;
-  return SHARED_CONFIG_APPLY.PREVIEW_HEADING;
+/** A genuine move, not a collapsed pair: the copy goes from the project, the entry lives on. */
+function movedToGlobal(changes: ConfigChanges): ProjectCopies {
+  const skillMoves = [...scopeMovesOf(changes)].filter(([, change]) => change.to === "global");
+  const agentMoves = [...changes.agentScopeChanges].filter(
+    ([name, change]) => change.to === "global" && !changes.dualScopeAgentTransitions.has(name),
+  );
+
+  return {
+    skillIds: skillMoves.map(([id]) => id),
+    agentNames: agentMoves.map(([name]) => name),
+  };
+}
+
+/**
+ * A configuration that only adds says so, and is still confirmed: it is applied whole. One that
+ * removes nothing but overwrites opens on what it overwrites, since it does not only add.
+ */
+function planHeading(
+  sections: RemovalPlanSection[],
+  overwritten: RemovalPlanSection,
+): Pick<SharedConfigPlan, "heading"> {
+  if (sections.length > 0) return { heading: SHARED_CONFIG_APPLY.PREVIEW_HEADING };
+  if (overwritten.items.length > 0) return {};
+  return { heading: SHARED_CONFIG_APPLY.NOTHING_REMOVED };
+}
+
+/**
+ * Written over in place, the user's own edits with them: carried skills whose files change, and
+ * the ejected copies a switch to plugins deletes. One already named as moving is not named again.
+ */
+function overwrittenSkillIds(changes: AppliedChanges, active: ActiveEntries): SkillId[] {
+  const leaving = new Set(movedToGlobal(changes).skillIds);
+  const switched = ejectedCopiesSwitchedToPlugins(migrationPlanOf(changes, active));
+  return unique([...changes.rewrittenSkills, ...switched]).filter((id) => !leaving.has(id));
+}
+
+/** A copy beside a global install it keeps is not deleted (`keepsGlobalInstall`). */
+function ejectedCopiesSwitchedToPlugins(plan: MigrationPlan): SkillId[] {
+  return plan.toPlugin.filter((migration) => !keepsGlobalInstall(migration)).map(({ id }) => id);
+}
+
+/** Measured against each collapsed pair's global install: the only one a collapse can switch. */
+function migrationPlanOf(changes: ConfigChanges, active: ActiveEntries): MigrationPlan {
+  return detectMigrations(
+    withMaskedGlobalsRestored(active.oldSkills, changes.collapsedPairs),
+    active.selection.skills,
+  );
+}
+
+/** Only carried skills whose files would change: identical bytes written again change nothing. */
+async function carriedThatChange(carried: ExternalSkillInstall[]): Promise<ExternalSkillInstall[]> {
+  const changing = new Set(await carriedSkillsThatDiffer(carried));
+  return carried.filter((skill) => changing.has(skill.id));
+}
+
+/** A carried skill new here is an addition, already counted; the rest are rewritten in place. */
+function withRewrittenCarried(
+  planned: PlannedChanges,
+  carriedToWrite: ExternalSkillInstall[],
+): AppliedChanges {
+  const writtenIds = carriedToWrite.map((skill) => skill.id);
+  return { ...planned, rewrittenSkills: difference(writtenIds, skillsNewHere(planned)) };
 }
 
 /**
@@ -315,7 +449,7 @@ type ReassignedChanges = ConfigChanges & { reassignedAgents: AgentName[] };
 /** Adds the held global sub-agents a project run adds rows to (`HeldGlobal.joined`). */
 type PlannedChanges = ReassignedChanges & { joinedGlobalAgents: AgentName[] };
 
-/** Adds carried skills already installed here whose files the apply rewrote. */
+/** Adds carried skills already installed here whose files the apply rewrites. */
 type AppliedChanges = PlannedChanges & { rewrittenSkills: SkillId[] };
 
 /**
@@ -402,16 +536,82 @@ function unassignedStatement(unassigned: UnassignedRow[]): string[] {
   ];
 }
 
-function keptAsInstalledStatement(held: HeldGlobal, revisedCarried: SkillId[]): string[] {
+/** What the confirm says the run keeps, and the held global sub-agents it adds to. */
+function keptOnApply(
+  reconciled: ReconciledSharedConfig,
+  held: HeldGlobal,
+  revisedCarried: SkillId[],
+  idAppliedAtHome: string | undefined,
+): string[] {
+  return [
+    ...keptStatements(reconciled.kept),
+    ...unassignedStatement(reconciled.unassigned),
+    ...joinedStatement(held),
+    ...keptAsInstalledStatement(held, revisedCarried, idAppliedAtHome),
+  ];
+}
+
+function keptAsInstalledStatement(
+  held: HeldGlobal,
+  revisedCarried: SkillId[],
+  idAppliedAtHome: string | undefined,
+): string[] {
   const skillIds = [...held.keptAsInstalled.skillIds, ...revisedCarried];
   const { agentNames } = held.keptAsInstalled;
   if (skillIds.length === 0 && agentNames.length === 0) return [];
-  return [keptAsInstalledGlobally(skillIds, agentNames)];
+  return [keptAsInstalledGlobally(skillIds, agentNames, idAppliedAtHome)];
 }
 
 /** From a project, a shared configuration only adds to the global install. */
 function applyAuthority(editRoot: EditRoot): AuthoritativeScope {
   return editRoot.isGlobal ? "all" : "owned";
+}
+
+/** Both sides of the diff without their excluded entries. */
+type ActiveEntries = {
+  selection: InstallSelection;
+  oldConfig: ProjectConfig | null;
+  oldSkills: SkillConfig[];
+  oldAgents: AgentScopeConfig[];
+};
+
+function activeEntriesOf(
+  result: InstallSelection,
+  projectConfig: ProjectConfig | null,
+): ActiveEntries {
+  const oldSkills = (projectConfig?.skills ?? []).filter((s) => !s.excluded);
+  const oldAgents = (projectConfig?.agents ?? []).filter((a) => !a.excluded);
+
+  return {
+    selection: {
+      ...result,
+      skills: result.skills.filter((s) => !s.excluded),
+      agentConfigs: result.agentConfigs.filter((a) => !a.excluded),
+    },
+    oldConfig: projectConfig ? { ...projectConfig, skills: oldSkills, agents: oldAgents } : null,
+    oldSkills,
+    oldAgents,
+  };
+}
+
+function planChanges(
+  selection: EditSelection,
+  active: ActiveEntries,
+  projectConfig: ProjectConfig | null,
+  editRoot: EditRoot,
+): PlannedChanges {
+  const keptInstalled = globalHalvesKeptInstalled(selection.installedGlobal);
+  const changes = detectConfigChanges(active.oldConfig, active.selection, {
+    newSkills: [...selection.result.skills, ...keptInstalled.skills],
+    oldSkills: projectConfig?.skills ?? [],
+    newAgents: [...selection.result.agentConfigs, ...keptInstalled.agents],
+    oldAgents: projectConfig?.agents ?? [],
+  });
+
+  return {
+    ...withReassignments(changes, active.selection, projectConfig?.stack, editRoot),
+    joinedGlobalAgents: selection.joinedGlobalAgents,
+  };
 }
 
 export default class Edit extends BaseCommand {
@@ -457,12 +657,15 @@ export default class Edit extends BaseCommand {
   private async applyEdit(): Promise<void> {
     const { flags } = await this.parse(Edit);
     const cwd = process.cwd();
+    const namedProvider = providerNamedBy(flags.provider);
 
     // Above every installation check: opening a shared id needs no local state.
-    if (flags.ui && flags.from !== undefined) return this.openSharedInEditor(flags.from, cwd);
+    if (flags.ui && flags.from !== undefined) {
+      return this.openSharedInEditor(flags.from, cwd, namedProvider);
+    }
 
     // Before anything is copied or installed.
-    await refuseAnAmbiguousInstallation(cwd, "edit", providerNamedBy(flags.provider), (message) =>
+    await refuseAnAmbiguousInstallation(cwd, "edit", namedProvider, (message) =>
       this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
     );
 
@@ -473,11 +676,12 @@ export default class Edit extends BaseCommand {
     // A bare `edit` is `edit --ui`, and needs no source load.
     if (flags.from === undefined) return this.openInEditor(cwd);
 
-    // A destructive apply nobody can confirm must never become a yes; refused before the fetch.
-    const payload = await this.fetchSharedConfigOrFail(flags.from);
+    return this.applySharedConfig(flags.from, namedProvider);
+  }
 
+  private async applySharedConfig(id: string, namedProvider: Provider | undefined): Promise<void> {
+    const payload = await this.fetchSharedConfigOrFail(id, namedProvider);
     const context = await this.loadContextUnderSpinner();
-
     const editRoot = resolveEditRoot(context.installation);
 
     // A skill whose metadata.yaml no longer describes it would be dropped from config.ts.
@@ -487,74 +691,43 @@ export default class Edit extends BaseCommand {
       editRoot.dir,
     );
 
-    const selection = await this.selectionFromSharedConfig(payload, context, editRoot);
+    const selection = await this.selectionFromSharedConfig(id, payload, context, editRoot);
+    this.reportValidationErrors(selection.result.validation);
 
-    const { result } = selection;
-    this.reportValidationErrors(result.validation);
+    const active = activeEntriesOf(selection.result, context.projectConfig);
+    const planned = planChanges(selection, active, context.projectConfig, editRoot);
+    // Before asking: a rewrite is named in the plan, and a run that changes nothing asks nothing.
+    const carriedToWrite = await carriedThatChange(selection.carried);
+    const changes = withRewrittenCarried(planned, carriedToWrite);
 
-    const activeNewSkills = result.skills.filter((s) => !s.excluded);
-    const activeNewAgents = result.agentConfigs.filter((a) => !a.excluded);
-    const activeOldSkills = (context.projectConfig?.skills ?? []).filter((s) => !s.excluded);
-    const activeOldAgents = (context.projectConfig?.agents ?? []).filter((a) => !a.excluded);
+    if (!hasAnyChanges(changes)) return this.sayNothingChanged(selection.kept);
 
-    const filteredResult: InstallSelection = {
-      ...result,
-      skills: activeNewSkills,
-      agentConfigs: activeNewAgents,
-    };
-    const filteredOldConfig: ProjectConfig | null = context.projectConfig
-      ? { ...context.projectConfig, skills: activeOldSkills, agents: activeOldAgents }
-      : null;
+    const plan = await this.planToConfirm(changes, active, selection.kept, context, editRoot);
+    await this.confirmSharedConfigOrCancel(plan, applyArrivals(changes, active.selection));
+    await this.writeCarriedSkills(carriedToWrite);
+    await this.applyApprovedChanges(changes, active, selection.result, context, editRoot);
+  }
 
-    const keptInstalled = globalHalvesKeptInstalled(selection.installedGlobal);
-    const planned: PlannedChanges = {
-      ...withReassignments(
-        detectConfigChanges(filteredOldConfig, filteredResult, {
-          newSkills: [...result.skills, ...keptInstalled.skills],
-          oldSkills: context.projectConfig?.skills ?? [],
-          newAgents: [...result.agentConfigs, ...keptInstalled.agents],
-          oldAgents: context.projectConfig?.agents ?? [],
-        }),
-        filteredResult,
-        context.projectConfig?.stack,
-        editRoot,
-      ),
-      joinedGlobalAgents: selection.joinedGlobalAgents,
-    };
-    // After the diff, above every mutation and the no-change return: carried skills may still have
-    // bytes to land when the roster is unchanged.
-    const rewritten = await this.confirmAndWriteCarried(selection, planned, filteredResult);
-    const changes: AppliedChanges = {
-      ...planned,
-      rewrittenSkills: difference(rewritten, skillsNewHere(planned)),
-    };
-
-    // One authority for the merger's config row and the global config the gate commits.
-    const authority = applyAuthority(editRoot);
-
-    if (!hasAnyChanges(changes)) {
-      this.log(chalk.hex(CLI_COLORS.NEUTRAL)("No changes made."));
-      return;
-    }
-
-    this.logChangeSummary(changes, filteredResult.skills, filteredOldConfig?.skills ?? []);
-    const migratedSkillIds = await this.applyMigrations(
-      changes,
-      filteredResult,
-      activeOldSkills,
-      context,
-      editRoot,
-    );
-    await this.applyScopeChanges(changes, filteredResult, context, editRoot);
+  private async applyApprovedChanges(
+    changes: AppliedChanges,
+    active: ActiveEntries,
+    result: InstallSelection,
+    context: EditContext,
+    editRoot: EditRoot,
+  ): Promise<void> {
+    const { selection: activeSelection, oldSkills, oldAgents } = active;
+    this.logChangeSummary(changes, activeSelection.skills, oldSkills);
+    await this.applyMigrations(changes, active, context, editRoot);
+    await this.applyScopeChanges(changes, activeSelection, context, editRoot);
     await this.applyCollapsedPairs(changes, context, editRoot);
-    await this.applySourceChanges(changes, activeOldSkills, editRoot, migratedSkillIds);
-    await this.applyPluginChanges(changes, filteredResult, activeOldSkills, context, editRoot);
-    await this.copyNewLocalSkills(changes, filteredResult, context, editRoot);
-    await this.removeDeletedLocalSkills(changes, activeOldSkills, editRoot);
-    await this.writeConfigAndCompile(result, context, editRoot, authority);
-    await this.cleanupStaleAgentFiles(changes, activeOldAgents, editRoot);
+    await this.applyPluginChanges(changes, activeSelection, oldSkills, context, editRoot);
+    await this.copyNewLocalSkills(changes, activeSelection, context, editRoot);
+    await this.removeDeletedLocalSkills(changes, oldSkills, editRoot);
+    // Unfiltered: the config records the excluded entries too.
+    await this.writeConfigAndCompile(result, context, editRoot);
+    await this.cleanupStaleAgentFiles(changes, oldAgents, editRoot);
     await this.reportWhatThisHostCannotCarry(editRoot);
-    this.logCompletionSummary(changes);
+    this.logCompletionSummary();
   }
 
   /**
@@ -563,6 +736,7 @@ export default class Edit extends BaseCommand {
    * global install is only added to.
    */
   private async selectionFromSharedConfig(
+    id: string,
     payload: SeedPayload,
     context: EditContext,
     editRoot: EditRoot,
@@ -570,23 +744,13 @@ export default class Edit extends BaseCommand {
     const { matrix: sourceMatrix } = context.sourceResult;
     // Before the decode: a carried skill answers to no catalogue until it is seated.
     const carried = this.registerExternalSkillsOrFail(payload, sourceMatrix, editRoot.dir);
-    const { result, skippedSkillIds, skippedAgentNames } = this.decodeSeedOrFail(
-      payload,
-      sourceMatrix,
-    );
+    const mapping = this.decodeSeedOrFail(payload, sourceMatrix);
+    const { result } = mapping;
 
     // Before any skip is narrated; `init --from` asks the same at the same point.
     this.refuseProjectScopedContentAtHome(result, editRoot.dir);
 
-    // Ids the decode could not place stay, as does a sub-agent only they carried in: a catalogue
-    // limit is not an instruction to delete.
-    const unplaceable = new Set(skippedSkillIds);
-    const reconciled = reconcileSharedConfig({
-      decoded: withUnplaceableAssignees(result, context.projectConfig, payload, unplaceable),
-      installed: context.projectConfig,
-      authoredHere: await this.readAuthoredHere(context.projectConfig, editRoot.dir),
-      unplaceable,
-    });
+    const reconciled = await this.reconcileWithInstallation(mapping, payload, context, editRoot);
     const installedGlobal = editRoot.isGlobal ? null : await readInstalledGlobal(editRoot.dir);
     const held = restoreInstalledGlobal(reconciled.result, installedGlobal);
     const arrivingCarried = notInstalledGlobally(carried, held);
@@ -599,26 +763,37 @@ export default class Edit extends BaseCommand {
     );
 
     // Held globally, so not written from a project; named in the plan instead.
-    const heldGlobally = difference(carried, arrivingCarried);
-    const revisedGlobally = await carriedSkillsThatDiffer(heldGlobally);
+    const revisedGlobally = await carriedSkillsThatDiffer(difference(carried, arrivingCarried));
 
-    // Warnings the load buffered.
     sayCapturedWarnings(context.startupMessages);
-    if (skippedSkillIds.length > 0) this.warn(skippedUnknownSkills(skippedSkillIds));
-    if (skippedAgentNames.length > 0) this.warn(skippedUnknownAgents(skippedAgentNames));
+    this.warnOfSkippedEntries(mapping, held.result.selectedAgents);
 
     return {
       result: held.result,
-      kept: [
-        ...keptStatements(reconciled.kept),
-        ...unassignedStatement(reconciled.unassigned),
-        ...joinedStatement(held),
-        ...keptAsInstalledStatement(held, revisedGlobally),
-      ],
+      kept: keptOnApply(reconciled, held, revisedGlobally, installsAtHome(result) ? id : undefined),
       carried: arrivingCarried,
       joinedGlobalAgents: held.joined.map(({ agentName }) => agentName),
       installedGlobal,
     };
+  }
+
+  /**
+   * Ids the decode could not place stay, as does a sub-agent only they carried in: a catalogue
+   * limit is not an instruction to delete.
+   */
+  private async reconcileWithInstallation(
+    { result, skippedSkillIds }: SeedMapping,
+    payload: SeedPayload,
+    { projectConfig }: EditContext,
+    editRoot: EditRoot,
+  ): Promise<ReconciledSharedConfig> {
+    const unplaceable = new Set(skippedSkillIds);
+    return reconcileSharedConfig({
+      decoded: withUnplaceableAssignees(result, projectConfig, payload, unplaceable),
+      installed: projectConfig,
+      authoredHere: await this.readAuthoredHere(projectConfig, editRoot.dir),
+      unplaceable,
+    });
   }
 
   /** Best-effort: an unreadable directory protects nothing and must not fail an apply. */
@@ -636,13 +811,19 @@ export default class Edit extends BaseCommand {
     }
   }
 
-  /** Refuses an empty directory or a missing terminal before spending a round trip. */
-  private async fetchSharedConfigOrFail(id: string): Promise<SeedPayload> {
+  /**
+   * Refuses an empty directory, or a missing terminal, before spending a round trip: a destructive
+   * apply nobody can confirm must never become a yes.
+   */
+  private async fetchSharedConfigOrFail(
+    id: string,
+    namedProvider: Provider | undefined,
+  ): Promise<SeedPayload> {
     if (!(await detectProject())) {
-      this.error(nothingInstalledToApplyTo(id), { exit: EXIT_CODES.ERROR });
+      this.error(nothingInstalledToApplyTo(id, namedProvider), { exit: EXIT_CODES.ERROR });
     }
     if (!process.stdin.isTTY) {
-      this.error(sharedConfigNeedsTerminal(id), { exit: EXIT_CODES.ERROR });
+      this.error(sharedConfigNeedsTerminal(id, namedProvider), { exit: EXIT_CODES.ERROR });
     }
 
     this.log(`Fetching configuration ${id}...`);
@@ -674,42 +855,69 @@ export default class Edit extends BaseCommand {
     }
   }
 
-  private async confirmAndWriteCarried(
-    selection: EditSelection,
-    planned: PlannedChanges,
-    result: InstallSelection,
-  ): Promise<SkillId[]> {
-    await this.confirmSharedConfigOrCancel(planned, selection.kept, applyArrivals(planned, result));
-    return this.writeCarriedSkills(selection.carried);
+  private async writeCarriedSkills(carried: ExternalSkillInstall[]): Promise<void> {
+    if (carried.length === 0) return;
+
+    await writeExternalSkills(carried);
+    this.log(carriedSkillsWritten(carried.map((skill) => skill.id)));
   }
 
-  private async writeCarriedSkills(carried: ExternalSkillInstall[]): Promise<SkillId[]> {
-    if (carried.length === 0) return [];
+  /** What the run removes and overwrites, then what it keeps and what else it rewrites. */
+  private async planToConfirm(
+    changes: AppliedChanges,
+    active: ActiveEntries,
+    kept: string[],
+    context: EditContext,
+    editRoot: EditRoot,
+  ): Promise<SharedConfigPlan> {
+    const reachedProjects = await this.registeredProjectsStatement(changes, context, editRoot);
+    return sharedConfigPlan(changes, overwrittenSkillIds(changes, active), [
+      ...kept,
+      ...reachedProjects,
+    ]);
+  }
 
-    const rewritten = await writeExternalSkills(carried);
-    this.log(carriedSkillsWritten(carried.map((skill) => skill.id)));
-    return rewritten;
+  /** Nothing to confirm; what the run keeps still says why nothing changed. */
+  private sayNothingChanged(kept: string[]): void {
+    for (const statement of kept) {
+      this.log(statement);
+    }
+    this.log(chalk.hex(CLI_COLORS.NEUTRAL)(INFO_MESSAGES.NO_CHANGES_MADE));
   }
 
   /**
-   * The plan and the apply read the same `ConfigChanges`, so what is approved is what is removed.
-   * The arrivals print above it, so the question covers the whole of what a yes does.
+   * At home every registered project inlines the global config, so a change to it rewrites each
+   * one the fan-out reaches. Rewritten carried files alone leave the config as it was.
+   */
+  private async registeredProjectsStatement(
+    changes: AppliedChanges,
+    context: EditContext,
+    editRoot: EditRoot,
+  ): Promise<string[]> {
+    if (!editRoot.isGlobal || !changesTheConfig(changes)) return [];
+
+    const reached = await projectsAFanOutReaches(
+      context.projectConfig?.projects ?? [],
+      providerInUse(editRoot.dir),
+    );
+    return reached.length === 0 ? [] : [registeredProjectsRewritten(reached)];
+  }
+
+  /**
+   * The plan and the apply read the same changes, so what is approved is what is removed. The
+   * arrivals print above it, so the question covers the whole of what a yes does.
    */
   private async confirmSharedConfigOrCancel(
-    changes: ConfigChanges,
-    kept: string[],
+    plan: SharedConfigPlan,
     arrivals: Arrivals,
   ): Promise<void> {
-    const plan = sharedConfigPlan(changes, kept);
     for (const line of arrivalLines(arrivals)) {
       this.log(line);
     }
 
     const outcome = await promptConfirm(({ onConfirm, onCancel }) => (
       <RemovalPlanConfirm
-        heading={plan.heading}
-        sections={plan.sections}
-        statements={plan.statements}
+        {...plan}
         message={SHARED_CONFIG_APPLY.CONFIRM}
         onConfirm={onConfirm}
         onCancel={onCancel}
@@ -767,11 +975,15 @@ export default class Edit extends BaseCommand {
   }
 
   /** Opens an id rather than applying it; `--from` without `--ui` is the destructive apply. */
-  private async openSharedInEditor(id: string, cwd: string): Promise<void> {
+  private async openSharedInEditor(
+    id: string,
+    cwd: string,
+    namedProvider: Provider | undefined,
+  ): Promise<void> {
     const url = editorConfigUrl(id);
 
     this.log(`Open it at ${url}`);
-    this.log(applySharedConfigHere(id, await holdsItsOwnInstallation(cwd)));
+    this.log(applySharedConfigHere(id, await holdsItsOwnInstallation(cwd), namedProvider));
 
     if (!process.stdin.isTTY) return;
 
@@ -821,110 +1033,24 @@ export default class Edit extends BaseCommand {
     newSkills: SkillConfig[],
     oldSkills: SkillConfig[],
   ): void {
-    const {
-      addedSkills,
-      removedSkills,
-      addedAgents,
-      removedAgents,
-      sourceChanges,
-      scopeChanges,
-      agentScopeChanges,
-      dualScopeSkillTransitions,
-      dualScopeAgentTransitions,
-      tuningChanges,
-      reassignedAgents,
-      joinedGlobalAgents,
-      rewrittenSkills,
-    } = changes;
-
     this.log(`\n${chalk.hex(CLI_COLORS.WHITE).bold("Changes:")}`);
-    for (const skillId of addedSkills) {
-      const scope = newSkills.find((s) => s.id === skillId)?.scope;
-      const scopeLabel = scope ? ` ${formatScopeTag(scope)}` : "";
-      this.log(
-        chalk.hex(CLI_COLORS.SUCCESS)(`  + ${getSkillById(skillId).displayName}${scopeLabel}`),
-      );
-    }
-    for (const skillId of removedSkills) {
-      const scope = oldSkills.find((s) => s.id === skillId)?.scope;
-      const scopeLabel = scope ? ` ${formatScopeTag(scope)}` : "";
-      this.log(chalk.hex(CLI_COLORS.ERROR)(`  - ${getSkillDisplayName(skillId)}${scopeLabel}`));
-    }
-    for (const agentName of addedAgents) {
-      this.log(
-        chalk.hex(CLI_COLORS.SUCCESS)(`  + ${agentName}`) +
-          chalk.hex(CLI_COLORS.NEUTRAL)(" (agent)"),
-      );
-    }
-    for (const agentName of removedAgents) {
-      this.log(
-        chalk.hex(CLI_COLORS.ERROR)(`  - ${agentName}`) + chalk.hex(CLI_COLORS.NEUTRAL)(" (agent)"),
-      );
-    }
-    for (const [skillId, change] of sourceChanges) {
-      const displayName = getSkillDisplayName(skillId);
-      const fromLabel = formatSourceDisplayName(change.from);
-      const toLabel = formatSourceDisplayName(change.to);
-      this.log(
-        chalk.hex(CLI_COLORS.WARNING)(`  ~ ${displayName}`) +
-          chalk.hex(CLI_COLORS.NEUTRAL)(` (${fromLabel} \u2192 ${toLabel})`),
-      );
-    }
-    for (const [skillId, change] of scopeChanges) {
-      this.log(formatSkillScopeChangeLine(skillId, change, dualScopeSkillTransitions));
-    }
-    for (const [agentName, change] of agentScopeChanges) {
-      this.log(formatAgentScopeChangeLine(agentName, change, dualScopeAgentTransitions));
-    }
-    // A retune moves no file, so it needs its own line or the run reads as a no-op.
-    for (const [agentName, change] of tuningChanges) {
-      this.log(formatValueChangeLine(agentName, change, "agent"));
-    }
-    // Neither does a re-assignment.
-    for (const agentName of reassignedAgents) {
-      this.log(
-        chalk.hex(CLI_COLORS.WARNING)(`  ~ ${agentName}`) +
-          chalk.hex(CLI_COLORS.NEUTRAL)(" (agent: skills reassigned)"),
-      );
-    }
-    // Nor rows joining a held global sub-agent, which keeps everything else.
-    for (const agentName of joinedGlobalAgents) {
-      this.log(
-        chalk.hex(CLI_COLORS.WARNING)(`  ~ ${agentName}`) +
-          chalk.hex(CLI_COLORS.NEUTRAL)(` ${formatScopeTag("global")} (agent: skills added)`),
-      );
-    }
-    for (const skillId of rewrittenSkills) {
-      this.log(
-        chalk.hex(CLI_COLORS.WARNING)(`  ~ ${getSkillDisplayName(skillId)}`) +
-          chalk.hex(CLI_COLORS.NEUTRAL)(" (skill: files rewritten)"),
-      );
+    for (const line of changeSummaryLines(changes, newSkills, oldSkills)) {
+      this.log(line);
     }
     this.log("");
   }
 
   private async applyMigrations(
     changes: ConfigChanges,
-    filteredResult: InstallSelection,
-    activeOldSkills: SkillConfig[],
+    active: ActiveEntries,
     context: EditContext,
     editRoot: EditRoot,
-  ): Promise<Set<SkillId>> {
-    const migrationPlan = detectMigrations(
-      withMaskedGlobalsRestored(activeOldSkills, changes.collapsedPairs),
-      filteredResult.skills,
-    );
-    const migratedSkillIds = new Set([
-      ...migrationPlan.toEject.map((m) => m.id),
-      ...migrationPlan.toPlugin.map((m) => m.id),
-    ]);
-    if (migratedSkillIds.size === 0) return migratedSkillIds;
+  ): Promise<void> {
+    const migrationPlan = migrationPlanOf(changes, active);
+    if (migrationPlan.toEject.length === 0 && migrationPlan.toPlugin.length === 0) return;
 
-    if (migrationPlan.toEject.length > 0) {
-      this.logModeSwitch(migrationPlan.toEject.length, INSTALL_MODE_DESCRIPTIONS.eject);
-    }
+    this.announceMigrations(migrationPlan);
     if (migrationPlan.toPlugin.length > 0) {
-      this.logModeSwitch(migrationPlan.toPlugin.length, INSTALL_MODE_DESCRIPTIONS.plugin);
       // `claude plugin install` needs the marketplace registered and current. Before
       // `executeMigration`, so an unresolvable marketplace exits with the ejected copies intact.
       await this.requireMarketplaceOrExit(
@@ -956,8 +1082,6 @@ export default class Edit extends BaseCommand {
     if (migrationPlan.toPlugin.length > 0) {
       this.reportPluginInstalls(migrationResult.pluginInstalls);
     }
-
-    return migratedSkillIds;
   }
 
   /**
@@ -974,8 +1098,41 @@ export default class Edit extends BaseCommand {
     this.log(chalk.hex(CLI_COLORS.NEUTRAL)(localSkillsCopied(result.copied.length)));
   }
 
+  /**
+   * One line per kind, each counting its own: a mode switch, then a skill added in the project
+   * beside the global install it keeps (`keepsGlobalInstall` decides both the keep and the line).
+   */
+  private announceMigrations(plan: MigrationPlan): void {
+    const [copiesBesideGlobalPlugin, switchesToEject] = partition(plan.toEject, keepsGlobalInstall);
+    const [installsBesideGlobalCopy, switchesToPlugin] = partition(
+      plan.toPlugin,
+      keepsGlobalInstall,
+    );
+
+    if (switchesToEject.length > 0) {
+      this.logModeSwitch(switchesToEject.length, INSTALL_MODE_DESCRIPTIONS.eject);
+    }
+    if (copiesBesideGlobalPlugin.length > 0) {
+      this.logCopiesBesideGlobalPlugins(copiesBesideGlobalPlugin.length);
+    }
+    if (switchesToPlugin.length > 0) {
+      this.logModeSwitch(switchesToPlugin.length, INSTALL_MODE_DESCRIPTIONS.plugin);
+    }
+    if (installsBesideGlobalCopy.length > 0) {
+      this.logInstallsBesideGlobalCopies(installsBesideGlobalCopy.length);
+    }
+  }
+
   private logModeSwitch(count: number, modeDescription: string): void {
     this.log(chalk.hex(CLI_COLORS.NEUTRAL)(`Switching ${count} skill(s) to ${modeDescription}`));
+  }
+
+  private logCopiesBesideGlobalPlugins(count: number): void {
+    this.log(chalk.hex(CLI_COLORS.NEUTRAL)(copyingBesideGlobalPlugins(count)));
+  }
+
+  private logInstallsBesideGlobalCopies(count: number): void {
+    this.log(chalk.hex(CLI_COLORS.NEUTRAL)(installingBesideGlobalCopies(count)));
   }
 
   /**
@@ -989,20 +1146,9 @@ export default class Edit extends BaseCommand {
     editRoot: EditRoot,
   ): Promise<void> {
     const scopeChanges = scopeMovesOf(changes);
+    await moveEjectedSkillCopies(scopeChanges, filteredResult.skills, editRoot.dir);
 
-    for (const [skillId, change] of scopeChanges) {
-      const skillConfig = filteredResult.skills.find((s) => s.id === skillId);
-      if (skillConfig?.origin === EJECT_SOURCE) {
-        await migrateLocalSkillScope(skillId, change.from, editRoot.dir);
-      }
-    }
-
-    // Only resolve the marketplace when a plugin scope migration exists.
-    const hasPluginScopeChanges = [...scopeChanges.keys()].some((skillId) => {
-      const skillConfig = filteredResult.skills.find((s) => s.id === skillId);
-      return skillConfig && skillConfig.origin !== EJECT_SOURCE;
-    });
-    if (!hasPluginScopeChanges) return;
+    if (!movesAPluginSkill(scopeChanges, filteredResult.skills)) return;
 
     const marketplace = await this.requireMarketplaceOrExit(
       context.sourceResult,
@@ -1063,39 +1209,31 @@ export default class Edit extends BaseCommand {
       return;
     }
 
-    const uninstallResult = await uninstallPluginSkills(
+    await this.uninstallPluginSkillsReported(
       pluginHalves.map((half) => half.id),
       pluginHalves,
       marketplace,
       editRoot.dir,
     );
-    if (uninstallResult.uninstalled.length > 0) {
-      this.log(
-        chalk.hex(CLI_COLORS.NEUTRAL)(`Removed ${uninstallResult.uninstalled.length} plugin(s)`),
-      );
-    }
-    for (const item of uninstallResult.failed) {
-      this.warn(`Failed to uninstall plugin ${item.id}: ${item.error}`);
-    }
   }
 
-  private async applySourceChanges(
-    changes: ConfigChanges,
-    activeOldSkills: SkillConfig[],
-    editRoot: EditRoot,
-    migratedSkillIds: Set<SkillId>,
+  private async uninstallPluginSkillsReported(
+    skillIds: SkillId[],
+    oldSkills: SkillConfig[],
+    marketplace: string,
+    projectDir: string,
   ): Promise<void> {
-    const { sourceChanges } = changes;
-
-    // Non-migration source changes, e.g. marketplace A -> marketplace B.
-    for (const [skillId, change] of sourceChanges) {
-      if (migratedSkillIds.has(skillId)) {
-        continue;
-      }
-      if (change.from === EJECT_SOURCE) {
-        const oldSkill = activeOldSkills.find((s) => s.id === skillId);
-        await deleteLocalSkill(editRoot.dir, skillId, oldSkill?.scope);
-      }
+    const { uninstalled, failed } = await uninstallPluginSkills(
+      skillIds,
+      oldSkills,
+      marketplace,
+      projectDir,
+    );
+    if (uninstalled.length > 0) {
+      this.log(chalk.hex(CLI_COLORS.NEUTRAL)(`Removed ${uninstalled.length} plugin(s)`));
+    }
+    for (const item of failed) {
+      this.warn(`Failed to uninstall plugin ${item.id}: ${item.error}`);
     }
   }
 
@@ -1133,20 +1271,12 @@ export default class Edit extends BaseCommand {
     }
 
     if (removedPluginSkills.length > 0) {
-      const uninstallResult = await uninstallPluginSkills(
+      await this.uninstallPluginSkillsReported(
         removedPluginSkills,
         activeOldSkills,
         marketplace,
         editRoot.dir,
       );
-      if (uninstallResult.uninstalled.length > 0) {
-        this.log(
-          chalk.hex(CLI_COLORS.NEUTRAL)(`Removed ${uninstallResult.uninstalled.length} plugin(s)`),
-        );
-      }
-      for (const item of uninstallResult.failed) {
-        this.warn(`Failed to uninstall plugin ${item.id}: ${item.error}`);
-      }
     }
   }
 
@@ -1179,8 +1309,8 @@ export default class Edit extends BaseCommand {
   ): Promise<void> {
     const { removedSkills } = changes;
 
-    // A deselected eject skill is uninstalled at its scope; plugin removals and eject->marketplace
-    // deletions belong to applyPluginChanges and applySourceChanges.
+    // A deselected eject skill is uninstalled at its scope; plugin removals belong to
+    // applyPluginChanges.
     for (const skillId of removedSkills) {
       const oldSkill = activeOldSkills.find((s) => s.id === skillId);
       if (oldSkill?.origin !== EJECT_SOURCE) continue;
@@ -1193,68 +1323,63 @@ export default class Edit extends BaseCommand {
     result: InstallSelection,
     context: EditContext,
     editRoot: EditRoot,
-    authority: AuthoritativeScope,
   ): Promise<void> {
-    let agentDefsResult: AgentDefs;
+    const agentDefs = await this.loadAgentDefsOrFail();
+    const configResult = await this.writeConfigOrFail(result, context, editRoot, agentDefs);
+    this.reportUnassignedSkills(configResult.config, result.skills);
+    await this.recompileAgents(result, editRoot, configResult.propagation, agentDefs.sourcePath);
+    this.reportFanOut(configResult.propagation);
+  }
+
+  private async loadAgentDefsOrFail(): Promise<AgentDefs> {
     try {
-      agentDefsResult = await loadAgentDefs();
+      return await loadAgentDefs();
     } catch (error) {
       this.handleError(error);
     }
+  }
 
-    // A failed write is fatal: every mutation has landed and config.ts is their only record.
-    let configResult: ConfigWriteResult;
+  /** Fatal: every mutation has landed and config.ts is their only record. */
+  private async writeConfigOrFail(
+    result: InstallSelection,
+    context: EditContext,
+    editRoot: EditRoot,
+    agentDefs: AgentDefs,
+  ): Promise<ConfigWriteResult> {
     try {
-      configResult = await writeProjectConfig({
+      return await writeProjectConfig({
         selection: result,
         sourceResult: context.sourceResult,
         projectDir: editRoot.dir,
-        agentDefs: agentDefsResult,
-        authoritativeScope: authority,
+        agentDefs,
+        authoritativeScope: applyAuthority(editRoot),
       });
     } catch (error) {
       this.error(`Could not update config: ${getErrorMessage(error)}`, {
         exit: EXIT_CODES.ERROR,
       });
     }
+  }
 
-    this.reportUnassignedSkills(configResult.config, result.skills);
-
+  private async recompileAgents(
+    result: InstallSelection,
+    editRoot: EditRoot,
+    propagation: GateReport,
+    sourcePath: string,
+  ): Promise<void> {
     try {
       const agentScopeMap = activeAgentScopeMap(result.agentConfigs);
       const { allSkills } = await discoverInstalledSkills(editRoot.dir);
-      const compile = compilesGlobalScope(editRoot, configResult.propagation)
+      const compile = compilesGlobalScope(editRoot, propagation)
         ? compileAgentsAllScopes
         : compileProjectScope;
-      const compilationResult = await compile({
+      const compilation = await compile({
         projectDir: editRoot.dir,
-        sourcePath: agentDefsResult.sourcePath,
+        sourcePath,
         skills: allSkills,
         agentScopeMap,
       });
-
-      const { compiled, rewritten, failed, warnings } = compilationResult;
-      const summary = recompileSummary(
-        rewritten.length,
-        compiled.length - rewritten.length,
-        RECOMPILE_SUBJECT,
-      );
-
-      if (failed.length > 0) {
-        this.log(
-          chalk.hex(CLI_COLORS.NEUTRAL)(summary) +
-            chalk.hex(CLI_COLORS.WARNING)(` (${failed.length} failed)`),
-        );
-        for (const warning of warnings) {
-          this.warn(warning);
-        }
-        // Off `failed`: `warnings` also carries non-failures.
-        this.recordIncompleteWork(agentsNotCompiled(failed), INCOMPLETE_WORK_RECOVERY.RECOMPILE);
-      } else if (compiled.length > 0) {
-        this.log(chalk.hex(CLI_COLORS.NEUTRAL)(summary));
-      } else {
-        this.log(chalk.hex(CLI_COLORS.NEUTRAL)(INFO_MESSAGES.NO_AGENTS_TO_RECOMPILE));
-      }
+      this.reportRecompile(compilation);
     } catch (error) {
       // The config already landed; a failed recompile must not end in silence.
       this.reportIncompleteWork(
@@ -1263,8 +1388,30 @@ export default class Edit extends BaseCommand {
       );
       this.log(`You can manually recompile with '${CLI_INVOKE_COMMAND} compile'.`);
     }
+  }
 
-    this.reportFanOut(configResult.propagation);
+  private reportRecompile({ compiled, rewritten, failed, warnings }: CompilationResult): void {
+    const summary = recompileSummary(
+      rewritten.length,
+      compiled.length - rewritten.length,
+      RECOMPILE_SUBJECT,
+    );
+
+    if (failed.length > 0) {
+      this.log(
+        chalk.hex(CLI_COLORS.NEUTRAL)(summary) +
+          chalk.hex(CLI_COLORS.WARNING)(` (${failed.length} failed)`),
+      );
+      for (const warning of warnings) {
+        this.warn(warning);
+      }
+      // Off `failed`: `warnings` also carries non-failures.
+      this.recordIncompleteWork(agentsNotCompiled(failed), INCOMPLETE_WORK_RECOVERY.RECOMPILE);
+    } else if (compiled.length > 0) {
+      this.log(chalk.hex(CLI_COLORS.NEUTRAL)(summary));
+    } else {
+      this.log(chalk.hex(CLI_COLORS.NEUTRAL)(INFO_MESSAGES.NO_AGENTS_TO_RECOMPILE));
+    }
   }
 
   private async cleanupStaleAgentFiles(
@@ -1299,15 +1446,14 @@ export default class Edit extends BaseCommand {
     }
   }
 
-  private logCompletionSummary(_changes: ConfigChanges): void {
+  private logCompletionSummary(): void {
     if (this.hasIncompleteWork) return;
 
     this.log(`\n${chalk.hex(CLI_COLORS.SUCCESS)("\u2713 Done")}\n`);
   }
 }
 
-/** @internal Exported for testing */
-export type ConfigChanges = {
+type ConfigChanges = {
   addedSkills: SkillId[];
   removedSkills: SkillId[];
   addedAgents: AgentName[];
@@ -1348,15 +1494,13 @@ type FullScopeEntries = {
 };
 
 /**
- * @internal Exported for testing
- *
  * `fullEntries` carries the tombstone-inclusive lists, used only to tell a scope migration from a
- * dual-scope add/remove; without it every scope change is a migration.
+ * dual-scope add/remove.
  */
-export function detectConfigChanges(
+function detectConfigChanges(
   oldConfig: ProjectConfig | null,
   selection: InstallSelection,
-  fullEntries?: FullScopeEntries,
+  fullEntries: FullScopeEntries,
 ): ConfigChanges {
   const oldSkillIds = oldConfig?.skills.map((s) => s.id) ?? [];
   const newSkillIds = selection.skills.map((s) => s.id);
@@ -1380,19 +1524,19 @@ export function detectConfigChanges(
   );
   const dualScopeSkillTransitions = detectDualScopeTransitions(
     scopeChanges,
-    fullEntries?.newSkills ?? [],
-    fullEntries?.oldSkills ?? [],
+    fullEntries.newSkills,
+    fullEntries.oldSkills,
     (s) => s.id,
   );
   const collapsedPairs = collapsedPairsOf(
     scopeChanges,
     dualScopeSkillTransitions,
-    fullEntries?.oldSkills ?? [],
+    fullEntries.oldSkills,
   );
   const dualScopeAgentTransitions = detectDualScopeTransitions(
     agentScopeChanges,
-    fullEntries?.newAgents ?? [],
-    fullEntries?.oldAgents ?? [],
+    fullEntries.newAgents,
+    fullEntries.oldAgents,
     (a) => a.name,
   );
   const arrivingSkills = arrivingProjectHalves(scopeChanges, dualScopeSkillTransitions);
@@ -1511,21 +1655,12 @@ function detectDualScopeTransitions<
   T extends { scope: SkillScope; excluded?: boolean },
 >(scopeChanges: Map<K, ScopeChange>, fullNew: T[], fullOld: T[], getKey: (item: T) => K): Set<K> {
   const hasGlobalTombstone = (items: T[], key: K): boolean =>
-    items.some((item) => getKey(item) === key && item.scope === "global" && item.excluded === true);
+    items.some((item) => getKey(item) === key && isGlobalTombstone(item));
+  const isDualScope = ([key, { from, to }]: [K, ScopeChange]): boolean =>
+    (from === "global" && to === "project" && hasGlobalTombstone(fullNew, key)) ||
+    (from === "project" && to === "global" && hasGlobalTombstone(fullOld, key));
 
-  const result = new Set<K>();
-  for (const [key, change] of scopeChanges) {
-    if (change.from === "global" && change.to === "project" && hasGlobalTombstone(fullNew, key)) {
-      result.add(key);
-    } else if (
-      change.from === "project" &&
-      change.to === "global" &&
-      hasGlobalTombstone(fullOld, key)
-    ) {
-      result.add(key);
-    }
-  }
-  return result;
+  return new Set([...scopeChanges].filter(isDualScope).map(([key]) => key));
 }
 
 /** P→G dual-scope transitions as the pairs they collapsed, read from the old state. */
@@ -1585,6 +1720,30 @@ function scopeMovesOf(changes: ConfigChanges): Map<SkillId, ScopeChange> {
   return new Map([...changes.scopeChanges].filter(([id]) => !collapsed.has(id)));
 }
 
+async function moveEjectedSkillCopies(
+  scopeMoves: ReadonlyMap<SkillId, ScopeChange>,
+  skills: SkillConfig[],
+  projectDir: string,
+): Promise<void> {
+  for (const [skillId, change] of scopeMoves) {
+    const skillConfig = skills.find((s) => s.id === skillId);
+    if (skillConfig?.origin === EJECT_SOURCE) {
+      await migrateLocalSkillScope(skillId, change.from, projectDir);
+    }
+  }
+}
+
+/** An ejected skill moves as files; a plugin one needs the marketplace to re-register it. */
+function movesAPluginSkill(
+  scopeMoves: ReadonlyMap<SkillId, ScopeChange>,
+  skills: SkillConfig[],
+): boolean {
+  return [...scopeMoves.keys()].some((skillId) => {
+    const skill = skills.find((s) => s.id === skillId);
+    return skill !== undefined && skill.origin !== EJECT_SOURCE;
+  });
+}
+
 type StaleAgent = { name: AgentName; scope: SkillScope };
 
 const STALE_AGENT_SCOPES = ["project", "global"] as const satisfies readonly SkillScope[];
@@ -1624,10 +1783,14 @@ function planStaleAgentRemovals(
 }
 
 function hasAnyChanges(changes: AppliedChanges): boolean {
+  return changes.rewrittenSkills.length > 0 || changesTheConfig(changes);
+}
+
+/** Every change but rewritten carried files, which leave config.ts as it was. */
+function changesTheConfig(changes: PlannedChanges): boolean {
   return (
     changes.reassignedAgents.length > 0 ||
     changes.joinedGlobalAgents.length > 0 ||
-    changes.rewrittenSkills.length > 0 ||
     changes.addedSkills.length > 0 ||
     changes.removedSkills.length > 0 ||
     changes.addedAgents.length > 0 ||
@@ -1639,21 +1802,17 @@ function hasAnyChanges(changes: AppliedChanges): boolean {
   );
 }
 
-/** @internal Exported for testing */
-export type PluginScopeMigrationResult = {
-  migrated: SkillId[];
+type PluginScopeMigrationResult = {
   failed: Array<{ id: SkillId; error: string }>;
 };
 
-/** @internal Exported for testing */
-export async function migratePluginSkillScopes(
+async function migratePluginSkillScopes(
   scopeChanges: Map<SkillId, ScopeChange>,
   skills: Pick<SkillConfig, "id" | "origin">[],
   marketplace: string,
   projectDir: string,
 ): Promise<PluginScopeMigrationResult> {
   const host = hostAt(projectDir);
-  const migrated: SkillId[] = [];
   const failed: PluginScopeMigrationResult["failed"] = [];
 
   for (const [skillId, change] of scopeChanges) {
@@ -1670,11 +1829,10 @@ export async function migratePluginSkillScopes(
         await host.uninstallPlugin(pluginRef, "project", projectDir);
       }
       await host.installPlugin(pluginRef, change.to, projectDir);
-      migrated.push(skillId);
     } catch (error) {
       failed.push({ id: skillId, error: getErrorMessage(error) });
     }
   }
 
-  return { migrated, failed };
+  return { failed };
 }

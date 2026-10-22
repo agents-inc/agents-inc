@@ -50,7 +50,7 @@ export type EditableOptions = {
   unresolvableSkills?: string[];
 };
 
-export type SkillContentOverride = {
+type SkillContentOverride = {
   description: string;
   metadata: string;
 };
@@ -401,7 +401,6 @@ export interface ProjectConfig {
   stack?: Partial<Record<AgentName, StackAgentConfig>>;
   marketplace?: string;
   marketplaceName?: string;
-  agentsSource?: string;
   selectedDomains?: Domain[];
 }
 `;
@@ -500,7 +499,6 @@ export interface ProjectConfig {
   stack?: Partial<Record<AgentName, StackAgentConfig>>;
   marketplace?: string;
   marketplaceName?: string;
-  agentsSource?: string;
   selectedDomains?: Domain[];
 }
 `;

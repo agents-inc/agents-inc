@@ -64,6 +64,8 @@ const SKIPPED_LIST = STEP_TEXT.SHARED_CONFIG_LIST_SKIPPED;
 const GLOBAL_SKILL_LISTED_AS_SKIPPED = new RegExp(
   `${PROJECT_LIST}${ANYTHING}${PROJECT_SKILL}${ANYTHING}${SKIPPED_LIST}${ANYTHING}${GLOBAL_SKILL}`,
 );
+/** Restated exactly, so the skipped list is the only place it is named before the question. */
+const GLOBAL_AGENT_LISTED_AS_SKIPPED = new RegExp(`${SKIPPED_LIST}${ANYTHING}${API_DEV}`);
 
 describe("init --from <id> at a terminal", () => {
   let sourceDir: string;
@@ -223,7 +225,7 @@ describe("init --from <id> at a terminal", () => {
 
   describe("in a project under a global install", () => {
     it(
-      "names the global skills it skips because the global install already holds them",
+      "names the global skills and sub-agents it skips because the global install already holds them",
       { timeout: TIMEOUTS.INTERACTIVE },
       async () => {
         env = await createTestEnvironment();
@@ -251,6 +253,10 @@ describe("init --from <id> at a terminal", () => {
           shown,
           "a global skill the global install already holds must be listed as skipped",
         ).toMatch(GLOBAL_SKILL_LISTED_AS_SKIPPED);
+        expect(
+          shown,
+          "a global sub-agent the global install already holds must be listed as skipped",
+        ).toMatch(GLOBAL_AGENT_LISTED_AS_SKIPPED);
         // The skipped list is the subject guard: nothing goes into the global install.
         expect(shown, "a skipped skill is not going into the global install").not.toContain(
           GLOBAL_LIST,

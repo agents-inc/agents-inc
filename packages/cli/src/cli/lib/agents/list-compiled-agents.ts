@@ -11,7 +11,7 @@ import type { AgentName } from "../../types";
  */
 const CLAUDE_AGENTS = agentCodec("claude");
 
-export type AgentProvenanceSplit = {
+type AgentProvenanceSplit = {
   marked: string[];
   unmarked: string[];
 };
@@ -35,7 +35,10 @@ export async function splitAgentsByProvenance(
   );
   const [marked, unmarked] = partition(classified, (agent) => agent.compiledHere);
 
-  return { marked: marked.map(agentName), unmarked: unmarked.map(agentName) };
+  return {
+    marked: marked.map((agent) => agent.name),
+    unmarked: unmarked.map((agent) => agent.name),
+  };
 }
 
 type ClassifiedAgent = { name: string; compiledHere: boolean };
@@ -49,14 +52,10 @@ async function readAgentProvenance(
   return { name: path.basename(file, codec.extension), compiledHere: codec.hasMarker(content) };
 }
 
-function agentName(agent: ClassifiedAgent): string {
-  return agent.name;
-}
-
 export async function listCompiledAgentNames(agentsDir: string): Promise<AgentName[]> {
   const files = await listAgentMdFiles(agentsDir);
   // Boundary cast: custom marketplace agents may fall outside the AgentName union.
-  return files.map((f) => path.basename(f, ".md") as AgentName);
+  return files.map((f) => path.basename(f, CLAUDE_AGENTS.extension) as AgentName);
 }
 
 /**

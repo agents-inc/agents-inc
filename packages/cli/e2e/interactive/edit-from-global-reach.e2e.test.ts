@@ -45,8 +45,9 @@ import type { AgentName, ProjectConfig } from "../../src/cli/types/index.js";
 /**
  * `edit --from` and a global skill the configuration leaves out: from a project nothing global is
  * removed or changed, the global install and the other registered project stay byte-identical, and
- * the plan names the kept skill. At the home directory the global install itself is edited and the
- * skill is removed under the ordinary confirm. Both halves stay in one file.
+ * the plan names the kept skill. At the home directory the global install itself is edited, the
+ * skill is removed under the ordinary confirm, and the confirm names the registered projects the
+ * change rewrites. Both halves stay in one file.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -386,9 +387,14 @@ describe("edit --from <id> and a global install the configuration leaves out", (
       expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
     });
 
-    it("does not enumerate the registered projects", () => {
-      expect(planned).not.toContain(realpathSync(fixture.projectA));
-      expect(planned).not.toContain(realpathSync(fixture.projectB));
+    it("names each registered project the run rewrites before asking", () => {
+      for (const project of [fixture.projectA, fixture.projectB]) {
+        expect(planned).toMatch(
+          new RegExp(
+            `${STEP_TEXT.SHARED_CONFIG_REGISTERED_REWRITTEN}[\\s\\S]*${realpathSync(project)}`,
+          ),
+        );
+      }
     });
 
     it("removes the skill from the global config and the global skills directory anyway", async () => {

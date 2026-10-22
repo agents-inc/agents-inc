@@ -4,6 +4,7 @@ import "../matchers/setup.js";
 import {
   agentsPath,
   cleanupTempDir,
+  configTsPath,
   listFiles,
   loadConfigOrFail,
   skillsPath,
@@ -29,7 +30,8 @@ import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-con
 /**
  * At the home directory both scopes are one directory, so `init --from` must refuse project-scoped
  * entries rather than write them into the global config. Controls: an all-global payload at home,
- * and the same payload inside a project.
+ * and the same payload inside a project. Each names every config it wrote: one file at home, the
+ * global and the project's from a project.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -195,13 +197,16 @@ describe("init --from <id>: project-scoped content at the global root", () => {
       }),
     );
 
-    const { exitCode, output } = await runInitFrom(
+    const { exitCode, output, stdout } = await runInitFrom(
       store,
       "HomeGlob4",
       { dir: env.fakeHome, globalHome: env.fakeHome },
       sourceDir,
     );
     expect(exitCode, `all-global install at home failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
+    expect(stdout, "at home the global and the project config are one file, named once").toContain(
+      `${STEP_TEXT.CONFIGURATION_LABEL}\n  ${configTsPath(env.fakeHome)}\n\n`,
+    );
 
     const homeConfig = await loadConfigOrFail(env.fakeHome);
     expect(homeConfig.skills).toStrictEqual(
@@ -229,13 +234,19 @@ describe("init --from <id>: project-scoped content at the global root", () => {
       }),
     );
 
-    const { exitCode, output } = await runInitFrom(
+    const { exitCode, output, stdout } = await runInitFrom(
       store,
       "HomeProj1",
       { dir: env.projectDir, globalHome: env.fakeHome },
       sourceDir,
     );
     expect(exitCode, `project install failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
+    expect(
+      stdout,
+      "registering the project writes the global config too, so both configs it wrote are named",
+    ).toContain(
+      `${STEP_TEXT.CONFIGURATION_LABEL}\n  ${configTsPath(env.fakeHome)}\n  ${configTsPath(env.projectDir)}\n\n`,
+    );
 
     const projectConfig = await loadConfigOrFail(env.projectDir);
     expect(projectConfig.skills).toStrictEqual(

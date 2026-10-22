@@ -1,5 +1,5 @@
 import path from "path";
-import { readdir, readFile, writeFile } from "fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "fs/promises";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { describe, it, expect, afterAll, afterEach, beforeAll } from "vitest";
 import { CLI } from "../fixtures/cli.js";
@@ -13,6 +13,7 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 import type { ProjectHandle } from "../fixtures/project-handle.js";
 import type { RelationshipDefinitions } from "../../src/cli/types/index.js";
+import { renderUnparseableConfigTs } from "../../src/cli/lib/__tests__/factories/unloadable-config-factories.js";
 
 /** Longer than CLI_DESCRIPTION_MAX_LENGTH, which only warns. */
 const OVER_LENGTH_CLI_DESCRIPTION = "x".repeat(75);
@@ -203,6 +204,25 @@ describe("doctor in a skills source repository", () => {
         stdout,
         "there is no installed state in a source repo, so operational rows would be noise",
       ).not.toContain(STEP_TEXT.DOCTOR_CONFIG_CHECK);
+    },
+  );
+
+  it(
+    "should report the repository's own config it cannot read as a failed row, and finish the report",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async () => {
+      source = await createE2ESource();
+      const ownConfig = path.join(source.sourceDir, DIRS.SOURCE_ROOT, FILES.CONFIG_TS);
+      await mkdir(path.dirname(ownConfig), { recursive: true });
+      await writeFile(ownConfig, renderUnparseableConfigTs());
+
+      const { exitCode, stdout } = await CLI.run(["doctor"], { dir: source.sourceDir });
+
+      expect(exitCode, stdout).toBe(EXIT_CODES.ERROR);
+      expect(stdout).toMatch(/Marketplace Repository\s+✗\s+Check threw\n/);
+      expect(stdout, "the row names the file it could not read").toContain(ownConfig);
+      expect(stdout, "the report runs to its end").toContain(STEP_TEXT.DOCTOR_SUMMARY);
+      expect(stdout).not.toContain(STEP_TEXT.DOCTOR_SKIP_NO_INSTALLATION);
     },
   );
 

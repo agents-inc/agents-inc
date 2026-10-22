@@ -36,11 +36,7 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
-/**
- * A global install from one scaffolded marketplace and a project from another, sharing an example
- * skill slug: no command may call the global skill unassigned or a duplicate, and `doctor` counts
- * only what the project's marketplace ships. Output is flattened because oclif wraps the warning.
- */
+/** Output is flattened because oclif wraps the warning. */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const API_DEV = E2E_AGENT["api-developer"].name;
@@ -55,8 +51,13 @@ const PROJECT_SKILL = `${PROJECT_MARKETPLACE}-example-skill`;
 /** Not namespaced, so both skills carry it. */
 const SHARED_SLUG = "example-skill";
 
+/** Each configuration describes itself, as a shared stack's description travels. */
+const GLOBAL_DESCRIPTION = "The acme skills, for every project";
+const PROJECT_DESCRIPTION = "The plain skills, for this project alone";
+
 const GLOBAL_CONFIGURATION = buildSeedPayload({
   v: PINNED_WIRE_VERSION,
+  description: GLOBAL_DESCRIPTION,
   skills: {
     [GLOBAL_SKILL]: buildSeedSkill({
       install: "eject",
@@ -70,6 +71,7 @@ const GLOBAL_CONFIGURATION = buildSeedPayload({
 /** Nothing in it is global, as `init --from` requires over an existing global install. */
 const PROJECT_CONFIGURATION = buildSeedPayload({
   v: PINNED_WIRE_VERSION,
+  description: PROJECT_DESCRIPTION,
   skills: {
     [PROJECT_SKILL]: buildSeedSkill({
       install: "eject",
@@ -193,6 +195,17 @@ describe("a global installation from one marketplace under a project from anothe
         skillIds: [PROJECT_SKILL],
         noSkillIds: [GLOBAL_SKILL],
       });
+    });
+
+    it("describes each scope as its own configuration does", async () => {
+      const globalConfig = await loadConfigOrFail(env.fakeHome);
+      expect(globalConfig.description).toBe(GLOBAL_DESCRIPTION);
+
+      const projectConfig = await loadConfigOrFail(env.projectDir);
+      expect(
+        projectConfig.description,
+        "the project took the global installation's description over the one its own configuration carried",
+      ).toBe(PROJECT_DESCRIPTION);
     });
 
     it("does not report the global installation's skill as assigned to no sub-agent", () => {

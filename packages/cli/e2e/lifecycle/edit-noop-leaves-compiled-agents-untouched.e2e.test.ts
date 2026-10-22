@@ -5,7 +5,8 @@ import {
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
-import { applyEditFrom, e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
+import { e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
+import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   agentsPath,
@@ -19,9 +20,9 @@ import type { TreeSnapshotEntry } from "../helpers/test-utils.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
 /**
- * An edit that changes nothing writes nothing. "No changes made." proves the run reached the
- * decision; the mtime-carrying tree snapshot proves it was acted on, since an identical rewrite
- * is invisible to content alone.
+ * "No changes made." proves the run reached the decision; the mtime-carrying tree snapshot proves
+ * it was acted on, since an identical rewrite is invisible to content alone. Run at a terminal and
+ * never answered: a run that asked would sit on its question until the exit wait gave up.
  */
 
 const COMPILED_AGENT_SUFFIX = ".md";
@@ -56,9 +57,15 @@ describe("an edit that changes nothing leaves the installed scope untouched", ()
     compiledBefore = await readTreeSnapshot(agentsPath(globalHome));
     configBefore = await readTreeSnapshot(sourceFolderIn(globalHome));
 
-    ({ exitCode: editExitCode, output: editOutput } = await applyEditFrom(store, STACK_AT_HOME_ID, {
-      dir: globalHome,
-    }));
+    const prompt = new InteractivePrompt(["edit", "--from", STACK_AT_HOME_ID], globalHome, {
+      env: { AGENTS_INC_API_URL: store.url, HOME: globalHome },
+    });
+    try {
+      editExitCode = await prompt.waitForExit(TIMEOUTS.WIZARD_LOAD);
+      editOutput = prompt.getOutput();
+    } finally {
+      await prompt.destroy();
+    }
 
     compiledAfter = await readTreeSnapshot(agentsPath(globalHome));
     configAfter = await readTreeSnapshot(sourceFolderIn(globalHome));
@@ -85,10 +92,14 @@ describe("an edit that changes nothing leaves the installed scope untouched", ()
   });
 
   // Proof of execution: a crash before the comparison leaves the same clean tree.
-  it("reports that it changed nothing", () => {
+  it("reports that it changed nothing, without asking", () => {
     expect(editOutput, `a passthrough must reach its decision and say so: ${editOutput}`).toContain(
       STEP_TEXT.EDIT_UNCHANGED,
     );
+    expect(
+      editOutput,
+      "a run that changes nothing has nothing to confirm, so it must not ask",
+    ).not.toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
   });
 
   it("leaves every compiled agent unwritten, not merely identical", () => {

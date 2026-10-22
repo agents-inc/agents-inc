@@ -14,7 +14,6 @@ export {
 
 export {
   buildConfigTypesBackgroundData,
-  getGlobalConfigTypesPath,
   regenerateConfigTypes,
   type ConfigTypesBackgroundData,
 } from "./config-types-io.js";

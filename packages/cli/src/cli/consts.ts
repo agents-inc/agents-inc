@@ -31,8 +31,9 @@ const __dirname = path.dirname(__filename);
 
 // Built dist/ is flat (one level up); src/cli/ is two.
 const isInDist = __dirname.includes("/dist");
-const CLI_ROOT = isInDist ? path.resolve(__dirname, "..") : path.resolve(__dirname, "../..");
-export const PROJECT_ROOT = CLI_ROOT;
+export const PROJECT_ROOT = isInDist
+  ? path.resolve(__dirname, "..")
+  : path.resolve(__dirname, "../..");
 
 export const PLUGINS_SUBDIR = "plugins";
 export const PLUGIN_MANIFEST_DIR = ".claude-plugin";
@@ -60,7 +61,9 @@ export function cacheRoot(): string {
 }
 
 // The `/editor` segment is required: the apex serves the landing page, which ignores `?fromId=`.
-export const EDITOR_URL = "https://agentsinc.sh/editor";
+const DEFAULT_EDITOR_URL = "https://agentsinc.sh/editor";
+
+export const EDITOR_URL = process.env.AGENTS_INC_EDITOR_URL ?? DEFAULT_EDITOR_URL;
 
 /** Same form as the editor's own Share button copies. */
 export function editorConfigUrl(id: string): string {
@@ -71,8 +74,6 @@ export const SKILL_CATEGORIES_PATH = "config/skill-categories.ts";
 export const SKILL_RULES_PATH = "config/skill-rules.ts";
 export const STACKS_FILE_PATH = "config/stacks.ts";
 export const DEFAULT_VERSION = "1.0.0";
-
-export const DEFAULT_DISPLAY_VERSION = "0.0.0";
 
 // Raw GitHub URLs so `$schema` comments resolve without the CLI installed; must track the
 // repository name and this package's path in it.
@@ -163,7 +164,7 @@ export const DEFAULT_BRANDING = {
  */
 export const PUBLIC_CATALOGUE_PACKAGE = "@agents-inc/skills";
 
-export const SOURCE_DISPLAY_NAMES: Record<string, string> = {
+const SOURCE_DISPLAY_NAMES: Record<string, string> = {
   public: "Public",
   eject: "Eject",
   "agents-inc": "Agents Inc",

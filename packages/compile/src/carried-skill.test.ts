@@ -225,7 +225,7 @@ describe("the directory an install writes for a carried skill", () => {
     })
   })
 
-  it("puts the stamp first, in place of the one the repository shipped", async () => {
+  it("puts the stamp last, in place of the one the repository shipped", async () => {
     const tree = await installedSkillTree(
       installFor({
         "metadata.yaml":
@@ -234,8 +234,16 @@ describe("the directory an install writes for a carried skill", () => {
     )
 
     expect(tree["metadata.yaml"]).toBe(
-      `${SCHEMA_COMMENT}\n${FORKED_FROM}${DEFAULT_METADATA.replace('"@acme"', '"@shipper"')}`
+      `${SCHEMA_COMMENT}\n${DEFAULT_METADATA.replace('"@acme"', '"@shipper"')}${FORKED_FROM}`
     )
+  })
+
+  it("draws the same metadata again from a directory that carries its own earlier output", async () => {
+    const first = await installedSkillTree(installFor({}))
+
+    const again = await installedSkillTree(installFor(first))
+
+    expect(again["metadata.yaml"]).toBe(first["metadata.yaml"])
   })
 
   it("keeps the repository's own fields beside a stamp it did not ship", async () => {

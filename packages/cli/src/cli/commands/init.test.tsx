@@ -1,20 +1,19 @@
 import path from "path";
-import { mkdir } from "fs/promises";
+import { mkdir, writeFile } from "fs/promises";
 import { Config } from "@oclif/core";
 import { render } from "ink-testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import Init, {
-  Dashboard,
-  dashboardCountLines,
-  formatDashboardText,
-  type DashboardData,
-} from "./init";
-import { DEFAULT_BRANDING } from "../consts";
+import Init, { Dashboard, formatDashboardText, type DashboardData } from "./init";
+import { CLAUDE_DIR, DEFAULT_BRANDING, STANDARD_DIRS } from "../consts";
 import { EXIT_CODES } from "../lib/exit-codes";
-import { buildProjectConfig } from "../lib/__tests__/factories/config-factories";
-import { CLI_ROOT } from "../lib/__tests__/helpers/cli-runner";
+import { sourceFolderInUse } from "../lib/installation/install-layout";
+import type { ProviderInstallation } from "../lib/plugins/plugin-info";
+import { buildAgentConfigs, buildProjectConfig } from "../lib/__tests__/factories/config-factories";
+import { CLI_ROOT, runCliCommand } from "../lib/__tests__/helpers/cli-runner";
 import { writeTestTsConfig } from "../lib/__tests__/helpers/config-io";
+import { setupIsolatedHome } from "../lib/__tests__/helpers/isolated-home";
+import { buildSkillConfigs } from "../lib/__tests__/helpers/skill-config-builders";
 import { standAtTerminal } from "../lib/__tests__/helpers/terminal-input";
 import {
   ARROW_DOWN,
@@ -29,22 +28,60 @@ import {
 const ESCAPE = "\u001B";
 import { cleanupTempDir, createTempDir } from "../lib/__tests__/test-fs-utils";
 
-/** Expected lines come from {@link dashboardCountLines}, so the TTY and piped paths cannot drift. */
-
-const WITH_MARKETPLACE: DashboardData = {
-  name: DEFAULT_BRANDING.NAME,
+const CLAUDE_WITH_MARKETPLACE: ProviderInstallation = {
+  provider: "claude",
   skillCount: 12,
   agentCount: 3,
   mode: "plugin",
-  source: "github:agents-inc/skills",
+  marketplace: "github:agents-inc/skills",
 };
 
-const WITHOUT_MARKETPLACE: DashboardData = {
-  name: DEFAULT_BRANDING.NAME,
+const CODEX_WITHOUT_MARKETPLACE: ProviderInstallation = {
+  provider: "codex",
   skillCount: 0,
   agentCount: 0,
   mode: "eject",
 };
+
+const WITH_MARKETPLACE: DashboardData = {
+  name: DEFAULT_BRANDING.NAME,
+  installations: [CLAUDE_WITH_MARKETPLACE],
+};
+
+const WITHOUT_MARKETPLACE: DashboardData = {
+  name: DEFAULT_BRANDING.NAME,
+  installations: [{ ...CODEX_WITHOUT_MARKETPLACE, provider: "claude" }],
+};
+
+const BOTH_PROVIDERS: DashboardData = {
+  name: DEFAULT_BRANDING.NAME,
+  installations: [CLAUDE_WITH_MARKETPLACE, CODEX_WITHOUT_MARKETPLACE],
+};
+
+/** The count lines both dashboards print, held once so the TTY and piped specs pin the same text. */
+const WITH_MARKETPLACE_COUNTS = [
+  "  Skills:       12 installed",
+  "  Agents:       3 compiled",
+  "  Mode:         Plugin",
+  "  Marketplace:  github:agents-inc/skills",
+];
+
+const WITHOUT_MARKETPLACE_COUNTS = [
+  "  Skills:       0 installed",
+  "  Agents:       0 compiled",
+  "  Mode:         Eject",
+];
+
+/** One block per provider, each named, a blank line apart. */
+const BOTH_PROVIDERS_COUNTS = [
+  "  Provider:     claude",
+  ...WITH_MARKETPLACE_COUNTS,
+  "",
+  "  Provider:     codex",
+  ...WITHOUT_MARKETPLACE_COUNTS,
+];
+
+const DASHBOARD_COMMANDS_LINE = "  [Edit in the web editor]  [Compile]  [Doctor]  [List]";
 
 async function frameFor(data: DashboardData): Promise<string> {
   const { lastFrame } = render(
@@ -66,7 +103,7 @@ describe("the dashboard a person sits in front of", () => {
   it("carries every count line the piped dashboard prints", async () => {
     const frame = await frameFor(WITH_MARKETPLACE);
 
-    const missing = dashboardCountLines(WITH_MARKETPLACE).filter((line) => !frame.includes(line));
+    const missing = WITH_MARKETPLACE_COUNTS.filter((line) => !frame.includes(line));
 
     expect(
       missing,
@@ -74,23 +111,19 @@ describe("the dashboard a person sits in front of", () => {
     ).toStrictEqual([]);
   });
 
-  it("carries them for an installation that names no marketplace", async () => {
+  it("carries them, and no marketplace line, for an installation that names no marketplace", async () => {
     const frame = await frameFor(WITHOUT_MARKETPLACE);
 
-    const missing = dashboardCountLines(WITHOUT_MARKETPLACE).filter(
-      (line) => !frame.includes(line),
-    );
+    const missing = WITHOUT_MARKETPLACE_COUNTS.filter((line) => !frame.includes(line));
 
     expect(missing).toStrictEqual([]);
+    expect(frame).not.toContain("Marketplace:");
   });
 
-  // Control for the pair above, which an empty `dashboardCountLines` would satisfy for free.
-  it("draws a marketplace line only for an installation that names one", () => {
-    expect(dashboardCountLines(WITH_MARKETPLACE)).toHaveLength(
-      dashboardCountLines(WITHOUT_MARKETPLACE).length + 1,
-    );
-    expect(formatDashboardText(WITH_MARKETPLACE)).toContain("github:agents-inc/skills");
-    expect(formatDashboardText(WITHOUT_MARKETPLACE)).not.toContain("Marketplace:");
+  it("shows one block per provider over a scope holding two installations, each named", async () => {
+    const frame = await frameFor(BOTH_PROVIDERS);
+
+    expect(frame).toContain([...BOTH_PROVIDERS_COUNTS, "", ""].join("\n"));
   });
 
   it("still offers the four commands", async () => {
@@ -100,9 +133,7 @@ describe("the dashboard a person sits in front of", () => {
     expect(frame).toContain("Compile");
     expect(frame).toContain("Doctor");
     expect(frame).toContain("List");
-    expect(formatDashboardText(WITH_MARKETPLACE)).toContain(
-      "  [Edit in the web editor]  [Compile]  [Doctor]  [List]",
-    );
+    expect(formatDashboardText(WITH_MARKETPLACE)).toContain(DASHBOARD_COMMANDS_LINE);
   });
 });
 
@@ -211,17 +242,115 @@ describe("the dashboard's title", () => {
 });
 
 describe("the dashboard printed without a terminal", () => {
-  it("is the name, the counts and the commands, each block a blank line apart", () => {
-    expect(formatDashboardText(WITH_MARKETPLACE)).toBe(
+  it.each([
+    ["names a marketplace", WITH_MARKETPLACE, WITH_MARKETPLACE_COUNTS],
+    ["names none", WITHOUT_MARKETPLACE, WITHOUT_MARKETPLACE_COUNTS],
+    ["sits beside another provider's, one block each", BOTH_PROVIDERS, BOTH_PROVIDERS_COUNTS],
+  ])(
+    "is the name, the counts and the commands, each block a blank line apart, for an installation that %s",
+    (_installation, data, counts) => {
+      expect(formatDashboardText(data)).toBe(
+        ["Agents Inc.", "", ...counts, "", DASHBOARD_COMMANDS_LINE].join("\n"),
+      );
+    },
+  );
+});
+
+/** Read off disk: each provider's own config, and its own agents folders in its own format. */
+describe("the dashboard over a scope holding a Claude and a Codex installation", () => {
+  let projectDir: string;
+  let cleanup: () => Promise<void>;
+
+  beforeEach(async () => {
+    ({ projectDir, cleanup } = await setupIsolatedHome("cc-init-dashboard-providers-"));
+    // Empty reads as unset: Codex's global folder is then the fake home's.
+    vi.stubEnv("CODEX_HOME", "");
+  });
+
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    await cleanup();
+  });
+
+  async function installClaude(): Promise<void> {
+    await writeTestTsConfig(
+      projectDir,
+      buildProjectConfig({
+        skills: buildSkillConfigs(["web-framework-react", "api-framework-hono"], {
+          scope: "project",
+          origin: "eject",
+        }),
+        agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+      }),
+    );
+    await compiledAgents(path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS), [
+      "web-developer.md",
+    ]);
+  }
+
+  async function installCodex(): Promise<void> {
+    await writeTestTsConfig(
+      projectDir,
+      buildProjectConfig({
+        skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
+        agents: buildAgentConfigs(["web-developer", "pm"], { scope: "project" }),
+      }),
+      sourceFolderInUse(projectDir, "codex").relName,
+    );
+    await compiledAgents(path.join(projectDir, ".codex", STANDARD_DIRS.AGENTS), [
+      "web-developer.toml",
+      "pm.toml",
+    ]);
+  }
+
+  async function compiledAgents(dir: string, files: string[]): Promise<void> {
+    await mkdir(dir, { recursive: true });
+    await Promise.all(files.map((file) => writeFile(path.join(dir, file), "compiled\n")));
+  }
+
+  it("prints one block per provider, each counting its own skills and compiled sub-agents", async () => {
+    await installClaude();
+    await installCodex();
+
+    const { stdout, error } = await runCliCommand(["init"]);
+
+    expect(error).toBeUndefined();
+    expect(stdout).toBe(
       [
         "Agents Inc.",
         "",
-        "  Skills:       12 installed",
-        "  Agents:       3 compiled",
-        "  Mode:         Plugin",
-        "  Marketplace:  github:agents-inc/skills",
+        "  Provider:     claude",
+        "  Skills:       2 installed",
+        "  Agents:       1 compiled",
+        "  Mode:         Eject",
         "",
-        "  [Edit in the web editor]  [Compile]  [Doctor]  [List]",
+        "  Provider:     codex",
+        "  Skills:       1 installed",
+        "  Agents:       2 compiled",
+        "  Mode:         Eject",
+        "",
+        DASHBOARD_COMMANDS_LINE,
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("prints the one block, naming no provider, over a scope holding one installation", async () => {
+    await installCodex();
+
+    const { stdout, error } = await runCliCommand(["init"]);
+
+    expect(error).toBeUndefined();
+    expect(stdout).toBe(
+      [
+        "Agents Inc.",
+        "",
+        "  Skills:       1 installed",
+        "  Agents:       2 compiled",
+        "  Mode:         Eject",
+        "",
+        DASHBOARD_COMMANDS_LINE,
+        "",
       ].join("\n"),
     );
   });

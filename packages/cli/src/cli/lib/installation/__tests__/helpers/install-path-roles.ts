@@ -10,7 +10,7 @@ export type RoleSite = {
   at: string;
 };
 
-export type PathClaim = { path: string; roles: string[] };
+type PathClaim = { path: string; roles: string[] };
 
 export type Attribution = {
   claims: PathClaim[];

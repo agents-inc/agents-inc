@@ -80,6 +80,7 @@ export class TerminalSession {
       CC_MARKETPLACE: undefined,
       XDG_CACHE_HOME: undefined,
       GIGET_AUTH: undefined,
+      AGENTS_INC_EDITOR_URL: undefined,
       ...options?.env,
       HOME: home,
       // Pinned after the caller's env: both beat HOME in the host binaries.

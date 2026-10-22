@@ -1,7 +1,13 @@
 import { createHash } from "node:crypto";
 import http from "node:http";
 
-import { CONFIGS_URL, answerFor, configHandlers, workerRequestFrom } from "@workspace/api-mocks";
+import {
+  CONFIGS_URL,
+  answerFor,
+  configHandlers,
+  configRateLimitedHandler,
+  workerRequestFrom,
+} from "@workspace/api-mocks";
 import { installableSeedPayloadSchema } from "@workspace/matrix/seed";
 import { HttpResponse, http as route } from "msw";
 
@@ -27,6 +33,8 @@ export type SeedConfigStore = {
   readonly minted: string[];
   /** A string is served verbatim (to pin a body the schema refuses); anything else is JSON-encoded. */
   publish(id: string, payload: unknown): void;
+  /** Answers every mint with the worker's 429 until `reset`, filing nothing. */
+  limitMints(): void;
   reset(): void;
   close(): Promise<void>;
 };
@@ -89,10 +97,12 @@ export async function startSeedConfigStore(): Promise<SeedConfigStore> {
   const held = new Map<string, string>();
   const requests: SeedConfigRequest[] = [];
   const minted: string[] = [];
+  let mintsLimited = false;
 
   // Rebuilt per request; held ids first, then the mint, then `configHandlers` for 404s and 400s.
   const handlersNow = (mintedId: string | undefined): RequestHandler[] => [
     ...[...held].map(([id, bytes]) => heldBytesHandler(id, bytes)),
+    ...(mintsLimited ? [configRateLimitedHandler] : []),
     ...(mintedId === undefined ? [] : [mintedHandler(mintedId)]),
     ...configHandlers,
   ];
@@ -126,7 +136,7 @@ export async function startSeedConfigStore(): Promise<SeedConfigStore> {
     const body = await readBody(req);
     record(req, body);
 
-    const mintedId = isMint(req) && isInstallable(body) ? file(body) : undefined;
+    const mintedId = isMint(req) && !mintsLimited && isInstallable(body) ? file(body) : undefined;
     const answer = await answerFor(handlersNow(mintedId), workerRequestFrom(req, body));
 
     if (!answer.served) {
@@ -163,10 +173,14 @@ export async function startSeedConfigStore(): Promise<SeedConfigStore> {
     publish: (id, payload) => {
       held.set(id, typeof payload === "string" ? payload : JSON.stringify(payload));
     },
+    limitMints: () => {
+      mintsLimited = true;
+    },
     reset: () => {
       held.clear();
       requests.length = 0;
       minted.length = 0;
+      mintsLimited = false;
     },
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };

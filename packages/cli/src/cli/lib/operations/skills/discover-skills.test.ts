@@ -2,25 +2,21 @@ import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../plugins/index.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../plugins/index.js")>()),
-  discoverAllPluginSkills: vi.fn(),
-}));
-
-vi.mock("../../../utils/logger.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../utils/logger.js")>()),
-  verbose: vi.fn(),
-}));
+vi.mock("../../hosts/host-for.js", async () => {
+  const { createMockPluginHost } = await import("../../__tests__/helpers/mock-plugin-host.js");
+  const host = createMockPluginHost();
+  return { hostAt: () => host, hostFor: () => host };
+});
 
 import { discoverInstalledSkills } from "./discover-skills.js";
-import { discoverAllPluginSkills } from "../../plugins/index.js";
-import { verbose } from "../../../utils/logger.js";
+import { hostAt } from "../../hosts/host-for.js";
+import { setVerbose } from "../../../utils/logger.js";
 import { resolveInstallPaths } from "../../installation/index.js";
 import { initializeMatrix } from "../../matrix/matrix-provider.js";
 import { createMockMatrix } from "../../__tests__/factories/matrix-factories.js";
-import { createMockSkillDefinition } from "../../__tests__/factories/skill-factories.js";
-import { writeTestSkill } from "../../__tests__/helpers/disk-writers.js";
+import { writeTestPluginManifest, writeTestSkill } from "../../__tests__/helpers/disk-writers.js";
 import { useFakeHome } from "../../__tests__/helpers/isolated-home.js";
+import { silenceConsole } from "../../__tests__/helpers/silence-console.js";
 import {
   renderSkillMd,
   renderUnparseableMetadataYaml,
@@ -28,24 +24,30 @@ import {
 import { cleanupTempDir, createTempDir } from "../../__tests__/test-fs-utils.js";
 import { SKILLS } from "../../__tests__/test-fixtures.js";
 import { STANDARD_FILES } from "../../../consts.js";
-import type { SkillDefinitionMap } from "../../../types/index.js";
+import type { SkillId } from "../../../types/index.js";
 
-const mockDiscoverAllPluginSkills = vi.mocked(discoverAllPluginSkills);
+const mockListPlugins = vi.mocked(hostAt("/any-root").listPlugins);
 
-/** Plugin skills are scripted per root; copied-in skills are written to disk at each scope. */
+/**
+ * The host lists each root's plugins, each a real plugin folder on disk; copied-in skills are
+ * written to disk at each scope.
+ */
 describe("discoverInstalledSkills", () => {
+  const consoleSpies = silenceConsole(["log"]);
   let tempDir: string;
   let projectDir: string;
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    setVerbose(true);
     tempDir = await createTempDir("cc-discover-installed-");
     projectDir = path.join(tempDir, "project");
     await mkdir(projectDir, { recursive: true });
-    initializeMatrix(createMockMatrix(SKILLS.react, SKILLS.hono));
+    initializeMatrix(createMockMatrix(SKILLS.react, SKILLS.hono, SKILLS.zustand, SKILLS.vitest));
   });
 
   afterEach(async () => {
+    setVerbose(false);
     await cleanupTempDir(tempDir);
   });
 
@@ -54,9 +56,21 @@ describe("discoverInstalledSkills", () => {
   const globalSkillsDir = (): string => resolveInstallPaths(home.dir, "global").skillsDir;
   const projectSkillsDir = (): string => resolveInstallPaths(projectDir, "project").skillsDir;
 
-  function pluginSkillsAt(byRoot: { global: SkillDefinitionMap; project: SkillDefinitionMap }) {
-    mockDiscoverAllPluginSkills.mockImplementation((root) =>
-      Promise.resolve(root === home.dir ? byRoot.global : byRoot.project),
+  /** One plugin per skill, installed where the host says; each lists only its own root's. */
+  async function pluginSkillsAt(byRoot: { global: SkillId[]; project: SkillId[] }) {
+    const pluginsOf = async (ids: SkillId[]) =>
+      Promise.all(
+        ids.map(async (id) => {
+          const installPath = path.join(tempDir, "plugin-cache", id);
+          await writeTestPluginManifest(installPath, { name: id });
+          await writeTestSkill(path.join(installPath, "skills"), id);
+          return { pluginKey: `${id}@test-marketplace`, installPath, enabled: true };
+        }),
+      );
+    const global = await pluginsOf(byRoot.global);
+    const project = await pluginsOf(byRoot.project);
+    mockListPlugins.mockImplementation((root) =>
+      Promise.resolve(root === home.dir ? global : project),
     );
   }
 
@@ -71,10 +85,7 @@ describe("discoverInstalledSkills", () => {
   }
 
   it("counts plugin and copied-in skills at both scopes, and says what it found where", async () => {
-    pluginSkillsAt({
-      global: { [SKILLS.zustand.id]: createMockSkillDefinition(SKILLS.zustand.id) },
-      project: { [SKILLS.vitest.id]: createMockSkillDefinition(SKILLS.vitest.id) },
-    });
+    await pluginSkillsAt({ global: [SKILLS.zustand.id], project: [SKILLS.vitest.id] });
     await writeTestSkill(globalSkillsDir(), SKILLS.react.id);
     await writeTestSkill(projectSkillsDir(), SKILLS.hono.id);
 
@@ -86,30 +97,30 @@ describe("discoverInstalledSkills", () => {
     expect(counts).toStrictEqual({
       totalSkillCount: 4,
       pluginSkillCount: 2,
-      localSkillCount: 2,
       globalPluginSkillCount: 1,
       globalLocalSkillCount: 1,
       unusableMetadata: [],
     });
-    expect(verbose).toHaveBeenCalledWith("  Found 1 skills from global plugins");
-    expect(verbose).toHaveBeenCalledWith(`  Found 1 global local skills from ${globalSkillsDir()}`);
-    expect(verbose).toHaveBeenCalledWith("  Found 1 skills from installed plugins");
-    expect(verbose).toHaveBeenCalledWith(`  Found 1 local skills from ${projectSkillsDir()}`);
+    const said = (line: string) => expect(consoleSpies.log).toHaveBeenCalledWith(`    ${line}`);
+    said("Found 1 skills from global plugins");
+    said(`Found 1 global local skills from ${globalSkillsDir()}`);
+    said("Found 1 skills from installed plugins");
+    said(`Found 1 local skills from ${projectSkillsDir()}`);
   });
 
   it("says nothing about the global scope when it holds no skills", async () => {
-    pluginSkillsAt({ global: {}, project: {} });
+    await pluginSkillsAt({ global: [], project: [] });
 
     await discoverInstalledSkills(projectDir);
 
-    expect(verbose).not.toHaveBeenCalledWith("  Found 0 skills from global plugins");
-    expect(verbose).not.toHaveBeenCalledWith(
-      `  Found 0 global local skills from ${globalSkillsDir()}`,
+    expect(consoleSpies.log).toHaveBeenCalledWith(
+      `    Found 0 local skills from ${projectSkillsDir()}`,
     );
+    expect(consoleSpies.log).not.toHaveBeenCalledWith(expect.stringContaining("global"));
   });
 
   it("reports the unusable metadata of both scopes, the global scope's first", async () => {
-    pluginSkillsAt({ global: {}, project: {} });
+    await pluginSkillsAt({ global: [], project: [] });
     await writeUnusableSkill(globalSkillsDir(), "broken-global");
     await writeUnusableSkill(projectSkillsDir(), "broken-project");
 

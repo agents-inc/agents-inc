@@ -17,7 +17,7 @@ import {
   flattenCliOutput,
 } from "../helpers/test-utils.js";
 import path from "path";
-import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.js";
+import { pluginKeyFor } from "../fixtures/plugin-install-state.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
@@ -92,7 +92,7 @@ describe("edit --from over a Codex installation", () => {
 
     return {
       installed,
-      ref: buildMarketplacePluginRef(E2E_SKILL.react.id, fixture.marketplaceName),
+      ref: pluginKeyFor(E2E_SKILL.react.id, fixture.marketplaceName),
     };
   }
 
@@ -112,8 +112,9 @@ describe("edit --from over a Codex installation", () => {
       ...TERMINAL_SIZE.TALL,
       env: { AGENTS_INC_API_URL: store.url, HOME: installed.fakeHome },
     });
-    await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM, TIMEOUTS.WIZARD_LOAD);
-    await prompt.confirm();
+    // A run that changes nothing ends without asking, so there is nothing to approve.
+    await prompt.waitForTextOrExit(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM, TIMEOUTS.WIZARD_LOAD);
+    if (prompt.getOutput().includes(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM)) await prompt.confirm();
     const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
     return { exitCode, output: prompt.getRawOutput() };
   }
@@ -146,7 +147,7 @@ describe("edit --from over a Codex installation", () => {
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       const { installed } = await codexInstallWithAPluginSkill("CdxEdit3");
-      const added = buildMarketplacePluginRef(E2E_SKILL.zustand.id, fixture.marketplaceName);
+      const added = pluginKeyFor(E2E_SKILL.zustand.id, fixture.marketplaceName);
       expect(await pluginsCodexReports(installed)).not.toContain(added);
 
       const result = await applyAtHome(

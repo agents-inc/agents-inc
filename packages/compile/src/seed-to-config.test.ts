@@ -220,6 +220,7 @@ describe("a shared configuration, decoded into the install it describes", () => 
       },
       skippedSkillIds: [],
       skippedAgentNames: [],
+      agentsOnlySkippedSkillsCarried: [],
     })
   })
 
@@ -341,6 +342,67 @@ describe("what a shared configuration names that this install cannot", () => {
       skippedSkillIds: ["nope-skill", "shared-tooling-misc"],
       skippedAgentNames: ["ghost-agent", "acme-deployer"],
     })
+  })
+})
+
+describe("the sub-agents only a skipped skill carried", () => {
+  const SKIPPED = "nope-skill"
+  const onWebDeveloper = {
+    install: "plugin",
+    scope: "global",
+    assignments: { [WEB_DEV]: "lazy" },
+  } as const
+  const agents = {
+    [WEB_DEV]: { scope: "global" },
+    "web-tester": { scope: "global" },
+    pm: { scope: "global" },
+    reviewer: { on: true, scope: "global" },
+    "api-developer": { on: false },
+  } as const
+  const withSkipped = buildSeedPayload({
+    skills: {
+      [REACT]: onWebDeveloper,
+      [SKIPPED]: {
+        install: "plugin",
+        scope: "global",
+        assignments: {
+          [WEB_DEV]: "lazy",
+          "web-tester": "lazy",
+          pm: "preloaded",
+          reviewer: "lazy",
+          "api-developer": "lazy",
+          "ghost-agent": "lazy",
+        },
+      },
+    },
+    agents,
+  })
+
+  it("names each one under the skill, leaving out a sub-agent placed, switched on, switched off or unknown", () => {
+    expect(
+      seedToInstallSelection(withSkipped, SEED_CATALOG)
+        .agentsOnlySkippedSkillsCarried
+    ).toStrictEqual([{ skillId: SKIPPED, agentNames: ["web-tester", "pm"] }])
+  })
+
+  it("decodes the install exactly as it would without the skipped skill", () => {
+    const without = buildSeedPayload({
+      skills: { [REACT]: onWebDeveloper },
+      agents,
+    })
+
+    expect(
+      seedToInstallSelection(withSkipped, SEED_CATALOG).result
+    ).toStrictEqual(seedToInstallSelection(without, SEED_CATALOG).result)
+  })
+
+  it("names nothing when every skill places", () => {
+    const decoded = seedToInstallSelection(
+      buildSeedPayload({ skills: { [REACT]: onWebDeveloper }, agents }),
+      SEED_CATALOG
+    )
+
+    expect(decoded.agentsOnlySkippedSkillsCarried).toStrictEqual([])
   })
 })
 

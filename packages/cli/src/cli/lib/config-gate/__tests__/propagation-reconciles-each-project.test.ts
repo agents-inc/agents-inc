@@ -13,7 +13,8 @@ import {
   buildProjectConfig,
   buildSourceConfig,
 } from "../../__tests__/factories/config-factories.js";
-import { writeTestTsConfig } from "../../__tests__/helpers/config-io.js";
+import { writeRawTestConfig, writeTestTsConfig } from "../../__tests__/helpers/config-io.js";
+import { renderUnparseableConfigTs } from "../../__tests__/factories/unloadable-config-factories.js";
 import { useFakeHome } from "../../__tests__/helpers/isolated-home.js";
 import { silenceConsole } from "../../__tests__/helpers/silence-console.js";
 import { buildSkillConfig } from "../../__tests__/helpers/skill-config-builders.js";
@@ -25,9 +26,10 @@ import { loadProjectConfigFromDir } from "../../configuration/project-config.js"
 import { getProjectConfigPath } from "../../installation/install-base-dir.js";
 import { matrix } from "../../matrix/matrix-provider.js";
 import { setVerbose } from "../../../utils/logger.js";
-import { STANDARD_FILES } from "../../../consts.js";
+import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE, STANDARD_FILES } from "../../../consts.js";
 import {
   buildProjectTypesExtras,
+  projectsAFanOutReaches,
   propagateGlobalChangesToProjects,
   reconcileProjectSplitAgainstGlobal,
   resolveEffectiveGlobalConfig,
@@ -48,6 +50,15 @@ const NO_AGENTS = {};
 const CODEX_SOURCE_REL = ".agents-inc/codex";
 
 const MISSING_MARKETPLACE = "/no/such/project/marketplace";
+
+/** A marketplace other than the one a project's mask recorded. */
+const OTHER_MARKETPLACE = "acme-internal";
+
+/** A model the global install sets on a sub-agent after a project masked it. */
+const GLOBAL_MODEL = "opus";
+
+/** How a project's types file opens its category union over the global one. */
+const PROJECT_CATEGORY_UNION = "export type Category = GlobalCategory | ";
 
 describe("a global change propagated into a registered project", () => {
   const consoleSpies = silenceConsole(["log"]);
@@ -214,6 +225,113 @@ describe("a global change propagated into a registered project", () => {
     ]);
   });
 
+  it("keeps the origin its mask of a skill recorded, though the global install now takes it from another marketplace", async () => {
+    const project = await registerProject(
+      "masked-origin",
+      buildProjectConfig({
+        name: "masked-origin",
+        skills: [
+          buildSkillConfig(REACT, { scope: "project", origin: EJECT_SOURCE }),
+          buildSkillConfig(REACT, {
+            scope: "global",
+            origin: DEFAULT_PUBLIC_SOURCE_NAME,
+            excluded: true,
+          }),
+        ],
+        agents: buildAgentConfigs([WEB_DEVELOPER], { scope: "project" }),
+      }),
+    );
+
+    await propagateGlobalChangesToProjects(
+      globalInstall({
+        skills: [buildSkillConfig(REACT, { scope: "global", origin: OTHER_MARKETPLACE })],
+        projects: [project],
+      }),
+      NO_AGENTS,
+      "claude",
+    );
+
+    expect((await projectConfigOf(project))?.skills).toStrictEqual([
+      buildSkillConfig(REACT, {
+        scope: "global",
+        origin: DEFAULT_PUBLIC_SOURCE_NAME,
+        excluded: true,
+      }),
+      buildSkillConfig(REACT, { scope: "project", origin: EJECT_SOURCE }),
+    ]);
+  });
+
+  it("keeps its mask of a sub-agent as recorded, though the global install's entry now carries a model", async () => {
+    const project = await registerProject(
+      "masked-model",
+      buildProjectConfig({
+        name: "masked-model",
+        skills: [],
+        agents: [
+          ...buildAgentConfigs([WEB_DEVELOPER], { scope: "project" }),
+          ...buildAgentConfigs([WEB_DEVELOPER], { scope: "global", excluded: true }),
+        ],
+      }),
+    );
+
+    await propagateGlobalChangesToProjects(
+      globalInstall({
+        agents: [
+          ...buildAgentConfigs([WEB_DEVELOPER], { scope: "global", model: GLOBAL_MODEL }),
+          ...buildAgentConfigs([API_DEVELOPER], { scope: "global" }),
+        ],
+        projects: [project],
+      }),
+      NO_AGENTS,
+      "claude",
+    );
+
+    expect((await projectConfigOf(project))?.agents).toStrictEqual([
+      ...buildAgentConfigs([API_DEVELOPER], { scope: "global" }),
+      ...buildAgentConfigs([WEB_DEVELOPER], { scope: "global", excluded: true }),
+      ...buildAgentConfigs([WEB_DEVELOPER], { scope: "project" }),
+    ]);
+  });
+
+  it("leaves out of the project's regenerated types a category the global install's removal emptied", async () => {
+    await withGateToken(() => ensureBlankPair("claude"));
+    const project = await registerProject(
+      "emptied-category",
+      buildProjectConfig({
+        name: "emptied-category",
+        skills: [
+          buildSkillConfig(REACT, { scope: "global" }),
+          buildSkillConfig(VITEST, { scope: "global" }),
+        ],
+        agents: buildAgentConfigs([API_DEVELOPER], { scope: "project" }),
+        stack: {
+          [API_DEVELOPER]: {
+            "web-framework": [{ id: REACT, preloaded: false }],
+            "web-testing": [{ id: VITEST, preloaded: false }],
+          },
+        },
+      }),
+    );
+
+    await propagateGlobalChangesToProjects(
+      globalInstall({
+        skills: [buildSkillConfig(REACT, { scope: "global" })],
+        projects: [project],
+      }),
+      NO_AGENTS,
+      "claude",
+    );
+
+    const types = await readFile(
+      path.join(
+        path.dirname(getProjectConfigPath(project, "claude")),
+        STANDARD_FILES.CONFIG_TYPES_TS,
+      ),
+      "utf-8",
+    );
+    expect(types).toContain(`${PROJECT_CATEGORY_UNION}'web-framework'\n`);
+  });
+
   it("regenerates the project's types, unless told that no union moved", async () => {
     const regenerated = await registerProject("regenerated", buildProjectConfig({ name: "r" }));
     const untouched = await registerProject("untouched", buildProjectConfig({ name: "u" }));
@@ -330,6 +448,34 @@ describe("a global change propagated into a registered project", () => {
     expect(consoleSpies.log).toHaveBeenCalledWith(
       `  Skipped propagation to ${gone} (nothing installed there)`,
     );
+  });
+
+  it("names before a fan-out the projects it rewrites, and none it then skips", async () => {
+    const reached = await registerProject("reached", buildProjectConfig({ name: "reached" }));
+    const unreadableDir = path.join(tempDir, "unreadable");
+    await writeRawTestConfig(unreadableDir, renderUnparseableConfigTs());
+    const unreadable = await realpath(unreadableDir);
+    const otherProvider = path.join(tempDir, "other-provider");
+    await writeTestTsConfig(otherProvider, buildProjectConfig({ name: "other" }), CODEX_SOURCE_REL);
+    const notOurs = await realpath(otherProvider);
+    const gone = path.join(tempDir, "gone");
+    const projects = [reached, unreadable, notOurs, gone];
+
+    const named = await projectsAFanOutReaches(projects, "claude");
+    const result = await propagateGlobalChangesToProjects(
+      globalInstall({ projects }),
+      NO_AGENTS,
+      "claude",
+    );
+
+    expect(named).toStrictEqual([reached]);
+    expect(result).toStrictEqual({
+      updated: named,
+      unreadable: [unreadable],
+      gone: [gone],
+      notOurs: [notOurs],
+      failed: [],
+    });
   });
 });
 

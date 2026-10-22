@@ -13,18 +13,22 @@ import { fileURLToPath } from "node:url"
 
 import ts from "typescript"
 
+import { EDITOR_URL as SITE_EDITOR_PATH } from "../src/lib/links"
+
 const CONSTS = fileURLToPath(
   new URL("../../../packages/cli/src/cli/consts.ts", import.meta.url)
 )
 const CONSTS_LABEL = "packages/cli/src/cli/consts.ts"
 
-const LINKS = fileURLToPath(new URL("../src/lib/links.ts", import.meta.url))
 const LINKS_LABEL = "src/lib/links.ts"
 
 const DOCS = fileURLToPath(new URL("../src/content/docs/", import.meta.url))
 const DOCS_LABEL = "src/content/docs/"
 
 const EDITOR_URL_CONSTANT = "EDITOR_URL"
+
+/** `EDITOR_URL` yields to an environment variable; this literal is the address users get. */
+const DEFAULT_EDITOR_URL_CONSTANT = "DEFAULT_EDITOR_URL"
 
 const SHARE_LINK_FUNCTION = "editorConfigUrl"
 
@@ -78,8 +82,7 @@ type Judged = {
 
 function main(): void {
   const address = readEditorAddress()
-  const sitePath = readSiteEditorPath()
-  const judged = judge(readDocumentationPages(), address, sitePath)
+  const judged = judge(readDocumentationPages(), address, SITE_EDITOR_PATH)
 
   if (judged.addresses.length === 0) {
     refuse(`no page under ${DOCS_LABEL} writes an address on ${address.host}`)
@@ -87,7 +90,7 @@ function main(): void {
 
   const drift = [
     driftIn("the two constants that spell the editor's address", [
-      siteConstantAgainst(sitePath, address),
+      siteConstantAgainst(SITE_EDITOR_PATH, address),
     ]),
     driftIn("every address written on this site's own host", judged.addresses),
     driftIn("every share link written out", judged.shareLinks),
@@ -112,7 +115,11 @@ function judge(
 
 function readEditorAddress(): EditorAddress {
   const declared = parseModule(CONSTS, CONSTS_LABEL)
-  const url = stringConstantIn(declared, EDITOR_URL_CONSTANT, CONSTS_LABEL)
+  const url = stringConstantIn(
+    declared,
+    DEFAULT_EDITOR_URL_CONSTANT,
+    CONSTS_LABEL
+  )
   const { host, path } = hostAndPathOf(url)
   const appended = whatShareLinksAppend(declared)
 
@@ -127,13 +134,15 @@ function readEditorAddress(): EditorAddress {
 
 function hostAndPathOf(url: string): { host: string; path: string } {
   if (!URL.canParse(url)) {
-    refuse(`'${EDITOR_URL_CONSTANT}' in ${CONSTS_LABEL} is not a URL: ${url}`)
+    refuse(
+      `'${DEFAULT_EDITOR_URL_CONSTANT}' in ${CONSTS_LABEL} is not a URL: ${url}`
+    )
   }
 
   const { host, pathname } = new URL(url)
   if (pathname === ROOT_PATH) {
     refuse(
-      `'${EDITOR_URL_CONSTANT}' in ${CONSTS_LABEL} names no path below ${host}, ` +
+      `'${DEFAULT_EDITOR_URL_CONSTANT}' in ${CONSTS_LABEL} names no path below ${host}, ` +
         `so an address on that host cannot be told from the editor's`
     )
   }
@@ -187,14 +196,6 @@ function queryWithin(appended: string): string {
   }
 
   return appended.slice(opensAt)
-}
-
-function readSiteEditorPath(): string {
-  return stringConstantIn(
-    parseModule(LINKS, LINKS_LABEL),
-    EDITOR_URL_CONSTANT,
-    LINKS_LABEL
-  )
 }
 
 function siteConstantAgainst(
@@ -425,7 +426,7 @@ function exitWith(drift: Drift[], judged: Judged): never {
     }
   }
   console.error(
-    `\n'${EDITOR_URL_CONSTANT}' in ${CONSTS_LABEL} is where the editor is, and` +
+    `\n'${DEFAULT_EDITOR_URL_CONSTANT}' in ${CONSTS_LABEL} is where the editor is, and` +
       `\n'${SHARE_LINK_FUNCTION}' beside it is the shape of a share link. The` +
       `\napex serves the landing page, so a reference that drops the path still` +
       `\nrenders — nothing but this will tell you it is wrong.`

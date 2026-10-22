@@ -18,8 +18,7 @@ import type {
   SkillSlug,
 } from "../../../types";
 import { computeSkillFolderHash } from "../../versioning";
-import { fileExists, directoryExists, createTempDir, cleanupTempDir } from "../test-fs-utils";
-import { readTestYaml } from "../helpers/config-io.js";
+import { fileExists, createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { writeSourceAgent, writeTestPluginManifest } from "../helpers/disk-writers.js";
 import { renderSkillMd, renderConfigTs } from "../content-generators";
 import { createMockMarketplace, createMockMarketplacePlugin } from "../factories/plugin-factories";
@@ -107,7 +106,7 @@ export type TestDirs = {
   configDir?: string;
 };
 
-export { fileExists, directoryExists };
+export { fileExists };
 
 /** `id` and `domain` widen for the same reason as `TestSkill`'s. */
 type TestCategoryDefinition = Omit<CategoryDefinition, "id" | "domain"> & {
@@ -391,20 +390,7 @@ export async function readTestFile(filePath: string): Promise<string> {
   return readFile(filePath, "utf-8");
 }
 
-export { readTestYaml };
-
-export async function readTestJson<T>(filePath: string): Promise<T> {
-  const content = await readFile(filePath, "utf-8");
-  // JSON.parse returns `any`; the caller names the type
-  return JSON.parse(content) as T;
-}
-
 export async function writeTestFile(filePath: string, content: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, content);
-}
-
-export async function writeTestYaml(filePath: string, data: unknown): Promise<void> {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, stringifyYaml(data));
 }

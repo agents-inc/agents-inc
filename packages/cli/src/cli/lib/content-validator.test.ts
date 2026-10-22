@@ -3,7 +3,8 @@ import { mkdir, realpath, writeFile } from "fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
-  listInstalledArtifacts,
+  agentFilesWithOurProvenanceIn,
+  skillDirsWithOurProvenanceIn,
   validateInstalledAgents,
   validateInstalledPlugins,
   validateProjectConfigFile,
@@ -11,6 +12,7 @@ import {
 } from "./content-validator";
 import { getInstalledPluginsRegistryPath, getUserPluginsDir } from "./plugins/index";
 import { resolveInstallPaths } from "./installation/index";
+import { agentCodec } from "./installation/install-layout";
 import { buildProjectConfig, buildSourceConfig } from "./__tests__/factories/config-factories";
 import { renderUnparseableConfigTs } from "./__tests__/factories/unloadable-config-factories";
 import { renderAgentMd } from "./__tests__/content-generators";
@@ -252,6 +254,11 @@ describe("content-validator", () => {
   });
 
   it("lists nothing installed where no skills or agents folder exists", async () => {
-    expect(await listInstalledArtifacts(projectDir)).toStrictEqual({ skills: [], agents: [] });
+    const { skillsDir, agentsDir } = resolveInstallPaths(projectDir, "project");
+
+    expect({
+      skills: await skillDirsWithOurProvenanceIn(skillsDir),
+      agents: await agentFilesWithOurProvenanceIn(agentsDir, agentCodec("claude")),
+    }).toStrictEqual({ skills: [], agents: [] });
   });
 });

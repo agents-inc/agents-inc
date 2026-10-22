@@ -41,20 +41,15 @@ async function hasManifestOnDisk({ pluginKey, installPath }: ResolvedPlugin): Pr
 }
 
 export async function discoverAllPluginSkills(projectDir: string): Promise<SkillDefinitionMap> {
-  try {
-    const pluginPaths = await getVerifiedPluginInstallPaths(projectDir);
+  const pluginPaths = await getVerifiedPluginInstallPaths(projectDir);
 
-    if (pluginPaths.length === 0) {
-      verbose(`No enabled plugins found for '${projectDir}'`);
-      return {};
-    }
-
-    const perPluginSkills = await Promise.all(pluginPaths.map(loadSkillsOfPlugin));
-    return mergeInPluginOrder(perPluginSkills);
-  } catch (error) {
-    verbose(`Plugin discovery failed: ${getErrorMessage(error)}`);
+  if (pluginPaths.length === 0) {
+    verbose(`No enabled plugins found for '${projectDir}'`);
     return {};
   }
+
+  const perPluginSkills = await Promise.all(pluginPaths.map(loadSkillsOfPlugin));
+  return mergeInPluginOrder(perPluginSkills);
 }
 
 async function loadSkillsOfPlugin({
@@ -83,11 +78,6 @@ function mergeInPluginOrder(perPluginSkills: readonly SkillDefinitionMap[]): Ski
 }
 
 export async function listPluginNames(projectDir: string): Promise<string[]> {
-  try {
-    const pluginPaths = await getVerifiedPluginInstallPaths(projectDir);
-    return pluginPaths.map(({ pluginKey }) => pluginKey);
-  } catch (error) {
-    verbose(`Failed to list plugin names: ${getErrorMessage(error)}`);
-    return [];
-  }
+  const pluginPaths = await getVerifiedPluginInstallPaths(projectDir);
+  return pluginPaths.map(({ pluginKey }) => pluginKey);
 }

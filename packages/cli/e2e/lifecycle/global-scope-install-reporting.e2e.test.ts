@@ -10,11 +10,6 @@ import { agentsPath, cleanupTempDir, configTsPath, skillsPath } from "../helpers
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import "../matchers/setup.js";
 
-/**
- * Reporting for an all-global install driven from a project whose HOME is separate, so report and
- * `list` counts can be checked against where files actually landed.
- */
-
 const GLOBAL_STACK_SKILLS = [
   E2E_SKILL.react,
   E2E_SKILL.vitest,
@@ -121,14 +116,11 @@ describe("default init from a project dir — global scope reporting", () => {
     expect(initOutput).not.toContain(agentsPath(projectDir));
   });
 
-  /** The project config keeps no global-agent assignment, so the global config holds them. */
-  it("names the global config as the one holding the assignments", () => {
-    expect(initOutput).toContain(STEP_TEXT.CONFIGURATION_LABEL);
-    expect(initOutput).toContain(configTsPath(fakeHome));
-    expect(
-      initOutput,
-      "the project config carries no stack for a wholly global install, so naming it sends the user to a file with nothing in it",
-    ).not.toContain(configTsPath(projectDir));
+  /** Every config the run wrote is named: the global one holding the assignments, and the project's. */
+  it("names the global config holding the assignments, and the project config it also wrote", () => {
+    expect(initOutput).toContain(
+      `${STEP_TEXT.CONFIGURATION_LABEL}\n  ${configTsPath(fakeHome)}\n  ${configTsPath(projectDir)}\n\n`,
+    );
   });
 
   /** `compile` in this cwd runs the project pass only, recompiling no global agent. */

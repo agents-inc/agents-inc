@@ -5,6 +5,7 @@ import { unique } from "remeda";
 
 import { CLI_COLORS, DEFAULT_BRANDING, MIN_TERMINAL_SIZE } from "./consts.js";
 import { getErrorMessage } from "./utils/errors.js";
+import { stripTerminalControls } from "./utils/string.js";
 import { verbose } from "./utils/logger.js";
 import {
   completedWithFailures,
@@ -20,6 +21,8 @@ import {
   sharedConfigProjectScopeAtHome,
   skillAssignedToNoAgent,
   skillMetadataUnusableDetail,
+  skippedUnknownAgents,
+  skippedUnknownSkills,
   STATUS_MESSAGES,
 } from "./utils/messages.js";
 import {
@@ -50,6 +53,12 @@ import {
   refuseUncarriedDestinations,
   type ExternalSkillInstall,
 } from "./lib/seed/external-skills.js";
+import {
+  installsAtHome,
+  projectScopedContent,
+  skippedWithTheirSkills,
+} from "./lib/seed/seed-apply.js";
+import type { SeedMapping } from "./lib/seed/seed-to-selection.js";
 import { refuseUnwritableStack } from "@workspace/compile/config-source";
 import { requireMarketplace } from "./lib/operations/source/require-marketplace.js";
 import {
@@ -122,21 +131,6 @@ function hasActiveProjectEntry(skills: readonly SkillConfig[], skillId: SkillId)
   return skills.some((skill) => skill.id === skillId && isActiveAt(skill, "project"));
 }
 
-/** Split by kind: skill and sub-agent scopes are independent, so the refusal names each. */
-function projectScopedContent(result: InstallSelection): {
-  skillIds: SkillId[];
-  agentNames: AgentName[];
-} {
-  return {
-    skillIds: result.skills
-      .filter((skill) => isActiveAt(skill, "project"))
-      .map((skill) => skill.id),
-    agentNames: result.agentConfigs
-      .filter((agent) => isActiveAt(agent, "project"))
-      .map((agent) => agent.name),
-  };
-}
-
 export abstract class BaseCommand extends Command {
   /** Non-empty decides the exit code; see {@link exitIfWorkIncomplete}. */
   private readonly incompleteWork: IncompleteWork[] = [];
@@ -149,7 +143,7 @@ export abstract class BaseCommand extends Command {
   protected async ensureTerminalSize(): Promise<void> {
     if (isTerminalBigEnough()) return;
 
-    this.clearTerminal();
+    clearTerminalScreen();
     this.log(chalk.hex(CLI_COLORS.WARNING)(formatTerminalTooSmallMessage(terminalColumns())));
 
     await waitForTerminal(isTerminalBigEnough);
@@ -178,18 +172,6 @@ export abstract class BaseCommand extends Command {
     this.log(`✓ ${message}`);
   }
 
-  protected logWarning(message: string): void {
-    this.warn(message);
-  }
-
-  protected logInfo(message: string): void {
-    this.log(message);
-  }
-
-  protected clearTerminal(): void {
-    clearTerminalScreen();
-  }
-
   /** `onRegistered` fires only when the marketplace had to be registered. */
   protected async requireMarketplaceOrExit(
     sourceResult: SourceLoadResult,
@@ -207,10 +189,10 @@ export abstract class BaseCommand extends Command {
     return required.marketplace;
   }
 
-  /** Advisory: the selection installs either way, so these are warnings. */
+  /** Advisory: the selection installs either way. A message can quote a payload's own ids. */
   protected reportValidationErrors(validation: SelectionValidation): void {
     for (const error of validation.errors) {
-      this.warn(error.message);
+      this.warn(stripTerminalControls(error.message));
     }
   }
 
@@ -331,12 +313,19 @@ export abstract class BaseCommand extends Command {
    * global config mislabelled. Needs the decoded selection; callers run it before any write.
    */
   protected refuseProjectScopedContentAtHome(result: InstallSelection, projectDir: string): void {
-    if (!isHomeDirectory(projectDir)) return;
+    if (!isHomeDirectory(projectDir) || installsAtHome(result)) return;
 
     const { skillIds, agentNames } = projectScopedContent(result);
-    if (skillIds.length === 0 && agentNames.length === 0) return;
-
     this.error(sharedConfigProjectScopeAtHome(skillIds, agentNames), { exit: EXIT_CODES.ERROR });
+  }
+
+  /** Measured against the selection after its restores, so a sub-agent kept is not named skipped. */
+  protected warnOfSkippedEntries(mapping: SeedMapping, selectedAgents: readonly AgentName[]): void {
+    const { skippedSkillIds, skippedAgentNames, agentsOnlySkippedSkillsCarried } = mapping;
+    const skippedWith = skippedWithTheirSkills(agentsOnlySkippedSkillsCarried, selectedAgents);
+
+    if (skippedSkillIds.length > 0) this.warn(skippedUnknownSkills(skippedSkillIds, skippedWith));
+    if (skippedAgentNames.length > 0) this.warn(skippedUnknownAgents(skippedAgentNames));
   }
 
   /** The `--from` refusals that need the decoded selection, asked before the confirm. */

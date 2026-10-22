@@ -18,7 +18,7 @@ export type InstallTree = {
   emptyDirectories: string[];
 };
 
-export type RecordedPhase = {
+type RecordedPhase = {
   files: Record<string, string>;
   emptyDirectories: string[];
 };

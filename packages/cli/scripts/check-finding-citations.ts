@@ -26,7 +26,7 @@ export const NO_SCOPE_DIRECTORY = "names a scope directory that does not exist";
 export const NO_FINDING_DIRECTORY = "names a finding directory that does not exist";
 export const NO_PLAN_DIRECTORY = "names a plan directory that does not exist";
 
-export type CitationForm = "link" | "mention";
+type CitationForm = "link" | "mention";
 
 export type Citation = { document: string; name: string; form: CitationForm };
 

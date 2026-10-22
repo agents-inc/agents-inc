@@ -1,21 +1,9 @@
 import type { Category, ResolvedSkill, SkillId, SkillSlug, SkillSource } from "../../../types";
 import type { TestSkill } from "../fixtures/create-test-source";
-import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE, LOCAL_PSEUDO_CATEGORY } from "../../../consts";
+import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE } from "../../../consts";
 import { createMockSkill, createTestSkill } from "../factories/skill-factories.js";
 import { SKILLS } from "../test-fixtures";
 import { renderSkillMd } from "../content-generators";
-
-const METHODOLOGY_TEST_SKILLS: TestSkill[] = [
-  {
-    id: "meta-reviewing-reviewing",
-    slug: "reviewing",
-    displayName: "Anti Over-Engineering",
-    description: "Surgical implementation, not architectural innovation",
-    category: "meta-reviewing",
-    author: "@test",
-    domain: "meta",
-  },
-];
 
 const reactSkill = createTestSkill(
   "web-framework-react",
@@ -151,12 +139,6 @@ export const RESOLUTION_PIPELINE_SKILLS: TestSkill[] = [
     author: "@acme",
   }),
   createTestSkill("web-testing-vitest", "Vitest testing (public source)"),
-];
-
-export const ALL_TEST_SKILLS = [
-  ...DEFAULT_TEST_SKILLS,
-  ...EXTRA_DOMAIN_TEST_SKILLS,
-  ...METHODOLOGY_TEST_SKILLS,
 ];
 
 export const INIT_SKILL_IDS: SkillId[] = [
@@ -308,83 +290,8 @@ export const SKILL_WITHOUT_METADATA_CUSTOM: TestSkill = createTestSkill(
   { slug: "security" as SkillSlug, displayName: "Custom", skipMetadata: true },
 );
 
-export const LOCAL_SKILL_BASIC: TestSkill = createTestSkill(
-  // Fictional id, outside the generated union
-  "web-tooling-my-skill" as SkillId,
-  "A test skill",
-  {
-    slug: "tooling" as SkillSlug,
-    displayName: "My Skill",
-    content: `---
-name: my-skill
-description: A test skill
-category: test
----
-
-# My Skill
-
-Test content here.
-`,
-  },
-);
-
-export const LOCAL_SKILL_FORKED: TestSkill = createTestSkill(
-  // Fictional id, outside the generated union
-  "web-tooling-forked-skill" as SkillId,
-  "A forked skill",
-  {
-    slug: "tooling" as SkillSlug,
-    displayName: "Forked Skill",
-    content: `---
-name: forked-skill
-description: A forked skill
-category: test
----
-
-# Forked Skill
-
-Local modifications here.
-`,
-    forkedFrom: {
-      skillId: "web-framework-react",
-      contentHash: "abc123",
-      date: "2025-01-01",
-    },
-  },
-);
-
-export const LOCAL_SKILL_FORKED_MINIMAL: TestSkill = createTestSkill(
-  // Fictional id, outside the generated union
-  "web-tooling-test-minimal" as SkillId,
-  "Test skill",
-  {
-    slug: "env" as SkillSlug,
-    displayName: "Test Minimal",
-    content: `---
-name: test
----
-# Test`,
-    forkedFrom: {
-      skillId: "web-framework-react",
-      contentHash: "abc",
-      date: "2025-01-01",
-    },
-  },
-);
-
 export const REACT_REQUIRES_ZUSTAND = createMockSkill("web-framework-react", {
   requires: [{ skillIds: ["web-state-zustand"], needsAny: false, reason: "Needs Zustand" }],
-});
-
-// A local skill's id names a user-written directory, outside the generated union.
-export const LOCAL_HOUSE_STYLE_ID = "local-house-style" as SkillId;
-
-export const LOCAL_HOUSE_STYLE_SKILL = createMockSkill(LOCAL_HOUSE_STYLE_ID, {
-  category: LOCAL_PSEUDO_CATEGORY,
-  // Outside the generated union, as the id is
-  slug: "house-style" as SkillSlug,
-  local: true,
-  custom: true,
 });
 
 // A custom skill's id names a user-written directory, outside the generated union; `external-`

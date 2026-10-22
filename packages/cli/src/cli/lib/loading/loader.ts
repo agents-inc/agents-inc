@@ -4,6 +4,7 @@ import { getErrorMessage } from "../../utils/errors";
 import { extractFrontmatter } from "../../utils/frontmatter";
 import { glob, readFile, directoryExists, fileExists } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
+import { isRecord } from "../../utils/type-guards";
 import {
   DIRS,
   LOCAL_PSEUDO_CATEGORY,
@@ -30,7 +31,7 @@ import {
 import type { LocalRawMetadata } from "../skills/local-skill-loader";
 import { METADATA_KEYS } from "../metadata-keys";
 
-export type SkillMetadataRead =
+type SkillMetadataRead =
   { usable: true; metadata: LocalRawMetadata } | { usable: false; reason: string };
 
 /**
@@ -45,7 +46,7 @@ export async function readSkillMetadata(metadataPath: string): Promise<SkillMeta
     return { usable: false, reason: getErrorMessage(error) };
   }
 
-  if (!isFieldMapping(parsed)) {
+  if (!isRecord(parsed)) {
     return { usable: false, reason: `expected metadata fields, found ${nameYamlValue(parsed)}` };
   }
 
@@ -63,10 +64,6 @@ export async function readSkillMetadata(metadataPath: string): Promise<SkillMeta
  */
 export function namesPlaceholderCategory(metadata: LocalRawMetadata): boolean {
   return metadata.category === LOCAL_PSEUDO_CATEGORY;
-}
-
-function isFieldMapping(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** Names what a metadata.yaml holds when it holds no fields — for the refusal's reason. */
@@ -112,25 +109,40 @@ async function loadAgentsFromDir(
   const files = await glob(`**/${STANDARD_FILES.AGENT_METADATA_YAML}`, agentsDir);
 
   for (const file of files) {
-    const fullPath = path.join(agentsDir, file);
-    try {
-      const content = await readFile(fullPath);
-      // safeParse: a ZodError's message is a JSON dump, and this warning is the only report.
-      const parsed = agentYamlConfigSchema.safeParse(parseYaml(content));
-      if (!parsed.success) {
-        warn(refusalOfAgentMetadata(fullPath, formatZodIssues(parsed.error.issues)));
-        continue;
-      }
-      const config = parsed.data;
-
-      agents[config.id] = toAgentDefinition(config, file, sourceRoot, options);
-      verbose(`Loaded ${options.verboseLabel}: ${config.id} from ${file}`);
-    } catch (error) {
-      warn(refusalOfAgentMetadata(fullPath, getErrorMessage(error)));
-    }
+    const read = await readAgentDefinition(agentsDir, file, sourceRoot, options);
+    if (read) agents[read.id] = read.definition;
   }
 
   return agents;
+}
+
+type AgentDefinitionRead = { id: AgentYamlConfig["id"]; definition: AgentDefinition };
+
+/** Undefined, and warned about, when the file cannot be read or is not a valid definition. */
+async function readAgentDefinition(
+  agentsDir: string,
+  file: string,
+  sourceRoot: string,
+  options: LoadAgentsFromDirOptions,
+): Promise<AgentDefinitionRead | undefined> {
+  const fullPath = path.join(agentsDir, file);
+  try {
+    const content = await readFile(fullPath);
+    // safeParse: a ZodError's message is a JSON dump, and this warning is the only report.
+    const parsed = agentYamlConfigSchema.safeParse(parseYaml(content));
+    if (!parsed.success) {
+      warn(refusalOfAgentMetadata(fullPath, formatZodIssues(parsed.error.issues)));
+      return undefined;
+    }
+    const config = parsed.data;
+
+    const definition = toAgentDefinition(config, file, sourceRoot, options);
+    verbose(`Loaded ${options.verboseLabel}: ${config.id} from ${file}`);
+    return { id: config.id, definition };
+  } catch (error) {
+    warn(refusalOfAgentMetadata(fullPath, getErrorMessage(error)));
+    return undefined;
+  }
 }
 
 /** `file` is the path under the agents directory; its parent becomes the agent's `path`. */
@@ -191,8 +203,7 @@ export async function loadProjectAgents(
 
   if (!(await directoryExists(projectAgentsDir))) {
     verbose(`No project agents directory at ${projectAgentsDir}`);
-    const noAgents: Record<string, AgentDefinition> = {};
-    return noAgents;
+    return {};
   }
 
   return loadAgentsFromDir(projectAgentsDir, projectRoot, {
@@ -202,7 +213,7 @@ export async function loadProjectAgents(
   });
 }
 
-export type LoadSkillsFromDirOptions = {
+type LoadSkillsFromDirOptions = {
   /** Path prefix recorded on each skill's `path` (e.g. LOCAL_SKILLS_PATH or "skills"). */
   pathPrefix?: string;
   /**

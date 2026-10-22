@@ -6,7 +6,7 @@ import type { AddressInfo } from "node:net";
 
 export type ResponsesRequestBody = { input?: unknown[] } & Record<string, unknown>;
 
-export type RecordedRequest = { path: string; body: ResponsesRequestBody };
+type RecordedRequest = { path: string; body: ResponsesRequestBody };
 
 export type ResponseEvent = { type: string } & Record<string, unknown>;
 
@@ -85,7 +85,6 @@ async function readBody(request: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString("utf-8");
 }
 
-// A non-object body is kept whole under `_raw`.
 function parseBody(raw: string): ResponsesRequestBody {
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -112,11 +111,11 @@ export function respondWith(
   return [responseCreated(responseId), ...items(responseId), responseCompleted(responseId)];
 }
 
-export function responseCreated(responseId: string): ResponseEvent {
+function responseCreated(responseId: string): ResponseEvent {
   return { type: "response.created", response: { id: responseId } };
 }
 
-export function responseCompleted(responseId: string): ResponseEvent {
+function responseCompleted(responseId: string): ResponseEvent {
   return {
     type: "response.completed",
     response: {
@@ -141,17 +140,8 @@ export function assistantMessage(responseId: string, text: string): ResponseEven
   });
 }
 
-export function applyPatchCall(callId: string, patch: string): ResponseEvent {
-  return outputItem({
-    type: "custom_tool_call",
-    name: "apply_patch",
-    input: patch,
-    call_id: callId,
-  });
-}
-
 /** `namespace` groups multi-agent tools (e.g. `collaboration`). */
-export function functionCall(
+function functionCall(
   callId: string,
   name: string,
   args: Record<string, unknown>,
@@ -168,14 +158,6 @@ export function functionCall(
 
 function outputItem(item: Record<string, unknown>): ResponseEvent {
   return { type: "response.output_item.done", item };
-}
-
-export function toolOutputsIn(body: ResponsesRequestBody): Record<string, unknown>[] {
-  return (body.input ?? [])
-    .filter(isRecord)
-    .filter(
-      (item) => item.type === "function_call_output" || item.type === "custom_tool_call_output",
-    );
 }
 
 export function userTextsIn(body: ResponsesRequestBody): string[] {

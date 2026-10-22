@@ -48,12 +48,6 @@ function getSkillSourcePath(skill: ResolvedSkill, rootDir: string): string {
   return resolveSkillPath(srcDir, skill.path);
 }
 
-function getSkillDestPath(skill: ResolvedSkill, stackDir: string): string {
-  const skillRelativePath = skill.path.replace(/^skills\//, "");
-  const skillsDir = path.join(stackDir, "skills");
-  return resolveSkillPath(skillsDir, skillRelativePath);
-}
-
 async function generateSkillHash(skillSourcePath: string): Promise<string> {
   const skillMdPath = path.join(skillSourcePath, STANDARD_FILES.SKILL_MD);
   return computeFileHash(skillMdPath);
@@ -76,33 +70,6 @@ async function copySkillTo(
   });
 
   return { skillId: skill.id, contentHash, sourcePath, destPath };
-}
-
-export async function copySkill(
-  skill: ResolvedSkill,
-  stackDir: string,
-  registryRoot: string,
-  source?: string,
-): Promise<CopiedSkill> {
-  return copySkillTo(
-    skill,
-    getSkillSourcePath(skill, registryRoot),
-    getSkillDestPath(skill, stackDir),
-    source,
-  );
-}
-
-export async function copySkillFromSource(
-  skill: ResolvedSkill,
-  stackDir: string,
-  sourceResult: SourceLoadResult,
-): Promise<CopiedSkill> {
-  return copySkillTo(
-    skill,
-    getSkillSourcePath(skill, sourceResult.sourcePath),
-    getSkillDestPath(skill, stackDir),
-    sourceResult.sourceConfig.source,
-  );
 }
 
 async function resolveLocalCopiedSkill(
@@ -189,24 +156,51 @@ export async function copySkillsToLocalFlattened(
   sourceResult: SourceLoadResult,
   sourceSelections?: Partial<Record<SkillId, string>>,
 ): Promise<CopiedSkill[]> {
-  return copyEachSkill(selectedSkillIds, async (skillId) => {
-    const skill = getSkillById(skillId);
+  return copyEachSkill(selectedSkillIds, (skillId) =>
+    copySelectedSkill(skillId, localSkillsDir, sourceResult, sourceSelections?.[skillId]),
+  );
+}
 
-    const selectedSource = sourceSelections?.[skillId];
-    const userSelectedRemote = selectedSource && selectedSource !== EJECT_SOURCE;
-    if (!skill.local || !skill.localPath || userSelectedRemote) {
-      return copySkillToLocalFlattened(skill, localSkillsDir, sourceResult);
-    }
+/**
+ * From the source, unless the skill is a local one the user did not point at a remote source;
+ * that one is copied from where it lives, or recorded in place when it already lives there.
+ */
+async function copySelectedSkill(
+  skillId: SkillId,
+  localSkillsDir: string,
+  sourceResult: SourceLoadResult,
+  selectedSource: string | undefined,
+): Promise<CopiedSkill> {
+  const skill = getSkillById(skillId);
+  const localPath = picksRemoteSource(selectedSource) ? undefined : localPathOf(skill);
+  if (localPath === undefined) {
+    return copySkillToLocalFlattened(skill, localSkillsDir, sourceResult);
+  }
 
-    const destPath = getFlattenedSkillDestPath(skill, localSkillsDir);
-    if (path.resolve(skill.localPath) === path.resolve(destPath)) {
-      return resolveLocalCopiedSkill(skill, skill.localPath);
-    }
+  const destPath = getFlattenedSkillDestPath(skill, localSkillsDir);
+  if (path.resolve(localPath) === path.resolve(destPath)) {
+    return resolveLocalCopiedSkill(skill, localPath);
+  }
 
-    const contentHash = await generateSkillHash(skill.localPath);
-    await ensureDir(path.dirname(destPath));
-    await copy(skill.localPath, destPath);
+  return copyLocalSkillTo(skill, localPath, destPath);
+}
 
-    return { skillId: skill.id, sourcePath: skill.localPath, destPath, contentHash };
-  });
+function picksRemoteSource(selectedSource: string | undefined): boolean {
+  return !!selectedSource && selectedSource !== EJECT_SOURCE;
+}
+
+function localPathOf(skill: ResolvedSkill): string | undefined {
+  return skill.local && skill.localPath ? skill.localPath : undefined;
+}
+
+async function copyLocalSkillTo(
+  skill: ResolvedSkill,
+  localPath: string,
+  destPath: string,
+): Promise<CopiedSkill> {
+  const contentHash = await generateSkillHash(localPath);
+  await ensureDir(path.dirname(destPath));
+  await copy(localPath, destPath);
+
+  return { skillId: skill.id, sourcePath: localPath, destPath, contentHash };
 }

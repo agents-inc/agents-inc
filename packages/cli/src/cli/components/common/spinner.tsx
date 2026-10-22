@@ -1,13 +1,7 @@
 import React from "react";
 import { Text, type Instance } from "ink";
-import { Spinner as InkSpinner } from "@inkjs/ui";
+import { Spinner } from "@inkjs/ui";
 import { render } from "../render.js";
-
-type SpinnerProps = {
-  label: string;
-};
-
-export const Spinner: React.FC<SpinnerProps> = ({ label }) => <InkSpinner label={label} />;
 
 /** `finally`, never `catch`: a throw must reach the caller untouched, with the spinner gone. */
 export async function awaitUnderSpinner<T>(label: string, load: () => Promise<T>): Promise<T> {

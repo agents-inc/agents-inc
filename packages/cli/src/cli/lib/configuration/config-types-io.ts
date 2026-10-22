@@ -20,7 +20,7 @@ import { loadProjectConfigFromDir } from "./project-config";
 import { activeAgentNames, activeProjectAgentNames } from "./scope-predicates";
 
 /** The provider is the asking project's: a project inherits only from its own provider's global. */
-export async function getGlobalConfigTypesPath(provider: Provider): Promise<string | null> {
+async function getGlobalConfigTypesPath(provider: Provider): Promise<string | null> {
   const globalConfigTypesPath = path.join(
     sourceFolderInUse(globalInstallRoot(), provider).dir,
     STANDARD_FILES.CONFIG_TYPES_TS,
@@ -66,20 +66,19 @@ export async function regenerateConfigTypes(
 ): Promise<void> {
   // One provider for every path built below: they must all name one installation.
   const provider = providerInUse(projectDir);
+  const configTypesPath = path.join(
+    sourceFolderInUse(projectDir, provider).dir,
+    STANDARD_FILES.CONFIG_TYPES_TS,
+  );
 
-  // Refused here too: this names the entry point and survives a mocked `utils/fs`.
-  if (isHomeDirectory(projectDir)) {
-    throw new GlobalPairWriteViolation(
-      path.join(sourceFolderInUse(projectDir, provider).dir, STANDARD_FILES.CONFIG_TYPES_TS),
-    );
-  }
+  // The gate token every caller holds lifts the `utils/fs` refusal, so this is the one they meet.
+  if (isHomeDirectory(projectDir)) throw new GlobalPairWriteViolation(configTypesPath);
 
-  const data = await backgroundData;
-
-  const sourceFolderDir = sourceFolderInUse(projectDir, provider).dir;
-
-  const globalConfigTypes = await getGlobalConfigTypesPath(provider);
-  const loadedConfig = await loadProjectConfigFromDir(projectDir, provider);
+  const [data, globalConfigTypes, loadedConfig] = await Promise.all([
+    backgroundData,
+    getGlobalConfigTypesPath(provider),
+    loadProjectConfigFromDir(projectDir, provider),
+  ]);
 
   // Otherwise standalone, narrowed to the config: full unions would stop `satisfies` biting.
   const source = globalConfigTypes
@@ -92,7 +91,6 @@ export async function regenerateConfigTypes(
         loadedConfig?.config,
       );
 
-  const configTypesPath = path.join(sourceFolderDir, STANDARD_FILES.CONFIG_TYPES_TS);
   await writeFile(configTypesPath, source);
   verbose(`Regenerated ${STANDARD_FILES.CONFIG_TYPES_TS}`);
 }

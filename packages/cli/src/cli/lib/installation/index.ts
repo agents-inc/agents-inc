@@ -11,29 +11,16 @@ export {
 } from "./installation";
 
 // No config writers here: writing config.ts goes through `config-gate` only.
-export {
-  buildAndMergeConfig,
-  setConfigMetadata,
-  buildCompileAgents,
-  buildAgentScopeMap,
-  refuseUnofferedStack,
-} from "./local-installer";
+export { buildAndMergeConfig, buildAgentScopeMap, refuseUnofferedStack } from "./local-installer";
 
 export { isHomeDirectory } from "./is-home-directory";
-export {
-  getInstalledConfigPath,
-  installBaseDir,
-  resolveInstallPaths,
-  type InstallPaths,
-} from "./install-base-dir";
+export { installBaseDir, resolveInstallPaths } from "./install-base-dir";
 
-export { detectInstallations, type DetectedInstallation } from "./detect-installations";
+export { detectInstallations } from "./detect-installations";
 
 export {
   type EjectCopyResult,
-  type SkillMigration,
   type MigrationPlan,
-  type MigrationResult,
   detectMigrations,
   ejectCopyFailureError,
   executeMigration,

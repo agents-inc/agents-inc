@@ -4,7 +4,7 @@
  */
 
 import path from "path";
-import { mkdir, realpath } from "fs/promises";
+import { chmod, mkdir, realpath } from "fs/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ProjectConfig } from "../../../types/index.js";
@@ -41,7 +41,6 @@ import {
   writeProjectPartial,
   writeScopeConfigTypes,
 } from "../index.js";
-import { NOTHING_RECOMPILED } from "../recompile.js";
 
 const REACT = "web-framework-react";
 const VITEST = "web-testing-vitest";
@@ -51,6 +50,9 @@ const API_DEVELOPER = "api-developer";
 const NO_AGENTS = {};
 
 const NOTHING_PROPAGATED = { updated: [], unreadable: [], gone: [], notOurs: [], failed: [] };
+
+const UNOPENABLE_FILE = 0o000;
+const READ_WRITE_FILE = 0o644;
 
 describe("the config gate's entry points", () => {
   const consoleSpies = silenceConsole(["log", "warn"]);
@@ -151,7 +153,7 @@ describe("the config gate's entry points", () => {
       said(`Updated global config at ${globalConfigPath}`);
     });
 
-    it("propagates a change that moves types into the other registered projects", async () => {
+    it("propagates a change that moves types into the other registered projects, and recompiles them", async () => {
       const project = await installProject("project");
       const other = await installProject("other");
       await installGlobal({ projects: [project, other] });
@@ -167,7 +169,40 @@ describe("the config gate's entry points", () => {
       );
 
       expect(report.propagated.updated).toStrictEqual([other]);
+      expect(report.recompile).toStrictEqual({
+        rewrittenCount: 1,
+        unchangedCount: 0,
+        failedCount: 0,
+        warnings: [],
+      });
       said("Propagated global changes to 1 project(s)");
+    });
+
+    it("counts a registered project whose config pair it rewrote as rewritten, though it holds no sub-agent", async () => {
+      const project = await installProject("project");
+      const agentless = await installProject(
+        "agentless",
+        buildProjectConfig({ name: "agentless", skills: [], agents: [] }),
+      );
+      await installGlobal({ projects: [project, agentless] });
+
+      const report = await writeFromProject(
+        project,
+        sessionWith({
+          skills: [
+            buildSkillConfig(REACT, { scope: "global" }),
+            buildSkillConfig(VITEST, { scope: "global" }),
+          ],
+        }),
+      );
+
+      expect(report.propagated.updated).toStrictEqual([agentless]);
+      expect(report.recompile).toStrictEqual({
+        rewrittenCount: 1,
+        unchangedCount: 0,
+        failedCount: 0,
+        warnings: [],
+      });
     });
 
     it("propagates nothing when only the registration list moved", async () => {
@@ -181,7 +216,12 @@ describe("the config gate's entry points", () => {
 
       expect(report.changes.projectsChanged).toBe(true);
       expect(report.propagated).toStrictEqual(NOTHING_PROPAGATED);
-      expect(report.recompile).toStrictEqual(NOTHING_RECOMPILED);
+      expect(report.recompile).toStrictEqual({
+        rewrittenCount: 0,
+        unchangedCount: 0,
+        failedCount: 0,
+        warnings: [],
+      });
     });
 
     it("skips the project pair when nothing is the project's own and none is installed", async () => {
@@ -259,6 +299,76 @@ describe("the config gate's entry points", () => {
       expect(report.globalWritten).toBe(true);
       expect(report.propagated.updated).toStrictEqual([other]);
       said("Propagated global changes to 1 project(s)");
+    });
+
+    it("counts a registered project rewritten while the fan-out changes its pair, and unchanged once it does not", async () => {
+      const agentless = await installProject(
+        "agentless",
+        buildProjectConfig({ name: "agentless", skills: [], agents: [] }),
+      );
+      await installGlobal({ projects: [agentless] });
+      const reconcile = () =>
+        reconcileTypesFromDisk(
+          home.dir,
+          buildProjectConfig({
+            name: "global-install",
+            skills: [buildSkillConfig(REACT, { scope: "global" })],
+            agents: buildAgentConfigs([WEB_DEVELOPER], { scope: "global" }),
+            projects: [agentless],
+          }),
+          { matrix, agents: NO_AGENTS },
+        );
+
+      const first = await reconcile();
+      const second = await reconcile();
+
+      expect(first.recompile).toStrictEqual({
+        rewrittenCount: 1,
+        unchangedCount: 0,
+        failedCount: 0,
+        warnings: [],
+      });
+      expect(second.recompile).toStrictEqual({
+        rewrittenCount: 0,
+        unchangedCount: 1,
+        failedCount: 0,
+        warnings: [],
+      });
+    });
+
+    it("visits every registered project when one's config cannot be opened, naming that one unreadable", async () => {
+      const locked = await installProject("locked");
+      const other = await installProject("other");
+      await installGlobal({ projects: [locked, other] });
+      const lockedConfig = getProjectConfigPath(locked, "claude");
+      await chmod(lockedConfig, UNOPENABLE_FILE);
+
+      try {
+        const report = await reconcileTypesFromDisk(
+          home.dir,
+          buildProjectConfig({
+            name: "global-install",
+            skills: [buildSkillConfig(REACT, { scope: "global" })],
+            agents: buildAgentConfigs([WEB_DEVELOPER], { scope: "global" }),
+            projects: [locked, other],
+          }),
+          { matrix, agents: NO_AGENTS },
+        );
+
+        expect(report.propagated).toStrictEqual({
+          ...NOTHING_PROPAGATED,
+          updated: [other],
+          unreadable: [locked],
+        });
+        expect(report.recompile).toStrictEqual({
+          rewrittenCount: 1,
+          unchangedCount: 0,
+          failedCount: 0,
+          warnings: [],
+        });
+      } finally {
+        await chmod(lockedConfig, READ_WRITE_FILE);
+      }
     });
 
     it("says nothing about propagating from home when no registered project took the change", async () => {
@@ -342,6 +452,10 @@ describe("the config gate's entry points", () => {
           ),
         ),
       ).toBe(false);
+      expect(
+        report.recompile,
+        "a project whose config.ts took the new marketplace was rewritten, recompile or not",
+      ).toStrictEqual({ rewrittenCount: 1, unchangedCount: 0, failedCount: 0, warnings: [] });
     });
 
     it("says nothing about propagating when no registered project took the change", async () => {
@@ -408,5 +522,18 @@ describe("the config gate's entry points", () => {
     );
 
     expect(report.globalWritten).toBe(false);
+  });
+
+  it("prunes no project and counts none for a global removal with none registered", async () => {
+    const report = await propagateGlobalRemoval(
+      buildProjectConfig({ name: "global-install" }),
+      { matrix, agents: NO_AGENTS },
+      "claude",
+    );
+
+    expect({ propagated: report.propagated, recompile: report.recompile }).toStrictEqual({
+      propagated: NOTHING_PROPAGATED,
+      recompile: { rewrittenCount: 0, unchangedCount: 0, failedCount: 0, warnings: [] },
+    });
   });
 });

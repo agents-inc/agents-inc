@@ -1,7 +1,5 @@
 import { seedPayload } from "@workspace/api-mocks/fixtures"
 
-import { externalSkillId } from "@/stores/catalog-store"
-
 import { expect, test as base } from "../fixtures"
 import {
   HARBOR_STACK,
@@ -48,7 +46,9 @@ const test = base.extend<object, { crossing: Crossing }>({
 // back off the screen.
 const COMPUTED_AT_INSTALL = "<computed at install time>"
 
-const CARRIED_ID = externalSkillId(HARBOR_STORE.category, "brainstorming")
+// Written out: an added skill's id is what the payload carries, in the form the
+// editor mints it.
+const CARRIED_ID = `external-${HARBOR_STORE.category}-brainstorming`
 
 /** One configuration, minted as an id the browser opens and the CLI installs. */
 type Install = {
@@ -182,6 +182,29 @@ const INSTALLS: Install[] = [
         },
       },
       agents: { "web-developer": { scope: "project" } },
+    }),
+    shows: "Zustand",
+  },
+  {
+    // The install writes config.ts in the catalogue's category order and
+    // compiles from it; the payload names Zustand's category first.
+    title:
+      "a configuration naming its skills against the catalogue's category order",
+    id: "PubOrdr6",
+    payload: seedPayload({
+      skills: {
+        [PUBLIC_ZUSTAND]: {
+          install: "eject",
+          scope: "global",
+          assignments: { "web-developer": "preloaded" },
+        },
+        [PUBLIC_REACT]: {
+          install: "eject",
+          scope: "global",
+          assignments: { "web-developer": "preloaded" },
+        },
+      },
+      agents: {},
     }),
     shows: "Zustand",
   },

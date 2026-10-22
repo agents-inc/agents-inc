@@ -1,8 +1,4 @@
-import type {
-  AssignmentTarget,
-  SkillId,
-  StackExpansion,
-} from "@workspace/matrix"
+import type { AssignmentTarget, StackExpansion } from "@workspace/matrix"
 import { create } from "zustand"
 import {
   createJSONStorage,
@@ -15,7 +11,7 @@ import {
   stackAgentPins,
 } from "@/features/configure/lib/default-assignments"
 import { track } from "@/lib/analytics/track"
-import { reportIssue } from "@/lib/observability/report"
+import { reportIssue, reportableIssues } from "@/lib/observability/report"
 import {
   activeCatalog,
   activeExternalSkill,
@@ -26,6 +22,7 @@ import {
   DEFAULT_SKILL_OPTIONS,
   PERSIST_VERSION,
   isAgentOn,
+  isKnownSkill,
   isWorthRemembering,
   migrateConfig,
   persistedConfigSchema,
@@ -49,9 +46,7 @@ type ConfigActions = {
   // empty → lazy → preloaded → empty, per the design's matrix cell. A row the
   // roster switched off counts as empty, so cycling it re-enables at lazy.
   cycleAssignment: (skillId: string, agentId: string) => void
-  // The roster's row click: keep the assignment, flip whether it is live.
   toggleAssignmentEnabled: (skillId: string, agentId: string) => void
-  // The roster's load word: pre ↔ lazy for that one agent.
   flipAssignmentLoad: (skillId: string, agentId: string) => void
   // Pins the agent to the opposite of what it derives to, in both directions.
   toggleAgentPin: (agentId: string) => void
@@ -75,11 +70,14 @@ type SkillMap = PersistedConfig["skills"]
 type AgentMap = PersistedConfig["agents"]
 type Assignments = SkillEntry["assignments"]
 
+// `description` is named so that replacing the selection clears it: `set`
+// merges, and an absent key would keep the last one.
 const EMPTY: PersistedConfig = {
   stackId: null,
   skills: {},
   remembered: {},
   agents: {},
+  description: undefined,
 }
 
 const withoutKey = <T>(record: Record<string, T>, key: string) => {
@@ -149,13 +147,9 @@ export const unknownSavedIds = (
   ...lostStack(before.stackId, after.stackId),
 ]
 
-// The loaded catalogue only, so a stale id cannot survive in storage.
-const isKnownSkill = (skillId: string) => skillId in activeCatalog().skillsById
-
 const isInCategory = (skillId: string, categoryId: string) =>
   activeSkillById(skillId)?.categoryId === categoryId
 
-// The skill's category, but only when picking one replaces the others.
 const exclusiveCategoryOf = (skillId: string) => {
   const categoryId = activeSkillById(skillId)?.categoryId
   if (!categoryId) return undefined
@@ -165,7 +159,6 @@ const exclusiveCategoryOf = (skillId: string) => {
     : undefined
 }
 
-// A deselected skill's setup is set aside rather than dropped.
 const setAside = (
   remembered: SkillMap,
   skillId: string,
@@ -233,8 +226,7 @@ export const isEjectOnly = (skillId: string) =>
 const installModeFor = (skillId: string): SkillOptions["install"] =>
   isEjectOnly(skillId) ? "eject" : DEFAULT_SKILL_OPTIONS.install
 
-// What a never-configured skill starts as. Exported because the cell shows it
-// before the skill is selected.
+// What a never-configured skill starts as.
 export const freshEntry = (skillId: string): SkillEntry => ({
   ...DEFAULT_SKILL_OPTIONS,
   install: installModeFor(skillId),
@@ -253,6 +245,27 @@ const select = (state: PersistedConfig, skillId: string) => {
     remembered: withoutKey(remembered, skillId),
   }
 }
+
+// A deselection or an eviction on Codex sets the entry aside at global.
+const toggled = (state: PersistedConfig, skillId: string, onCodex: boolean) => {
+  const current = state.skills[skillId]
+  const next = current
+    ? deselect(state, skillId, current)
+    : select(state, skillId)
+
+  return onCodex
+    ? { ...next, remembered: withProjectPluginsAtGlobal(next.remembered) }
+    : next
+}
+
+// The panel cannot express plugin for an eject-only skill either.
+const withOfferedInstall = (
+  skillId: string,
+  patch: Partial<SkillOptions>
+): Partial<SkillOptions> =>
+  isEjectOnly(skillId) && patch.install === "plugin"
+    ? { ...patch, install: "eject" }
+    : patch
 
 // The agents an entry reaches; a switched-off row does not pulse.
 const liveAgentIds = (entry: SkillEntry | undefined) =>
@@ -316,6 +329,9 @@ const patchAssignment = (
   }
 }
 
+const isNonResting = <T>(value: T | undefined, resting: T): value is T =>
+  value !== undefined && value !== resting
+
 // A field back at its resting value loses its key. `on` is exempt: a pin is a
 // decision even where it matches what the assignments imply.
 const withoutRestingValues = (
@@ -323,16 +339,12 @@ const withoutRestingValues = (
   resting: AgentOptions
 ): AgentEntry => ({
   ...(entry.on !== undefined && { on: entry.on }),
-  ...(entry.model !== undefined &&
-    entry.model !== resting.model && { model: entry.model }),
-  ...(entry.codexModel !== undefined &&
-    entry.codexModel !== resting.codexModel && {
-      codexModel: entry.codexModel,
-    }),
-  ...(entry.effort !== undefined &&
-    entry.effort !== resting.effort && { effort: entry.effort }),
-  ...(entry.scope !== undefined &&
-    entry.scope !== resting.scope && { scope: entry.scope }),
+  ...(isNonResting(entry.model, resting.model) && { model: entry.model }),
+  ...(isNonResting(entry.codexModel, resting.codexModel) && {
+    codexModel: entry.codexModel,
+  }),
+  ...(isNonResting(entry.effort, resting.effort) && { effort: entry.effort }),
+  ...(isNonResting(entry.scope, resting.scope) && { scope: entry.scope }),
 })
 
 const alreadyInEffect = (
@@ -377,18 +389,35 @@ const toStackSkills = (expansion: StackExpansion): SkillMap => {
   )
 }
 
+/**
+ * The whole selection applying a stack leaves: its skills, and its pins. The
+ * description goes, since the stack's own is what the install writes.
+ */
+export const stackSelection = (
+  stackId: string
+): PersistedConfig | undefined => {
+  const expansion = expandActiveStack(stackId)
+  if (!expansion) return undefined
+
+  return {
+    ...EMPTY,
+    stackId,
+    skills: toStackSkills(expansion),
+    agents: stackAgentPins(expansion),
+  }
+}
+
 // What the last read could not place. Beside the store rather than in it,
 // because a `set` writes the slot.
 let unknownOnLastRead: string[] = []
 
 // An added skill's content is not persisted, so its id is not either.
+const isPersistable = (skillId: string) =>
+  isKnownSkill(skillId) && activeExternalSkill(skillId) === undefined
+
 const onlyPersistableSkills = (skills: SkillMap) =>
   Object.fromEntries(
-    Object.entries(skills).filter(
-      ([skillId]) =>
-        skillId in activeCatalog().skillsById &&
-        activeExternalSkill(skillId) === undefined
-    )
+    Object.entries(skills).filter(([skillId]) => isPersistable(skillId))
   )
 
 // Persist's own default, named so `withoutWrites` has something to wrap.
@@ -421,15 +450,8 @@ export const useConfigStore = create<ConfigState>()(
           return
         }
 
-        const expansion = expandActiveStack(stackId)
-        if (!expansion) return
-
-        set({
-          stackId,
-          skills: toStackSkills(expansion),
-          remembered: {},
-          agents: stackAgentPins(expansion),
-        })
+        const applied = stackSelection(stackId)
+        if (applied) set(applied)
       },
 
       toggleSkill: (skillId) => {
@@ -438,21 +460,8 @@ export const useConfigStore = create<ConfigState>()(
         // Ahead of `set`, which writes whatever its updater returns.
         if (selecting && !isKnownSkill(skillId)) return
 
-        // A deselection or an eviction on Codex sets the entry aside at global.
         const onCodex = useUiStore.getState().provider === "codex"
-        set((state) => {
-          const current = state.skills[skillId]
-          const next = current
-            ? deselect(state, skillId, current)
-            : select(state, skillId)
-
-          return onCodex
-            ? {
-                ...next,
-                remembered: withProjectPluginsAtGlobal(next.remembered),
-              }
-            : next
-        })
+        set((state) => toggled(state, skillId, onCodex))
 
         // A deselect flashes nobody; a restored entry flashes what it restored.
         const reached = selecting ? get().skills[skillId] : undefined
@@ -467,12 +476,7 @@ export const useConfigStore = create<ConfigState>()(
       },
 
       setSkillOption: (skillId, patch) => {
-        // The panel cannot express plugin for an eject-only skill either.
-        const allowed =
-          isEjectOnly(skillId) && patch.install === "plugin"
-            ? { ...patch, install: "eject" as const }
-            : patch
-
+        const allowed = withOfferedInstall(skillId, patch)
         const configured = configure(get(), skillId, (entry) => ({
           ...entry,
           ...allowed,
@@ -558,7 +562,7 @@ export const useConfigStore = create<ConfigState>()(
 
       importConfig: (config) => {
         useUiStore.getState().clearFlash()
-        set({ ...config })
+        set({ ...EMPTY, ...config })
 
         track({
           name: "config_imported",
@@ -569,7 +573,7 @@ export const useConfigStore = create<ConfigState>()(
       applySavedStack: (config) => {
         // Whatever was pulsing belonged to the selection being replaced.
         useUiStore.getState().clearFlash()
-        set({ ...config })
+        set({ ...EMPTY, ...config })
       },
 
       pruneToCatalog: () => {
@@ -596,11 +600,12 @@ export const useConfigStore = create<ConfigState>()(
       // `merge` prunes against the loaded catalogue, so storage is read only
       // once `readSavedConfig` knows it settled.
       skipHydration: true,
-      partialize: ({ stackId, skills, remembered, agents }) => ({
+      partialize: ({ stackId, skills, remembered, agents, description }) => ({
         stackId,
         skills: onlyPersistableSkills(skills),
         remembered: onlyPersistableSkills(remembered),
         agents,
+        description,
       }),
       // The untrusted boundary: anything unparseable becomes empty state.
       merge: (persisted, current) => {
@@ -614,9 +619,7 @@ export const useConfigStore = create<ConfigState>()(
           // catalogue id, and on a marketplace that is a name the org chose.
           reportIssue("Discarded unreadable saved configuration", {
             persistVersion: PERSIST_VERSION,
-            issues: parsed.error.issues.map(
-              (issue) => `${String(issue.path[0] ?? "(root)")}: ${issue.code}`
-            ),
+            issues: reportableIssues(parsed.error),
           })
           return current
         }
@@ -631,6 +634,9 @@ export const useConfigStore = create<ConfigState>()(
     }
   )
 )
+
+// Read as `activeMarketplace` is: the payload carries it, no derivation does.
+export const activeDescription = () => useConfigStore.getState().description
 
 // Whether the slot is held open for a configuration that is not this browser's.
 let heldOpen = false
@@ -672,5 +678,3 @@ export const readSavedConfig = async (): Promise<string[]> => {
   await useConfigStore.persist.rehydrate()
   return unknownOnLastRead
 }
-
-export type { SkillId }

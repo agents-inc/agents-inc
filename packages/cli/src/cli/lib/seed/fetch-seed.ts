@@ -26,11 +26,8 @@ const NO_SUCH_CONFIG = 404;
 export type FetchSeedResult = { ok: true; payload: SeedPayload } | { ok: false; error: string };
 
 export async function fetchSeedConfig(id: string): Promise<FetchSeedResult> {
-  let response: Response;
-  try {
-    // hono substitutes path params verbatim, so a `/` or `?` in an id would address another route.
-    response = await store.configs[":id"].$get({ param: { id: encodeURIComponent(id) } });
-  } catch {
+  const response = await requestFromStore(id);
+  if (response === null) {
     return { ok: false, error: `Could not reach ${SEED_API_URL} — check your connection.` };
   }
 
@@ -42,10 +39,30 @@ export async function fetchSeedConfig(id: string): Promise<FetchSeedResult> {
     return { ok: false, error: await refusalMessage(response) };
   }
 
-  let body: unknown;
+  return payloadIn(await jsonBodyOrUndefined(response), id);
+}
+
+/** Null where the store could not be reached at all. */
+async function requestFromStore(id: string): Promise<Response | null> {
   try {
-    body = await response.json();
+    // hono substitutes path params verbatim, so a `/` or `?` in an id would address another route.
+    return await store.configs[":id"].$get({ param: { id: encodeURIComponent(id) } });
   } catch {
+    return null;
+  }
+}
+
+/** Undefined where the body is not JSON, which no JSON document parses to. */
+export async function jsonBodyOrUndefined(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return undefined;
+  }
+}
+
+function payloadIn(body: unknown, id: string): FetchSeedResult {
+  if (body === undefined) {
     return { ok: false, error: "The configuration store returned something that is not JSON." };
   }
 
@@ -82,7 +99,7 @@ async function refusalBody(response: Response): Promise<string | undefined> {
 }
 
 /** Anything not `text/plain` came from a proxy or gateway in the store's place, not the store. */
-function arrivedAsText(response: Response): boolean {
+export function arrivedAsText(response: Response): boolean {
   return (response.headers.get("content-type") ?? "").startsWith(QUOTABLE_TYPE);
 }
 

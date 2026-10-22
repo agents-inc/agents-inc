@@ -54,17 +54,15 @@ import type {
   Category,
 } from "../types";
 
-export const modelNameSchema = z.enum(MODEL_NAMES) as z.ZodType<ModelName>;
+const modelNameSchema = z.enum(MODEL_NAMES) as z.ZodType<ModelName>;
 
 const codexModelNameSchema = z.enum(CODEX_MODEL_NAMES) as z.ZodType<CodexModelName>;
 
-export const effortLevelSchema = z.enum(EFFORT_NAMES) as z.ZodType<EffortLevel>;
+const effortLevelSchema = z.enum(EFFORT_NAMES) as z.ZodType<EffortLevel>;
 
-export const permissionModeSchema = z.enum(PERMISSION_MODES) as z.ZodType<PermissionMode>;
+const permissionModeSchema = z.enum(PERMISSION_MODES) as z.ZodType<PermissionMode>;
 
-export const skillSlugSchema = z.enum(SKILL_SLUGS) as z.ZodType<SkillSlug>;
-
-export const categoryPathSchema = z.string().refine(
+const categoryPathSchema = z.string().refine(
   (val): val is CategoryPath => {
     if (val === LOCAL_PSEUDO_CATEGORY) return true;
     if ((CATEGORIES as readonly string[]).includes(val)) return true;
@@ -75,7 +73,7 @@ export const categoryPathSchema = z.string().refine(
   },
 ) as z.ZodType<CategoryPath>;
 
-export const agentHookActionSchema: z.ZodType<AgentHookAction> = z.object({
+const agentHookActionSchema: z.ZodType<AgentHookAction> = z.object({
   type: z.enum(["command", "script", "prompt"]),
   command: z.string().exactOptional(),
   script: z.string().exactOptional(),
@@ -83,21 +81,21 @@ export const agentHookActionSchema: z.ZodType<AgentHookAction> = z.object({
 });
 
 /** `Partial`: nothing reads a manifest's hooks, and refusing one would drop the whole plugin. */
-export const agentHookDefinitionSchema: z.ZodType<Partial<AgentHookDefinition>> = z.object({
+const agentHookDefinitionSchema: z.ZodType<Partial<AgentHookDefinition>> = z.object({
   matcher: z.string().exactOptional(),
   hooks: z.array(agentHookActionSchema).exactOptional(),
 });
 
-export const hooksRecordSchema = z.record(z.string(), z.array(agentHookDefinitionSchema));
+const hooksRecordSchema = z.record(z.string(), z.array(agentHookDefinitionSchema));
 
 /**
  * `z.enum` rather than a cast literal, so it moves with the vocabulary: a narrower schema still
  * satisfies `z.ZodType<AgentIsolation>`, so `tsc` would not catch a missing mode.
  */
-export const agentIsolationSchema = z.enum(AGENT_ISOLATIONS) as z.ZodType<AgentIsolation>;
+const agentIsolationSchema = z.enum(AGENT_ISOLATIONS) as z.ZodType<AgentIsolation>;
 
 /** `.strict()`: a plain object empties an unknown key to `{}`, leaving nothing to refuse. */
-export const agentExperimentalSchema = z
+const agentExperimentalSchema = z
   .object({
     cacheTtl: z.enum(CACHE_TTLS).exactOptional(),
   })
@@ -113,7 +111,7 @@ export const strictHooksRecordSchema = z.record(
   z.array(strictAgentHookDefinitionSchema),
 );
 
-export const skillAssignmentSchema: z.ZodType<SkillAssignment> = z.object({
+const skillAssignmentSchema: z.ZodType<SkillAssignment> = z.object({
   id: z.string() as z.ZodType<SkillId>,
   preloaded: z.boolean().exactOptional(),
   local: z.boolean().exactOptional(),
@@ -149,12 +147,11 @@ export const matrixRawMetadataSchema = z.object({
   custom: z.boolean().exactOptional(),
 });
 
-export const pluginAuthorSchema: z.ZodType<PluginAuthor> = z.object({
+const pluginAuthorSchema: z.ZodType<PluginAuthor> = z.object({
   name: z.string().min(1),
   email: z.string().exactOptional(),
 });
 
-// The lenient and strict variants below differ only in unknown-key policy.
 const pluginManifestObjectSchema = z.object({
   name: z.string(),
   version: z.string().exactOptional(),
@@ -197,7 +194,7 @@ const skillAssignmentElementSchema = z.union([
 ]);
 
 /** Lenient: a bare string, object or array from YAML; consumers normalize to SkillAssignment[]. */
-export const stackAgentConfigSchema = z.record(
+const stackAgentConfigSchema = z.record(
   z.string(),
   z.union([skillAssignmentElementSchema, z.array(skillAssignmentElementSchema)]),
 );
@@ -288,7 +285,6 @@ const projectConfigFields = z
     marketplace: z.string().exactOptional(),
     /** The name the marketplace's manifest gives it, which plugins are registered under */
     marketplaceName: z.string().exactOptional(),
-    agentsSource: z.string().exactOptional(),
     /** Global config only */
     projects: z.array(z.string()).exactOptional(),
   })
@@ -307,9 +303,14 @@ const categoryDefinitionSchema: z.ZodType<CategoryDefinition> = z.object({
   icon: z.string().exactOptional(),
 });
 
+/** The refused input as the author wrote it, where it is text at all. */
+function refusedInputNamed(input: unknown): string {
+  return typeof input === "string" ? `'${input}'` : "That value";
+}
+
 /** Names the slug the author wrote: Zod's enum message lists ~250 options and never the input. */
 function unknownSkillSlugRefusal(input: unknown): string {
-  const named = typeof input === "string" ? `'${input}'` : "That value";
+  const named = refusedInputNamed(input);
   return (
     `${named} is not a slug the public catalogue carries, and a relationship rule may only ` +
     `name skills the public catalogue carries — this marketplace's own skills cannot be named ` +
@@ -402,7 +403,6 @@ const stackSchema = z.object({
   philosophy: z.string().exactOptional(),
 });
 
-// Values may be string or string[]; loadStacks() normalizes them to SkillId[].
 export const stacksConfigSchema = z.object({
   stacks: z.array(stackSchema).min(1),
 });
@@ -426,7 +426,6 @@ const marketplacePluginSchema: z.ZodType<MarketplacePlugin> = z.object({
   keywords: z.array(z.string()).exactOptional(),
 });
 
-// MarketplaceOwner aliases PluginAuthor (identical shape, both require name.min(1))
 const marketplaceOwnerSchema: z.ZodType<MarketplaceOwner> = pluginAuthorSchema;
 
 const marketplaceMetadataSchema: z.ZodType<MarketplaceMetadata> = z.object({
@@ -482,12 +481,9 @@ const projectSourceConfigFields = z
     author: z.string().exactOptional(),
     /** The name the marketplace's manifest gives it, which plugins are registered under */
     marketplaceName: z.string().exactOptional(),
-    agentsSource: z.string().exactOptional(),
     branding: brandingConfigSchema.exactOptional(),
     /** Custom skills directory override (default: "src/skills") */
     skillsDir: z.string().exactOptional(),
-    /** Custom agents directory override (default: "src/agents") */
-    agentsDir: z.string().exactOptional(),
     /** Custom stacks file path override (default: "config/stacks.ts") */
     stacksFile: z.string().exactOptional(),
     /** Custom categories file path override (default: "config/skill-categories.ts") */
@@ -498,8 +494,6 @@ const projectSourceConfigFields = z
   .passthrough();
 
 export const projectSourceConfigSchema = renamedFieldGuard.pipe(projectSourceConfigFields);
-
-// The strict schemas below reject unknown fields; the loaders above pass them through.
 
 /** A source agent's `metadata.yaml`; generates `agent.schema.json`. Custom ids allowed. */
 export const agentYamlGenerationSchema = z
@@ -597,7 +591,7 @@ const skillMetadataBaseSchema = z.object({
 
 /** As `unknownSkillSlugRefusal`, and points at `custom: true`. */
 function unknownMetadataSlugRefusal(input: unknown): string {
-  const named = typeof input === "string" ? `'${input}'` : "That value";
+  const named = refusedInputNamed(input);
   return (
     `${named} is not a slug the public catalogue carries. A published skill's slug is held to ` +
     `that catalogue unless the skill declares it is not from it — add '${METADATA_KEYS.CUSTOM}: true' ` +
@@ -716,9 +710,8 @@ function isOverLengthCliDescription(issue: z.ZodIssue): boolean {
 }
 
 function readCliDescription(raw: unknown): string | undefined {
-  if (raw == null || typeof raw !== "object") return undefined;
-  // Boundary cast: raw comes straight from YAML parsing; the typeof check above narrows to object
-  const value = (raw as { cliDescription?: unknown }).cliDescription;
+  if (!isRecord(raw)) return undefined;
+  const value = raw.cliDescription;
   return typeof value === "string" ? value : undefined;
 }
 
@@ -754,10 +747,8 @@ export function validateNestingDepth(value: unknown, maxDepth: number): boolean 
   return check(value, 0);
 }
 
-export function isCustomMetadata(raw: unknown): boolean {
-  if (raw == null || typeof raw !== "object") return false;
-  if (!("custom" in raw)) return false;
-  return raw.custom === true;
+function isCustomMetadata(raw: unknown): boolean {
+  return isRecord(raw) && raw.custom === true;
 }
 
 /**

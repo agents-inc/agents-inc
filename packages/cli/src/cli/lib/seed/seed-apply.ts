@@ -14,7 +14,7 @@ import {
 } from "../../utils/messages.js";
 import { typedEntries, typedKeys, typedValues } from "../../utils/typed-object.js";
 
-import type { InstallSelection } from "@workspace/compile/seed-to-config";
+import type { InstallSelection, SkippedSkillAgents } from "@workspace/compile/seed-to-config";
 import type { AgentName } from "../../types/agents.js";
 import type {
   AgentScopeConfig,
@@ -242,19 +242,19 @@ export async function readInstalledGlobal(projectDir: string): Promise<Installed
   return loaded?.config ?? null;
 }
 
-type GlobalEntries = { skillIds: SkillId[]; agentNames: AgentName[] };
+type Entries = { skillIds: SkillId[]; agentNames: AgentName[] };
 
 /** A held global sub-agent an arriving skill's row joins, and the skills those rows bring. */
 export type JoinedAgent = { agentName: AgentName; skillIds: SkillId[] };
 
 export type HeldGlobal = {
   result: InstallSelection;
-  installed: GlobalEntries;
-  keptAsInstalled: GlobalEntries;
+  installed: Entries;
+  keptAsInstalled: Entries;
   joined: JoinedAgent[];
 };
 
-const NO_GLOBAL_ENTRIES: GlobalEntries = { skillIds: [], agentNames: [] };
+const NO_GLOBAL_ENTRIES: Entries = { skillIds: [], agentNames: [] };
 
 /** A project `--from` only adds to the global install: every global entry it holds stays as held. */
 export function holdInstalledGlobal(
@@ -280,18 +280,6 @@ export function holdInstalledGlobal(
     agentNames: namedAgentNames,
     skippedSkillIds: new Set(namedSkillIds),
   });
-  const joinedNames = new Set(joined.map(({ agentName }) => agentName));
-
-  const restatesSkill = ({ named, held }: Held<SkillConfig>): boolean =>
-    named.origin === held.origin;
-  const restatesAgent = ({ named, held }: Held<AgentScopeConfig>): boolean =>
-    named.model === held.model &&
-    named.codexModel === held.codexModel &&
-    named.effort === held.effort &&
-    sameAssignments(decoded.assignedStack[named.name], assignedStack[named.name]);
-  // A sub-agent a row joins is changed, so it is named as added to rather than as kept.
-  const keptAsIs = (pair: Held<AgentScopeConfig>): boolean =>
-    !restatesAgent(pair) && !joinedNames.has(pair.named.name);
 
   return {
     result: {
@@ -302,11 +290,47 @@ export function holdInstalledGlobal(
     },
     installed: { skillIds: namedSkillIds, agentNames: namedAgentNames },
     keptAsInstalled: {
-      skillIds: skills.filter((pair) => !restatesSkill(pair)).map(({ named }) => named.id),
-      agentNames: agents.filter(keptAsIs).map(({ named }) => named.name),
+      skillIds: skillsKeptAsInstalled(skills),
+      agentNames: agentsKeptAsInstalled(agents, {
+        stated: decoded.assignedStack,
+        held: assignedStack,
+        joined,
+      }),
     },
     joined,
   };
+}
+
+function skillsKeptAsInstalled(pairs: Held<SkillConfig>[]): SkillId[] {
+  return pairs.filter((pair) => !restatesSkill(pair)).map(({ named }) => named.id);
+}
+
+function restatesSkill({ named, held }: Held<SkillConfig>): boolean {
+  return named.origin === held.origin;
+}
+
+type HeldAgentRows = {
+  stated: Partial<Record<AgentName, StackAgentConfig>>;
+  held: Partial<Record<AgentName, StackAgentConfig>>;
+  joined: JoinedAgent[];
+};
+
+/** A sub-agent a row joins is changed, so it is named as added to rather than as kept. */
+function agentsKeptAsInstalled(pairs: Held<AgentScopeConfig>[], rows: HeldAgentRows): AgentName[] {
+  const joinedNames = new Set(rows.joined.map(({ agentName }) => agentName));
+  const keptAsIs = (pair: Held<AgentScopeConfig>): boolean =>
+    !restatesAgent(pair, rows) && !joinedNames.has(pair.named.name);
+
+  return pairs.filter(keptAsIs).map(({ named }) => named.name);
+}
+
+function restatesAgent({ named, held }: Held<AgentScopeConfig>, rows: HeldAgentRows): boolean {
+  return (
+    named.model === held.model &&
+    named.codexModel === held.codexModel &&
+    named.effort === held.effort &&
+    sameAssignments(rows.stated[named.name], rows.held[named.name])
+  );
 }
 
 /** For the destructive `edit --from`: a project may not remove global entries. */
@@ -515,16 +539,24 @@ export function notInstalledGlobally<Entry extends { id: SkillId }>(
   return entries.filter((entry) => !installed.has(entry.id));
 }
 
-export type ArrivingEntries = { skillIds: SkillId[]; agentNames: AgentName[] };
-
-export type Arrivals = Record<SkillScope, ArrivingEntries>;
+export type Arrivals = Record<SkillScope, Entries>;
 
 export function arrivalsByScope(skills: SkillConfig[], agents: AgentScopeConfig[]): Arrivals {
-  const landingAt = (scope: SkillScope): ArrivingEntries => ({
+  return {
+    project: entriesActiveAt(skills, agents, "project"),
+    global: entriesActiveAt(skills, agents, "global"),
+  };
+}
+
+function entriesActiveAt(
+  skills: SkillConfig[],
+  agents: AgentScopeConfig[],
+  scope: SkillScope,
+): Entries {
+  return {
     skillIds: skills.filter((skill) => isActiveAt(skill, scope)).map((skill) => skill.id),
     agentNames: agents.filter((agent) => isActiveAt(agent, scope)).map((agent) => agent.name),
-  });
-  return { project: landingAt("project"), global: landingAt("global") };
+  };
 }
 
 function installArrivals(held: HeldGlobal): Arrivals {
@@ -539,12 +571,18 @@ function installArrivals(held: HeldGlobal): Arrivals {
 export function installPlanLines(held: HeldGlobal): string[] {
   return [
     ...arrivalLines(installArrivals(held)),
-    ...scopeLines(SHARED_CONFIG_ARRIVALS.SKIPPED_HEADING, {
-      skillIds: held.installed.skillIds,
-      agentNames: [],
-    }),
+    ...scopeLines(SHARED_CONFIG_ARRIVALS.SKIPPED_HEADING, skippedAsInstalled(held)),
     ...joinedStatement(held),
   ];
+}
+
+/** A sub-agent a row joins is changed, so it is named as added to rather than as skipped. */
+function skippedAsInstalled({ installed, joined }: HeldGlobal): Entries {
+  const joinedNames = new Set(joined.map(({ agentName }) => agentName));
+  return {
+    skillIds: installed.skillIds,
+    agentNames: installed.agentNames.filter((name) => !joinedNames.has(name)),
+  };
 }
 
 export function joinedStatement(held: HeldGlobal): string[] {
@@ -563,7 +601,7 @@ export function arrivalLines(arrivals: Arrivals): string[] {
   ];
 }
 
-function scopeLines(heading: string, entries: ArrivingEntries): string[] {
+function scopeLines(heading: string, entries: Entries): string[] {
   const groups = [
     { label: SHARED_CONFIG_APPLY.SKILLS_HEADING, items: entries.skillIds.map(skillLabel) },
     { label: SHARED_CONFIG_APPLY.AGENTS_HEADING, items: entries.agentNames },
@@ -574,4 +612,27 @@ function scopeLines(heading: string, entries: ArrivingEntries): string[] {
     heading,
     ...groups.flatMap((group) => [`  ${group.label}`, ...group.items.map((item) => `    ${item}`)]),
   ];
+}
+
+/** Split by kind: skill and sub-agent scopes are independent, so a refusal names each. */
+export function projectScopedContent(result: InstallSelection): Entries {
+  return entriesActiveAt(result.skills, result.agentConfigs, "project");
+}
+
+/** The home directory is the global scope, so it refuses anything project-scoped. */
+export function installsAtHome(result: InstallSelection): boolean {
+  const { skillIds, agentNames } = projectScopedContent(result);
+  return skillIds.length === 0 && agentNames.length === 0;
+}
+
+/** Less any sub-agent the run installs after all, as `edit` keeps one already installed. */
+export function skippedWithTheirSkills(
+  skipped: readonly SkippedSkillAgents[],
+  selectedAgents: readonly AgentName[],
+): SkippedSkillAgents[] {
+  const selected = new Set(selectedAgents);
+  return skipped.flatMap(({ skillId, agentNames }) => {
+    const left = agentNames.filter((name) => !selected.has(name));
+    return left.length === 0 ? [] : [{ skillId, agentNames: left }];
+  });
 }

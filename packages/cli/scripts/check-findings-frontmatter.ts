@@ -3,7 +3,7 @@
  * `TEMPLATE.md`, no duplicate filing, no dangling file reference and no undeclared symbol.
  *
  * `inFlight` names files whose bytes moved during the run, so a red caused by a concurrent write
- * says so instead of reading as a malformed finding. Each finding is read once per run.
+ * says so instead of reading as a malformed finding.
  */
 import { spawnSync } from "child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
@@ -47,10 +47,10 @@ const FILED_ON_A_DAY = /^\d{4}-\d{2}-\d{2}-/;
 
 const INDEXED_FINDING = /`(\d{4}-\d{2}-\d{2}-[^`]+?)(?:\.md)?`/g;
 
-export type FindingVerdict =
+type FindingVerdict =
   { file: string; outcome: "readable" } | { file: string; outcome: "unreadable"; problem: string };
 
-export type DuplicateFiling = { files: string[]; rootCause: string; date: string };
+type DuplicateFiling = { files: string[]; rootCause: string; date: string };
 
 export type UnresolvedReference = { file: string; key: string; value: string };
 

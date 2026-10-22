@@ -30,7 +30,7 @@ const JOURNEY_TABLE_COLUMNS = JOURNEY_TABLE_HEADER.length;
 const JOURNEY_NUMBER = /^\d+[a-z]?$/;
 
 // An unescaped `|`: markdown resolves `\|` even inside a code span. Copied verbatim into
-// `scripts/check-enumeration-drift.ts`, whose spec holds the two together.
+// `scripts/check-enumeration-drift.ts`.
 const CELL_SEPARATOR = /(?<!\\)\|/;
 
 const ESCAPED_PIPE = "\\|";
@@ -40,7 +40,7 @@ const NAMED_IN_BACKTICKS = /`([^`]+)`/g;
 const COVERAGE_MARKER = /\*\*([^*]+)\*\*/;
 
 /** `unlocated-spec`: a real spec named by basename alone — a page defect, not a coverage one. */
-export type SpecReference =
+type SpecReference =
   | { name: string; kind: "spec" }
   | { name: string; kind: "unlocated-spec"; livesAt: string }
   | { name: string; kind: "not-a-spec" };

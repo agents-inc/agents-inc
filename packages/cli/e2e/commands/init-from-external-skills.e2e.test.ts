@@ -21,13 +21,15 @@ import { CLI } from "../fixtures/cli.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import {
+  runEditUi,
   runInitFrom,
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
+import { applyEditFrom } from "../fixtures/e2e-stack-seed.js";
 import { flattenCliOutput } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
+import { EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
   UPSTREAM_SKILL_NAME,
   buildSeedExternalSkill,
@@ -37,6 +39,7 @@ import {
 import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { renderSkillMd } from "../../src/cli/lib/__tests__/content-generators.js";
+import { entryAt, firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
 /**
  * `init --from` with a skill from outside the catalogue: its inline directory becomes a real
@@ -66,8 +69,13 @@ const CATALOGUE_ID_THE_FIXTURE_LACKS = "web-framework-react";
 const LONG_EXTERNAL_DESCRIPTION =
   "Use before any creative work - explores user intent, requirements and design before implementation";
 
+const EXTERNAL_DESCRIPTION = "Structured brainstorming";
+
+/** Longer than the manifest's own, as a description the editor carried can be. */
+const PAYLOAD_DESCRIPTION = "Structured brainstorming for hard problems";
+
 const EXTERNAL_FILES = {
-  [FILES.SKILL_MD]: renderSkillMd(UPSTREAM_SKILL_NAME, "Structured brainstorming"),
+  [FILES.SKILL_MD]: renderSkillMd(UPSTREAM_SKILL_NAME, EXTERNAL_DESCRIPTION),
   "reference/prompts.md": "# Prompts\n",
 };
 
@@ -130,7 +138,7 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
     );
     expect(exitCode, `install failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
 
-    // The old failure: reported as unknown while its content sat unread in the payload.
+    // Carries the red: reported as unknown while its content sat unread in the payload.
     expect(flattenCliOutput(output)).not.toContain("does not know");
 
     // "eject" is the only origin an added skill can have.
@@ -170,6 +178,68 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
     // Everything is pinned to the project, so the other scope must own nothing.
     await expectFourSurfaces(env.fakeHome, { expectEmpty: true });
   });
+
+  /**
+   * The share carries the installed `metadata.yaml`, stamp and all, so the apply reads its own
+   * earlier output as what the repository shipped. It also reads the description back off the
+   * manifest, which here is shorter than the one the payload carried, so the apply has one line to
+   * write and every other byte to leave alone.
+   */
+  it(
+    "rewrites only the line a round trip through edit and edit --from changed, in the order it was first written",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async () => {
+      env = await createTestEnvironment({ permissions: false });
+      store.publish(
+        "ExtTrip1",
+        buildSeedPayload({
+          skills: {
+            [EXTERNAL_ID]: buildSeedSkill({
+              install: "eject",
+              scope: "project",
+              assignments: { [WEB_DEV]: "lazy" },
+            }),
+          },
+          external: {
+            [EXTERNAL_ID]: buildSeedExternalSkill({
+              displayName: EXTERNAL_DISPLAY,
+              description: PAYLOAD_DESCRIPTION,
+              categoryId: EXTERNAL_CATEGORY,
+              repo: EXTERNAL_REPO,
+              files: EXTERNAL_FILES,
+            }),
+          },
+          agents: { [WEB_DEV]: PINNED_TO_PROJECT },
+        }),
+      );
+      const project = { dir: env.projectDir, globalHome: env.fakeHome };
+      const installed = await runInitFrom(store, "ExtTrip1", project, sourceDir);
+      expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
+      const skillDir = path.join(skillsPath(env.projectDir), EXTERNAL_ID);
+      const before = await readTreeSnapshot(skillDir);
+
+      const shared = await runEditUi(store, project);
+      expect(shared.exitCode, `edit --ui failed: ${shared.output}`).toBe(EXIT_CODES.SUCCESS);
+      const applied = await applyEditFrom(store, firstElement(store.minted), project);
+      expect(applied.exitCode, `edit --from failed: ${applied.output}`).toBe(EXIT_CODES.SUCCESS);
+
+      const firstWrite = entryAt(before, FILES.METADATA_YAML).content;
+      expect(
+        firstWrite,
+        "the first write must carry the payload's description, or the apply has nothing to write",
+      ).toContain(`cliDescription: ${PAYLOAD_DESCRIPTION}\n`);
+      expect(await readTreeSnapshot(skillDir)).toStrictEqual({
+        ...before,
+        [FILES.METADATA_YAML]: {
+          content: firstWrite.replace(
+            `cliDescription: ${PAYLOAD_DESCRIPTION}\n`,
+            `cliDescription: ${EXTERNAL_DESCRIPTION}\n`,
+          ),
+          modifiedAtMs: expect.any(Number),
+        },
+      });
+    },
+  );
 
   it("writes a carried skill's metadata that doctor does not warn about", async () => {
     env = await createTestEnvironment({ permissions: false });
@@ -336,7 +406,10 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
     // For the right reason: an unknown-id skip names the id too.
     expect(flattenCliOutput(output)).not.toContain("does not know");
 
-    // Content and mtime under both scopes: a refusal owes every surface.
+    // Content and mtime under both scopes: a refusal owes every surface. Watched go red by flipping
+    // the exit-code expectation above to SUCCESS against the unguarded build, not by reverting a
+    // fix: this was then the only failing assertion, reporting the impostor's files, the compiled
+    // sub-agent and both config files. Restore that flip to re-measure.
     expect(await readTreeSnapshot(env.fakeHome)).toStrictEqual(homeBefore);
   });
 
@@ -431,7 +504,9 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
     expect(exitCode).toBe(EXIT_CODES.ERROR);
     // Named: the directory is the user's to move or rename.
     expect(flattenCliOutput(output)).toContain(EXTERNAL_ID);
-    // A hand-authored skill must survive untouched; content and mtime for every file.
+    // A hand-authored skill must survive untouched; content and mtime for every file. Measured
+    // before the guard: the payload's bytes replaced its SKILL.md and its metadata.yaml was stamped
+    // `forkedFrom`, handing the user's own work to `uninstall` and `share`.
     expect(await readTreeSnapshot(handAuthoredDir)).toStrictEqual(before);
   });
 });

@@ -1,7 +1,17 @@
-import { CATALOG, DOMAINS, createStackExpander } from "@workspace/matrix"
+import {
+  CATALOG,
+  DOMAINS,
+  STACKS,
+  createStackExpander,
+  expandStack,
+  resolveAssignment,
+} from "@workspace/matrix"
 import { matrixSchema } from "@workspace/matrix/matrix-schema"
 import { MAX_EXTERNAL_SKILL_BYTES } from "@workspace/matrix/seed"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
+
+import type * as Matrix from "@workspace/matrix"
+import type { SeedSkill } from "@workspace/matrix/seed"
 
 import {
   BIGCO_CANONICAL_REF,
@@ -34,8 +44,181 @@ import {
   STORED_PAYLOAD,
   UNREADABLE_CONFIG_ID,
   XSS_SENTINEL,
+  cliMintedPayload,
+  cliMintedStackPayload,
+  freshlyPickedSkill,
   seedPayload,
 } from "./fixtures"
+
+// The real expander, wrapped so one spec can hand the fixture a stack the vendored catalogue lacks.
+vi.mock("@workspace/matrix", async (importOriginal) => {
+  const real = await importOriginal<typeof Matrix>()
+  return { ...real, expandStack: vi.fn(real.expandStack) }
+})
+
+const REACT = "web-framework-react"
+const VITEST = "web-testing-vitest"
+const HONO = "api-framework-hono"
+
+const AT_REST_GLOBALLY = { on: true, scope: "global" }
+
+const pickedFor = (...agents: string[]): SeedSkill => ({
+  install: "plugin",
+  scope: "global",
+  assignments: Object.fromEntries(agents.map((agent) => [agent, "lazy"])),
+})
+
+const expandCatalogueStack = (stackId: string) => {
+  const expansion = expandStack(stackId)
+  if (!expansion) throw new Error(`No catalogue stack ${stackId}`)
+  return expansion
+}
+
+// One whose roster names a sub-agent no skill reaches, so both halves of the roster are minted.
+const STACK_PINNING_AN_AGENT = (() => {
+  const pinning = STACKS.find(
+    ({ id }) => expandCatalogueStack(id).skillLessAgentIds.length > 0
+  )
+  if (!pinning)
+    throw new Error("No catalogue stack pins a skill-less sub-agent")
+  return pinning.id
+})()
+
+describe("a selection as a bare `edit` mints it", () => {
+  it("carries no stack id, and the CLI's own catalogue version", () => {
+    const minted = cliMintedPayload({ [REACT]: pickedFor("web-developer") })
+
+    expect({
+      stackId: minted.stackId,
+      matrixVersion: minted.matrixVersion,
+    }).toStrictEqual({ stackId: null, matrixVersion: "0.0.0-cli" })
+  })
+
+  it("lists its skills in id order, whatever order they were picked in", () => {
+    const minted = cliMintedPayload({
+      [VITEST]: pickedFor("web-tester"),
+      [REACT]: pickedFor("web-developer"),
+      [HONO]: pickedFor("api-developer"),
+    })
+
+    expect(Object.keys(minted.skills)).toStrictEqual([HONO, REACT, VITEST])
+  })
+
+  it("switches each sub-agent a skill reaches on at global, once, in name order", () => {
+    const minted = cliMintedPayload({
+      [REACT]: pickedFor("web-developer", "pm"),
+      [VITEST]: pickedFor("web-developer"),
+    })
+
+    expect(Object.entries(minted.agents)).toStrictEqual([
+      ["pm", AT_REST_GLOBALLY],
+      ["web-developer", AT_REST_GLOBALLY],
+    ])
+  })
+
+  it("switches on a sub-agent no skill reaches once it is named, and one named twice once", () => {
+    const minted = cliMintedPayload({ [REACT]: pickedFor("web-developer") }, [
+      "pm",
+      "web-developer",
+    ])
+
+    expect(Object.keys(minted.agents)).toStrictEqual(["pm", "web-developer"])
+  })
+
+  it("switches on nothing for no skills and no sub-agents named", () => {
+    expect(cliMintedPayload({}).agents).toStrictEqual({})
+  })
+})
+
+describe("a skill picked fresh and minted back", () => {
+  it("installs as a plugin at global scope on the sub-agents the selection defaults pick", () => {
+    const targets = resolveAssignment(REACT)
+
+    // Subject guard: an empty default would make the comparison below vacuous.
+    expect(targets).not.toStrictEqual([])
+    expect(freshlyPickedSkill(REACT)).toStrictEqual({
+      install: "plugin",
+      scope: "global",
+      assignments: Object.fromEntries(
+        targets.map(({ agentId, load }) => [agentId, load])
+      ),
+    })
+  })
+})
+
+describe("a built-in stack installed and minted back", () => {
+  const expansion = expandCatalogueStack(STACK_PINNING_AN_AGENT)
+
+  const agentsTheStackGives = (skillId: string) => {
+    const targets = expansion.assignmentsBySkill[skillId]
+    if (!targets) throw new Error(`The stack gives ${skillId} no sub-agent`)
+    return targets.map(({ agentId }) => agentId)
+  }
+
+  it("refuses a stack the vendored catalogue does not ship", () => {
+    expect(() => cliMintedStackPayload("no-such-stack")).toThrow(
+      "The vendored catalogue has no stack no-such-stack"
+    )
+  })
+
+  it("carries every skill the stack expands to, in id order", () => {
+    expect(
+      Object.keys(cliMintedStackPayload(STACK_PINNING_AN_AGENT).skills)
+    ).toStrictEqual([...expansion.skillIds].sort())
+  })
+
+  it("puts each skill on the sub-agents the stack gives it, as a global plugin", () => {
+    const minted = cliMintedStackPayload(STACK_PINNING_AN_AGENT)
+
+    expect(
+      Object.entries(minted.skills).map(([skillId, skill]) => [
+        skillId,
+        skill.install,
+        skill.scope,
+        Object.keys(skill.assignments),
+      ])
+    ).toStrictEqual(
+      [...expansion.skillIds]
+        .sort()
+        .map((skillId) => [
+          skillId,
+          "plugin",
+          "global",
+          agentsTheStackGives(skillId),
+        ])
+    )
+  })
+
+  // Every vendored stack gives each of its skills a sub-agent; a marketplace's need not.
+  it("mints a stack's skill that no sub-agent carries assigned to none", () => {
+    vi.mocked(expandStack).mockReturnValueOnce({
+      skillIds: [REACT],
+      assignmentsBySkill: {},
+      skillLessAgentIds: [],
+    })
+
+    const minted = cliMintedStackPayload(STACK_PINNING_AN_AGENT)
+
+    expect({ skills: minted.skills, agents: minted.agents }).toStrictEqual({
+      skills: {
+        [REACT]: { install: "plugin", scope: "global", assignments: {} },
+      },
+      agents: {},
+    })
+  })
+
+  it("switches on the sub-agent the stack pins with no skill, beside every one a skill reaches", () => {
+    const reached = Object.values(expansion.assignmentsBySkill).flatMap(
+      (targets) => targets.map(({ agentId }) => agentId)
+    )
+
+    expect(
+      Object.keys(cliMintedStackPayload(STACK_PINNING_AN_AGENT).agents)
+    ).toStrictEqual(
+      [...new Set([...reached, ...expansion.skillLessAgentIds])].sort()
+    )
+  })
+})
 
 describe("the configuration the worker holds", () => {
   it("moves the field an override names and no other", () => {

@@ -1,6 +1,9 @@
 import { compilesForCodex, pluginRefFor } from "@workspace/compile/agent-source"
 import { installedSkillTree } from "@workspace/compile/carried-skill"
-import { generateConfigSource } from "@workspace/compile/config-source"
+import {
+  canonicalizeStackOrder,
+  generateConfigSource,
+} from "@workspace/compile/config-source"
 import {
   deriveCategories,
   deriveDomains,
@@ -73,7 +76,7 @@ import { COMPUTED_AT_INSTALL, type PreviewLang } from "./render-tokens"
 // own renderers; what a browser cannot know is a placeholder. Steps that read
 // an existing disk are skipped.
 
-export type PreviewMarker = "new" | "plugin" | "eject"
+type PreviewMarker = "new" | "plugin" | "eject"
 
 export type PreviewNode = {
   /** Also the header subtitle: a path, where one exists. */
@@ -85,7 +88,7 @@ export type PreviewNode = {
   lang: PreviewLang
 }
 
-export type PreviewRoot = {
+type PreviewRoot = {
   base: PreviewBase
   /** Exposed so a test can re-render the pair. */
   config: ProjectConfig
@@ -108,6 +111,111 @@ const SCOPE_OF: Record<PreviewBase, SkillScope> = {
   [GLOBAL_BASE]: "global",
   [PROJECT_BASE]: "project",
 }
+
+export async function buildOutputPreview(
+  payload: SeedPayload,
+  provider: Provider
+): Promise<OutputPreview> {
+  // Seated per build: a marketplace or an added skill can change mid-session.
+  const catalog = activeMatrix()
+  seatCatalog(catalog)
+
+  const corpus = await corpusRenderer()
+
+  const config = buildConfig(payload)
+  const { global: globalSplit, project: projectSplit } =
+    splitConfigByScope(config)
+  const globalConfig = globalConfigOnCleanMachine(globalSplit, catalog)
+  const external = payload.external ?? {}
+  const [agents, carried] = await Promise.all([
+    compileAgents(
+      config,
+      catalog,
+      agentRendererFor(provider, corpus),
+      provider
+    ),
+    carriedAsInstalled(external, catalog),
+  ])
+  const pairCatalog = catalogueAsInstalled(catalog, Object.keys(external))
+  const context: RootContext = { provider, carried, catalog }
+
+  // A project install writes both config pairs regardless.
+  const roots = [
+    previewRoot(
+      GLOBAL_BASE,
+      globalConfig,
+      globalPair(globalConfig, pairCatalog),
+      agents.filter((agent) => agent.scope === "global"),
+      context
+    ),
+    previewRoot(
+      PROJECT_BASE,
+      projectSplit,
+      projectPair(projectSplit, globalConfig, pairCatalog),
+      agents.filter((agent) => agent.scope !== "global"),
+      context
+    ),
+  ]
+
+  return {
+    roots,
+    fileCount: countWrittenFiles(roots),
+    corpusVersion: corpus.CORPUS_CLI_VERSION,
+    defaultSelectionId: defaultSelection(roots),
+  }
+}
+
+// The heaviest module; kept off the static graph.
+const corpusRenderer = () => import("@workspace/compile/preview")
+
+type AgentRenderer = (name: AgentName, agent: AgentConfig) => Promise<string>
+
+const agentRendererFor = (
+  provider: Provider,
+  corpus: Awaited<ReturnType<typeof corpusRenderer>>
+): AgentRenderer =>
+  provider === "claude"
+    ? corpus.renderAgentFromCorpus
+    : corpus.renderAgentRoleFromCorpus
+
+const countWrittenFiles = (roots: readonly PreviewRoot[]): number =>
+  roots.flatMap((root) => root.nodes).filter((entry) => entry.marker === "new")
+    .length
+
+const defaultSelection = (roots: readonly PreviewRoot[]): string | null => {
+  const configTsOf = (base: PreviewBase) =>
+    roots
+      .find((root) => root.base === base)
+      ?.nodes.find((node) => node.name === STANDARD_FILES.CONFIG_TS)?.id
+
+  return configTsOf(PROJECT_BASE) ?? configTsOf(GLOBAL_BASE) ?? null
+}
+
+type RootContext = {
+  provider: Provider
+  carried: Readonly<Record<string, SeedExternalSkill>>
+  catalog: Matrix
+}
+
+const previewRoot = (
+  base: PreviewBase,
+  config: ProjectConfig,
+  pair: ConfigPair,
+  agents: readonly CompiledAgent[],
+  { provider, carried, catalog }: RootContext
+): PreviewRoot => ({
+  base,
+  config,
+  nodes: rootNodes(
+    base,
+    layoutFor(provider, base),
+    pair,
+    agents,
+    config.skills,
+    carried,
+    catalog
+  ),
+})
 
 const isPluginSkill = (skill: SkillConfig) => skill.origin !== EJECT_SOURCE
 
@@ -151,10 +259,9 @@ const recordedMarketplaceName = (
   return registersAPlugin ? DEFAULT_PUBLIC_SOURCE_NAME : undefined
 }
 
-// The payload's assigned stack replaces the derived one, or a bare sub-agent
-// gets someone else's skills.
 function buildConfig(payload: SeedPayload): ProjectConfig {
-  const { result } = seedToInstallSelection(payload, activeMatrix())
+  const catalog = activeMatrix()
+  const { result } = seedToInstallSelection(payload, catalog)
   const skillIds = [...new Set(result.skills.map((skill) => skill.id))]
 
   const generated = generateProjectConfigFromSkills(
@@ -175,7 +282,13 @@ function buildConfig(payload: SeedPayload): ProjectConfig {
     }
   )
 
-  const stack = generated.stack === undefined ? undefined : result.assignedStack
+  // The payload's assigned stack replaces the derived one, or a bare sub-agent
+  // gets someone else's skills. In the writer's order: the install compiles
+  // from the config.ts it wrote, so payload order never reaches a sub-agent.
+  const stack =
+    generated.stack === undefined
+      ? undefined
+      : canonicalizeStackOrder(result.assignedStack, catalog)
 
   const description = resolveDescription(
     result.selectedStackId,
@@ -284,13 +397,10 @@ const resolveSkill = (
 
 type CompiledAgent = { name: AgentName; scope: SkillScope; body: string }
 
-// The heaviest module; kept off the static graph.
-const corpusRenderer = () => import("@workspace/compile/preview")
-
 async function compileAgents(
   config: ProjectConfig,
   matrix: Matrix,
-  renderAgent: (name: AgentName, agent: AgentConfig) => Promise<string>,
+  renderAgent: AgentRenderer,
   provider: Provider
 ): Promise<CompiledAgent[]> {
   const selected = config.agents.filter((agent) =>
@@ -351,6 +461,8 @@ function agentConfigFor(
   }
 }
 
+type ConfigPair = { configTs: string; configTypesTs: string }
+
 // Every literal the project `config.ts` holds, inlined global rows included;
 // same derivation as the CLI's `buildProjectTypesExtras`.
 function projectTypesExtras(
@@ -365,19 +477,18 @@ function projectTypesExtras(
     (agent) => !agent.excluded
   )
   const stack = { ...globalConfig.stack, ...projectSplit.stack }
+  const selectedDomains = [
+    ...(projectSplit.selectedDomains ?? []),
+    ...(globalConfig.selectedDomains ?? []),
+  ]
 
   const extraSkillIds = [...new Set(skills.map((skill) => skill.id))]
-  const stackCategories = Object.values(stack).flatMap((agentStack) =>
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.values hides a Partial's explicit undefined
-    Object.keys(agentStack ?? {})
-  )
-  // Object.keys widens the stack's category keys to string.
   const extraCategories = [
     ...new Set([
       ...deriveCategories(extraSkillIds, catalog),
-      ...stackCategories,
+      ...stackCategories(stack),
     ]),
-  ] as Category[]
+  ]
 
   return {
     extraSkillIds,
@@ -386,14 +497,25 @@ function projectTypesExtras(
     extraDomains: [
       ...new Set([
         ...deriveDomains(extraCategories, catalog),
-        ...(projectSplit.selectedDomains ?? []),
-        ...(globalConfig.selectedDomains ?? []),
+        ...selectedDomains,
       ]),
     ],
   }
 }
 
-const globalPair = (config: ProjectConfig, catalog: CompileCatalog) => ({
+// Object.keys widens the stack's category keys to string.
+const stackCategories = (
+  stack: NonNullable<ProjectConfig["stack"]>
+): Category[] =>
+  Object.values(stack).flatMap((agentStack) =>
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.values hides a Partial's explicit undefined
+    Object.keys(agentStack ?? {})
+  ) as Category[]
+
+const globalPair = (
+  config: ProjectConfig,
+  catalog: CompileCatalog
+): ConfigPair => ({
   configTs: generateConfigSource(config, catalog),
   configTypesTs: generateConfigTypesSource(
     catalog,
@@ -409,7 +531,7 @@ const projectPair = (
   projectSplit: ProjectConfig,
   globalConfig: ProjectConfig,
   catalog: CompileCatalog
-) => {
+): ConfigPair => {
   const extras = projectTypesExtras(projectSplit, globalConfig, catalog)
   const projectScopedAgentNames = activeProjectAgentNames(projectSplit.agents)
 
@@ -461,9 +583,6 @@ const ejectedSourceLine = (skillId: string): string => {
     : `Source: ${path}, in ${marketplacePhrase(seated)}`
 }
 
-const seatedMarketplacePhrase = (): string =>
-  marketplacePhrase(seatedMarketplace())
-
 // `origin` is the `eject` sentinel here, so the source is the seated marketplace.
 const ejectedCatalogueNote = (skill: SkillConfig) =>
   [
@@ -498,7 +617,7 @@ const pluginReferenceNote = (
     ``,
     `Installed as a plugin, at ${SCOPE_OF[base]} scope. No files are written`,
     `under ${base} for it — ${layout.hostName} owns where a plugin lands, and the`,
-    `skill resolves from ${seatedMarketplacePhrase()} at run time, as`,
+    `skill resolves from ${marketplacePhrase(seatedMarketplace())} at run time, as`,
     `${skill.id}:${skill.id}.`,
     ``,
     `Switch it to eject and the CLI writes a copy you own, at`,
@@ -512,7 +631,6 @@ const node = (input: NodeInput): PreviewNode => ({ lang: "text", ...input })
 const structural = (id: string, name: string, depth: number): PreviewNode =>
   node({ id, name, depth, marker: null, body: "" })
 
-// A Codex project's skills sit at `.agents/skills/`, outside `.codex/`.
 type DirRow = {
   path: string
   /** May carry more than one segment. */
@@ -532,7 +650,8 @@ type RootLayout = {
 
 const CODEX_DIR = ".codex"
 
-// The CLI's `CODEX_PROJECT_SKILLS_PATH`.
+// The CLI's `CODEX_PROJECT_SKILLS_PATH`: a Codex project's skills sit outside
+// `.codex/`.
 const CODEX_PROJECT_SKILLS = ".agents/skills"
 
 const dir = (path: string, name: string, depth: number): DirRow => ({
@@ -607,7 +726,7 @@ const writtenFile = (
 function rootNodes(
   base: PreviewBase,
   layout: RootLayout,
-  pair: { configTs: string; configTypesTs: string },
+  pair: ConfigPair,
   agents: readonly CompiledAgent[],
   skills: readonly SkillConfig[],
   external: Readonly<Record<string, SeedExternalSkill>>,
@@ -616,47 +735,46 @@ function rootNodes(
   const ejected = skills.filter((skill) => !isPluginSkill(skill))
   const plugins = skills.filter(isPluginSkill)
 
-  const agentNodes = agents.map((agent) => {
-    const file = layout.agentFile(agent.name)
-    return writtenFile(layout.agents, file.name, agent.body, file.lang)
-  })
-
-  const skillNodes = ejected.flatMap((skill) =>
-    ejectedSkillNodes(layout.skills, skill, external[skill.id], catalog)
+  const agentsDirectory = directoryNodes(
+    layout.agents,
+    agents.map((agent) => agentFileNode(layout, agent))
   )
-
-  const underHost = [
-    ...directoryNodes(layout.agents, agentNodes),
-    ...(layout.skillsUnderHost
-      ? directoryNodes(layout.skills, skillNodes)
-      : []),
-  ]
+  const skillsDirectory = directoryNodes(
+    layout.skills,
+    ejected.flatMap((skill) =>
+      ejectedSkillNodes(layout.skills, skill, external[skill.id], catalog)
+    )
+  )
 
   return [
     structural(base, base, 0),
-
-    structural(layout.source.path, layout.source.name, layout.source.depth),
-    writtenFile(
-      layout.source,
-      STANDARD_FILES.CONFIG_TS,
-      pair.configTs,
-      "typescript"
-    ),
-    writtenFile(
-      layout.source,
-      STANDARD_FILES.CONFIG_TYPES_TS,
-      pair.configTypesTs,
-      "typescript"
-    ),
-
-    ...directoryNodes(layout.host, underHost),
-
-    ...(layout.skillsUnderHost
-      ? []
-      : directoryNodes(layout.skills, skillNodes)),
-
+    ...configPairNodes(layout.source, pair),
+    ...directoryNodes(layout.host, [
+      ...agentsDirectory,
+      ...(layout.skillsUnderHost ? skillsDirectory : []),
+    ]),
+    ...(layout.skillsUnderHost ? [] : skillsDirectory),
     ...pluginGroupNodes(base, layout, plugins),
   ]
+}
+
+const configPairNodes = (source: DirRow, pair: ConfigPair): PreviewNode[] => [
+  structural(source.path, source.name, source.depth),
+  writtenFile(source, STANDARD_FILES.CONFIG_TS, pair.configTs, "typescript"),
+  writtenFile(
+    source,
+    STANDARD_FILES.CONFIG_TYPES_TS,
+    pair.configTypesTs,
+    "typescript"
+  ),
+]
+
+const agentFileNode = (
+  layout: RootLayout,
+  agent: CompiledAgent
+): PreviewNode => {
+  const file = layout.agentFile(agent.name)
+  return writtenFile(layout.agents, file.name, agent.body, file.lang)
 }
 
 const pluginGroupNodes = (
@@ -770,82 +888,4 @@ async function carriedSkillAsInstalled(
     date: COMPUTED_AT_INSTALL,
   })
   return [id, { ...skill, files }]
-}
-
-const countWrittenFiles = (roots: readonly PreviewRoot[]): number =>
-  roots.flatMap((root) => root.nodes).filter((entry) => entry.marker === "new")
-    .length
-
-export async function buildOutputPreview(
-  payload: SeedPayload,
-  provider: Provider
-): Promise<OutputPreview> {
-  // Seated per build: a marketplace or an added skill can change mid-session.
-  const catalog = activeMatrix()
-  seatCatalog(catalog)
-
-  const corpus = await corpusRenderer()
-
-  const config = buildConfig(payload)
-  const { global: globalSplit, project: projectSplit } =
-    splitConfigByScope(config)
-  const globalConfig = globalConfigOnCleanMachine(globalSplit, catalog)
-  // Not destructured, so a test double without the Codex export still works.
-  const agents = await compileAgents(
-    config,
-    catalog,
-    provider === "claude"
-      ? corpus.renderAgentFromCorpus
-      : corpus.renderAgentRoleFromCorpus,
-    provider
-  )
-  const external = payload.external ?? {}
-  const carried = await carriedAsInstalled(external, catalog)
-  const pairCatalog = catalogueAsInstalled(catalog, Object.keys(external))
-
-  // A project install writes both config pairs regardless.
-  const roots: PreviewRoot[] = [
-    {
-      base: GLOBAL_BASE,
-      config: globalConfig,
-      nodes: rootNodes(
-        GLOBAL_BASE,
-        layoutFor(provider, GLOBAL_BASE),
-        globalPair(globalConfig, pairCatalog),
-        agents.filter((agent) => agent.scope === "global"),
-        globalConfig.skills,
-        carried,
-        catalog
-      ),
-    },
-    {
-      base: PROJECT_BASE,
-      config: projectSplit,
-      nodes: rootNodes(
-        PROJECT_BASE,
-        layoutFor(provider, PROJECT_BASE),
-        projectPair(projectSplit, globalConfig, pairCatalog),
-        agents.filter((agent) => agent.scope !== "global"),
-        projectSplit.skills,
-        carried,
-        catalog
-      ),
-    },
-  ]
-
-  return {
-    roots,
-    fileCount: countWrittenFiles(roots),
-    corpusVersion: corpus.CORPUS_CLI_VERSION,
-    defaultSelectionId: defaultSelection(roots),
-  }
-}
-
-const defaultSelection = (roots: readonly PreviewRoot[]): string | null => {
-  const configTsOf = (base: PreviewBase) =>
-    roots
-      .find((root) => root.base === base)
-      ?.nodes.find((node) => node.name === STANDARD_FILES.CONFIG_TS)?.id
-
-  return configTsOf(PROJECT_BASE) ?? configTsOf(GLOBAL_BASE) ?? null
 }

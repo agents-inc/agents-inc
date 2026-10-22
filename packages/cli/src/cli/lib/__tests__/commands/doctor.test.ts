@@ -39,10 +39,11 @@ const CLI_PROVENANCE = {
 
 describe("doctor command", () => {
   let projectDir: string;
+  let fakeHome: string;
   let cleanup: () => Promise<void>;
 
   beforeEach(async () => {
-    ({ projectDir, cleanup } = await setupIsolatedHome("doctor-test-home-"));
+    ({ projectDir, fakeHome, cleanup } = await setupIsolatedHome("doctor-test-home-"));
   });
 
   afterEach(async () => {
@@ -67,7 +68,6 @@ describe("doctor command", () => {
     });
 
     it("should pass when valid config exists", async () => {
-      // Create valid project config
       await writeTestTsConfig(
         projectDir,
         buildProjectConfig({
@@ -514,6 +514,47 @@ describe("doctor command", () => {
    * one needs an id no marketplace carries, since a catalogue id resolves without anything on disk.
    */
   describe("broken agent references", () => {
+    /** Not a category any installation declares, which the loader refuses for a custom skill. */
+    const UNDECLARED_CATEGORY = "house-conventions";
+
+    function configNamingTheHouseSkill(scope: "project" | "global") {
+      return buildProjectConfig({
+        name: "test-project",
+        agents: buildAgentConfigs(["web-developer"]),
+        skills: buildSkillConfigs([CUSTOM_HOUSE_TOOLING_SKILL.id], { scope }),
+        stack: {
+          "web-developer": {
+            [CUSTOM_HOUSE_TOOLING_SKILL.category]: [saUnflagged(CUSTOM_HOUSE_TOOLING_SKILL.id)],
+          },
+        },
+      });
+    }
+
+    /** Whole skill: `custom: true` carries a non-catalogue slug; every required field is present. */
+    async function writeHouseSkill(
+      scopeRoot: string,
+      category: string = CUSTOM_HOUSE_TOOLING_SKILL.category,
+    ): Promise<void> {
+      const skillDir = path.join(scopeRoot, LOCAL_SKILLS_PATH, CUSTOM_HOUSE_TOOLING_SKILL.id);
+      await mkdir(skillDir, { recursive: true });
+      await writeFile(
+        path.join(skillDir, STANDARD_FILES.SKILL_MD),
+        renderSkillMd(CUSTOM_HOUSE_TOOLING_SKILL.id, CUSTOM_HOUSE_TOOLING_SKILL.description),
+      );
+      await writeFile(
+        path.join(skillDir, STANDARD_FILES.METADATA_YAML),
+        renderMetadataYaml({
+          custom: true,
+          displayName: CUSTOM_HOUSE_TOOLING_SKILL.displayName,
+          category,
+          slug: CUSTOM_HOUSE_TOOLING_SKILL.slug,
+          cliDescription: CUSTOM_HOUSE_TOOLING_SKILL.description,
+          usageGuidance: "Use for the tooling conventions this project wrote for itself",
+          contentHash: "b2c3d4e",
+        }),
+      );
+    }
+
     it("should report skills in stack that cannot be resolved", async () => {
       await writeTestTsConfig(
         projectDir,
@@ -537,39 +578,8 @@ describe("doctor command", () => {
     });
 
     it("should pass when stack skills exist as local skills", async () => {
-      await writeTestTsConfig(
-        projectDir,
-        buildProjectConfig({
-          name: "test-project",
-          agents: buildAgentConfigs(["web-developer"]),
-          skills: buildSkillConfigs([CUSTOM_HOUSE_TOOLING_SKILL.id]),
-          stack: {
-            "web-developer": {
-              [CUSTOM_HOUSE_TOOLING_SKILL.category]: [saUnflagged(CUSTOM_HOUSE_TOOLING_SKILL.id)],
-            },
-          },
-        }),
-      );
-
-      // Whole skill: `custom: true` carries a non-catalogue slug; every required field is present.
-      const skillDir = path.join(projectDir, LOCAL_SKILLS_PATH, CUSTOM_HOUSE_TOOLING_SKILL.id);
-      await mkdir(skillDir, { recursive: true });
-      await writeFile(
-        path.join(skillDir, STANDARD_FILES.SKILL_MD),
-        renderSkillMd(CUSTOM_HOUSE_TOOLING_SKILL.id, CUSTOM_HOUSE_TOOLING_SKILL.description),
-      );
-      await writeFile(
-        path.join(skillDir, STANDARD_FILES.METADATA_YAML),
-        renderMetadataYaml({
-          custom: true,
-          displayName: CUSTOM_HOUSE_TOOLING_SKILL.displayName,
-          category: CUSTOM_HOUSE_TOOLING_SKILL.category,
-          slug: CUSTOM_HOUSE_TOOLING_SKILL.slug,
-          cliDescription: CUSTOM_HOUSE_TOOLING_SKILL.description,
-          usageGuidance: "Use for the tooling conventions this project wrote for itself",
-          contentHash: "b2c3d4e",
-        }),
-      );
+      await writeTestTsConfig(projectDir, configNamingTheHouseSkill("project"));
+      await writeHouseSkill(projectDir);
 
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");
@@ -577,5 +587,35 @@ describe("doctor command", () => {
       expect(output).toContain("1/1 skill found");
       expect(output).not.toContain(`${CUSTOM_HOUSE_TOOLING_SKILL.id} (not found)`);
     });
+
+    it("should pass when a stack skill exists only as a global local skill", async () => {
+      await writeTestTsConfig(projectDir, configNamingTheHouseSkill("global"));
+      await writeHouseSkill(fakeHome);
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+      const output = stdout + (error?.message || "");
+
+      expect(output).toContain("1/1 skill found");
+      expect(output).not.toContain(`${CUSTOM_HOUSE_TOOLING_SKILL.id} (not found)`);
+    });
+
+    it.each([
+      ["project", () => projectDir],
+      ["global", () => fakeHome],
+    ] as const)(
+      "should report a %s local skill the loader refuses for a category nothing declares",
+      async (scope, scopeRoot) => {
+        await writeTestTsConfig(projectDir, configNamingTheHouseSkill(scope));
+        await writeHouseSkill(scopeRoot(), UNDECLARED_CATEGORY);
+
+        const { stdout, error } = await runCliCommand(["doctor"]);
+        const output = stdout + (error?.message || "");
+
+        expect(output).toContain(`- ${CUSTOM_HOUSE_TOOLING_SKILL.id} (not found)`);
+        expect(output, "the loader dropped it, so no sub-agent can be given it").not.toContain(
+          "1/1 skill found",
+        );
+      },
+    );
   });
 });

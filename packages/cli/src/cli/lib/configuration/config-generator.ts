@@ -5,8 +5,5 @@ export {
   buildStackProperty,
   generateProjectConfigFromSkills,
   isScopePairCompatible,
-  scopeEligibilityKey,
   splitConfigByScope,
-  type ProjectConfigOptions,
-  type SplitConfigResult,
 } from "@workspace/compile/seed-to-config";

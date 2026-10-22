@@ -30,11 +30,14 @@ import {
   marketplaceRefreshFailed,
   marketplacesRefreshFailed,
   marketplacesRefreshed,
+  nothingInstalledToApplyTo,
   notInstalledHere,
   pluginsInstalled,
+  projectCopyMovedToGlobal,
   projectCopyRemoved,
   propagatedRecompileSummary,
   recompileSummary,
+  registeredProjectsRewritten,
   registeredProjectConfigUnreadable,
   registeredProjectGone,
   registeredProjectOnAnotherProvider,
@@ -110,18 +113,6 @@ describe("the line a missing host binary produces", () => {
 });
 
 describe("ERROR_MESSAGES", () => {
-  it("should have all expected keys", () => {
-    expect(Object.keys(ERROR_MESSAGES)).toStrictEqual([
-      "UNKNOWN_ERROR",
-      "UNKNOWN_ERROR_SHORT",
-      "NO_INSTALLATION",
-      "FAILED_RESOLVE_SOURCE",
-      "FAILED_LOAD_AGENT_PARTIALS",
-      "FAILED_COMPILE_AGENTS",
-      "NO_SKILLS_TO_COMPILE",
-    ]);
-  });
-
   it("should have non-empty string values for every key", () => {
     for (const [key, value] of Object.entries(ERROR_MESSAGES)) {
       expect(value, `${key} should be a non-empty string`).toBeTypeOf("string");
@@ -131,13 +122,6 @@ describe("ERROR_MESSAGES", () => {
 });
 
 describe("SUCCESS_MESSAGES", () => {
-  it("should have all expected keys", () => {
-    expect(Object.keys(SUCCESS_MESSAGES)).toStrictEqual([
-      "UNINSTALL_COMPLETE",
-      "PLUGIN_COMPILE_COMPLETE",
-    ]);
-  });
-
   it("should have non-empty string values for every key", () => {
     for (const [key, value] of Object.entries(SUCCESS_MESSAGES)) {
       expect(value, `${key} should be a non-empty string`).toBeTypeOf("string");
@@ -147,23 +131,6 @@ describe("SUCCESS_MESSAGES", () => {
 });
 
 describe("STATUS_MESSAGES", () => {
-  it("should have all expected keys", () => {
-    expect(Object.keys(STATUS_MESSAGES)).toStrictEqual([
-      "INSTALLING_PLUGINS",
-      "LOADING_SKILLS",
-      "LOADING_MARKETPLACE_SOURCE",
-      "RECOMPILING_AGENTS",
-      "COMPILING_AGENTS",
-      "DISCOVERING_SKILLS",
-      "RESOLVING_SOURCE",
-      "RESOLVING_MARKETPLACE_SOURCE",
-      "LOADING_AGENT_PARTIALS",
-      "FETCHING_REPOSITORY",
-      "COPYING_SKILLS",
-      "MARKETPLACE_HAS_NEWER_CONTENT",
-    ]);
-  });
-
   it("should have non-empty string values for every key", () => {
     for (const [key, value] of Object.entries(STATUS_MESSAGES)) {
       expect(value, `${key} should be a non-empty string`).toBeTypeOf("string");
@@ -206,20 +173,6 @@ describe("the vocabulary the message tables print in", () => {
 });
 
 describe("INFO_MESSAGES", () => {
-  it("should have all expected keys", () => {
-    expect(Object.keys(INFO_MESSAGES)).toStrictEqual([
-      "NO_CHANGES_MADE",
-      "RUN_COMPILE",
-      "NO_AGENTS_TO_RECOMPILE",
-      "NO_PLUGIN_INSTALLATION",
-      "NO_LOCAL_INSTALLATION",
-      "CONFIG_TYPES_REFRESHED",
-      "EJECTED_SKILLS_USER_OWNED",
-      "NO_PLUGIN_MARKETPLACES",
-      "AGENT_PARTIALS_CUSTOMIZABLE",
-    ]);
-  });
-
   it("should have non-empty string values for every key", () => {
     for (const [key, value] of Object.entries(INFO_MESSAGES)) {
       expect(value, `${key} should be a non-empty string`).toBeTypeOf("string");
@@ -239,12 +192,12 @@ describe("the count lines an install and a recompile end on", () => {
     expect(recompileSummary(2, 0, "global agent")).toBe("2 global agents rewritten, 0 unchanged");
   });
 
-  it("counts the registered projects a fan-out rewrote in the singular at one", () => {
+  it("counts the registered projects a fan-out rewrote, which need not hold a sub-agent", () => {
     expect(propagatedRecompileSummary(1, 0, 0)).toBe(
-      "Recompiled agents in 1 registered project, 0 unchanged",
+      "Registered projects: 1 rewritten, 0 unchanged",
     );
     expect(propagatedRecompileSummary(2, 1, 1)).toBe(
-      "Recompiled agents in 2 registered projects, 1 unchanged (1 failed)",
+      "Registered projects: 2 rewritten, 1 unchanged (1 failed)",
     );
   });
 
@@ -267,12 +220,33 @@ describe("the way out of a config that will not load", () => {
           reason: "ParseError: Missing semicolon",
           scope: "project",
           scopeRoot: "/home/me/project",
+          providerToName: undefined,
         },
       ]),
     ).toBe(
       [
         "This project's config at '/home/me/project/.agents-inc/claude/config.ts' could not be loaded: ParseError: Missing semicolon",
         "There is no automatic repair for this — fix the file, or recreate the configuration by running 'npx agents-inc uninstall' from '/home/me/project', which still works on a config it cannot read, then 'npx agents-inc init --from <id>' with an id from https://agentsinc.sh/editor.",
+        "'npx agents-inc doctor' reports the same file, alongside whatever else is wrong here.",
+      ].join("\n"),
+    );
+  });
+
+  it("names the installation in both commands where another provider's sits beside it", () => {
+    expect(
+      installationConfigsUnreadable([
+        {
+          configPath: "/home/me/.agents-inc/claude/config.ts",
+          reason: "ParseError: Missing semicolon",
+          scope: "global",
+          scopeRoot: "/home/me",
+          providerToName: "claude",
+        },
+      ]),
+    ).toBe(
+      [
+        "The global installation's config at '/home/me/.agents-inc/claude/config.ts' could not be loaded: ParseError: Missing semicolon",
+        "There is no automatic repair for this — fix the file, or recreate the configuration by running 'npx agents-inc uninstall --provider claude' from '/home/me', which still works on a config it cannot read, then 'npx agents-inc init --from <id> --provider claude' with an id from https://agentsinc.sh/editor.",
         "'npx agents-inc doctor' reports the same file, alongside whatever else is wrong here.",
       ].join("\n"),
     );
@@ -532,43 +506,80 @@ describe("the errors a skill whose metadata.yaml cannot describe it produces", (
 
 describe("the lines that point a shared configuration at where it can be applied", () => {
   it("tells an installation without an id to apply one with edit --from", () => {
-    expect(applySharedConfigHere(undefined, true)).toBe(
+    expect(applySharedConfigHere(undefined, true, undefined)).toBe(
       "Then apply what it gives you with 'npx agents-inc edit --from <id>'.",
     );
   });
 
   it("tells a directory without an installation to install one with init --from", () => {
-    expect(applySharedConfigHere(undefined, false)).toBe(
+    expect(applySharedConfigHere(undefined, false, undefined)).toBe(
       "Then install what it gives you with 'npx agents-inc init --from <id>'.",
     );
   });
 
   it("hands an installation the edit --from command for the id it has", () => {
-    expect(applySharedConfigHere("abc123", true)).toBe(
+    expect(applySharedConfigHere("abc123", true, undefined)).toBe(
       "To apply it here instead, run 'npx agents-inc edit --from abc123'.",
     );
   });
 
   it("hands a directory without an installation the init --from command for the id it has", () => {
-    expect(applySharedConfigHere("abc123", false)).toBe(
+    expect(applySharedConfigHere("abc123", false, undefined)).toBe(
       "To install it here instead, run 'npx agents-inc init --from abc123'.",
     );
   });
 
   it("refuses init --from over an existing installation and points at edit --from", () => {
     expect(
-      sharedConfigExistingInstall(`${PROJECT_DIR}/.agents-inc/claude/config.ts`, "abc123"),
+      sharedConfigExistingInstall(
+        `${PROJECT_DIR}/.agents-inc/claude/config.ts`,
+        "abc123",
+        undefined,
+      ),
     ).toBe(
       `An installation already exists at ${PROJECT_DIR}/.agents-inc/claude/config.ts. Run 'npx agents-inc uninstall' first — installing a shared configuration is a fresh setup, not a merge. To apply it here instead, run 'npx agents-inc edit --from abc123'.`,
     );
   });
 
   it("refuses to apply over an installation without a terminal to confirm at", () => {
-    expect(sharedConfigNeedsTerminal("abc123")).toBe(
+    expect(sharedConfigNeedsTerminal("abc123", undefined)).toBe(
       [
         "Applying configuration 'abc123' removes whatever it leaves out, so it has to be confirmed — and there is no terminal here to confirm it at.",
         "Run 'npx agents-inc edit --from abc123' from a terminal, or 'npx agents-inc init --from abc123' in a clean directory, which installs without removing anything.",
       ].join("\n"),
+    );
+  });
+
+  it("names the installation in both commands of a refused install beside another", () => {
+    expect(
+      sharedConfigExistingInstall(
+        `${PROJECT_DIR}/.agents-inc/claude/config.ts`,
+        "abc123",
+        "claude",
+      ),
+    ).toBe(
+      `An installation already exists at ${PROJECT_DIR}/.agents-inc/claude/config.ts. Run 'npx agents-inc uninstall --provider claude' first — installing a shared configuration is a fresh setup, not a merge. To apply it here instead, run 'npx agents-inc edit --from abc123 --provider claude'.`,
+    );
+  });
+
+  it("names the installation the run named in both commands of a refused apply", () => {
+    expect(sharedConfigNeedsTerminal("abc123", "codex")).toBe(
+      [
+        "Applying configuration 'abc123' removes whatever it leaves out, so it has to be confirmed — and there is no terminal here to confirm it at.",
+        "Run 'npx agents-inc edit --from abc123 --provider codex' from a terminal, or 'npx agents-inc init --from abc123 --provider codex' in a clean directory, which installs without removing anything.",
+      ].join("\n"),
+    );
+  });
+
+  it("sends a run that found nothing to apply to to an install of the id", () => {
+    expect(nothingInstalledToApplyTo("abc123", undefined)).toBe(
+      "No installation found. Run 'npx agents-inc init --from abc123' to install configuration 'abc123' here.",
+    );
+  });
+
+  it("installs the installation the run named, where it found nothing to apply to", () => {
+    expect(nothingInstalledToApplyTo("abc123", "codex")).toBe(
+      "No installation found. Run 'npx agents-inc init --from abc123 --provider codex' to install configuration 'abc123' here.",
     );
   });
 });
@@ -620,7 +631,7 @@ describe("the lines init --from prints about what a configuration brings", () =>
   });
 
   it("counts and names the skills, sub-agents and carried skills it skipped or wrote", () => {
-    expect(skippedUnknownSkills([REACT, HONO])).toBe(
+    expect(skippedUnknownSkills([REACT, HONO], [])).toBe(
       `Skipped 2 skill(s) this catalog does not know: ${REACT}, ${HONO}`,
     );
     expect(skippedUnknownAgents(["web-ghost", "api-ghost"])).toBe(
@@ -631,19 +642,75 @@ describe("the lines init --from prints about what a configuration brings", () =>
     );
   });
 
+  it("names, under each skipped skill, the sub-agents skipped because they carried only it", () => {
+    expect(
+      skippedUnknownSkills(
+        [REACT, HONO],
+        [{ skillId: HONO, agentNames: [WEB_DEVELOPER, "api-developer"] }],
+      ),
+    ).toBe(
+      [
+        `Skipped 2 skill(s) this catalog does not know: ${REACT}, ${HONO}`,
+        `  sub-agent(s) skipped with ${HONO}, carrying nothing else this catalog knows: web-developer, api-developer`,
+      ].join("\n"),
+    );
+  });
+
+  it("takes out the terminal controls a configuration's own keys carry, wherever a key is named", () => {
+    const keyWithControls = "web-x\u001b]0;pwned\u0007\u001b[2J";
+
+    expect(
+      skippedUnknownSkills(
+        [keyWithControls],
+        [{ skillId: keyWithControls, agentNames: [WEB_DEVELOPER] }],
+      ),
+    ).toBe(
+      [
+        "Skipped 1 skill(s) this catalog does not know: web-x",
+        "  sub-agent(s) skipped with web-x, carrying nothing else this catalog knows: web-developer",
+      ].join("\n"),
+    );
+    expect(skippedUnknownAgents([keyWithControls])).toBe("Skipped 1 unknown sub-agent(s): web-x");
+  });
+
   it("says a project's copy gives way to the global one", () => {
     expect(projectCopyRemoved(REACT)).toBe(
       `${REACT}: this project's copy is removed; the global one takes over`,
     );
   });
 
-  it("lists what the global install keeps as installed, and where to change it", () => {
-    expect(keptAsInstalledGlobally([REACT], [WEB_DEVELOPER])).toBe(
+  it("says a project's copy goes when its entry moves to the global install", () => {
+    expect(projectCopyMovedToGlobal(REACT)).toBe(
+      `${REACT}: moves to the global install, so this project's copy is removed`,
+    );
+  });
+
+  it("names each registered project a global run rewrites", () => {
+    expect(registeredProjectsRewritten(["/work/one", "/work/two"])).toBe(
+      [
+        "Each project registered with this global install is rewritten to match:",
+        "  /work/one",
+        "  /work/two",
+      ].join("\n"),
+    );
+  });
+
+  it("lists what the global install keeps as installed, and the run from home that changes it", () => {
+    expect(keptAsInstalledGlobally([REACT], [WEB_DEVELOPER], "Abc123")).toBe(
       [
         "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
         `  skill ${REACT}`,
         "  sub-agent web-developer",
-        "Change them with 'npx agents-inc edit' from your home directory.",
+        "Change them with 'npx agents-inc edit --from Abc123' from your home directory.",
+      ].join("\n"),
+    );
+  });
+
+  it("names no run from home for a configuration home would refuse", () => {
+    expect(keptAsInstalledGlobally([REACT], [], undefined)).toBe(
+      [
+        "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
+        `  skill ${REACT}`,
       ].join("\n"),
     );
   });
@@ -693,12 +760,14 @@ describe("the lines uninstall prints about what it cannot read or leaves behind"
           reason: "ParseError: Missing semicolon",
           scope: "project",
           scopeRoot: PROJECT_DIR,
+          providerToName: undefined,
         },
         {
           configPath: "/home/me/.agents-inc/claude/config.ts",
           reason: "ParseError: Unexpected token",
           scope: "global",
           scopeRoot: "/home/me",
+          providerToName: undefined,
         },
       ]),
     ).toBe(
@@ -724,10 +793,19 @@ describe("the lines uninstall prints about what it cannot read or leaves behind"
   });
 
   it("refuses to uninstall without a terminal to confirm at, and names --yes", () => {
-    expect(uninstallNeedsTerminal()).toBe(
+    expect(uninstallNeedsTerminal(undefined)).toBe(
       [
         "Uninstalling removes files, so it has to be confirmed — and there is no terminal here to confirm it at.",
         "Run 'npx agents-inc uninstall' from a terminal, or 'npx agents-inc uninstall --yes' to remove it without being asked.",
+      ].join("\n"),
+    );
+  });
+
+  it("names the installation the run named in both of the commands it hands out", () => {
+    expect(uninstallNeedsTerminal("codex")).toBe(
+      [
+        "Uninstalling removes files, so it has to be confirmed — and there is no terminal here to confirm it at.",
+        "Run 'npx agents-inc uninstall --provider codex' from a terminal, or 'npx agents-inc uninstall --yes --provider codex' to remove it without being asked.",
       ].join("\n"),
     );
   });

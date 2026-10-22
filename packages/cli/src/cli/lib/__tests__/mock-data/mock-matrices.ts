@@ -23,14 +23,12 @@ import {
   HEALTH_PARTIAL_UNRESOLVED_REQUIRES_SKILL,
   HEALTH_UNRESOLVED_CONFLICTS_WITH_SKILL,
   HEALTH_UNRESOLVED_REQUIRES_SKILL,
-  LOCAL_HOUSE_STYLE_SKILL,
   MULTI_SOURCE_PUBLIC_SKILLS,
   MULTI_SOURCE_ACME_SKILLS,
   MULTI_SOURCE_INTERNAL_SKILLS,
   REACT_REQUIRES_ZUSTAND,
 } from "./mock-skills.js";
 import type { MultiSourceSkillEntry } from "./mock-skills.js";
-import { BUILT_IN_MATRIX } from "../../../types/generated/matrix.js";
 import { PUBLIC_SOURCE, ACME_SOURCE, INTERNAL_SOURCE } from "./mock-sources.js";
 import type {
   CategoryPath,
@@ -51,11 +49,6 @@ export const REACT_SCSS_MATRIX = createMockMatrix(SKILLS.react, SKILLS.scss);
 export const REACT_SCSS_HONO_MATRIX = createMockMatrix(SKILLS.react, SKILLS.scss, SKILLS.hono);
 export const SCSS_HONO_REACT_MATRIX = createMockMatrix(SKILLS.scss, SKILLS.hono, SKILLS.react);
 export const HONO_REACT_MATRIX = createMockMatrix(SKILLS.hono, SKILLS.react);
-export const REACT_ZUSTAND_HONO_MATRIX = createMockMatrix(
-  SKILLS.react,
-  SKILLS.zustand,
-  SKILLS.hono,
-);
 
 /**
  * Categories with real `exclusive` flags; `createMockMatrix` defaults to none, so exclusivity
@@ -79,12 +72,6 @@ export const CATEGORY_EXCLUSIVITY_MATRIX = createMockMatrix(
   },
 );
 
-/** The shipped catalogue plus one local skill, merged as `source-loader` does. */
-export const CATALOGUE_WITH_LOCAL_SKILL_MATRIX: MergedSkillsMatrix = {
-  ...BUILT_IN_MATRIX,
-  skills: { ...BUILT_IN_MATRIX.skills, [LOCAL_HOUSE_STYLE_SKILL.id]: LOCAL_HOUSE_STYLE_SKILL },
-};
-
 /**
  * One guided skill and one unguided. Not `SKILLS.zustand`: the registry states no guidance, so it
  * would exercise only the fallback.
@@ -106,39 +93,6 @@ export const MARKETPLACE_AND_CUSTOM_TAGGED_MATRIX = createMockMatrix(
     }),
   },
 );
-
-export const ALL_SKILLS_WEB_FRAMEWORK_MATRIX = createMockMatrix(...Object.values(SKILLS), {
-  categories: buildCategoryMap({
-    "web-framework": { domain: "web" },
-  }),
-});
-
-export const ALL_SKILLS_WEB_PAIR_CATEGORIES_MATRIX = createMockMatrix(...Object.values(SKILLS), {
-  categories: buildCategoryMap({
-    "web-framework": { domain: "web" },
-    "web-client-state": { domain: "web" },
-  }),
-});
-
-export const ALL_SKILLS_METHODOLOGY_MATRIX = createMockMatrix(...Object.values(SKILLS), {
-  categories: buildCategoryMap({
-    "meta-reviewing": { domain: "meta" },
-  }),
-});
-
-export const ALL_SKILLS_METHODOLOGY_BARE_MATRIX = createMockMatrix(...Object.values(SKILLS), {
-  categories: buildCategoryMap({
-    "meta-reviewing": {},
-  }),
-});
-
-export const ALL_SKILLS_MULTI_DOMAIN_MATRIX = createMockMatrix(...Object.values(SKILLS), {
-  categories: buildCategoryMap({
-    "web-framework": { domain: "web" },
-    "meta-reviewing": { domain: "meta" },
-    "api-api": { domain: "api" },
-  }),
-});
 
 // api-api on the "api" domain, so react and hono split across domains.
 export const REACT_HONO_WEB_API_DOMAINS_MATRIX = createMockMatrix(SKILLS.react, SKILLS.hono, {
@@ -276,8 +230,6 @@ export const NAMESPACED_SKILL_MATRIX = createMockMatrix(
 export const VITEST_MATRIX = createMockMatrix(SKILLS.vitest);
 
 export const SHARED_SECURITY_MATRIX = createMockMatrix(SKILLS.authSecurity);
-
-export const REACT_SHARED_SECURITY_MATRIX = createMockMatrix(SKILLS.react, SKILLS.authSecurity);
 
 export const MULTI_STYLING_MATRIX = createMockMatrix(SKILLS.react, SKILLS.scss, SKILLS.tailwind);
 

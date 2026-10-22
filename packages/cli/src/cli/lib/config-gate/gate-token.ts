@@ -16,7 +16,7 @@ export function withGateToken<T>(fn: () => Promise<T>): Promise<T> {
   return gateToken.run(true, fn);
 }
 
-export function hasGateToken(): boolean {
+function hasGateToken(): boolean {
   return gateToken.getStore() === true;
 }
 

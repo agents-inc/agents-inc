@@ -12,18 +12,18 @@ import {
   loadConfigOrFail,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
-import { applyFromSeed, e2eStackPayload, installFromSeed } from "../fixtures/e2e-stack-seed.js";
+import {
+  applyFromSeed,
+  applyUnchangedFromSeed,
+  e2eStackPayload,
+  installFromSeed,
+} from "../fixtures/e2e-stack-seed.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
-
-/**
- * Repeated `edit --from` runs on one installation accumulate no duplicate skills, agents or
- * domains.
- */
 
 async function readConfigArrays(projectDir: string): Promise<{
   skillIds: string[];
@@ -110,7 +110,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         expectNoDuplicates(initArrays.agentNames, "agents after init");
         expectNoDuplicates(initArrays.domains, "domains after init");
 
-        await applyFromSeed(store, "Stacked1", stack, site);
+        await applyUnchangedFromSeed(store, "Stacked1", stack, site);
 
         await expect({ dir: projectDir }).toHaveConfig({
           skillIds: [E2E_SKILL.react.id],
@@ -133,7 +133,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
 
         expect(edit1Arrays.skillIds.sort()).toStrictEqual(initArrays.skillIds.sort());
 
-        await applyFromSeed(store, "Stacked1", stack, site);
+        await applyUnchangedFromSeed(store, "Stacked1", stack, site);
 
         await expect({ dir: projectDir }).toHaveConfig({
           skillIds: [E2E_SKILL.react.id],
@@ -240,7 +240,12 @@ describe("re-edit cycles: config stability across multiple edits", () => {
           (id) => !beforeArrays.skillIds.includes(id),
         );
 
-        const edit2Result = await applyFromSeed(store, "AddVitest1", REACT_AND_VITEST, site);
+        const edit2Result = await applyUnchangedFromSeed(
+          store,
+          "AddVitest1",
+          REACT_AND_VITEST,
+          site,
+        );
 
         await expectPhaseSuccess(
           { project: { dir: projectDir }, exitCode: edit2Result.exitCode },

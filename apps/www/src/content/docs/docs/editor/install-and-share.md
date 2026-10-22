@@ -28,16 +28,16 @@ Its subtitle names what you're installing _from_: `marketplace <ref> · stack <n
 
 **Click the command block to copy it.** The line beneath it says what just happened, one phrase per ending:
 
-| Line                                                              | Means                                                                                                                    |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `preparing your id`                                               | The id is still being minted.                                                                                            |
-| `click to copy`                                                   | Ready.                                                                                                                   |
-| `copied`                                                          | On your clipboard.                                                                                                       |
-| `out of date — reload the page for an id`                         | This tab is running a build older than the service. Reload; re-opening the dialog won't help.                            |
-| `id unavailable — this command starts over in the editor`         | The id couldn't be stored. The command is still valid — it just starts over in the editor.                               |
-| `offline — this command starts over in the editor`                | Same, with the network as the cause.                                                                                     |
-| `rate limit reached — try again in …`                             | Too many writes from your network address — every open of this dialog is one, unchanged or not. Wait as long as it says. |
-| `a sub-agent needs project scope — close and fix the marked rows` | A project skill is assigned to a sub-agent resting at global. Re-opening won't help; the marked rows are the fix.        |
+| Line                                                              | Means                                                                                                             |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `preparing your id`                                               | The id is still being minted.                                                                                     |
+| `click to copy`                                                   | Ready.                                                                                                            |
+| `copied`                                                          | On your clipboard.                                                                                                |
+| `out of date — reload the page for an id`                         | This tab is running a build older than the service. Reload; re-opening the dialog won't help.                     |
+| `id unavailable — this command starts over in the editor`         | The id couldn't be stored. The command is still valid — it just starts over in the editor.                        |
+| `offline — this command starts over in the editor`                | Same, with the network as the cause.                                                                              |
+| `rate limit reached — try again in …`                             | Too many writes from your network address. Wait as long as it says.                                               |
+| `a sub-agent needs project scope — close and fix the marked rows` | A project skill is assigned to a sub-agent resting at global. Re-opening won't help; the marked rows are the fix. |
 
 Where no id could be minted the command degrades to a bare `npx agents-inc init` rather than a broken one. On Codex it stays bare too, because `--provider` needs `--from`, and the line says so: `· a provider needs --from`.
 

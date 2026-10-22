@@ -144,19 +144,8 @@ export async function recompileAgents(
   const { pluginDir, sourcePath, skills: providedSkills, projectDir, outputDir } = options;
 
   const configDir = projectDir ?? pluginDir;
-  const loadedConfig = await loadProjectConfig(configDir);
-  const projectConfig = loadedConfig?.config ?? null;
-
-  const filteredConfig = projectConfig ? filterExcludedEntries(projectConfig) : null;
-
-  const builtinAgents = await loadAllAgents(sourcePath);
-  const projectAgents = projectDir ? await loadProjectAgents(projectDir) : {};
-
-  // Priority: project agents > built-in agents
-  const allAgents: Partial<Record<AgentName, AgentDefinition>> = {
-    ...builtinAgents,
-    ...projectAgents,
-  };
+  const filteredConfig = await loadConfigWithoutExclusions(configDir);
+  const allAgents = await loadAgentDefinitions(sourcePath, projectDir);
 
   const agentNames = await resolveAgentNames({
     ...(options.agents !== undefined && { specifiedAgents: options.agents }),
@@ -181,15 +170,10 @@ export async function recompileAgents(
     filteredConfig,
     allAgents,
   );
-
-  const compileConfig: CompileConfig = {
-    name: filteredConfig?.name || path.basename(pluginDir),
-    description: filteredConfig?.description || "Recompiled plugin",
-    agents: configAgents,
-  };
+  const compileConfig = compileConfigFor(filteredConfig, configAgents, pluginDir);
 
   const engine = await createLiquidEngine(projectDir);
-  const resolvedAgents = await resolveAgents(allAgents, pluginSkills, compileConfig, sourcePath);
+  const resolvedAgents = await resolveAgents(allAgents, pluginSkills, compileConfig);
 
   const agentsDir = outputDir ?? getPluginAgentsDir(pluginDir);
   await ensureDir(agentsDir);
@@ -204,6 +188,34 @@ export async function recompileAgents(
     ...(options.agentScopeMap !== undefined && { agentScopeMap: options.agentScopeMap }),
   });
   return buildRecompileResult(outcomes, missingWarnings);
+}
+
+async function loadConfigWithoutExclusions(configDir: string): Promise<ProjectConfig | null> {
+  const loaded = await loadProjectConfig(configDir);
+  return loaded ? filterExcludedEntries(loaded.config) : null;
+}
+
+/** A project agent wins over a built-in one of the same name. */
+async function loadAgentDefinitions(
+  sourcePath: string,
+  projectDir: string | undefined,
+): Promise<Partial<Record<AgentName, AgentDefinition>>> {
+  const builtinAgents = await loadAllAgents(sourcePath);
+  const projectAgents = projectDir ? await loadProjectAgents(projectDir) : {};
+
+  return { ...builtinAgents, ...projectAgents };
+}
+
+function compileConfigFor(
+  config: ProjectConfig | null,
+  agents: Partial<Record<AgentName, CompileAgentConfig>>,
+  pluginDir: string,
+): CompileConfig {
+  return {
+    name: config?.name || path.basename(pluginDir),
+    description: config?.description || "Recompiled plugin",
+    agents,
+  };
 }
 
 /** Only agents the scope filter matches: a project pass must not overwrite stackless globals. */

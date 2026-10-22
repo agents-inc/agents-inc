@@ -19,8 +19,3 @@ export const indexById = <T extends { id: string }>(
   Object.fromEntries(items.map((item) => [item.id, item])) as Partial<
     Record<T["id"], T>
   >
-
-// Cast: `Object.entries` widens keys to `string`; the record is keyed by `K`.
-export const typedEntries = <K extends string, V>(
-  record: Partial<Record<K, V>>
-): [K, V][] => Object.entries(record) as [K, V][]

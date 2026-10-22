@@ -14,7 +14,3 @@ export type Stack = {
   agents: Partial<Record<AgentName, StackAgentConfig>>;
   philosophy?: string;
 };
-
-export type StacksConfig = {
-  stacks: Stack[];
-};

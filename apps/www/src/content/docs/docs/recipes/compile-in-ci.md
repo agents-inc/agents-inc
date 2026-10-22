@@ -70,6 +70,7 @@ Completed with 1 failure(s) — the changes above landed, these did not:
 | `GIGET_AUTH`                           | any command that fetches a private marketplace                            |
 | `HTTPS_PROXY`, `FORCE_NODE_FETCH=true` | fetching from behind a corporate proxy                                    |
 | `AGENTS_INC_API_URL`                   | `share`, `edit` and `--from`, to point at a different configuration store |
+| `AGENTS_INC_EDITOR_URL`                | every editor link the CLI prints or opens, to point at a different editor |
 
 There's no refresh flag and no offline flag. Every load revalidates its cached copy of the marketplace against the remote with a five-second budget, and on failure uses the cache and warns:
 

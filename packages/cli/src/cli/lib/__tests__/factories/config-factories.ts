@@ -136,6 +136,7 @@ export function buildSourceResult(
     sourceConfig,
     sourcePath,
     isLocal: true,
+    unreachable: false,
     marketplaceSkillIds: new Set(typedKeys<SkillId>(matrix.skills)),
     ...overrides,
   };

@@ -33,8 +33,8 @@ import type {
 const CLAUDE: PluginHost["provider"] = "claude";
 
 /**
- * Claude's two spellings of "no such plugin". It exits 1 for these and for real failures alike,
- * so the message is what's read; dropping either makes a second uninstall throw.
+ * Claude's two spellings of "no such plugin or marketplace". It exits 1 for these and for real
+ * failures alike, so the message is what's read; dropping either makes a second removal throw.
  */
 const NOT_INSTALLED_MESSAGES = ["not installed", "not found"];
 
@@ -47,8 +47,7 @@ function claudeOfferedPlacements(): InstallPlacement[] {
   ];
 }
 
-/** `global` is Claude's `user` scope; anything else, including absent, is `project`. */
-export function toClaudePluginScope(scope: SkillScope | undefined): ClaudePluginScope {
+function toClaudePluginScope(scope: SkillScope | undefined): ClaudePluginScope {
   return scope === "global" ? "user" : "project";
 }
 
@@ -176,7 +175,7 @@ export async function claudePluginMarketplaceRemove(
   if (result.exitCode === 0) return;
 
   const said = whyClaudeFailed(result);
-  if (said.includes("not found") || said.includes("not installed")) return;
+  if (namesNothingThere(said)) return;
   throw new Error(`Failed to remove marketplace: ${said}`);
 }
 
@@ -225,11 +224,11 @@ export async function claudePluginUninstall(
   if (result.exitCode === 0) return "removed";
 
   const said = whyClaudeFailed(result);
-  if (namesAMissingPlugin(said)) return "absent";
+  if (namesNothingThere(said)) return "absent";
   throw new Error(`Plugin uninstall failed: ${said}`);
 }
 
-function namesAMissingPlugin(message: string): boolean {
+function namesNothingThere(message: string): boolean {
   return NOT_INSTALLED_MESSAGES.some((phrase) => message.includes(phrase));
 }
 

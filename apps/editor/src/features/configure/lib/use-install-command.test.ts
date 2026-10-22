@@ -1,6 +1,64 @@
+import { CONFIG_WRITE_WINDOW_SECONDS, STORED_ID } from "@workspace/api-mocks"
 import { describe, expect, it } from "vitest"
 
-import { COMMAND_NOTES, limitReachedNote } from "./use-install-command"
+import {
+  COMMAND_NOTES,
+  isReusable,
+  limitReachedNote,
+} from "./use-install-command"
+
+// The dialog stays mounted, so a reopening finds the last answer still held.
+describe("which answer a reopened dialog keeps", () => {
+  const SELECTION = '{"skills":{}}'
+  const OTHER_SELECTION = '{"skills":{"web-framework-react":{}}}'
+
+  it("keeps an id minted for the same selection", () => {
+    expect(
+      isReusable(
+        { key: SELECTION, result: { ok: true, id: STORED_ID } },
+        SELECTION
+      )
+    ).toBe(true)
+  })
+
+  it("asks again for another selection", () => {
+    expect(
+      isReusable(
+        { key: OTHER_SELECTION, result: { ok: true, id: STORED_ID } },
+        SELECTION
+      )
+    ).toBe(false)
+  })
+
+  it("asks again after a refusal", () => {
+    expect(
+      isReusable(
+        { key: SELECTION, result: { ok: false, refusal: "unreachable" } },
+        SELECTION
+      )
+    ).toBe(false)
+  })
+
+  it("asks again after the rate limit", () => {
+    expect(
+      isReusable(
+        {
+          key: SELECTION,
+          result: {
+            ok: false,
+            refusal: "refused",
+            retryAfterSeconds: CONFIG_WRITE_WINDOW_SECONDS,
+          },
+        },
+        SELECTION
+      )
+    ).toBe(false)
+  })
+
+  it("asks on the first opening", () => {
+    expect(isReusable(null, SELECTION)).toBe(false)
+  })
+})
 
 const notes = Object.values(COMMAND_NOTES)
 

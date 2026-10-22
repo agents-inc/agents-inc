@@ -425,7 +425,7 @@ describe("edit --from <id> interactive", () => {
     }
 
     it(
-      "writes the carried skill again rather than refusing its own previous apply",
+      "names the carried skill it overwrites, then writes it again rather than refusing its own previous apply",
       { timeout: TIMEOUTS.INTERACTIVE },
       async () => {
         const env = await createTestEnvironment({ permissions: false });
@@ -442,10 +442,15 @@ describe("edit --from <id> interactive", () => {
           env: { AGENTS_INC_API_URL: store.url, HOME: project.globalHome },
         });
         await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM, TIMEOUTS.WIZARD_LOAD);
+        const planned = prompt.getOutput();
         await prompt.confirm();
         const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
 
         expect(exitCode, `re-apply failed: ${prompt.getOutput()}`).toBe(EXIT_CODES.SUCCESS);
+        expect(
+          planned,
+          "the apply writes over the installed copy, so the plan must name it before asking",
+        ).toMatch(new RegExp(`${STEP_TEXT.SHARED_CONFIG_OVERWRITTEN}[\\s\\S]*${CARRIED_ID}`));
         // Both surfaces: either alone can look right.
         const config = await loadConfigOrFail(project.dir);
         expect(config.skills.map((skill) => skill.id).sort()).toStrictEqual(
@@ -506,7 +511,7 @@ describe("edit --from <id> interactive", () => {
     );
 
     it(
-      "from a project, names a revised global carried skill as kept as installed, and leaves it",
+      "from a project, names a revised global carried skill as kept as installed, and leaves it without asking",
       { timeout: TIMEOUTS.INTERACTIVE },
       async () => {
         const env = await createTestEnvironment({ permissions: false });
@@ -529,26 +534,27 @@ describe("edit --from <id> interactive", () => {
             env: { AGENTS_INC_API_URL: store.url, HOME: project.globalHome },
           });
 
-        // Control: the global copy matches the configuration, so nothing is named.
+        // Control: the global copy matches the configuration, so nothing is named, and with nothing
+        // to change the run ends without asking.
         prompt = launchHere();
-        await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM, TIMEOUTS.WIZARD_LOAD);
+        expect(await prompt.waitForExit(TIMEOUTS.WIZARD_LOAD)).toBe(EXIT_CODES.SUCCESS);
+        expect(prompt.getOutput()).toContain(STEP_TEXT.EDIT_UNCHANGED);
         expect(prompt.getOutput()).not.toMatch(namedAsKept);
-        await prompt.deny();
-        await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
         await prompt.destroy();
 
         publishCarrying(CARRIED_ID_GLOBAL, REVISED_DESCRIPTION, "global");
         prompt = launchHere();
-        await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM, TIMEOUTS.WIZARD_LOAD);
-        const planned = prompt.getOutput();
-        await prompt.confirm();
-        const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
+        const exitCode = await prompt.waitForExit(TIMEOUTS.WIZARD_LOAD);
+        const said = prompt.getOutput();
 
-        expect(exitCode, `re-apply failed: ${prompt.getOutput()}`).toBe(EXIT_CODES.SUCCESS);
+        expect(exitCode, `re-apply failed: ${said}`).toBe(EXIT_CODES.SUCCESS);
         expect(
-          planned,
-          "a project run keeps the global copy, so the plan must say the revision does not arrive",
+          said,
+          "a project run keeps the global copy, so the run must say the revision does not arrive",
         ).toMatch(namedAsKept);
+        expect(said, "keeping the global copy changes nothing here").toContain(
+          STEP_TEXT.EDIT_UNCHANGED,
+        );
         expect(
           await readTreeSnapshot(globalCopy),
           "a project run must leave the global copy as installed",

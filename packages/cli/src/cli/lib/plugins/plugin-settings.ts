@@ -9,7 +9,7 @@ import { formatZodErrors } from "../schema-validator";
 import { INSTALLED_PLUGINS_FILE } from "../installation/install-layout";
 
 /** `plugin-name@marketplace`. */
-export type PluginKey = string;
+type PluginKey = string;
 
 export type ResolvedPlugin = {
   pluginKey: PluginKey;
@@ -42,8 +42,6 @@ const installedPluginsSchema = z
     plugins: z.record(z.string(), z.array(pluginInstallationSchema)),
   })
   .passthrough();
-
-const SETTINGS_FILE = STANDARD_FILES.SETTINGS_JSON;
 
 export function getInstalledPluginsRegistryPath(pluginsDir: string): string {
   return path.join(pluginsDir, INSTALLED_PLUGINS_FILE);
@@ -95,7 +93,7 @@ export async function listPluginInstallsForProject(
 }
 
 export async function getEnabledPluginKeys(projectDir: string): Promise<PluginKey[]> {
-  const settingsPath = path.join(projectDir, CLAUDE_DIR, SETTINGS_FILE);
+  const settingsPath = path.join(projectDir, CLAUDE_DIR, STANDARD_FILES.SETTINGS_JSON);
 
   if (!(await fileExists(settingsPath))) {
     verbose(`No settings.json found at '${settingsPath}'`);

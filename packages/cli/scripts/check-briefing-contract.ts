@@ -17,7 +17,7 @@ export const NO_BINDING_DOCUMENT = "names a binding document that does not exist
 export const BROKEN_LINK = "links a path that is not on disk";
 export const UNBOUND_CONTRACT = "does not link the briefing contract";
 
-export type UnreachableReason = typeof BROKEN_LINK | typeof UNBOUND_CONTRACT;
+type UnreachableReason = typeof BROKEN_LINK | typeof UNBOUND_CONTRACT;
 
 /** `document` is where the repair is made and `target` is what it must reach. */
 export type Unreachable = { document: string; target: string; reason: UnreachableReason };

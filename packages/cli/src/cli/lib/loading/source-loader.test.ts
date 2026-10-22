@@ -78,7 +78,7 @@ import { disableBuffering, drainBuffer, enableBuffering } from "../../utils/logg
 import { defaultCategories } from "../configuration/default-categories";
 import { defaultStacks } from "../configuration/default-stacks";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
-import { allSkills, initializeMatrix, matrix } from "../matrix/matrix-provider";
+import { initializeMatrix, matrix } from "../matrix/matrix-provider";
 // Cleared through the resolver's own constant: these hooks assert nothing.
 import { SOURCE_ENV_VAR } from "../configuration/config";
 import { LOCAL_DEFAULTS } from "../metadata-keys";
@@ -632,7 +632,6 @@ describe("source-loader", () => {
       });
 
       it("should return empty skills if skills directory is missing", async () => {
-        // Create a directory without src/skills/ — published, so the manifest is not the subject
         const emptySource = path.join(tempDir, "empty-source");
         await mkdir(emptySource, { recursive: true });
         await publishMarketplace(emptySource);
@@ -826,7 +825,7 @@ describe("source-loader local skills integration", () => {
   it("should not modify matrix when no local skills exist", async () => {
     const result = await loadSkillsMatrixFromSource({
       sourceFlag: fixtureDirs.sourceDir,
-      projectDir: tempDir, // No .claude/skills directory
+      projectDir: tempDir,
     });
 
     // The matrix may carry local categories from earlier tests, so assert on local skills instead.
@@ -939,7 +938,7 @@ describe("source-loader local skills integration", () => {
         description: "Marketplace vitest configuration",
       }),
     );
-    expect(existingSkill.local).toBeUndefined(); // Should be a marketplace skill
+    expect(existingSkill.local).toBeUndefined();
     expect(existingSkill.description).toBe("Marketplace vitest configuration");
 
     const localSkillsDir = path.join(tempDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS, "local-vitest");
@@ -974,7 +973,6 @@ describe("source-loader local skills integration", () => {
         localPath: path.join(tempDir, ".claude/skills", "local-vitest") + path.sep,
       }),
     );
-    // Verify the original description was different (proves we actually overwrote something)
     expect(overriddenSkill.description).not.toBe(existingSkill.description);
   });
 });
@@ -1013,7 +1011,7 @@ describe("source-loader local skill slugs", () => {
       matrix.slugMap.slugToId[LOCAL_DISK_SKILL_SLUG],
       "the merge left the slug map as the source built it, so a relationship rule naming a skill the user wrote themselves resolved to nothing",
     ).toBe(LOCAL_DISK_SKILL_ID);
-    expect(allSkills().filter((skill) => skill.local)).toStrictEqual([
+    expect(typedValues(matrix.skills).filter((skill) => skill.local)).toStrictEqual([
       expect.objectContaining({ id: LOCAL_DISK_SKILL_ID, slug: LOCAL_DISK_SKILL_SLUG }),
     ]);
   });
@@ -1176,7 +1174,6 @@ describe("source-loader config-driven paths", () => {
   it("should fall back to convention defaults when source has no config", async () => {
     const sourceDir = path.join(tempDir, "no-config-source");
 
-    // No .agents-inc/config.ts — just create conventional paths
     await mkdir(path.join(sourceDir, "src", STANDARD_DIRS.SKILLS), { recursive: true });
 
     await publishMarketplace(sourceDir);
@@ -1193,7 +1190,6 @@ describe("source-loader config-driven paths", () => {
   it("should fall back to convention defaults when config has no path overrides", async () => {
     const sourceDir = path.join(tempDir, "config-no-paths-source");
 
-    // Create source config WITHOUT path fields
     const configDir = path.join(sourceDir, ".agents-inc");
     await mkdir(configDir, { recursive: true });
     await writeFile(
@@ -1231,7 +1227,7 @@ describe("source-loader integration", () => {
       sourceFlag: fixtureDirs.sourceDir,
     });
 
-    // Verify all fixture skills are present (built-in matrix may add more)
+    // The built-in matrix may add more.
     const loadedSkillIds = Object.keys(result.matrix.skills);
     expect(loadedSkillIds.length).toBeGreaterThanOrEqual(FIXTURE_SKILL_COUNT);
     for (const skill of FIXTURE_SKILLS) {

@@ -30,7 +30,7 @@ import { sourceUnreachableUsingCache, STATUS_MESSAGES } from "../../utils/messag
 import {
   DEFAULT_SOURCE,
   isLocalSource,
-  NAMED_SOURCE_LABEL,
+  NAMED_MARKETPLACE,
   validateSourceFormat,
 } from "../configuration";
 import { validateLoadedMarketplaceName } from "../marketplace-generator";
@@ -43,9 +43,10 @@ import {
 } from "../schemas";
 import type { Marketplace, MarketplaceFetchResult } from "../../types";
 
-/** Safe name pattern: alphanumeric, hyphens, underscores, dots, spaces, @, / (no shell metacharacters) */
+/** No shell metacharacters. */
 const SAFE_NAME_PATTERN = /^[a-zA-Z0-9@._/ -]+$/;
 const MAX_NAME_LENGTH = 200;
+const QUOTED_NAME_LENGTH = 50;
 
 /** Matches giget's source protocol regex to extract provider name */
 const SOURCE_PROTO_RE = /^([\w-.]+):/;
@@ -53,13 +54,15 @@ const SOURCE_PROTO_RE = /^([\w-.]+):/;
 /** giget's git URI regex. Groups: repo (org/name), subdir, ref (#branch). */
 const GIT_URI_RE = /^(?<repo>[\w.-]+\/[\w.-]+)(?<subdir>[^#]+)?(?<ref>#[\w./@-]+)?/;
 
-export type FetchOptions = {
+type FetchOptions = {
   subdir?: string;
 };
 
-export type FetchResult = {
+type FetchResult = {
   path: string;
   fromCache: boolean;
+  /** The source could not be asked, so a cached copy of unknown age stood in for it. */
+  unreachable: boolean;
   source: string;
 };
 
@@ -86,7 +89,7 @@ export async function fetchFromSource(
   options: FetchOptions = {},
 ): Promise<FetchResult> {
   const { subdir } = options;
-  validateSourceFormat(source, NAMED_SOURCE_LABEL);
+  validateSourceFormat(source, NAMED_MARKETPLACE);
 
   if (isLocalSource(source)) {
     return fetchFromLocalSource(source, subdir);
@@ -113,6 +116,7 @@ async function fetchFromLocalSource(source: string, subdir?: string): Promise<Fe
   return {
     path: absolutePath,
     fromCache: false,
+    unreachable: false,
     source,
   };
 }
@@ -164,18 +168,33 @@ async function fetchFromRemoteSource(source: string, subdir?: string): Promise<F
 
   if (await directoryExists(cacheDir)) {
     const verdict = await revalidateCachedCopy(cacheDir, source);
-    const cached: FetchResult = { path: cacheDir, fromCache: true, source: fullSource };
-
     if (verdict === "current" || verdict === "unreachable") {
       verbose(`Using cached marketplace: ${cacheDir}`);
-      return cached;
+      return {
+        path: cacheDir,
+        fromCache: true,
+        unreachable: verdict === "unreachable",
+        source: fullSource,
+      };
     }
 
     announceRefetch(verdict);
-    await clearGigetCache(source);
-    await remove(cacheDir);
+    await discardCachedCopy(cacheDir, source);
   }
 
+  return downloadFreshCopy(cacheDir, source, fullSource);
+}
+
+async function discardCachedCopy(cacheDir: string, source: string): Promise<void> {
+  await clearGigetCache(source);
+  await remove(cacheDir);
+}
+
+async function downloadFreshCopy(
+  cacheDir: string,
+  source: string,
+  fullSource: string,
+): Promise<FetchResult> {
   await ensureDir(path.dirname(cacheDir));
 
   try {
@@ -192,6 +211,7 @@ async function fetchFromRemoteSource(source: string, subdir?: string): Promise<F
     return {
       path: result.dir,
       fromCache: false,
+      unreachable: false,
       source: fullSource,
     };
   } catch (error) {
@@ -387,24 +407,35 @@ function manifestRefusal(marketplacePath: string, issues: readonly z.ZodIssue[])
 }
 
 export async function fetchMarketplace(source: string): Promise<MarketplaceFetchResult> {
-  const result = await fetchFromSource(source, {
-    subdir: "", // Root of repo
-  });
+  const { path: sourcePath, fromCache } = await fetchFromSource(source, { subdir: "" });
+  const marketplacePath = marketplaceManifestPath(sourcePath);
 
-  const marketplacePath = marketplaceManifestPath(result.path);
+  await refuseAbsentManifest(marketplacePath, source);
+  const parsed = await readManifestJson(marketplacePath);
+  const marketplace = validateManifest(parsed, marketplacePath);
+  warnAboutUnknownManifestFields(parsed);
+  refuseTooManyPlugins(marketplace, marketplacePath);
+  warnAboutPluginNames(marketplace);
 
-  // The file, not its directory: a plugin repo ships `.claude-plugin/` with no marketplace in it.
-  if (!(await fileExists(marketplacePath))) {
-    throw new MarketplaceManifestAbsentError(
-      `Marketplace not found at: ${source}\n\n` +
-        `The .claude-plugin/marketplace.json file is missing from this repository.\n\n` +
-        `Possible causes:\n` +
-        "  - The marketplace URL may be incorrect\n" +
-        "  - The repository may not have a marketplace configured\n\n" +
-        "To create a marketplace, add a .claude-plugin/marketplace.json file to your marketplace repository.",
-    );
-  }
+  verbose(`Loaded marketplace: ${marketplace.name} v${marketplace.version}`);
+  return { marketplace, sourcePath, fromCache };
+}
 
+/** The file, not its directory: a plugin repo ships `.claude-plugin/` with no marketplace in it. */
+async function refuseAbsentManifest(marketplacePath: string, source: string): Promise<void> {
+  if (await fileExists(marketplacePath)) return;
+
+  throw new MarketplaceManifestAbsentError(
+    `Marketplace not found at: ${source}\n\n` +
+      `The .claude-plugin/marketplace.json file is missing from this repository.\n\n` +
+      `Possible causes:\n` +
+      "  - The marketplace URL may be incorrect\n" +
+      "  - The repository may not have a marketplace configured\n\n" +
+      "To create a marketplace, add a .claude-plugin/marketplace.json file to your marketplace repository.",
+  );
+}
+
+async function readManifestJson(marketplacePath: string): Promise<unknown> {
   const content = await readFileSafe(marketplacePath, MAX_MARKETPLACE_FILE_SIZE);
   const parsed: unknown = JSON.parse(content);
 
@@ -414,58 +445,62 @@ export async function fetchMarketplace(source: string): Promise<MarketplaceFetch
         `JSON structure exceeds maximum nesting depth of ${MAX_JSON_NESTING_DEPTH}.`,
     );
   }
+  return parsed;
+}
 
+/** The schema first, then the reserved names the schema cannot know. */
+function validateManifest(parsed: unknown, marketplacePath: string): Marketplace {
   const validation = marketplaceSchema.safeParse(parsed);
-
   if (!validation.success) {
     throw manifestRefusal(marketplacePath, validation.error.issues);
   }
 
   const marketplace = validation.data;
-
   const reservedName = validateLoadedMarketplaceName(marketplace.name, LOADED_NAME_WAY_OUT);
   if (reservedName) {
     throw new MarketplaceNameRefusedError(
       `Invalid ${MARKETPLACE_JSON} at: ${marketplacePath}\n\n${reservedName}`,
     );
   }
+  return marketplace;
+}
 
-  const EXPECTED_MARKETPLACE_KEYS = [
-    "$schema",
-    "name",
-    "version",
-    "description",
-    "owner",
-    "metadata",
-    "plugins",
-  ] as const;
+const EXPECTED_MARKETPLACE_KEYS = [
+  "$schema",
+  "name",
+  "version",
+  "description",
+  "owner",
+  "metadata",
+  "plugins",
+] as const;
+
+function warnAboutUnknownManifestFields(parsed: unknown): void {
   if (isRecord(parsed)) {
     warnUnknownFields(parsed, EXPECTED_MARKETPLACE_KEYS, MARKETPLACE_JSON);
   }
+}
 
-  if (marketplace.plugins.length > MAX_MARKETPLACE_PLUGINS) {
-    throw new Error(
-      `Invalid marketplace.json at: ${marketplacePath}\n\n` +
-        `Too many plugins: ${marketplace.plugins.length} (limit: ${MAX_MARKETPLACE_PLUGINS}).`,
-    );
-  }
+function refuseTooManyPlugins(marketplace: Marketplace, marketplacePath: string): void {
+  if (marketplace.plugins.length <= MAX_MARKETPLACE_PLUGINS) return;
 
+  throw new Error(
+    `Invalid marketplace.json at: ${marketplacePath}\n\n` +
+      `Too many plugins: ${marketplace.plugins.length} (limit: ${MAX_MARKETPLACE_PLUGINS}).`,
+  );
+}
+
+function warnAboutPluginNames(marketplace: Marketplace): void {
   for (const plugin of marketplace.plugins) {
     if (plugin.name.length > MAX_NAME_LENGTH) {
       warn(
-        `Marketplace plugin name too long (${plugin.name.length} chars): '${plugin.name.slice(0, 50)}...'`,
+        `Marketplace plugin name too long (${plugin.name.length} chars): '${plugin.name.slice(0, QUOTED_NAME_LENGTH)}...'`,
       );
     }
     if (!SAFE_NAME_PATTERN.test(plugin.name)) {
-      warn(`Marketplace plugin name contains unsafe characters: '${plugin.name.slice(0, 50)}'`);
+      warn(
+        `Marketplace plugin name contains unsafe characters: '${plugin.name.slice(0, QUOTED_NAME_LENGTH)}'`,
+      );
     }
   }
-
-  verbose(`Loaded marketplace: ${marketplace.name} v${marketplace.version}`);
-
-  return {
-    marketplace,
-    sourcePath: result.path,
-    fromCache: result.fromCache,
-  };
 }

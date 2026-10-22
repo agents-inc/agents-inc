@@ -113,15 +113,13 @@ export const seedAgentScope = (entry: SeedAgent | undefined): SeedScope =>
 
 export type UnwritableSeedAssignment = { skillId: string; agent: string }
 
-const isSwitchedOff = (entry: SeedAgent | undefined) => entry?.on === false
-
 const isUnwritablePair = (
   agents: SeedPayload["agents"],
   skillScope: SeedScope,
   agent: string
 ): boolean => {
   const entry = agents[agent]
-  if (isSwitchedOff(entry)) return false
+  if (entry?.on === false) return false
   return !isSeedScopePairWritable(skillScope, seedAgentScope(entry))
 }
 
@@ -135,6 +133,28 @@ export const unwritableSeedAssignments = (
       .map((agent) => ({ skillId, agent }))
   )
 
+const PATH_SEPARATOR = /[/\\]/
+
+// C0, DEL and C1: a terminal acts on them wherever the directory is named. Read off the code unit,
+// since a regex would need control characters in a class (`no-control-regex`).
+const isControlCode = (code: number) =>
+  code <= 0x1f || (code >= 0x7f && code <= 0x9f)
+
+const holdsAControl = (id: string) =>
+  Array.from(id, (character) => character.charCodeAt(0)).some(isControlCode)
+
+// Windows separators too: an id minted on one machine is installed on another.
+const namesOneDirectory = (id: string) =>
+  id !== "" &&
+  id !== "." &&
+  id !== ".." &&
+  !PATH_SEPARATOR.test(id) &&
+  !holdsAControl(id)
+
+/** A carried skill's id is the directory it is written into, so each must name exactly one. */
+export const externalIdsNamingNoDirectory = (payload: SeedPayload): string[] =>
+  Object.keys(payload.external ?? {}).filter((id) => !namesOneDirectory(id))
+
 /** Minting refuses unwritable pairs; `seedPayloadSchema` stays lenient so the editor can repair old links. */
 export const installableSeedPayloadSchema = seedPayloadSchema.superRefine(
   (payload, ctx) => {
@@ -143,6 +163,14 @@ export const installableSeedPayloadSchema = seedPayloadSchema.superRefine(
         code: "custom",
         path: ["skills", skillId, "assignments", agent],
         message: `a project-scoped skill has nowhere to be written on '${agent}', which rests at global scope`,
+      })
+    }
+    for (const id of externalIdsNamingNoDirectory(payload)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["external", id],
+        message:
+          "a carried skill's id is the directory it is written into, so it must name exactly one directory and hold no control character",
       })
     }
   }

@@ -16,7 +16,7 @@ import {
   type RecoveryEndings,
   type Unseated,
 } from "./seat-catalog"
-import { adoptSeedPayload, unknownPayloadIds } from "./seed"
+import { adoptSeedPayload, recogniseStack, unknownPayloadIds } from "./seed"
 
 import type { SeedPayload } from "@workspace/matrix"
 
@@ -62,85 +62,82 @@ export const useCatalogFirst = (fromId: string): void => {
     if (opened.current === fromId) return
     opened.current = fromId
 
-    const { sayCatalogue, parkCatalogue } = useUiStore.getState()
-
     // The screen stays mounted across addresses, so the last one's notice and
     // recovery (whose endings close over its payload) are cleared here.
-    sayCatalogue(null)
-
-    const park = (
-      unseated: Unseated,
-      waiting: string,
-      endings: RecoveryEndings
-    ) => parkCatalogue({ ...unseated, ...endings }, waiting)
-
-    // Read from the store: two steps of one opening write the sentences.
-    const alsoSay = (dropped: string[]) =>
-      sayCatalogue(withDropped(useUiStore.getState().catalogueNotice, dropped))
-
-    const finishRestore = async () => {
-      const dropped = await readSavedConfig()
-      // Replaced: the standing notice described a restore not yet done.
-      sayCatalogue(droppedNotice(dropped))
-    }
-
-    const openOwn = async () => {
-      const unseated = await restoreSavedCatalog()
-      if (unseated) {
-        // Both endings restore: the slot names the marketplace, so once cleared
-        // the public catalogue is the one the config is saved against.
-        const restore = () => void finishRestore()
-        park(unseated, restoreParkedNotice(unseated.marketplace), {
-          onSeated: restore,
-          onPublic: restore,
-        })
-        return
-      }
-
-      alsoSay(await readSavedConfig())
-    }
-
-    const applyShared = (payload: SeedPayload) => {
-      const config = adoptSeedPayload(payload)
-      useConfigStore.getState().importConfig(config)
-      sayCatalogue(
-        sentences([
-          SHARED_NOTICE,
-          droppedNotice(unknownPayloadIds(payload, config)),
-        ])
-      )
-    }
-
-    const openShared = async (id: string) => {
-      const result = await fetchSharedConfig(id)
-      if (!result.ok) {
-        // An id that names nothing opens the visitor's own editor.
-        sayCatalogue(refusedNotice(result.error))
-        await openOwn()
-        return
-      }
-
-      // The address governs now, so edits are not written to this browser.
-      detachSavedConfig()
-
-      const { payload } = result
-      const unseated = await seatCatalog(payload.marketplace)
-      if (unseated) {
-        park(
-          unseated,
-          sentences([
-            SHARED_NOTICE,
-            parkedNotice(A_LINK, unseated.marketplace),
-          ]),
-          { onSeated: () => applyShared(payload), onPublic: STAYS_PARKED }
-        )
-        return
-      }
-
-      applyShared(payload)
-    }
+    say(null)
 
     if (fromId) void openShared(fromId)
     else void openOwn()
   }, [fromId])
 }
+
+const openShared = async (id: string) => {
+  const result = await fetchSharedConfig(id)
+  if (!result.ok) {
+    // An id that names nothing opens the visitor's own editor.
+    say(refusedNotice(result.error))
+    await openOwn()
+    return
+  }
+
+  // The address governs now, so edits are not written to this browser.
+  detachSavedConfig()
+
+  const { payload } = result
+  const unseated = await seatCatalog(payload.marketplace)
+  if (unseated) {
+    park(
+      unseated,
+      sentences([SHARED_NOTICE, parkedNotice(A_LINK, unseated.marketplace)]),
+      { onSeated: () => applyShared(payload), onPublic: STAYS_PARKED }
+    )
+    return
+  }
+
+  applyShared(payload)
+}
+
+// What was dropped is read off the adoption, before a recognised stack
+// replaces it with that stack's own records.
+const applyShared = (payload: SeedPayload) => {
+  const adopted = adoptSeedPayload(payload)
+  useConfigStore.getState().importConfig(recogniseStack(payload, adopted))
+  say(
+    sentences([
+      SHARED_NOTICE,
+      droppedNotice(unknownPayloadIds(payload, adopted)),
+    ])
+  )
+}
+
+const openOwn = async () => {
+  const unseated = await restoreSavedCatalog()
+  if (unseated) {
+    // Both endings restore: the slot names the marketplace, so once cleared
+    // the public catalogue is the one the config is saved against.
+    const restore = () => void finishRestore()
+    park(unseated, restoreParkedNotice(unseated.marketplace), {
+      onSeated: restore,
+      onPublic: restore,
+    })
+    return
+  }
+
+  alsoSay(await readSavedConfig())
+}
+
+const finishRestore = async () => {
+  const dropped = await readSavedConfig()
+  // Replaced: the standing notice described a restore not yet done.
+  say(droppedNotice(dropped))
+}
+
+const say = (notice: string | null) =>
+  useUiStore.getState().sayCatalogue(notice)
+
+const park = (unseated: Unseated, waiting: string, endings: RecoveryEndings) =>
+  useUiStore.getState().parkCatalogue({ ...unseated, ...endings }, waiting)
+
+// Read from the store: two steps of one opening write the sentences.
+const alsoSay = (dropped: string[]) =>
+  say(withDropped(useUiStore.getState().catalogueNotice, dropped))

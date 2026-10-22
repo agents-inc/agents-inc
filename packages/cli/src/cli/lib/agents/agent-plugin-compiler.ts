@@ -3,23 +3,26 @@ import { getErrorMessage } from "../../utils/errors";
 import { readFile, ensureDir, copy } from "../../utils/fs";
 import { log, verbose, warn } from "../../utils/logger";
 import {
+  agentPluginName,
   generateAgentPluginManifest,
+  getPluginAgentsDir,
   writePluginManifest,
   getPluginManifestPath,
 } from "../plugins";
 import { listAgentMdFiles } from "./list-compiled-agents";
+import { agentCodec } from "../installation/install-layout";
 import { computeStringHash, determinePluginVersion, writeContentHash } from "../versioning";
 import { extractFrontmatter } from "../../utils/frontmatter";
 import { plural } from "../../utils/string";
 import type { AgentFrontmatter, PluginManifest } from "../../types";
 import { agentFrontmatterValidationSchema, formatZodIssues } from "../schemas";
 
-export type AgentPluginOptions = {
+type AgentPluginOptions = {
   agentPath: string;
   outputDir: string;
 };
 
-export type CompiledAgentPlugin = {
+type CompiledAgentPlugin = {
   pluginPath: string;
   manifest: PluginManifest;
   agentName: string;
@@ -49,9 +52,7 @@ function parseAgentFrontmatter(content: string): AgentFrontmatterParse {
   };
 }
 
-export async function compileAgentPlugin(
-  options: AgentPluginOptions,
-): Promise<CompiledAgentPlugin> {
+async function compileAgentPlugin(options: AgentPluginOptions): Promise<CompiledAgentPlugin> {
   const { agentPath, outputDir } = options;
   const fileName = path.basename(agentPath);
 
@@ -69,8 +70,8 @@ export async function compileAgentPlugin(
 
   verbose(`Compiling agent plugin: ${agentName} from ${agentPath}`);
 
-  const pluginDir = path.join(outputDir, `agent-${agentName}`);
-  const agentsDir = path.join(pluginDir, "agents");
+  const pluginDir = path.join(outputDir, agentPluginName(agentName));
+  const agentsDir = getPluginAgentsDir(pluginDir);
 
   await ensureDir(pluginDir);
   await ensureDir(agentsDir);
@@ -94,8 +95,9 @@ export async function compileAgentPlugin(
 
   verbose(`  Wrote plugin.json for ${agentName} (v${version})`);
 
-  await copy(agentPath, path.join(agentsDir, `${agentName}.md`));
-  verbose(`  Copied agent ${fileName} -> agents/${agentName}.md`);
+  const pluginAgentFile = `${agentName}${agentCodec("claude").extension}`;
+  await copy(agentPath, path.join(agentsDir, pluginAgentFile));
+  verbose(`  Copied agent ${fileName} -> agents/${pluginAgentFile}`);
 
   return {
     pluginPath: pluginDir,
@@ -121,7 +123,7 @@ export async function compileAllAgentPlugins(
         outputDir,
       });
       results.push(result);
-      log(`  [OK] agent-${result.agentName}`);
+      log(`  [OK] ${agentPluginName(result.agentName)}`);
     } catch (error) {
       const errorMessage = getErrorMessage(error);
       warn(`Failed to compile agent from '${agentFile}': ${errorMessage}`);
@@ -134,6 +136,6 @@ export async function compileAllAgentPlugins(
 export function printAgentCompilationSummary(results: CompiledAgentPlugin[]): void {
   log(`\nCompiled ${plural(results.length, "agent plugin")}:`);
   for (const result of results) {
-    log(`  - agent-${result.agentName} (v${result.manifest.version})`);
+    log(`  - ${agentPluginName(result.agentName)} (v${result.manifest.version})`);
   }
 }

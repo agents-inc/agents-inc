@@ -1,6 +1,8 @@
 import {
   MARKETPLACE_CANONICAL_REF,
   MARKETPLACE_CATALOG,
+  cliMintedPayload,
+  cliMintedStackPayload,
 } from "@workspace/api-mocks"
 import {
   CATALOG,
@@ -8,8 +10,10 @@ import {
   SEED_VERSION,
   STACKS,
   SUB_AGENTS_BY_ID,
+  expandStack,
   installableSeedPayloadSchema,
   seedPayloadSchema,
+  type SeedPayload,
 } from "@workspace/matrix"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
@@ -18,15 +22,20 @@ import {
   useCatalogStore,
   type ExternalSkill,
 } from "@/stores/catalog-store"
+import { stackSelection, useConfigStore } from "@/stores/config-store"
 import {
+  AGENT_MODELS,
   DEFAULT_SKILL_OPTIONS,
+  restingAgentOptions,
   type PersistedConfig,
 } from "@/stores/persisted-schema"
 
+import { isStackCustom } from "./derive"
 import {
   adoptSeedPayload,
   fromSeedPayload,
   matchesSavedStack,
+  recogniseStack,
   toSeedPayload,
   unknownPayloadIds,
 } from "./seed"
@@ -595,6 +604,148 @@ describe("matchesSavedStack", () => {
 
   it("says no when the slot is empty", () => {
     expect(matchesSavedStack(config(), null)).toBe(false)
+  })
+
+  // No stack id, another matrix version, every sub-agent spelled out at rest.
+  it("says yes to the same selection as the CLI mints it", () => {
+    const minted = cliMintedPayload({
+      [SKILL]: {
+        ...DEFAULT_SKILL_OPTIONS,
+        scope: "global",
+        assignments: { [AGENT]: "preloaded" },
+      },
+    })
+
+    expect(matchesSavedStack(config(), minted)).toBe(true)
+  })
+
+  it("says no to the same selection saved on another marketplace", () => {
+    const elsewhere = { ...saved(), marketplace: MARKETPLACE_CANONICAL_REF }
+
+    expect(matchesSavedStack(config(), elsewhere)).toBe(false)
+  })
+})
+
+// The CLI mints with `stackId: null`, so the stack is recognised by contents.
+describe("recogniseStack", () => {
+  // Pins a sub-agent no skill reaches, so the roster is compared as well as
+  // the skills.
+  const STACK_WITH_PINS = STACKS.find(
+    (stack) => (expandStack(stack.id)?.skillLessAgentIds.length ?? 0) > 0
+  )!.id
+  const PINNED_AGENT = expandStack(STACK_WITH_PINS)!.skillLessAgentIds[0]!
+  const OUTSIDE_SKILL = Object.keys(CATALOG.skillsById).find(
+    (skillId) => !expandStack(STACK_WITH_PINS)!.skillIds.includes(skillId)
+  )!
+  // One the stack's skills switch on, so tuning it moves nothing else.
+  const TUNED_AGENT = Object.values(
+    expandStack(STACK_WITH_PINS)!.assignmentsBySkill
+  ).flat()[0]!.agentId
+  const RESTING = restingAgentOptions(TUNED_AGENT)
+  const OTHER_MODEL = AGENT_MODELS.find((model) => model !== RESTING.model)!
+
+  const opened = (payload: SeedPayload) =>
+    recogniseStack(payload, fromSeedPayload(payload))
+
+  const minted = () => cliMintedStackPayload(STACK_WITH_PINS)
+
+  const withTunedAgent = (tuning: SeedPayload["agents"][string]) => ({
+    ...minted(),
+    agents: { ...minted().agents, [TUNED_AGENT]: tuning },
+  })
+
+  it("opens a link the CLI minted from a stack as that stack, applied", () => {
+    expect(opened(minted())).toStrictEqual(stackSelection(STACK_WITH_PINS))
+  })
+
+  it("leaves nothing to lose on the stack it opened", () => {
+    expect(isStackCustom(opened(minted()))).toBe(false)
+  })
+
+  it("opens one skill more than the stack on Start from scratch", () => {
+    const payload = {
+      ...minted(),
+      skills: {
+        ...minted().skills,
+        [OUTSIDE_SKILL]: {
+          ...DEFAULT_SKILL_OPTIONS,
+          assignments: {},
+        },
+      },
+    }
+
+    expect(opened(payload)).toStrictEqual(fromSeedPayload(payload))
+  })
+
+  it("opens on Start from scratch without a sub-agent the stack switches on", () => {
+    const { [PINNED_AGENT]: _left, ...agents } = minted().agents
+    const payload = { ...minted(), agents }
+
+    expect(opened(payload)).toStrictEqual(fromSeedPayload(payload))
+  })
+
+  it("opens a sub-agent tuned away from rest on Start from scratch", () => {
+    const payload = withTunedAgent({
+      on: true,
+      scope: RESTING.scope,
+      model: OTHER_MODEL,
+    })
+
+    expect(opened(payload)).toStrictEqual(fromSeedPayload(payload))
+  })
+
+  it("reads a choice spelled out at its resting value as no choice", () => {
+    const payload = withTunedAgent({
+      on: true,
+      scope: RESTING.scope,
+      model: RESTING.model,
+      effort: RESTING.effort,
+    })
+
+    expect(opened(payload)).toStrictEqual(stackSelection(STACK_WITH_PINS))
+  })
+
+  it("leaves a link that names a stack on the stack it names", () => {
+    const other = STACKS.find((stack) => stack.id !== STACK_WITH_PINS)!.id
+    const payload = { ...minted(), stackId: other }
+
+    expect(opened(payload)).toStrictEqual(fromSeedPayload(payload))
+  })
+})
+
+// `init --from` writes it; a bare `edit` mints it back.
+describe("the description a configuration arrived with", () => {
+  const DESCRIPTION = "The house web app, as installed."
+
+  afterEach(() => {
+    useConfigStore.getState().reset()
+  })
+
+  const described = () => ({
+    ...toSeedPayload(config()),
+    description: DESCRIPTION,
+  })
+
+  it("is kept on adoption", () => {
+    expect(fromSeedPayload(described()).description).toBe(DESCRIPTION)
+  })
+
+  it("travels on the next mint", () => {
+    useConfigStore.getState().importConfig(fromSeedPayload(described()))
+
+    expect(toSeedPayload(useConfigStore.getState()).description).toBe(
+      DESCRIPTION
+    )
+  })
+
+  it("is not invented for a configuration that arrived without one", () => {
+    useConfigStore
+      .getState()
+      .importConfig(fromSeedPayload(toSeedPayload(config())))
+
+    expect(toSeedPayload(useConfigStore.getState())).not.toHaveProperty(
+      "description"
+    )
   })
 })
 

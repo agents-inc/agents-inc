@@ -20,21 +20,23 @@ import { sa, saUnflagged } from "../../__tests__/factories/skill-factories.js";
 import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE } from "../../../consts";
 import type { ProjectConfig, SkillId } from "../../../types";
 import { EXPECTED_SKILLS } from "../../__tests__/expected-values";
-import { TEST_CUSTOM_SOURCE_URL, TEST_SOURCE_URL } from "../../__tests__/test-constants.js";
+import { TEST_SOURCE_URL } from "../../__tests__/test-constants.js";
 import {
   extractNamedSection,
   extractScopeSections,
 } from "../../__tests__/helpers/config-source-sections.js";
+
+/** A project a global config registers, so `projects` has something to emit. */
+const REGISTERED_PROJECT = path.join(os.tmpdir(), "registered-project");
 
 // Boundary cast: a skill outside every marketplace is outside the generated union by construction
 const EXTERNAL_SKILL_ID = "external-web-tooling-house" as SkillId;
 
 const SOURCE_LAYOUT_ROOT = "catalogue/";
 
-/** The five fields a source repository declares its own layout with, each set off its default. */
+/** The four fields a source repository declares its own layout with, each set off its default. */
 const SOURCE_LAYOUT = {
   skillsDir: `${SOURCE_LAYOUT_ROOT}skills`,
-  agentsDir: `${SOURCE_LAYOUT_ROOT}agents`,
   stacksFile: `${SOURCE_LAYOUT_ROOT}stacks.ts`,
   categoriesFile: `${SOURCE_LAYOUT_ROOT}skill-categories.ts`,
   rulesFile: `${SOURCE_LAYOUT_ROOT}skill-rules.ts`,
@@ -82,20 +84,20 @@ describe("generateConfigSource", () => {
     const config = buildProjectConfig({
       marketplace: TEST_SOURCE_URL,
       marketplaceName: DEFAULT_PUBLIC_SOURCE_NAME,
-      agentsSource: TEST_CUSTOM_SOURCE_URL,
+      projects: [REGISTERED_PROJECT],
     });
 
     const source = generateConfigSource(config, matrix);
 
     const marketplaceIdx = source.indexOf(`marketplace: '${TEST_SOURCE_URL}'`);
     const nameIdx = source.indexOf(`marketplaceName: '${DEFAULT_PUBLIC_SOURCE_NAME}'`);
-    const agentsSourceIdx = source.indexOf("agentsSource:");
+    const projectsIdx = source.indexOf("projects:");
     expect(marketplaceIdx).toBeGreaterThan(-1);
     expect(nameIdx, "the marketplace name follows the ref it names").toBeGreaterThan(
       marketplaceIdx,
     );
     expect(
-      agentsSourceIdx,
+      projectsIdx,
       "a canonically-ordered field must not be pushed behind a schema field it precedes",
     ).toBeGreaterThan(nameIdx);
   });
@@ -728,7 +730,6 @@ describe("generateConfigSource", () => {
 
       expect(source).toContain("name: 'Northwind'");
       expect(source).toContain("skillsDir: 'catalogue/skills'");
-      expect(source).toContain("agentsDir: 'catalogue/agents'");
       expect(source).toContain("stacksFile: 'catalogue/stacks.ts'");
       expect(source).toContain("categoriesFile: 'catalogue/skill-categories.ts'");
       expect(source).toContain("rulesFile: 'catalogue/skill-rules.ts'");

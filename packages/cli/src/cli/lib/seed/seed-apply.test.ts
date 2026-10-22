@@ -3,11 +3,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   holdInstalledGlobal,
   installPlanLines,
+  installsAtHome,
   joinedStatement,
   notInstalledGlobally,
+  projectScopedContent,
   reconcileSharedConfig,
   restoreInstalledGlobal,
   skillLabel,
+  skippedWithTheirSkills,
   withUnplaceableAssignees,
   type InstalledGlobal,
   type KeptFromRoundTrip,
@@ -851,7 +854,27 @@ describe("holding the global install as installed", () => {
     ]);
   });
 
-  it("lists what arrives where, then the global skills it skips as already installed", () => {
+  it("lists what arrives where, then the global skills and sub-agents it skips as already installed", () => {
+    const held = holdInstalledGlobal(
+      decodedWithGlobal({ [ZUSTAND]: onApiDeveloper() }),
+      installedGlobal,
+    );
+
+    expect(installPlanLines(held)).toStrictEqual([
+      "Into this project:",
+      "  Skills:",
+      `    ${SKILLS.react.displayName} (${REACT})`,
+      "  Sub-agents:",
+      `    ${WEB_DEV}`,
+      "Skipped, already in the global install:",
+      "  Skills:",
+      `    ${SKILLS.zustand.displayName} (${ZUSTAND})`,
+      "  Sub-agents:",
+      `    ${API_DEV}`,
+    ]);
+  });
+
+  it("names a held sub-agent a new row joins only as added to, never also as skipped", () => {
     const held = holdInstalledGlobal(
       decodedWithGlobal({ [ZUSTAND]: onApiDeveloper(), [HONO]: onApiDeveloper() }),
       installedGlobal,
@@ -1131,5 +1154,55 @@ describe("restoreInstalledGlobal and the plan lines", () => {
   it("labels a skill by its id alone when its display name is that id", () => {
     expect(skillLabel(UNPLACEABLE)).toBe(UNPLACEABLE);
     expect(skillLabel(REACT)).toBe(`${SKILLS.react.displayName} (${REACT})`);
+  });
+});
+
+describe("what a run from the home directory may install", () => {
+  function decodedScoped(skill: "project" | "global", agent: "project" | "global") {
+    return seedToInstallSelection(
+      buildSeedPayload({
+        skills: { [ZUSTAND]: buildSeedSkill({ scope: skill, assignments: { [API_DEV]: "lazy" } }) },
+        agents: { [API_DEV]: { scope: agent } },
+      }),
+      REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX,
+    ).result;
+  }
+
+  it("names every project-scoped skill and sub-agent, by kind, and installs none of it at home", () => {
+    const decoded = decodedScoped("project", "project");
+
+    expect(projectScopedContent(decoded)).toStrictEqual({
+      skillIds: [ZUSTAND],
+      agentNames: [API_DEV],
+    });
+    expect(installsAtHome(decoded)).toBe(false);
+  });
+
+  it("installs nothing at home where the one project-scoped entry is a sub-agent", () => {
+    const decoded = decodedScoped("global", "project");
+
+    expect(projectScopedContent(decoded)).toStrictEqual({ skillIds: [], agentNames: [API_DEV] });
+    expect(installsAtHome(decoded)).toBe(false);
+  });
+
+  it("installs at home a selection holding nothing project-scoped", () => {
+    const decoded = decodedScoped("global", "global");
+
+    expect(projectScopedContent(decoded)).toStrictEqual({ skillIds: [], agentNames: [] });
+    expect(installsAtHome(decoded)).toBe(true);
+  });
+});
+
+describe("skippedWithTheirSkills", () => {
+  it("leaves out a sub-agent the run installs after all, and a skipped skill left with none", () => {
+    const skippedWith = skippedWithTheirSkills(
+      [
+        { skillId: "web-unknown-one", agentNames: [WEB_DEV, API_DEV] },
+        { skillId: "web-unknown-two", agentNames: [API_DEV] },
+      ],
+      [API_DEV],
+    );
+
+    expect(skippedWith).toStrictEqual([{ skillId: "web-unknown-one", agentNames: [WEB_DEV] }]);
   });
 });

@@ -43,12 +43,18 @@ import {
 } from "../factories/plugin-factories.js";
 import type { AgentName, RelationshipDefinitions } from "../../../types";
 import { resolveInstallPaths } from "../../installation/index.js";
+import { getProjectConfigPath } from "../../installation/install-base-dir.js";
+import {
+  agentsDir as hostAgentsDir,
+  skillsDir as hostSkillsDir,
+} from "../../installation/install-layout.js";
 import {
   TEST_MARKETPLACE_NAME,
   testMarketplaceSkillId,
   type TestSkill,
 } from "../fixtures/create-test-source";
 import { renderAgentMd, renderConfigTs, renderSkillMd } from "../content-generators";
+import { stampProvenanceMarker } from "../../agents/agent-provenance.js";
 import {
   VALID_EMBEDDED_SKILL_METADATA_FILE,
   VALID_SKILL_CATEGORIES_FILE,
@@ -95,6 +101,9 @@ const MANIFEST_NAME_REFUSED = "Acme_Skills";
 const MANIFEST_NAME_ACCEPTED = "acme-skills";
 
 const MARKETPLACES_ROW_CLEAN = "1 marketplace validated";
+
+/** The cloud metadata service: an address the marketplace check refuses wherever it is named. */
+const PRIVATE_ADDRESS_MARKETPLACE = "http://169.254.169.254/latest";
 
 /** Printed by a run that finished, not by an aborted one. */
 const SUMMARY_LINE = "Summary:";
@@ -605,7 +614,6 @@ describe("doctor content checks", () => {
         }),
       );
 
-      // Plugin with invalid JSON in plugin.json → 1 error.
       const pluginDir = path.join(projectDir, CLAUDE_DIR, PLUGINS_SUBDIR, "broken-plugin");
       const manifestDir = path.join(pluginDir, PLUGIN_MANIFEST_DIR);
       await mkdir(manifestDir, { recursive: true });
@@ -1993,7 +2001,7 @@ describe("the doctor report, line by line", () => {
         "    Placements Offered      ✓  Every configured skill is placeable",
         "    Skills Resolved         ✓  1/1 skill found",
         "    Agents Compiled         ✓  1/1 agent compiled",
-        "    No Orphans              ✓  No orphaned agent files",
+        "    No Orphans              ✓  No orphaned skills or agent files",
         "    Skills Installed        ✓  1/1 eject-mode skill installed",
         "    Plugins Installed       ✓  No plugin-mode skills configured",
         ...reachedLocally(sourceDir, "named by this project's configuration"),
@@ -2058,7 +2066,7 @@ describe("the doctor report, line by line", () => {
         "    Skills Resolved         ✓  No skills configured",
         "    Agents Compiled         !  1 agent needs recompilation",
         "                               - web-developer (missing)",
-        "    No Orphans              ✓  No agents directory",
+        "    No Orphans              ✓  No orphaned skills or agent files",
         "    Skills Installed        ✓  No eject-mode skills configured",
         "    Plugins Installed       ✓  No plugin-mode skills configured",
         ...reachedLocally(sourceDir, "named by the global configuration"),
@@ -2189,7 +2197,7 @@ describe("the doctor report, line by line", () => {
 
     const { stdout } = await runCliCommand(["doctor"]);
 
-    expect(stdout).toContain("    No Orphans              ✓  No orphaned agent files\n");
+    expect(stdout).toContain("    No Orphans              ✓  No orphaned skills or agent files\n");
   });
 
   it("counts a project agent's file in the global folder as an orphan", async () => {
@@ -2229,7 +2237,7 @@ describe("the doctor report, line by line", () => {
 
     const { stdout } = await runCliCommand(["doctor"]);
 
-    expect(stdout).toContain("    No Orphans              ✓  No orphaned agent files\n");
+    expect(stdout).toContain("    No Orphans              ✓  No orphaned skills or agent files\n");
   });
 
   it("names each plugin-mode skill no enabled plugin provides", async () => {
@@ -2261,9 +2269,11 @@ describe("the doctor report, line by line", () => {
     expect(compactCliOutput(stdout)).toContain(
       compactCliOutput(
         [
-          "    Placements Offered      ✗  1 finding would stop a command acting here",
+          "  Operational checks",
+          "    Installations           ✗  2 installations here, each checked below",
           `                               - ${process.cwd()} holds 2 installations — claude and codex — so every command that acts on one cannot tell which one you mean. Name it with --provider <claude|codex>. Nothing has been changed.`,
-          "    Skills Resolved",
+          "",
+          "  The claude installation",
         ].join("\n"),
       ),
     );
@@ -2339,6 +2349,24 @@ describe("the doctor report, line by line", () => {
 
       expect(stdout).toContain("    Agents Compiled         ✓  1/1 agent compiled\n");
     });
+
+    it("names an orphan by the file Codex holds, extension included", async () => {
+      await installOnCodex([CONFIGURED_AGENT_NAME]);
+      const { agentsDir } = resolveInstallPaths(projectDir, "project");
+      await mkdir(agentsDir, { recursive: true });
+      await writeFile(path.join(agentsDir, `${CONFIGURED_AGENT_NAME}.toml`), "");
+      await writeFile(path.join(agentsDir, `${ORPHANED_AGENT_NAME}.toml`), "");
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(
+        [
+          "    No Orphans              !  1 orphaned agent file",
+          `                               - ${ORPHANED_AGENT_NAME}.toml (not in config)`,
+          "    Skills Installed",
+        ].join("\n"),
+      );
+    });
   });
 
   it("at home, names an orphan in the one agents folder both scopes share once", async () => {
@@ -2374,7 +2402,7 @@ describe("the doctor report, line by line", () => {
 
     const { stdout } = await runCliCommand(["doctor"]);
 
-    expect(stdout).toContain("    No Orphans              ✓  No orphaned agent files\n");
+    expect(stdout).toContain("    No Orphans              ✓  No orphaned skills or agent files\n");
   });
 
   it("counts a global agent's file in the project's folder as an orphan", async () => {
@@ -2480,6 +2508,47 @@ describe("the doctor report, line by line", () => {
     },
   );
 
+  it("says a marketplace the check refused was refused, not that the check threw", async () => {
+    await setupValidatedProject(tempDir, projectDir, { marketplace: PRIVATE_ADDRESS_MARKETPLACE });
+    const configPath = getProjectConfigPath(projectDir, "claude");
+
+    const { stdout } = await runCliCommand(["doctor"]);
+
+    expect(stdout).toContain(
+      [
+        "    Marketplaces            ✗  Refused",
+        `                               The marketplace in ${configPath} points to a private or reserved IP address: "${PRIVATE_ADDRESS_MARKETPLACE}"`,
+        "                               Marketplace URLs must not target private network addresses.",
+        "                               Use a public hostname instead.",
+        "                               Examples:",
+        "                                 marketplace: 'https://github.com/user/repo'",
+        "                                 marketplace: 'https://gitlab.company.com/team/skills'",
+        "    Plugins                 ✓  No plugins to validate",
+      ].join("\n"),
+    );
+  });
+
+  it("says Refused on the reachability row too, for a marketplace the check refused", async () => {
+    await setupValidatedProject(tempDir, projectDir, { marketplace: PRIVATE_ADDRESS_MARKETPLACE });
+    const configPath = getProjectConfigPath(projectDir, "claude");
+
+    const { stdout } = await runCliCommand(["doctor"]);
+
+    expect(stdout).toContain(
+      [
+        "    Marketplace Reachable   ✗  Refused",
+        `                               The marketplace in ${configPath} points to a private or reserved IP address: "${PRIVATE_ADDRESS_MARKETPLACE}"`,
+        "                               Marketplace URLs must not target private network addresses.",
+        "                               Use a public hostname instead.",
+        "                               Examples:",
+        "                                 marketplace: 'https://github.com/user/repo'",
+        "                                 marketplace: 'https://gitlab.company.com/team/skills'",
+        "",
+        "",
+      ].join("\n"),
+    );
+  });
+
   it("marks a content row holding only warnings as a warning, and counts errors and warnings apart", async () => {
     await setupValidatedProject(tempDir, projectDir);
     const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
@@ -2526,6 +2595,7 @@ describe("the doctor report, line by line", () => {
         "                               Check it for a typo, or name a marketplace that exists:",
         "                                 --marketplace github:agents-inc/skills",
         "",
+        "",
       ].join("\n"),
     );
   });
@@ -2545,6 +2615,7 @@ describe("the doctor report, line by line", () => {
         "  Operational checks",
         "    Skipped — fix the content errors above first",
         "",
+        "",
       ].join("\n"),
     );
 
@@ -2563,6 +2634,7 @@ describe("the doctor report, line by line", () => {
         "  Operational checks",
         "    Skipped — no installation here (marketplace repository)",
         "",
+        "",
       ].join("\n"),
     );
   });
@@ -2579,5 +2651,336 @@ describe("the doctor report, line by line", () => {
     expect(stdout).toContain(
       "    Config Valid            !  This project: .agents-inc/claude/config.ts is valid but declares no skills and no agents\n",
     );
+  });
+  /** A compiled agent this CLI can prove it wrote, which is all `uninstall` takes without a config. */
+  async function writeCompiledAgent(agentsDir: string, name: string): Promise<void> {
+    await mkdir(agentsDir, { recursive: true });
+    await writeFile(
+      path.join(agentsDir, `${name}.md`),
+      stampProvenanceMarker(renderAgentMd(name, "Compiled by this CLI")),
+    );
+  }
+
+  describe("the No Orphans row over skill folders", () => {
+    async function installEjectedSkill(): Promise<string> {
+      const skillsDir = path.join(projectDir, INSTALLED_SKILLS_SUBDIR);
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: buildSkillConfigs([CONFIGURED_SKILL_ID], { origin: "eject" }),
+      });
+      await writeValidInstalledSkill(skillsDir, CONFIGURED_SKILL_ID);
+      await writeValidInstalledAgent(
+        path.join(projectDir, INSTALLED_AGENTS_SUBDIR),
+        CONFIGURED_AGENT_NAME,
+      );
+      return skillsDir;
+    }
+
+    it("names a skill folder this CLI installed that the configuration does not claim", async () => {
+      const skillsDir = await installEjectedSkill();
+      await writeValidInstalledSkill(skillsDir, UNRELATED_INSTALLED_SKILL_ID);
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(
+        [
+          "    No Orphans              !  1 orphaned skill",
+          `                               - ${UNRELATED_INSTALLED_SKILL_ID} (not in config)`,
+          "    Skills Installed",
+        ].join("\n"),
+      );
+    });
+
+    it("counts orphaned skills and agent files apart", async () => {
+      const skillsDir = await installEjectedSkill();
+      await writeValidInstalledSkill(skillsDir, UNRELATED_INSTALLED_SKILL_ID);
+      await writeValidInstalledAgent(
+        path.join(projectDir, INSTALLED_AGENTS_SUBDIR),
+        ORPHANED_AGENT_NAME,
+      );
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(
+        [
+          "    No Orphans              !  1 orphaned skill and 1 orphaned agent file",
+          `                               - ${UNRELATED_INSTALLED_SKILL_ID} (not in config)`,
+          `                               - ${ORPHANED_AGENT_NAME}.md (not in config)`,
+          "    Skills Installed",
+        ].join("\n"),
+      );
+    });
+
+    it("leaves a skill folder that carries no provenance alone, as the user's own", async () => {
+      const skillsDir = await installEjectedSkill();
+      await mkdir(path.join(skillsDir, FOREIGN_SKILL_DIR), { recursive: true });
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(
+        "    No Orphans              ✓  No orphaned skills or agent files\n",
+      );
+    });
+
+    it("names the stranded skill and agent of a project whose config is gone, under a live global installation", async () => {
+      await setupValidatedProject(tempDir, fakeHome, {
+        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME], { scope: "global" }),
+      });
+      await writeValidInstalledAgent(
+        path.join(fakeHome, INSTALLED_AGENTS_SUBDIR),
+        CONFIGURED_AGENT_NAME,
+      );
+      await writeValidInstalledSkill(
+        path.join(projectDir, INSTALLED_SKILLS_SUBDIR),
+        UNRELATED_INSTALLED_SKILL_ID,
+      );
+      await writeCompiledAgent(path.join(projectDir, INSTALLED_AGENTS_SUBDIR), ORPHANED_AGENT_NAME);
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(stdout).toContain(
+        [
+          "    No Orphans              ✗  1 skill and 1 agent installed here, and no configuration declares them",
+          `                               - ${path.join(projectDir, INSTALLED_SKILLS_SUBDIR, UNRELATED_INSTALLED_SKILL_ID)}`,
+          `                               - ${path.join(projectDir, INSTALLED_AGENTS_SUBDIR, `${ORPHANED_AGENT_NAME}.md`)}`,
+          "    Skills Installed",
+        ].join("\n"),
+      );
+    });
+
+    it("names no installation in the tip for files nothing declares where only one is here", async () => {
+      await setupValidatedProject(tempDir, fakeHome, {
+        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME], { scope: "global" }),
+      });
+      await writeValidInstalledSkill(
+        path.join(projectDir, INSTALLED_SKILLS_SUBDIR),
+        UNRELATED_INSTALLED_SKILL_ID,
+      );
+      await writeCompiledAgent(path.join(projectDir, INSTALLED_AGENTS_SUBDIR), ORPHANED_AGENT_NAME);
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(
+        [
+          "  Tip: Nothing declares the files above — 'npx agents-inc init --from <id>' writes a configuration that can own them again, or 'npx agents-inc uninstall' removes them, the compiled agents included: each file listed carries this CLI's own provenance, which is what that command reads when there is no configuration left",
+          "",
+          "",
+        ].join("\n"),
+      );
+    });
+
+    it("leaves a hand-written agent in a project whose config is gone alone, as the user's own", async () => {
+      await setupValidatedProject(tempDir, fakeHome, {
+        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME], { scope: "global" }),
+      });
+      await writeValidInstalledAgent(
+        path.join(fakeHome, INSTALLED_AGENTS_SUBDIR),
+        CONFIGURED_AGENT_NAME,
+      );
+      await writeValidInstalledAgent(
+        path.join(projectDir, INSTALLED_AGENTS_SUBDIR),
+        ORPHANED_AGENT_NAME,
+      );
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(
+        "    No Orphans              ✓  No orphaned skills or agent files\n",
+      );
+    });
+  });
+
+  it("reports a marketplace repository whose own config it cannot read as a failed row, and finishes the report", async () => {
+    await buildValidSource(projectDir);
+    const configPath = await writeRawTestConfig(
+      projectDir,
+      renderUnparseableConfigTs(),
+      ".agents-inc",
+    );
+
+    const { stdout, error } = await runCliCommand(["doctor"]);
+
+    expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+    expect(stdout).toContain(
+      ["  Operational checks", "    Marketplace Repository  ✗  Check threw"].join("\n"),
+    );
+    expect(stdout, "the row names the file it could not read").toContain(
+      `Failed to load config from '${configPath}'`,
+    );
+    expect(stdout).toContain(`  ${SUMMARY_LINE}`);
+  });
+
+  describe("a project holding a Claude and a Codex installation", () => {
+    const CODEX_FOLDER = ".agents-inc/codex";
+
+    /** Both read the same marketplace, so only each installation's own files differ. */
+    async function installBoth(): Promise<string> {
+      const installed = {
+        skills: buildSkillConfigs([CONFIGURED_SKILL_ID], { origin: "eject" }),
+        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
+      };
+      const sourceDir = await setupValidatedProject(tempDir, projectDir, installed);
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({ name: "codex-one", marketplace: sourceDir, ...installed }),
+        CODEX_FOLDER,
+      );
+      return sourceDir;
+    }
+
+    it("reports each installation in a block of its own, read off that installation's folders", async () => {
+      const sourceDir = await installBoth();
+      await writeValidInstalledSkill(
+        path.join(projectDir, INSTALLED_SKILLS_SUBDIR),
+        CONFIGURED_SKILL_ID,
+      );
+      await writeValidInstalledAgent(
+        path.join(projectDir, INSTALLED_AGENTS_SUBDIR),
+        CONFIGURED_AGENT_NAME,
+      );
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(stdout).toBe(
+        [
+          ...HEADER,
+          ...cleanContent(sourceDir, { skills: 1, agents: 1 }),
+          "  Operational checks",
+          "    Installations           ✗  2 installations here, each checked below",
+          `                               - ${process.cwd()} holds 2 installations — claude and codex — so every command that acts on one cannot tell which one you mean. Name it with --provider <claude|codex>. Nothing has been changed.`,
+          "",
+          "  The claude installation",
+          "    Config Valid            ✓  This project: .agents-inc/claude/config.ts is valid",
+          "    Layout                  ✓  This project is on .agents-inc/claude/",
+          "    Placements Offered      ✓  Every configured skill is placeable",
+          "    Skills Resolved         ✓  1/1 skill found",
+          "    Agents Compiled         ✓  1/1 agent compiled",
+          "    No Orphans              ✓  No orphaned skills or agent files",
+          "    Skills Installed        ✓  1/1 eject-mode skill installed",
+          "    Plugins Installed       ✓  No plugin-mode skills configured",
+          ...reachedLocally(sourceDir, "named by this project's configuration"),
+          "",
+          "  The codex installation",
+          "    Config Valid            ✓  This project: .agents-inc/codex/config.ts is valid",
+          "    Layout                  ✓  This project is on .agents-inc/codex/",
+          "    Placements Offered      ✓  Every configured skill is placeable",
+          "    Skills Resolved         ✓  1/1 skill found",
+          "    Agents Compiled         !  1 agent needs recompilation",
+          `                               - ${CONFIGURED_AGENT_NAME} (missing)`,
+          "    No Orphans              ✓  No orphaned skills or agent files",
+          "    Skills Installed        !  1 skill missing from disk",
+          `                               - ${CONFIGURED_SKILL_ID} (not found in .agents/skills/)`,
+          "    Plugins Installed       ✓  No plugin-mode skills configured",
+          ...reachedLocally(sourceDir, "named by this project's configuration"),
+          "",
+          "  Summary: 21 passed, 2 warnings, 1 error",
+          "",
+          "  Tip: Run 'npx agents-inc compile --provider codex' to generate missing agent files",
+          "  Tip: Re-eject the missing skills from the marketplace to restore their files",
+          "",
+          "",
+        ].join("\n"),
+      );
+    });
+
+    it("reports a Codex config it cannot load in that installation's block, and stands its rows down", async () => {
+      await setupValidatedProject(tempDir, projectDir);
+      const codexConfig = await writeRawTestConfig(
+        projectDir,
+        renderUnparseableConfigTs(),
+        CODEX_FOLDER,
+      );
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(stdout).toContain(
+        [
+          "  The codex installation",
+          "    Config Valid            ✗  This project: .agents-inc/codex/config.ts exists but could not be loaded",
+        ].join("\n"),
+      );
+      expect(stdout, "the reason names the file the loader could not read").toContain(
+        `Failed to load config from '${codexConfig}'`,
+      );
+      expect(stdout).toMatch(
+        /The codex installation[\s\S]*Agents Compiled\s+–\s+Skipped \(config invalid\)/,
+      );
+    });
+
+    it("finds each installation whole where both are", async () => {
+      await installBoth();
+      await writeValidInstalledSkill(
+        path.join(projectDir, INSTALLED_SKILLS_SUBDIR),
+        CONFIGURED_SKILL_ID,
+      );
+      await writeValidInstalledAgent(
+        path.join(projectDir, INSTALLED_AGENTS_SUBDIR),
+        CONFIGURED_AGENT_NAME,
+      );
+      const codexAgents = hostAgentsDir("codex", "project", projectDir);
+      await mkdir(codexAgents, { recursive: true });
+      await writeFile(path.join(codexAgents, `${CONFIGURED_AGENT_NAME}.toml`), "");
+      await writeValidInstalledSkill(
+        hostSkillsDir("codex", "project", projectDir),
+        CONFIGURED_SKILL_ID,
+      );
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain("  Summary: 23 passed, 0 warnings, 1 error\n");
+    });
+
+    it("names in the tip for files nothing declares the installation whose block found them", async () => {
+      const globalAgents = buildAgentConfigs([CONFIGURED_AGENT_NAME], { scope: "global" });
+      const sourceDir = await setupValidatedProject(tempDir, fakeHome, { agents: globalAgents });
+      await writeTestTsConfig(
+        fakeHome,
+        buildProjectConfig({
+          name: "codex-one",
+          marketplace: sourceDir,
+          skills: [],
+          agents: globalAgents,
+        }),
+        CODEX_FOLDER,
+      );
+      await writeValidInstalledSkill(
+        path.join(projectDir, INSTALLED_SKILLS_SUBDIR),
+        UNRELATED_INSTALLED_SKILL_ID,
+      );
+      await writeCompiledAgent(path.join(projectDir, INSTALLED_AGENTS_SUBDIR), ORPHANED_AGENT_NAME);
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      // Subject guard: the finding sits in the claude block, beside a second installation.
+      expect(stdout).toContain(
+        `${fakeHome} holds 2 installations — claude and codex — so every command that acts on one cannot tell which one you mean.`,
+      );
+      expect(stdout).toContain(
+        [
+          "  Tip: Nothing declares the files above — 'npx agents-inc init --from <id> --provider claude' writes a configuration that can own them again, or 'npx agents-inc uninstall --provider claude' removes them, the compiled agents included: each file listed carries this CLI's own provenance, which is what that command reads when there is no configuration left",
+          "",
+          "",
+        ].join("\n"),
+      );
+    });
+
+    it("names in each compile tip the installation whose block needs it, and a tip naming none once", async () => {
+      await installBoth();
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(
+        [
+          "  Tip: Run 'npx agents-inc compile --provider claude' to generate missing agent files",
+          "  Tip: Run 'npx agents-inc compile --provider codex' to generate missing agent files",
+          "  Tip: Re-eject the missing skills from the marketplace to restore their files",
+          "",
+          "",
+        ].join("\n"),
+      );
+    });
   });
 });

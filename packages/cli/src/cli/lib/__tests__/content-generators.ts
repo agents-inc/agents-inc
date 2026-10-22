@@ -18,6 +18,17 @@ export function renderConfigTs(config: Record<string, unknown>): string {
   return `export default ${JSON.stringify(config, null, 2)};\n`;
 }
 
+/**
+ * Loads — the schema passes a key it does not know through — but carries a BigInt there, which
+ * every `JSON.stringify` of the loaded config refuses.
+ */
+export function renderConfigTsWithBigIntField(
+  config: Record<string, unknown>,
+  field: string,
+): string {
+  return `export default { ...${JSON.stringify(config, null, 2)}, ${JSON.stringify(field)}: 1n };\n`;
+}
+
 export function renderAgentYaml(
   name: string,
   description?: string,
@@ -70,7 +81,6 @@ export function renderAgentMd(
   const desc = description ?? `Test ${name} agent`;
   const tools = (options?.tools ?? ["Read", "Write"]).join(", ");
   const body = options?.body ?? `# ${name}\n\n${desc}`;
-  // Compile writes a writing sub-agent's `Stop` hook as one JSON line under this key.
   const hooks = options?.hooks === undefined ? "" : `hooks: ${options.hooks}\n`;
   return `---
 name: ${name}
@@ -134,7 +144,6 @@ export function renderIncompleteMetadataYaml(
   return emitMetadataYaml(omit(completeMetadata(fields), [...omitted]));
 }
 
-/** A metadata.yaml no YAML parser can read. */
 export function renderUnparseableMetadataYaml(): string {
   return `{{{ this is not: valid: yaml: "at all\n`;
 }

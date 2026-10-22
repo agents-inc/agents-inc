@@ -13,10 +13,7 @@ import { verbose } from "../utils/logger";
 import { typedEntries, typedFromEntries, typedKeys } from "../utils/typed-object";
 import { resolveAgentConfigToSkills } from "./stacks/stacks-loader";
 
-export function resolveSkillReference(
-  ref: SkillReference,
-  skills: SkillDefinitionMap,
-): Skill | null {
+function resolveSkillReference(ref: SkillReference, skills: SkillDefinitionMap): Skill | null {
   const definition = skills[ref.id];
   if (!definition) {
     verbose(`Skill '${ref.id}' not found in available skills, skipping`);
@@ -30,10 +27,7 @@ export function resolveSkillReference(
   };
 }
 
-export function resolveSkillReferences(
-  skillRefs: SkillReference[],
-  skills: SkillDefinitionMap,
-): Skill[] {
+function resolveSkillReferences(skillRefs: SkillReference[], skills: SkillDefinitionMap): Skill[] {
   return skillRefs
     .map((ref) => resolveSkillReference(ref, skills))
     .filter((skill): skill is Skill => skill !== null);
@@ -43,35 +37,33 @@ export function buildSkillRefsFromConfig(agentStack: StackAgentConfig): SkillRef
   return resolveAgentConfigToSkills(agentStack);
 }
 
-/** `buildCompileAgents` has already expanded the stack into `skills`. */
-export function resolveAgentSkillRefs(agentConfig: CompileAgentConfig): SkillReference[] {
-  return agentConfig.skills ?? [];
-}
-
 /** Throws when the compile config names an agent no scanned directory defines. */
-// eslint-disable-next-line @typescript-eslint/require-await -- callers await it and tests mock it as async
+// eslint-disable-next-line @typescript-eslint/require-await -- callers await it
 export async function resolveAgents(
   agents: Partial<Record<AgentName, AgentDefinition>>,
   skills: SkillDefinitionMap,
   compileConfig: CompileConfig,
-  _projectRoot: string,
 ): Promise<Partial<Record<AgentName, AgentConfig>>> {
   const entries = typedEntries<AgentName, CompileAgentConfig>(compileConfig.agents).map(
-    ([agentName, agentConfig]) => {
-      const definition = agents[agentName];
-      if (!definition) throw new Error(agentNotFoundError(agentName, agents));
-
-      const skillRefs = resolveAgentSkillRefs(agentConfig);
-      const resolvedSkills = resolveSkillReferences(skillRefs, skills);
-
-      return [
-        agentName,
-        assembleAgentConfig(agentName, definition, agentConfig, resolvedSkills),
-      ] as const;
-    },
+    ([agentName, agentConfig]) =>
+      [agentName, resolveAgent(agentName, agentConfig, agents, skills)] as const,
   );
 
   return typedFromEntries(entries);
+}
+
+function resolveAgent(
+  agentName: AgentName,
+  agentConfig: CompileAgentConfig,
+  agents: Partial<Record<AgentName, AgentDefinition>>,
+  skills: SkillDefinitionMap,
+): AgentConfig {
+  const definition = agents[agentName];
+  if (!definition) throw new Error(agentNotFoundError(agentName, agents));
+
+  // `buildCompileAgents` has already expanded the stack into `skills`.
+  const resolvedSkills = resolveSkillReferences(agentConfig.skills ?? [], skills);
+  return assembleAgentConfig(agentName, definition, agentConfig, resolvedSkills);
 }
 
 const MAX_LISTED_AVAILABLE_AGENTS = 5;

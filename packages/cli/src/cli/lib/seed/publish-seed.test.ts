@@ -1,8 +1,10 @@
 import {
   CONFIGS_URL,
   OUT_OF_DATE,
+  RATE_LIMITED_BODY,
   STORED_ID,
   STORE_REFUSED_BODY,
+  configRateLimitedHandler,
   configRefusedHandlerFor,
   configUnreachableHandler,
   storeRefusedHandler,
@@ -119,13 +121,23 @@ const forgedRefusalHandler = http.post(CONFIGS_URL, () =>
   HttpResponse.text(FORGED_REFUSAL, { status: STORE_REFUSED }),
 );
 
-const rateLimitedHandler = http.post(CONFIGS_URL, () =>
+/** No `retry-after`, so it names no window to wait out and reads as any other refusal. */
+const windowlessRateLimitedHandler = http.post(CONFIGS_URL, () =>
   HttpResponse.text(TOO_MANY_REQUESTS, { status: RATE_LIMITED }),
 );
 
+/** The worker's 429 with another window than the mocks' own. */
+const rateLimitedForHandler = (retryAfter: string) =>
+  http.post(CONFIGS_URL, () =>
+    HttpResponse.text(RATE_LIMITED_BODY, {
+      status: RATE_LIMITED,
+      headers: { "content-type": HONO_TEXT_PLAIN, "retry-after": retryAfter },
+    }),
+  );
+
 /** The control for trimming before the restatement check. */
 const paddedRestatementHandler = http.post(CONFIGS_URL, () =>
-  HttpResponse.text(`  ${TOO_MANY_REQUESTS}\n`, { status: RATE_LIMITED }),
+  HttpResponse.text(`  ${PAYLOAD_TOO_LARGE}\n`, { status: TOO_LARGE }),
 );
 
 const tooLargeHandler = http.post(CONFIGS_URL, () =>
@@ -215,13 +227,13 @@ describe("publishSeedConfig", () => {
   });
 
   it("keeps a refusal whose body only restates its own reason phrase to its status", async () => {
-    configMockServer.use(rateLimitedHandler);
+    configMockServer.use(tooLargeHandler);
 
     const result = await publishSeedConfig(PAYLOAD);
 
     const error = result.ok ? "" : result.error;
-    expect(error).toBe(`Sharing this configuration failed (HTTP ${RATE_LIMITED}).`);
-    expect(error).not.toContain(TOO_MANY_REQUESTS);
+    expect(error).toBe(`Sharing this configuration failed (HTTP ${TOO_LARGE}).`);
+    expect(error).not.toContain(PAYLOAD_TOO_LARGE);
   });
 
   it("keeps one restating around whitespace to its status too, the body being trimmed first", async () => {
@@ -230,18 +242,18 @@ describe("publishSeedConfig", () => {
     const result = await publishSeedConfig(PAYLOAD);
 
     const error = result.ok ? "" : result.error;
-    expect(error).toBe(`Sharing this configuration failed (HTTP ${RATE_LIMITED}).`);
-    expect(error).not.toContain(TOO_MANY_REQUESTS);
+    expect(error).toBe(`Sharing this configuration failed (HTTP ${TOO_LARGE}).`);
+    expect(error).not.toContain(PAYLOAD_TOO_LARGE);
   });
 
   it("does the same for the other restating status, the rule being general", async () => {
-    configMockServer.use(tooLargeHandler);
+    configMockServer.use(windowlessRateLimitedHandler);
 
     const result = await publishSeedConfig(PAYLOAD);
 
     const error = result.ok ? "" : result.error;
-    expect(error).toBe(`Sharing this configuration failed (HTTP ${TOO_LARGE}).`);
-    expect(error).not.toContain(PAYLOAD_TOO_LARGE);
+    expect(error).toBe(`Sharing this configuration failed (HTTP ${RATE_LIMITED}).`);
+    expect(error).not.toContain(TOO_MANY_REQUESTS);
   });
 
   it("keeps a refusal announcing prose and carrying none to its status", async () => {
@@ -346,6 +358,46 @@ describe("publishSeedConfig", () => {
 
     expect(result.ok).toBe(false);
     expect(result.ok ? "" : result.error).toContain(SEED_API_URL);
+  });
+});
+
+/** Mirrored from the editor's `limitReachedNote`, so both front doors say it alike. */
+describe("publishSeedConfig over the store's rate limit", () => {
+  useMockWorker();
+
+  it("says the limit was reached and when to try again, from the worker's own answer", async () => {
+    configMockServer.use(configRateLimitedHandler);
+
+    expect(await publishSeedConfig(PAYLOAD)).toStrictEqual({
+      ok: false,
+      error:
+        "Sharing this configuration failed (HTTP 429): rate limit reached — try again in 1 minute.",
+    });
+  });
+
+  it.each([
+    ["1", "1 second"],
+    ["30", "30 seconds"],
+    ["60", "1 minute"],
+    ["61", "2 minutes"],
+  ])("counts a %s-second window as %s, rounding minutes up", async (retryAfter, wait) => {
+    configMockServer.use(rateLimitedForHandler(retryAfter));
+
+    const result = await publishSeedConfig(PAYLOAD);
+
+    expect(result.ok ? "" : result.error).toBe(
+      `Sharing this configuration failed (HTTP 429): rate limit reached — try again in ${wait}.`,
+    );
+  });
+
+  it("names no window where the worker's is unreadable", async () => {
+    configMockServer.use(rateLimitedForHandler("Wed, 21 Oct 2026 07:28:00 GMT"));
+
+    const result = await publishSeedConfig(PAYLOAD);
+
+    expect(result.ok ? "" : result.error).toBe(
+      `Sharing this configuration failed (HTTP ${RATE_LIMITED}).`,
+    );
   });
 });
 

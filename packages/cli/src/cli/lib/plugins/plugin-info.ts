@@ -1,19 +1,24 @@
 import { readdir } from "fs/promises";
 import type { Dirent } from "fs";
 
-import { DEFAULT_PLUGIN_NAME } from "../../consts";
-import { loadProjectConfig, type LoadedProjectConfig } from "../configuration";
+import { DEFAULT_PLUGIN_NAME, type Provider } from "../../consts";
+import { loadProjectConfig } from "../configuration";
+import { loadProjectConfigFromDir } from "../configuration/project-config";
 import {
+  declaresNoContent,
+  deriveInstallMode,
   detectInstallation,
+  detectInstallations,
+  installBaseDir,
   isHomeDirectory,
   resolveInstallPaths,
   INSTALL_MODE_LABELS,
   type Installation,
   type InstallMode,
 } from "../installation";
-import type { SkillScope } from "../../types/config";
-
-const AGENT_FILE_EXTENSION = ".md";
+import type { DetectedInstallation } from "../installation/detect-installations";
+import { agentCodec, agentsDir } from "../installation/install-layout";
+import type { ProjectConfig, SkillScope } from "../../types/config";
 
 export type InstallationInfo = {
   mode: InstallMode;
@@ -28,27 +33,92 @@ export async function getInstallationInfo(): Promise<InstallationInfo | null> {
   const installation = await detectInstallation();
   if (!installation) return null;
 
-  const loaded = await loadProjectConfig(installation.projectDir);
-  const agentDirCounts = await countCompiledAgentsPerScope(
-    installation,
-    installedScopes(installation),
-  );
+  const [loaded, agentDirCounts] = await Promise.all([
+    loadProjectConfig(installation.projectDir),
+    countCompiledAgentsPerScope(installation, installedScopes(installation)),
+  ]);
 
   return {
     mode: installation.mode,
     name: loaded?.config.name || DEFAULT_PLUGIN_NAME,
-    skillCount: countManagedSkills(loaded),
+    skillCount: loaded ? countManagedSkills(loaded.config) : 0,
     agentCount: sumCounts(agentDirCounts),
     configPath: installation.configPath,
     agentDirs: agentDirCounts.filter(hasEntries).map((scopeCount) => scopeCount.dir),
   };
 }
 
-/** Counted from the config, not the plugin registry or skills dir, which each hold only part. */
-function countManagedSkills(loaded: LoadedProjectConfig | null): number {
-  if (!loaded) return 0;
+/** One provider's installation, counted in its own folders and its own agent format. */
+export type ProviderInstallation = {
+  provider: Provider;
+  mode: InstallMode;
+  skillCount: number;
+  agentCount: number;
+  marketplace?: string;
+};
 
-  const managed = loaded.config.skills.filter((skill) => !skill.excluded);
+/**
+ * One per provider installed where a bare `init` looks — the project's, else the global ones — in
+ * roster order. Each is read under its own provider, never through the run's `providerInUse`.
+ */
+export async function getInstallationsByProvider(cwd: string): Promise<ProviderInstallation[]> {
+  const found = await detectInstallations(cwd);
+  const loaded = await Promise.all(found.map((installed) => withItsConfig(installed, cwd)));
+  const inView = projectsOwnElseGlobal(loaded.filter(declaresContent));
+
+  return Promise.all(inView.map((installed) => describeInstallation(installed, cwd)));
+}
+
+type LoadedInstallation = DetectedInstallation & { config: ProjectConfig };
+
+/** A config declaring nothing is not an installation, as `detectInstallation` holds too. */
+function declaresContent(installed: LoadedInstallation | null): installed is LoadedInstallation {
+  return installed !== null && !declaresNoContent(installed.config);
+}
+
+/** Global installations stand in only where the project holds none of its own. */
+function projectsOwnElseGlobal(installed: LoadedInstallation[]): LoadedInstallation[] {
+  const inProject = installed.filter(({ scope }) => scope === "project");
+  return inProject.length > 0 ? inProject : installed;
+}
+
+/** ABORT: an unloadable config throws, as `detectInstallation` beside it would. */
+async function withItsConfig(
+  installed: DetectedInstallation,
+  cwd: string,
+): Promise<LoadedInstallation | null> {
+  const loaded = await loadProjectConfigFromDir(
+    installBaseDir(cwd, installed.scope),
+    installed.provider,
+  );
+  return loaded === null ? null : { ...installed, config: loaded.config };
+}
+
+/** A global installation's agents are global; a project's sit at both scopes. */
+async function describeInstallation(
+  { provider, scope, config }: LoadedInstallation,
+  cwd: string,
+): Promise<ProviderInstallation> {
+  const scopes: SkillScope[] = scope === "global" ? ["global"] : ["global", "project"];
+  const { extension } = agentCodec(provider);
+  const counts = await Promise.all(
+    scopes.map((agentScope) =>
+      countDirEntries(agentsDir(provider, agentScope, cwd), isCompiledAgentFileIn(extension)),
+    ),
+  );
+
+  return {
+    provider,
+    mode: deriveInstallMode(config.skills),
+    skillCount: countManagedSkills(config),
+    agentCount: counts.reduce((total, count) => total + count, 0),
+    ...(config.marketplace !== undefined && { marketplace: config.marketplace }),
+  };
+}
+
+/** Counted from the config, not the plugin registry or skills dir, which each hold only part. */
+function countManagedSkills(config: ProjectConfig): number {
+  const managed = config.skills.filter((skill) => !skill.excluded);
   return new Set(managed.map((skill) => skill.id)).size;
 }
 
@@ -77,16 +147,18 @@ async function countCompiledAgentsPerScope(
   return Promise.all(
     scopes.map(async (scope) => {
       const dir = resolveInstallPaths(installation.projectDir, scope).agentsDir;
-      return { dir, count: await countDirEntries(dir, isCompiledAgentFile) };
+      return {
+        dir,
+        count: await countDirEntries(dir, isCompiledAgentFileIn(agentCodec("claude").extension)),
+      };
     }),
   );
 }
 
-function isCompiledAgentFile(entry: Dirent): boolean {
-  return entry.isFile() && entry.name.endsWith(AGENT_FILE_EXTENSION);
+function isCompiledAgentFileIn(extension: string): (entry: Dirent) => boolean {
+  return (entry) => entry.isFile() && entry.name.endsWith(extension);
 }
 
-/** 0 when the directory is missing or unreadable. */
 async function countDirEntries(dir: string, pred: (entry: Dirent) => boolean): Promise<number> {
   try {
     const entries = await readdir(dir, { withFileTypes: true });

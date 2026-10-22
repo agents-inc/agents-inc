@@ -1,5 +1,5 @@
 import os from "os";
-import { unique } from "remeda";
+import { partition, unique } from "remeda";
 import path from "path";
 import {
   EJECT_SOURCE,
@@ -10,6 +10,7 @@ import {
   SKILLS_DIR_PATH,
   LOCAL_PSEUDO_CATEGORY,
   STANDARD_FILES,
+  type Provider,
 } from "../../consts";
 import { defaultCategories } from "../configuration/default-categories";
 import { defaultStacks } from "../configuration/default-stacks";
@@ -31,6 +32,7 @@ import type {
   SkillRulesConfig,
   SkillScope,
   Stack,
+  StackAgentConfig,
   Category,
 } from "../../types";
 import { getErrorMessage } from "../../utils/errors";
@@ -73,15 +75,17 @@ import { initializeMatrix, matrix as currentMatrix } from "../matrix/matrix-prov
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 
 /** `"fetch"` refuses a non-default marketplace without a valid manifest; `"upkeep"` goes on. */
-export type SourceLoadPurpose = "fetch" | "upkeep";
+type SourceLoadPurpose = "fetch" | "upkeep";
 
-export type SourceLoadOptions = {
+type SourceLoadOptions = {
   /** Defaults to `"fetch"`. */
   purpose?: SourceLoadPurpose;
   /** Defaults to `"stored"`, so the environment rung is never reached by omission. */
   caller?: SourceCaller;
   sourceFlag?: string;
   projectDir?: string;
+  /** Whose config names the marketplace, where a scope holds two installations. */
+  provider?: Provider;
   devMode?: boolean;
   skipExtraSources?: boolean;
   /** For the default source, skips the clone so the load stays offline; `sourcePath` is empty. */
@@ -93,6 +97,8 @@ export type SourceLoadResult = {
   sourceConfig: ResolvedConfig;
   sourcePath: string;
   isLocal: boolean;
+  /** The marketplace could not be reached, so `sourcePath` is its cached copy, of unknown age. */
+  unreachable: boolean;
   marketplace?: string;
   /** The only skills `sourcePath` has files for; the matrix also holds local and global ones. */
   marketplaceSkillIds: ReadonlySet<SkillId>;
@@ -114,12 +120,13 @@ async function loadCatalogue(options: SourceLoadOptions): Promise<SourceLoadResu
     caller = "stored",
     sourceFlag,
     projectDir,
+    provider,
     devMode = false,
     matrixOnly = false,
   } = options;
 
   // Aborts on an unreadable config: every skill resolves against the marketplace named here.
-  const sourceConfig = await resolveSource({ caller, flag: sourceFlag, projectDir });
+  const sourceConfig = await resolveSource({ caller, flag: sourceFlag, projectDir, provider });
   const { source } = sourceConfig;
 
   verbose(`Loading skills from source: ${source}`);
@@ -134,12 +141,7 @@ async function loadCatalogue(options: SourceLoadOptions): Promise<SourceLoadResu
     marketplaceSkillIds: new Set(typedKeys<SkillId>(catalogue.matrix.skills)),
   };
 
-  // Load global local skills first, then project local skills — project wins on conflict
-  const homeDir = os.homedir();
-  if (!isHomeDirectory(resolvedProjectDir)) {
-    result.matrix = await mergeDiscoveredLocalSkills(result.matrix, homeDir, "global");
-  }
-  result.matrix = await mergeDiscoveredLocalSkills(result.matrix, resolvedProjectDir, "project");
+  result.matrix = await mergeLocalSkills(result.matrix, resolvedProjectDir);
   await seatGlobalInstallationSkills(result.matrix, source, purpose);
 
   if (!options.skipExtraSources) {
@@ -282,6 +284,9 @@ function copyOfBuiltInMatrix(): MergedSkillsMatrix {
 
 type BaseLoadOptions = Required<Pick<SourceLoadOptions, "purpose" | "devMode" | "matrixOnly">>;
 
+/** A `matrixOnly` load of the default source reads the built-in matrix and fetches nothing. */
+const NOTHING_FETCHED = { path: "", unreachable: false } as const;
+
 async function resolveBaseResult(
   sourceConfig: ResolvedConfig,
   { purpose, devMode, matrixOnly }: BaseLoadOptions,
@@ -290,12 +295,13 @@ async function resolveBaseResult(
   const { source } = sourceConfig;
   if (isDefaultSource(source) && !devMode) {
     // Default source: BUILT_IN_MATRIX, still fetching (cached) for sourcePath unless matrixOnly.
-    const sourcePath = matrixOnly ? "" : (await fetchFromSource(source)).path;
+    const fetched = matrixOnly ? NOTHING_FETCHED : await fetchFromSource(source);
     return {
       matrix: copyOfBuiltInMatrix(),
       sourceConfig,
-      sourcePath,
+      sourcePath: fetched.path,
       isLocal: false,
+      unreachable: fetched.unreachable,
       ...(sourceConfig.marketplace !== undefined && { marketplace: sourceConfig.marketplace }),
     };
   }
@@ -405,6 +411,17 @@ function configuredLabel(sourceConfig: ResolvedConfig): MarketplaceLabels {
   return sourceConfig.marketplace === undefined ? {} : { marketplace: sourceConfig.marketplace };
 }
 
+/** Global local skills first, then the project's, so the project's win on conflict. */
+async function mergeLocalSkills(
+  matrix: MergedSkillsMatrix,
+  projectDir: string,
+): Promise<MergedSkillsMatrix> {
+  const withGlobal = isHomeDirectory(projectDir)
+    ? matrix
+    : await mergeDiscoveredLocalSkills(matrix, os.homedir(), "global");
+  return mergeDiscoveredLocalSkills(withGlobal, projectDir, "project");
+}
+
 /** Merges any discovered local skills for `dir` into the matrix, logging the find. */
 async function mergeDiscoveredLocalSkills(
   matrix: MergedSkillsMatrix,
@@ -437,6 +454,7 @@ async function loadFromLocal(
     sourceConfig,
     sourcePath: skillsPath,
     isLocal: true,
+    unreachable: false,
     ...labels,
   };
 }
@@ -460,6 +478,7 @@ async function loadFromRemote(
     sourceConfig,
     sourcePath: fetchResult.path,
     isLocal: false,
+    unreachable: fetchResult.unreachable,
     ...labels,
   };
 }
@@ -521,35 +540,41 @@ type SourceTaxonomy = {
 
 /** Either file may be absent; categories layer over the built-ins, rules come back as they are. */
 async function loadSourceTaxonomy(basePath: string): Promise<SourceTaxonomy> {
-  const sourceCategoriesPath = path.join(basePath, SKILL_CATEGORIES_PATH);
-  const sourceRulesPath = path.join(basePath, SKILL_RULES_PATH);
-  const hasSourceCategories = await fileExists(sourceCategoriesPath);
-  const hasSourceRules = await fileExists(sourceRulesPath);
+  const sourceCategories = await loadSourceCategories(basePath);
+  const sourceRules = await loadSourceRules(basePath);
 
-  const sourceCategories = hasSourceCategories
-    ? await loadSkillCategories(sourceCategoriesPath)
-    : undefined;
-  if (sourceCategories) {
-    verbose(
-      `Loaded source categories: ${sourceCategoriesPath} (${typedKeys(sourceCategories).length} categories)`,
-    );
-  }
-  const categories: CategoryMap = sourceCategories
-    ? { ...defaultCategories, ...sourceCategories }
-    : defaultCategories;
-
-  const sourceRules = hasSourceRules ? await loadSkillRules(sourceRulesPath) : undefined;
-  if (sourceRules) {
-    verbose(`Loaded source rules: ${sourceRulesPath}`);
-  }
-
-  if (hasSourceCategories || hasSourceRules) {
+  if (sourceCategories !== undefined || sourceRules !== undefined) {
     verbose(`Matrix merged: CLI (${typedKeys(defaultCategories).length} categories) + source`);
   } else {
     verbose(`Matrix from CLI only (source has no categories/rules files)`);
   }
 
+  const categories: CategoryMap = sourceCategories
+    ? { ...defaultCategories, ...sourceCategories }
+    : defaultCategories;
   return { categories, sourceRules };
+}
+
+/** Undefined when the source ships no categories file. */
+async function loadSourceCategories(basePath: string): Promise<CategoryMap | undefined> {
+  const categoriesPath = path.join(basePath, SKILL_CATEGORIES_PATH);
+  if (!(await fileExists(categoriesPath))) return undefined;
+
+  const categories = await loadSkillCategories(categoriesPath);
+  verbose(
+    `Loaded source categories: ${categoriesPath} (${typedKeys(categories).length} categories)`,
+  );
+  return categories;
+}
+
+/** Undefined when the source ships no rules file. */
+async function loadSourceRules(basePath: string): Promise<SkillRulesConfig | undefined> {
+  const rulesPath = path.join(basePath, SKILL_RULES_PATH);
+  if (!(await fileExists(rulesPath))) return undefined;
+
+  const rules = await loadSkillRules(rulesPath);
+  verbose(`Loaded source rules: ${rulesPath}`);
+  return rules;
 }
 
 /** Every skill id the shipped catalogue owns — the ids no other marketplace may take. */
@@ -641,25 +666,8 @@ export function convertStackToResolvedStack(stack: Stack): ResolvedStack {
   const { declared, undeclared } = declaredAgentsIn(stack);
   if (undeclared.length > 0) warn(undeclaredAgentsWarning(stack, undeclared));
 
-  const agentConfigs = declared.flatMap((agentId) => {
-    const agentConfig = stack.agents[agentId];
-    return agentConfig ? [{ agentId, agentConfig }] : [];
-  });
-
-  const skills = typedFromEntries(
-    agentConfigs.map(
-      ({ agentId, agentConfig }) => [agentId, resolveStackAgentSkills(agentConfig)] as const,
-    ),
-  );
-
-  // First-seen order, filtered by the same matrix question `resolveStackAgentSkills` asks.
-  const named = unique(
-    agentConfigs.flatMap(({ agentConfig }) =>
-      resolveAgentConfigToSkills(agentConfig).map((ref) => ref.id),
-    ),
-  );
-  const allSkillIds = named.filter((id) => id in currentMatrix.skills);
-  const withdrawn = named.filter((id) => !(id in currentMatrix.skills));
+  const agentConfigs = agentConfigsFor(stack, declared);
+  const [allSkillIds, withdrawn] = partition(namedSkillIds(agentConfigs), isInCurrentCatalogue);
   if (withdrawn.length > 0) warn(withdrawnSkillsWarning(stack, withdrawn));
 
   verbose(
@@ -670,26 +678,53 @@ export function convertStackToResolvedStack(stack: Stack): ResolvedStack {
     id: stack.id,
     name: stack.name,
     description: stack.description,
-    skills,
+    skills: skillsByAgent(agentConfigs),
     allSkillIds,
     philosophy: stack.philosophy || "",
   };
 }
 
-/** Per-category skill ids for one stack agent, keeping only ids present in the current matrix. */
+type StackAgentEntry = { agentId: AgentName; agentConfig: StackAgentConfig };
+
+function agentConfigsFor(stack: Stack, declared: readonly AgentName[]): StackAgentEntry[] {
+  return declared.flatMap((agentId) => {
+    const agentConfig = stack.agents[agentId];
+    return agentConfig ? [{ agentId, agentConfig }] : [];
+  });
+}
+
+/** First-seen order. */
+function namedSkillIds(agentConfigs: StackAgentEntry[]): SkillId[] {
+  return unique(
+    agentConfigs.flatMap(({ agentConfig }) =>
+      resolveAgentConfigToSkills(agentConfig).map((ref) => ref.id),
+    ),
+  );
+}
+
+/** The one question a stack's skills are filtered by, for the stack and for each agent's rows. */
+function isInCurrentCatalogue(id: SkillId): boolean {
+  return id in currentMatrix.skills;
+}
+
+function skillsByAgent(agentConfigs: StackAgentEntry[]): ResolvedStack["skills"] {
+  return typedFromEntries(
+    agentConfigs.map(
+      ({ agentId, agentConfig }) => [agentId, resolveStackAgentSkills(agentConfig)] as const,
+    ),
+  );
+}
+
+/** A category left with no carried skill is dropped. */
 function resolveStackAgentSkills(
   agentConfig: Partial<Record<Category, SkillAssignment[]>>,
 ): Partial<Record<Category, SkillId[]>> {
-  const byCategory = typedEntries<Category, SkillAssignment[]>(agentConfig)
-    .map(([category, assignments]) => ({
-      category,
+  const carriedByCategory = typedEntries<Category, SkillAssignment[]>(agentConfig).map(
+    ([category, assignments]) =>
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
-      validIds: (assignments ?? []).filter((a) => a.id in currentMatrix.skills).map((a) => a.id),
-    }))
-    .filter(({ validIds }) => validIds.length > 0);
-  return typedFromEntries(
-    byCategory.map(({ category, validIds }) => [category, validIds] as const),
+      [category, (assignments ?? []).map((a) => a.id).filter(isInCurrentCatalogue)] as const,
   );
+  return typedFromEntries(carriedByCategory.filter(([, ids]) => ids.length > 0));
 }
 
 /** `local` is never a defined category. */
@@ -784,7 +819,6 @@ function ensureCategoryDefined(
   category: CategoryPath,
   domain: Domain,
 ): void {
-  // `local` is a pseudo-category and never defined.
   if (category === LOCAL_PSEUDO_CATEGORY) return;
   if (matrix.categories[category]) return;
 

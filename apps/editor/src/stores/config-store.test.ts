@@ -18,6 +18,7 @@ import { setAnalyticsSink } from "@/lib/analytics/track"
 import {
   freshEntry,
   isEjectOnly,
+  stackSelection,
   unknownSavedIds,
   useConfigStore,
   withoutWrites,
@@ -819,7 +820,6 @@ describe("an added skill's install mode", () => {
   })
 })
 
-// The roster tints the sub-agents a selection just reached.
 describe("the pulse a selection sends through the roster", () => {
   const pulsing = () => useUiStore.getState().flashedAgentIds
 
@@ -908,6 +908,94 @@ describe("replacing the whole selection", () => {
 
     expect(held().stackId).toBe(STACK_ID)
     expect(held().skills).toStrictEqual(shared.skills)
+  })
+})
+
+// What `applyStack` writes, so a stack recognised elsewhere opens as applied.
+describe("stackSelection", () => {
+  afterEach(() => {
+    useConfigStore.getState().reset()
+  })
+
+  it("is the selection applying the stack leaves", () => {
+    useConfigStore.getState().applyStack(STACK_ID)
+    const { stackId, skills, remembered, agents, description } = held()
+
+    expect(stackSelection(STACK_ID)).toStrictEqual({
+      stackId,
+      skills,
+      remembered,
+      agents,
+      description,
+    })
+  })
+
+  it("names nothing for a stack the catalogue does not carry", () => {
+    expect(stackSelection("retired-stack")).toBeUndefined()
+  })
+})
+
+// The configuration's own words, which `init --from` writes into config.ts.
+describe("the description a configuration carries", () => {
+  const DESCRIPTION = "The house web app, as installed."
+
+  const described = () =>
+    persistedConfig({
+      skills: { [KNOWN_SKILL]: skillEntry() },
+      description: DESCRIPTION,
+    })
+
+  afterEach(() => {
+    useConfigStore.getState().reset()
+  })
+
+  it("arrives with a shared configuration", () => {
+    useConfigStore.getState().importConfig(described())
+
+    expect(held().description).toBe(DESCRIPTION)
+  })
+
+  it("arrives with a saved stack", () => {
+    useConfigStore.getState().applySavedStack(described())
+
+    expect(held().description).toBe(DESCRIPTION)
+  })
+
+  it("stays through an edit to the selection", () => {
+    useConfigStore.getState().importConfig(described())
+
+    useConfigStore.getState().toggleSkill(OTHER_CATEGORY_SKILL)
+
+    expect(held().description).toBe(DESCRIPTION)
+  })
+
+  it.each([
+    ["applying a stack", () => useConfigStore.getState().applyStack(STACK_ID)],
+    ["Start from scratch", () => useConfigStore.getState().applyStack(null)],
+    [
+      "a configuration arriving without one",
+      () => useConfigStore.getState().importConfig(persistedConfig()),
+    ],
+    [
+      "a saved stack without one",
+      () => useConfigStore.getState().applySavedStack(persistedConfig()),
+    ],
+  ])("goes with %s", (_label, replace) => {
+    useConfigStore.getState().importConfig(described())
+
+    replace()
+
+    expect(held().description).toBeUndefined()
+  })
+
+  it("is kept in this browser's slot and read back", async () => {
+    const first = await readingASlot(null)
+    first.useConfigStore.getState().applySavedStack(described())
+
+    const second = await readingASlot(first.writes.at(-1)!)
+    await second.readSavedConfig()
+
+    expect(second.useConfigStore.getState().description).toBe(DESCRIPTION)
   })
 })
 

@@ -2,13 +2,8 @@ import os from "os";
 import path from "path";
 import { mkdtemp } from "fs/promises";
 
-import { isDeepEqual, omit } from "remeda";
-import { seedExternalSkillSchema } from "@workspace/matrix/seed";
-import {
-  carriedSkillAuthor,
-  carriedSkillMetadata,
-  withInstalledName,
-} from "@workspace/compile/carried-skill";
+import { externalIdsNamingNoDirectory, seedExternalSkillSchema } from "@workspace/matrix/seed";
+import { carriedSkillAuthor, installedSkillTree } from "@workspace/compile/carried-skill";
 
 import { GITHUB_SOURCE, LOCAL_SKILLS_PATH, STANDARD_FILES } from "../../consts.js";
 import { resolveInstallPaths } from "../installation/install-base-dir.js";
@@ -16,22 +11,25 @@ import { parseFrontmatter, readSkillMetadata } from "../loading/loader.js";
 import { getCategoryDomain } from "../matrix/matrix-provider.js";
 import { claimSlug } from "../matrix/skill-resolution.js";
 import { validateSkillPath } from "../skills/skill-copier.js";
-import {
-  injectForkedFromMetadata,
-  readForkedFromMetadata,
-  readLocalSkillMetadata,
-  writeMetadataYaml,
-} from "../skills/skill-metadata.js";
+import { readForkedFromMetadata } from "../skills/skill-metadata.js";
 import { defaultUsageGuidance } from "../stacks/stacks-loader.js";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix.js";
-import { computeFileHash } from "../versioning.js";
-import { copy, directoryExists, glob, readFile, remove, writeFile } from "../../utils/fs.js";
+import { getCurrentDate } from "../versioning.js";
+import {
+  copy,
+  directoryExists,
+  fileExists,
+  glob,
+  readFile,
+  remove,
+  writeFile,
+} from "../../utils/fs.js";
 import { typedEntries, typedKeys } from "../../utils/typed-object.js";
 
 import type { SkillScope } from "../../types/config.js";
 import type { Domain, MergedSkillsMatrix, ResolvedSkill } from "../../types/matrix.js";
 import type { CategoryPath, SkillId, SkillSlug } from "../../types/skills.js";
-import type { ForkedFromMetadata, LocalSkillMetadata } from "../skills/skill-metadata.js";
+import type { ForkedFromMetadata } from "../skills/skill-metadata.js";
 import type {
   SeedExternalSkill,
   SeedPayload,
@@ -113,10 +111,6 @@ function externalSlug(id: SkillId): SkillSlug {
   return id as SkillSlug;
 }
 
-function repoRef(repo: string): string {
-  return `${GITHUB_SOURCE.GITHUB_PREFIX}${repo}`;
-}
-
 function externalSkillDir(id: SkillId, scope: SkillScope, projectDir: string): string {
   return path.join(resolveInstallPaths(projectDir, scope).skillsDir, id);
 }
@@ -164,15 +158,33 @@ function seatExternalSkill(
   return [install];
 }
 
+/** Quoted, so an empty id prints as something and an escape is spelled out rather than sent. */
+function notADirectoryNameError(ids: string[]): string {
+  return [
+    "This configuration cannot be installed: these skills travel inside it under ids that are " +
+      "not a single directory name:",
+    ...ids.map((id) => `  ${JSON.stringify(id)}`),
+    "A skill id is the directory the skill is written into, so an id holding a path separator, " +
+      "or naming '.' or '..', would be written somewhere other than a directory of its own, " +
+      "and one holding a control character would hand it to the terminal wherever that " +
+      "directory is named. Re-share it with each skill above added again, which mints an id — " +
+      "'external-<category>-<name>' — that names one directory.",
+  ].join("\n");
+}
+
 /**
- * Writes carried skills into `matrix` in place so the decode can resolve them. Both refusals run
- * before anything is seated, so a refused run leaves the matrix untouched.
+ * Writes carried skills into `matrix` in place so the decode can resolve them. Every refusal runs
+ * before anything is seated, so a refused run leaves the matrix untouched. The id is checked first:
+ * every path a carried skill is written to, scratch copies included, is joined from it.
  */
 export function registerExternalSkills(
   payload: SeedPayload,
   matrix: MergedSkillsMatrix,
   projectDir: string,
 ): ExternalSkillInstall[] {
+  const notDirectoryNames = externalIdsNamingNoDirectory(payload);
+  if (notDirectoryNames.length > 0) throw new Error(notADirectoryNameError(notDirectoryNames));
+
   const externals = selectedExternals(payload);
   const asPlugin = askedForAsPlugin(externals);
   const colliding = claimingACatalogueId(externals, matrix);
@@ -228,39 +240,91 @@ function changedIds(written: WrittenSkill[]): SkillId[] {
   return written.filter(({ changed }) => changed).map(({ id }) => id);
 }
 
+/** Writes only the files whose bytes differ, so an unchanged skill keeps its mtimes. */
 async function writeExternalSkill(install: ExternalSkillInstall): Promise<WrittenSkill> {
-  const before = await readSkillDir(install.skillDir);
+  const files = typedEntries<string, string>(await treeToWrite(install));
+  refuseEscapingPaths(install.skillDir, files);
 
-  await writeSkillTree(install);
-  await writeSkillManifest(install);
-  await registerSkillOnDisk(install);
-
-  return { id: install.id, changed: !isDeepEqual(before, await readSkillDir(install.skillDir)) };
+  const written = await Promise.all(
+    files.map(([relativePath, contents]) =>
+      writeIfChanged(path.join(install.skillDir, relativePath), contents),
+    ),
+  );
+  return { id: install.id, changed: written.some(Boolean) };
 }
 
-type SkillDirReading = { files: SeedSkillTree; metadata: Record<string, unknown> | null };
+/** The keys came off the wire, so every path is refused before any file is written. */
+function refuseEscapingPaths(skillDir: string, files: [string, string][]): void {
+  for (const [relativePath] of files) {
+    validateSkillPath(path.join(skillDir, relativePath), skillDir, relativePath);
+  }
+}
+
+/** The bytes the editor previews, dated today unless nothing in them would change. */
+async function treeToWrite(install: ExternalSkillInstall): Promise<SeedSkillTree> {
+  const shipped = await withShippedMetadata(install);
+  const unchanged = await treeAsInstalled(install, shipped);
+  return unchanged ?? carriedTree(install, shipped, getCurrentDate());
+}
 
 /**
- * Excludes the `forkedFrom` date, which every write moves. Metadata is compared as data because
- * the stamp's position in the file differs between a first and second write.
+ * The tree dated as the stamp on disk is, where that makes its metadata the bytes already there:
+ * a fresh date would otherwise make an unchanged skill look rewritten.
  */
-async function readSkillDir(skillDir: string): Promise<SkillDirReading | null> {
-  if (!(await directoryExists(skillDir))) return null;
+async function treeAsInstalled(
+  install: ExternalSkillInstall,
+  shipped: SeedExternalSkill,
+): Promise<SeedSkillTree | null> {
+  const recorded = (await readForkedFromMetadata(install.skillDir))?.date;
+  if (recorded === undefined) return null;
 
-  const files = omit(await readSkillTree(skillDir), [STANDARD_FILES.METADATA_YAML]);
-  return { files, metadata: undated(await readLocalSkillMetadata(skillDir)) };
+  const tree = await carriedTree(install, shipped, recorded);
+  const onDisk = await bytesOnDisk(path.join(install.skillDir, STANDARD_FILES.METADATA_YAML));
+  return tree[STANDARD_FILES.METADATA_YAML] === onDisk ? tree : null;
 }
 
-function undated(metadata: LocalSkillMetadata | null): Record<string, unknown> | null {
-  if (metadata?.forkedFrom === undefined) return metadata;
-  return { ...metadata, forkedFrom: omit(metadata.forkedFrom, ["date"]) };
+function carriedTree(
+  install: ExternalSkillInstall,
+  skill: SeedExternalSkill,
+  date: string,
+): Promise<SeedSkillTree> {
+  return installedSkillTree({
+    id: install.id,
+    skill,
+    domain: install.domain,
+    usageGuidance: defaultUsageGuidance(install.skill.categoryId),
+    date,
+  });
+}
+
+/** Where the payload carries no metadata, the copy on disk stands for what was shipped. */
+async function withShippedMetadata(install: ExternalSkillInstall): Promise<SeedExternalSkill> {
+  if (Object.hasOwn(install.skill.files, STANDARD_FILES.METADATA_YAML)) return install.skill;
+
+  const onDisk = await bytesOnDisk(path.join(install.skillDir, STANDARD_FILES.METADATA_YAML));
+  if (onDisk === null) return install.skill;
+
+  return {
+    ...install.skill,
+    files: { ...install.skill.files, [STANDARD_FILES.METADATA_YAML]: onDisk },
+  };
+}
+
+async function bytesOnDisk(filePath: string): Promise<string | null> {
+  return (await fileExists(filePath)) ? readFile(filePath) : null;
+}
+
+async function writeIfChanged(filePath: string, contents: string): Promise<boolean> {
+  if ((await bytesOnDisk(filePath)) === contents) return false;
+  await writeFile(filePath, contents);
+  return true;
 }
 
 type BlockedDestination = { id: SkillId; skillDir: string };
 
 /**
- * Refuses when a destination holds content no shared configuration carried. Only
- * {@link registerSkillOnDisk} writes `forkedFrom.path`, so its presence marks a carried directory.
+ * Refuses when a destination holds content no shared configuration carried. Only a carried skill's
+ * install writes `forkedFrom.path`, so its presence marks a carried directory.
  */
 export async function refuseUncarriedDestinations(installs: ExternalSkillInstall[]): Promise<void> {
   const judged = await Promise.all(installs.map(judgeDestination));
@@ -289,49 +353,6 @@ function uncarriedDestinationError(blocked: BlockedDestination[]): string {
   ].join("\n");
 }
 
-/** The keys came off the wire, so each path is guarded against escaping the skill directory. */
-async function writeSkillTree(install: ExternalSkillInstall): Promise<void> {
-  for (const [relativePath, contents] of Object.entries(install.skill.files)) {
-    const filePath = path.join(install.skillDir, relativePath);
-    validateSkillPath(filePath, install.skillDir, relativePath);
-    await writeFile(filePath, contents);
-  }
-}
-
-async function writeSkillManifest(install: ExternalSkillInstall): Promise<void> {
-  const manifestPath = path.join(install.skillDir, STANDARD_FILES.SKILL_MD);
-  await writeFile(
-    manifestPath,
-    withInstalledName(await readFile(manifestPath), {
-      id: install.id,
-      description: install.skill.description,
-    }),
-  );
-}
-
-/** `forkedFrom` records repository and path, the only record a re-share can rebuild from. */
-async function registerSkillOnDisk(install: ExternalSkillInstall): Promise<void> {
-  const metadataPath = path.join(install.skillDir, STANDARD_FILES.METADATA_YAML);
-  const shipped = await readLocalSkillMetadata(install.skillDir);
-
-  await writeMetadataYaml(
-    metadataPath,
-    carriedSkillMetadata({
-      id: install.id,
-      skill: install.skill,
-      domain: install.domain,
-      usageGuidance: defaultUsageGuidance(install.skill.categoryId),
-      shipped,
-    }),
-  );
-  await injectForkedFromMetadata(
-    install.skillDir,
-    install.id,
-    await computeFileHash(path.join(install.skillDir, STANDARD_FILES.SKILL_MD)),
-    { source: repoRef(install.skill.repo), path: install.skill.path },
-  );
-}
-
 export type OwnedSkillDir = { id: string; skillDir: string; provenance: ForkedFromMetadata };
 
 export type ContentReading = {
@@ -352,7 +373,7 @@ function uncarryableContentMessage(id: string, reason: string): string {
   return `${id} travels inside a shared configuration, and ${reason}`;
 }
 
-/** The inverse of {@link repoRef}; a non-GitHub ref answers nothing, for the caller to refuse. */
+/** The inverse of the stamp's `github:` source; any other ref answers nothing, to be refused. */
 function repoFromRef(ref: string | undefined): string | undefined {
   if (ref === undefined || !ref.startsWith(GITHUB_SOURCE.GITHUB_PREFIX)) return undefined;
   return ref.slice(GITHUB_SOURCE.GITHUB_PREFIX.length);

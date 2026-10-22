@@ -13,6 +13,7 @@ import {
 import { readFile, writeFile } from "../../utils/fs";
 import { getErrorMessage } from "../../utils/errors";
 import { EXIT_CODES } from "../../lib/exit-codes";
+import { readSourceRepoConfig } from "../../lib/configuration/config";
 import { loadMarketplaceMatrix } from "../../lib/loading";
 import {
   generateMarketplace,
@@ -148,7 +149,40 @@ export default class BuildMarketplace extends BaseCommand {
     nameOverride?: string,
   ): Promise<MarketplaceIdentity> {
     const packageJsonPath = path.join(projectRoot, STANDARD_FILES.PACKAGE_JSON);
+    const { name, version, description, author } = await this.readPackageJson(
+      projectRoot,
+      packageJsonPath,
+    );
 
+    if (version.trim() === "") {
+      this.error(marketplaceHasNoVersion(packageJsonPath), { exit: EXIT_CODES.ERROR });
+    }
+
+    const owner = parseAuthor(author);
+    if (owner.name.trim() === "") {
+      this.error(marketplaceOwnerHasNoName(packageJsonPath), { exit: EXIT_CODES.ERROR });
+    }
+
+    const resolvedName = this.resolvePublishableName(name, nameOverride, packageJsonPath);
+
+    const reservedError = validateMarketplaceName(resolvedName, name, RESERVED_NAME_WAY_OUT);
+    if (reservedError) {
+      this.error(reservedError, { exit: EXIT_CODES.ERROR });
+    }
+
+    return {
+      name: resolvedName,
+      version,
+      description,
+      ownerName: owner.name,
+      ...(owner.email !== undefined && { ownerEmail: owner.email }),
+    };
+  }
+
+  private async readPackageJson(
+    projectRoot: string,
+    packageJsonPath: string,
+  ): Promise<PackageJson> {
     let rawContent: string;
     try {
       rawContent = await readFile(packageJsonPath);
@@ -177,31 +211,7 @@ export default class BuildMarketplace extends BaseCommand {
       );
     }
 
-    const { name, version, description, author } = parseResult.data;
-
-    if (version.trim() === "") {
-      this.error(marketplaceHasNoVersion(packageJsonPath), { exit: EXIT_CODES.ERROR });
-    }
-
-    const owner = parseAuthor(author);
-    if (owner.name.trim() === "") {
-      this.error(marketplaceOwnerHasNoName(packageJsonPath), { exit: EXIT_CODES.ERROR });
-    }
-
-    const resolvedName = this.resolvePublishableName(name, nameOverride, packageJsonPath);
-
-    const reservedError = validateMarketplaceName(resolvedName, name, RESERVED_NAME_WAY_OUT);
-    if (reservedError) {
-      this.error(reservedError, { exit: EXIT_CODES.ERROR });
-    }
-
-    return {
-      name: resolvedName,
-      version,
-      description,
-      ownerName: owner.name,
-      ...(owner.email !== undefined && { ownerEmail: owner.email }),
-    };
+    return parseResult.data;
   }
 
   /** A package.json name that fails gets a different refusal: its way out is `--name`. */
@@ -270,6 +280,7 @@ export default class BuildMarketplace extends BaseCommand {
   /** Unconditional: consumers must be able to read an absent catalogue as a broken marketplace. */
   private async readCatalog(projectRoot: string): Promise<MergedSkillsMatrix> {
     this.log(`Reading the skills for ${CATALOG_JSON}...`);
+    await warnOfAConfigDeclaringNothing(projectRoot);
     const matrix = await loadMarketplaceMatrix(projectRoot);
     return { ...matrix, generatedAt: GENERATED_AT_BUILD };
   }
@@ -322,6 +333,21 @@ type ParsedAuthor = {
   name: string;
   email?: string;
 };
+
+/** The loader reads such a file as absent, so without this the build would say nothing of it. */
+async function warnOfAConfigDeclaringNothing(projectRoot: string): Promise<void> {
+  const read = await readSourceRepoConfig(projectRoot);
+  if (read.kind === "declares-nothing") {
+    warn(configDeclaresNothing(path.relative(projectRoot, read.configPath)));
+  }
+}
+
+function configDeclaresNothing(configPath: string): string {
+  return (
+    `${configPath} is empty or exports nothing, so this build reads the marketplace with the ` +
+    `default layout. Give it a default export, or delete it.`
+  );
+}
 
 /** The marketplace schema requires at least one plugin, so an empty manifest is never written. */
 function noPluginsToPublish(pluginsDir: string, pluginsDirFlag: string): string {

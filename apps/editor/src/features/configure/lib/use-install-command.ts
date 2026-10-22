@@ -62,8 +62,12 @@ export const limitReachedNote = (retryAfterSeconds: number) =>
   `${COMMAND_NOTES.limited} ${waitOf(retryAfterSeconds)}`
 
 // Keyed, so `command` and `copied` are derived: a moved selection goes stale by
-// comparison, with no effect resetting state.
+// comparison.
 type Minted = { key: string; result: ShareResult }
+
+// Only an id is kept: a refusal or a limit is asked again on the next opening.
+export const isReusable = (minted: Minted | null, key: string): boolean =>
+  minted?.key === key && minted.result.ok
 
 const toCommand = (minted: Minted | null, key: string): InstallCommand => {
   if (minted?.key !== key) return { status: "minting" }
@@ -127,8 +131,12 @@ export const useInstallCommand = (config: ConfigSelection, open: boolean) => {
   const [minted, setMinted] = useState<Minted | null>(null)
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
 
+  // The dialog stays mounted, so an id minted for this selection is still
+  // here when it reopens; the store would answer with the same one.
+  const reusable = isReusable(minted, serialized)
+
   useEffect(() => {
-    if (!open) return
+    if (!open || reusable) return
     let stale = false
 
     // Parsing the memo key keeps the sent payload and cache key the same bytes;
@@ -142,8 +150,10 @@ export const useInstallCommand = (config: ConfigSelection, open: boolean) => {
 
     return () => {
       stale = true
+      // A refusal answered that opening, so the next one is not shown it.
+      setMinted((last) => (last?.result.ok ? last : null))
     }
-  }, [open, serialized])
+  }, [open, serialized, reusable])
 
   const copied = copiedKey === serialized
 

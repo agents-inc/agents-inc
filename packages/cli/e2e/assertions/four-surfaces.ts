@@ -43,7 +43,7 @@ type SkillPlacement = {
   headingId: string | null;
 };
 
-export type SurfaceFinding = {
+type SurfaceFinding = {
   claim: string;
   held: boolean;
   detail?: string;
@@ -85,7 +85,6 @@ export async function inspectFourSurfaces(
     .map((a) => String(a.name))
     .filter((name) => !mine.includes(name));
 
-  // Does each ejected skill live where its entry's scope says?
   const misplaced = skills
     .filter((entry) => entry.origin === "eject")
     .filter((entry) => {

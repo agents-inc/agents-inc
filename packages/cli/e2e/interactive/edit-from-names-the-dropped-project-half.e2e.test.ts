@@ -30,6 +30,7 @@ import type { SeedPayload } from "@workspace/matrix/seed";
  * `edit --from` in a project names the project half of a dropped `[P][G]` pair as a removal, with
  * the global copy taking over, and lists nothing as arriving globally. Installs are made by `init
  * --from`; each leg adds a project skill to prove the apply ran and snapshots the global install.
+ * A project-only entry moved to the global install is named as a removal too: its project copy goes.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -42,12 +43,22 @@ const GLOBAL_ID = "DropHalf01";
 const SKILL_PAIR_ID = "DropHalf02";
 const AGENT_PAIR_ID = "DropHalf03";
 const APPLY_ID = "DropHalf04";
+const PROJECT_ONLY_ID = "DropHalf05";
+const MOVED_TO_GLOBAL_ID = "DropHalf06";
 
 const ANYTHING = "[\\s\\S]*";
 function namedAsDroppedHalf(subject: string): RegExp {
   return new RegExp(
     `${STEP_TEXT.SHARED_CONFIG_APPLY_PREVIEW}${ANYTHING}${subject}${ANYTHING}` +
       `${STEP_TEXT.SHARED_CONFIG_PROJECT_COPY_REMOVED}${ANYTHING}${STEP_TEXT.SHARED_CONFIG_GLOBAL_TAKES_OVER}`,
+  );
+}
+
+/** On the subject's own line: a skill is labelled with its display name before its id. */
+function namedAsMovedToGlobal(subject: string): RegExp {
+  return new RegExp(
+    `${STEP_TEXT.SHARED_CONFIG_APPLY_PREVIEW}${ANYTHING}${subject}[^\\n]*` +
+      `${STEP_TEXT.SHARED_CONFIG_MOVES_TO_GLOBAL}${ANYTHING}${STEP_TEXT.SHARED_CONFIG_PROJECT_COPY_REMOVED}`,
   );
 }
 
@@ -99,6 +110,23 @@ describe("edit --from <id> in a project names the project half of a pair it drop
         agents: apiDeveloperHere,
       }),
     );
+    // React and web-developer in the project alone, then both moved to the global install.
+    store.publish(
+      PROJECT_ONLY_ID,
+      buildSeedPayload({
+        skills: {
+          [REACT]: buildSeedSkill({ scope: "project", assignments: { [WEB_DEV]: "lazy" } }),
+        },
+        agents: { [WEB_DEV]: { on: true, scope: "project" } },
+      }),
+    );
+    store.publish(
+      MOVED_TO_GLOBAL_ID,
+      buildSeedPayload({
+        skills: { [REACT]: onGlobalWebDeveloper },
+        agents: { [WEB_DEV]: { on: true, scope: "global" } },
+      }),
+    );
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
@@ -138,8 +166,8 @@ describe("edit --from <id> in a project names the project half of a pair it drop
     );
   }
 
-  async function openApply(environment: TestEnvironment): Promise<string> {
-    prompt = new InteractivePrompt(["edit", "--from", APPLY_ID], environment.projectDir, {
+  async function openApply(environment: TestEnvironment, id = APPLY_ID): Promise<string> {
+    prompt = new InteractivePrompt(["edit", "--from", id], environment.projectDir, {
       env: { AGENTS_INC_API_URL: store.url, HOME: environment.fakeHome },
     });
     await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM, TIMEOUTS.WIZARD_LOAD);
@@ -236,6 +264,47 @@ describe("edit --from <id> in a project names the project half of a pair it drop
         await snapshotGlobalInstall(environment.fakeHome),
         "a project apply must leave the global install as it found it",
       ).toStrictEqual(globalBefore);
+    },
+  );
+
+  it(
+    "names a project-only skill and sub-agent it moves to the global install as removed here",
+    { timeout: TIMEOUTS.INTERACTIVE },
+    async () => {
+      const environment = await createTestEnvironment();
+      env = environment;
+      const installed = await runInitFrom(
+        store,
+        PROJECT_ONLY_ID,
+        { dir: environment.projectDir, globalHome: environment.fakeHome },
+        E2E_SOURCE.sourceDir,
+      );
+      expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
+      // Subject guard: React and web-developer are the project's alone.
+      expect(await listFiles(skillsPath(environment.projectDir))).toStrictEqual([REACT]);
+      await expect({ dir: environment.projectDir }).toHaveCompiledAgent(WEB_DEV);
+      expect(await listFiles(skillsPath(environment.fakeHome))).toStrictEqual([]);
+
+      const planned = await openApply(environment, MOVED_TO_GLOBAL_ID);
+
+      expect(planned, "the plan must name React's project copy as going").toMatch(
+        namedAsMovedToGlobal(REACT),
+      );
+      expect(planned, "the plan must name web-developer's project copy as going").toMatch(
+        namedAsMovedToGlobal(WEB_DEV),
+      );
+      expect(
+        planned,
+        "a plan that takes the project's copies away must not say nothing is removed",
+      ).not.toContain(STEP_TEXT.SHARED_CONFIG_APPLY_NOTHING_REMOVED);
+
+      await approve();
+
+      // What the plan named is what happened, on both sides of the move.
+      expect(await listFiles(skillsPath(environment.projectDir))).toStrictEqual([]);
+      expect(await listFiles(skillsPath(environment.fakeHome))).toStrictEqual([REACT]);
+      await expect({ dir: environment.projectDir }).not.toHaveCompiledAgent(WEB_DEV);
+      await expect({ dir: environment.fakeHome }).toHaveCompiledAgent(WEB_DEV);
     },
   );
 });

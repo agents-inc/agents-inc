@@ -44,6 +44,9 @@ const MOVED_SKILL: SkillId = "shared-monorepo-turborepo";
 const STALE_CATEGORY_KEY = "shared-monorepo";
 const LIVE_CATEGORY_KEY = "shared-task-runner";
 
+/** A literal: a test reading the folder off the product would move with it. */
+const CODEX_FOLDER = ".agents-inc/codex";
+
 describe("project-config", () => {
   let tempDir: string;
 
@@ -343,6 +346,19 @@ describe("loading a config: refusals and defaults", () => {
       scope: "project",
       reason: expect.stringMatching(/^Failed to load config from '/),
     });
+  });
+
+  it("names the provider to act on where another provider's installation sits beside the one that failed", async () => {
+    await writeRawTestConfig(tempDir, renderUnparseableConfigTs());
+    await writeTestTsConfig(tempDir, buildProjectConfig(), CODEX_FOLDER);
+
+    await expect(loadingTheProject()).rejects.toMatchObject({ providerToName: "claude" });
+  });
+
+  it("names no provider where the installation that failed is the only one", async () => {
+    await writeRawTestConfig(tempDir, renderUnparseableConfigTs());
+
+    await expect(loadingTheProject()).rejects.toHaveProperty("providerToName", undefined);
   });
 
   it("refuses a config that exports nothing as having no valid default export", async () => {

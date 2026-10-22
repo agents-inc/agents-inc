@@ -80,6 +80,9 @@ describe("source-fetcher revalidation", () => {
     const result = await fetchFromSource(SOURCE);
 
     expect(result.fromCache).toBe(true);
+    expect(result.unreachable, "the source answered, so the copy is known to be current").toBe(
+      false,
+    );
     expect(result.path).toBe(cacheDir);
     expect(mockDownloadTemplate).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledOnce();
@@ -122,6 +125,7 @@ describe("source-fetcher revalidation", () => {
     const result = await fetchFromSource(SOURCE);
 
     expect(result.fromCache).toBe(true);
+    expect(result.unreachable, "the copy stood in for a source nobody could ask").toBe(true);
     expect(mockDownloadTemplate).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith(sourceUnreachableUsingCache(SOURCE));
   });
@@ -176,6 +180,7 @@ describe("source-fetcher revalidation", () => {
 
     expect(warn).toHaveBeenCalledExactlyOnceWith(sourceUnreachableUsingCache(SOURCE));
     expect(second.fromCache).toBe(true);
+    expect(second.unreachable, "every load this run reads the same stand-in").toBe(true);
     expect(mockDownloadTemplate).not.toHaveBeenCalled();
   });
 

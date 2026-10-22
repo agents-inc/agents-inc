@@ -2,6 +2,7 @@ import React from "react";
 
 import { Flags, type Interfaces } from "@oclif/core";
 import { Box, Text, useApp } from "ink";
+import { partition } from "remeda";
 import { render } from "../components/render.js";
 
 import { BaseCommand } from "../base-command.js";
@@ -17,6 +18,7 @@ import {
   compileAgentsAllScopes,
   compileProjectScope,
   type CompilationResult,
+  type ConfigWriteResult,
   type SkillCopyResult,
   discoverInstalledSkills,
 } from "../lib/operations/index.js";
@@ -31,13 +33,21 @@ import { seedToInstallSelection, type SeedMapping } from "../lib/seed/seed-to-se
 import {
   holdInstalledGlobal,
   installPlanLines,
+  installsAtHome,
   notInstalledGlobally,
   readInstalledGlobal,
   type HeldGlobal,
+  type InstalledGlobal,
 } from "../lib/seed/seed-apply.js";
-import { getInstallationInfo } from "../lib/plugins/plugin-info.js";
-import { loadProjectConfig } from "../lib/configuration/project-config.js";
-import { isLocalSource, resolveBranding } from "../lib/configuration/config.js";
+import {
+  getInstallationsByProvider,
+  type ProviderInstallation,
+} from "../lib/plugins/plugin-info.js";
+import {
+  assertNamedSourceUsable,
+  isLocalSource,
+  resolveBranding,
+} from "../lib/configuration/config.js";
 import {
   type InstallMode,
   detectInstallation,
@@ -58,6 +68,7 @@ import {
   providerInUse,
   relativeConfigPath,
 } from "../lib/installation/install-layout.js";
+import { providerToNameAt } from "../lib/installation/provider-to-name.js";
 import { hostCompileNotices } from "../lib/hosts/host-compile-notices.js";
 import {
   providerFlag,
@@ -72,6 +83,7 @@ import {
   EDITOR_URL,
   EJECT_SOURCE,
   editorConfigUrl,
+  type Provider,
 } from "../consts.js";
 import { clearTerminalScreen } from "../utils/terminal.js";
 import { SelectList, type SelectListItem } from "../components/common/select-list.js";
@@ -84,6 +96,7 @@ import { plural } from "../utils/string.js";
 import type { AgentName, MergedSkillsMatrix, SkillId, SkillScope } from "../types/index.js";
 import { type StartupMessage } from "../utils/logger.js";
 import {
+  ERROR_MESSAGES,
   INCOMPLETE_WORK_RECOVERY,
   SHARED_CONFIG_ARRIVALS,
   STATUS_MESSAGES,
@@ -95,8 +108,6 @@ import {
   initSucceeded,
   keptAsInstalledGlobally,
   sharedConfigExistingInstall,
-  skippedUnknownAgents,
-  skippedUnknownSkills,
 } from "../utils/messages.js";
 import type { SeedPayload } from "@workspace/matrix/seed";
 
@@ -109,7 +120,7 @@ const DASHBOARD_OPTIONS = [
 
 const DASHBOARD_OPTIONS_LINE = `  ${DASHBOARD_OPTIONS.map(({ label }) => `[${label}]`).join("  ")}`;
 
-export type DashboardCommand = (typeof DASHBOARD_OPTIONS)[number]["value"];
+type DashboardCommand = (typeof DASHBOARD_OPTIONS)[number]["value"];
 
 /** A white-labelled name replaces the logo, because the logo spells the shipped name. */
 const DashboardTitle: React.FC<{ name: string }> = ({ name }) =>
@@ -148,17 +159,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, onSelect, onCancel }
   );
 };
 
-/** Shared by the TTY and piped dashboards so the two cannot drift apart. */
-export function dashboardCountLines(data: DashboardData): string[] {
-  const lines = [
-    `  Skills:       ${data.skillCount} installed`,
-    `  Agents:       ${data.agentCount} compiled`,
-    `  Mode:         ${INSTALL_MODE_LABELS[data.mode]}`,
+/**
+ * Shared by the TTY and piped dashboards so the two cannot drift apart. A scope holding two
+ * installations gets a named block for each, a blank line apart.
+ */
+function dashboardCountLines({ installations }: DashboardData): string[] {
+  const named = installations.length > 1;
+  const blocks = installations.map((installation) => [
+    ...(named ? [`  Provider:     ${installation.provider}`] : []),
+    ...installationCountLines(installation),
+  ]);
+  return blankLineBetween(blocks);
+}
+
+function blankLineBetween(blocks: string[][]): string[] {
+  return blocks.flatMap((block, index) => (index === 0 ? block : ["", ...block]));
+}
+
+function installationCountLines(installation: ProviderInstallation): string[] {
+  return [
+    `  Skills:       ${installation.skillCount} installed`,
+    `  Agents:       ${installation.agentCount} compiled`,
+    `  Mode:         ${INSTALL_MODE_LABELS[installation.mode]}`,
+    ...(installation.marketplace ? [`  Marketplace:  ${installation.marketplace}`] : []),
   ];
-  if (data.source) {
-    lines.push(`  Marketplace:  ${data.source}`);
-  }
-  return lines;
 }
 
 export function formatDashboardText(data: DashboardData): string {
@@ -170,8 +194,7 @@ const DASHBOARD_INTERRUPTED = "interrupted";
 
 type DashboardAnswer = DashboardCommand | typeof DASHBOARD_INTERRUPTED | null;
 
-/** Without a TTY, prints the summary and answers null. */
-export async function showDashboard(
+async function showDashboard(
   projectDir: string,
   log?: (message: string) => void,
 ): Promise<DashboardAnswer> {
@@ -235,10 +258,7 @@ type Selection = {
   installedAlready: ReadonlySet<SkillId>;
 };
 
-/**
- * The payload's marketplace, since a skill id never says where its repository lives;
- * `--marketplace` still outranks it.
- */
+/** The payload names the marketplace because a skill id never says where its repository lives. */
 function sharedConfigSourceFlags(flags: SourceFlags, payload: SeedPayload): SourceFlags {
   return { marketplace: flags.marketplace ?? payload.marketplace };
 }
@@ -291,11 +311,13 @@ export default class Init extends BaseCommand {
     this.exitIfWorkIncomplete();
   }
 
-  /**
-   * Opens the editor on the `--from` id, or on the catalogue. The link is printed before it is
-   * opened, so it still works where no browser can open.
-   */
-  private async openEditor(projectDir: string, id?: string, marketplace?: string): Promise<void> {
+  /** The link is printed before it is opened, so it still works where no browser can open. */
+  private async openEditor(
+    projectDir: string,
+    provider: Provider | undefined,
+    id?: string,
+    marketplace?: string,
+  ): Promise<void> {
     const url = id === undefined ? EDITOR_URL : editorConfigUrl(id);
     // Above the first line, so a ref the install route would refuse is refused before any output.
     const marketplaceLine =
@@ -303,7 +325,7 @@ export default class Init extends BaseCommand {
 
     this.log(id === undefined ? `Build it at ${url}` : `Open it at ${url}`);
     if (marketplaceLine !== undefined) this.log(marketplaceLine);
-    this.log(applySharedConfigHere(id, await holdsItsOwnInstallation(projectDir)));
+    this.log(applySharedConfigHere(id, await holdsItsOwnInstallation(projectDir), provider));
 
     if (!process.stdin.isTTY) return;
 
@@ -319,7 +341,14 @@ export default class Init extends BaseCommand {
     this.settleTheProviderForThisRun(flags);
 
     // Before `ensureConfigReadable`: a broken config must not block the editor route.
-    if (opensTheEditor(flags)) return this.openEditor(projectDir, flags.from, flags.marketplace);
+    if (opensTheEditor(flags)) {
+      return this.openEditor(
+        projectDir,
+        providerNamedBy(flags.provider),
+        flags.from,
+        flags.marketplace,
+      );
+    }
 
     // ABORT: an unreadable config is refused here, before any route reads it.
     await this.ensureConfigReadable(projectDir);
@@ -334,17 +363,19 @@ export default class Init extends BaseCommand {
 
     this.reportValidationErrors(selection.result.validation);
 
-    await this.handleInstallation(selection);
+    await this.handleInstallation(selection, projectDir);
   }
 
   private async showDashboardOrOpenEditor(projectDir: string): Promise<void> {
     const dashboard = await runDashboardFlow(projectDir, this.config, (msg) => this.log(msg));
     if (dashboard === "cancelled") this.error("Cancelled", { exit: EXIT_CODES.CANCELLED });
-    if (dashboard === "not-installed") await this.openEditor(projectDir);
+    if (dashboard === "not-installed") await this.openEditor(projectDir, undefined);
   }
 
+  /** Refused as the install route refuses it, since the line echoes the ref it was given. */
   private addMarketplaceLineOrFail(ref: string): string {
     try {
+      assertNamedSourceUsable(ref);
       return addMarketplaceInTheEditor(ref, isLocalSource(ref));
     } catch (error) {
       this.handleError(error);
@@ -363,10 +394,7 @@ export default class Init extends BaseCommand {
     chooseProviderForThisRun(named);
   }
 
-  /**
-   * Fetches and maps the `--from` id. Every refusal fires before anything is written; at a
-   * terminal it lists what goes where and asks, and headless it lists and carries on.
-   */
+  /** Every refusal fires before anything is written. */
   private async selectionFromSharedConfig(
     id: string,
     flags: SourceFlags,
@@ -374,31 +402,21 @@ export default class Init extends BaseCommand {
   ): Promise<Selection | null> {
     await this.refuseInstalledProject(projectDir, id);
 
-    this.log(`Fetching configuration ${id}...`);
-    const fetched = await fetchSeedConfig(id);
-    if (!fetched.ok) {
-      this.error(fetched.error, { exit: EXIT_CODES.ERROR });
-    }
-
-    const sourceFlags = sharedConfigSourceFlags(flags, fetched.payload);
-    const { sourceResult, startupMessages } = await this.loadSourceOrFail(sourceFlags);
+    const payload = await this.fetchSharedConfigOrFail(id);
+    const sourceFlags = sharedConfigSourceFlags(flags, payload);
+    const { sourceResult, startupMessages } = await this.loadSourceOrFail(sourceFlags, projectDir);
     // Before the decode, which would otherwise skip carried skills as unknown ids.
     const carriedSkills = this.registerExternalSkillsOrFail(
-      fetched.payload,
+      payload,
       sourceResult.matrix,
       projectDir,
     );
-    const { result, skippedSkillIds, skippedAgentNames } = this.decodeSeedOrFail(
-      fetched.payload,
-      sourceResult.matrix,
-    );
+    const mapping = this.decodeSeedOrFail(payload, sourceResult.matrix);
+    const { result } = mapping;
 
     this.refuseProjectScopedContentAtHome(result, projectDir);
 
-    const held = holdInstalledGlobal(
-      result,
-      isHomeDirectory(projectDir) ? null : await readInstalledGlobal(projectDir),
-    );
+    const held = holdInstalledGlobal(result, await installedGlobalToHold(projectDir));
     const arrivingCarried = notInstalledGlobally(carriedSkills, held);
 
     // Above the lists: a yes installs what was listed, so nothing listed may then be refused.
@@ -411,17 +429,10 @@ export default class Init extends BaseCommand {
 
     // Above the skips: an "unknown" skill is often one whose file failed to parse.
     sayCapturedWarnings(startupMessages);
+    this.warnOfSkippedEntries(mapping, held.result.selectedAgents);
+    this.refuseAnEmptySelection(held.result, id);
 
-    if (skippedSkillIds.length > 0) this.warn(skippedUnknownSkills(skippedSkillIds));
-    if (skippedAgentNames.length > 0) this.warn(skippedUnknownAgents(skippedAgentNames));
-
-    if (selectsNothing(held.result)) {
-      this.error(`Configuration '${id}' contains no skills this catalog can install.`, {
-        exit: EXIT_CODES.ERROR,
-      });
-    }
-
-    this.logWhatGoesWhere(held);
+    this.logWhatGoesWhere(held, installsAtHome(result) ? id : undefined);
     if (process.stdin.isTTY && !(await this.confirmInstall())) {
       this.log("Setup cancelled");
       return null;
@@ -429,13 +440,7 @@ export default class Init extends BaseCommand {
 
     // After the question, so a refusal or a no leaves nothing written.
     await this.writeCarriedSkills(arrivingCarried);
-
-    const arriving = notInstalledGlobally(held.result.skills, held);
-    if (arriving.length > 0) {
-      this.log(
-        `Installing ${arriving.length} skill(s) across ${result.selectedAgents.length} sub-agent(s)\n`,
-      );
-    }
+    this.announceArrivingSkills(held, result.selectedAgents.length);
 
     return {
       result: held.result,
@@ -445,16 +450,32 @@ export default class Init extends BaseCommand {
     };
   }
 
-  private logWhatGoesWhere(held: HeldGlobal): void {
+  /** `idAppliedAtHome` is the id only where a run from home would take the configuration. */
+  private logWhatGoesWhere(held: HeldGlobal, idAppliedAtHome: string | undefined): void {
     for (const line of installPlanLines(held)) {
       this.log(line);
     }
 
     const { skillIds, agentNames } = held.keptAsInstalled;
     if (skillIds.length > 0 || agentNames.length > 0) {
-      this.log(keptAsInstalledGlobally(skillIds, agentNames));
+      this.log(keptAsInstalledGlobally(skillIds, agentNames, idAppliedAtHome));
     }
     this.log("");
+  }
+
+  private refuseAnEmptySelection(result: InstallSelection, id: string): void {
+    if (!selectsNothing(result)) return;
+
+    this.error(`Configuration '${id}' contains no skills this catalog can install.`, {
+      exit: EXIT_CODES.ERROR,
+    });
+  }
+
+  private announceArrivingSkills(held: HeldGlobal, agentCount: number): void {
+    const arriving = notInstalledGlobally(held.result.skills, held);
+    if (arriving.length === 0) return;
+
+    this.log(`Installing ${arriving.length} skill(s) across ${agentCount} sub-agent(s)\n`);
   }
 
   private async confirmInstall(): Promise<boolean> {
@@ -473,9 +494,19 @@ export default class Init extends BaseCommand {
     const installation = await detectProjectInstallation(projectDir);
     if (!installation) return;
 
-    this.error(sharedConfigExistingInstall(installation.configPath, id), {
+    const provider = providerToNameAt(projectDir, providerInUse(projectDir));
+    this.error(sharedConfigExistingInstall(installation.configPath, id, provider), {
       exit: EXIT_CODES.ERROR,
     });
+  }
+
+  private async fetchSharedConfigOrFail(id: string): Promise<SeedPayload> {
+    this.log(`Fetching configuration ${id}...`);
+    const fetched = await fetchSeedConfig(id);
+    if (!fetched.ok) {
+      this.error(fetched.error, { exit: EXIT_CODES.ERROR });
+    }
+    return fetched.payload;
   }
 
   private decodeSeedOrFail(payload: SeedPayload, matrix: MergedSkillsMatrix): SeedMapping {
@@ -507,13 +538,14 @@ export default class Init extends BaseCommand {
 
   private async loadSourceOrFail(
     flags: SourceFlags,
+    projectDir: string,
   ): Promise<{ sourceResult: SourceLoadResult; startupMessages: StartupMessage[] }> {
     try {
       const loaded = await loadSource({
         // The one load that may choose a marketplace rather than read the stored one.
         caller: "init",
         ...(flags.marketplace !== undefined && { sourceFlag: flags.marketplace }),
-        projectDir: process.cwd(),
+        projectDir,
         captureStartupMessages: true,
       });
       return { sourceResult: loaded.sourceResult, startupMessages: loaded.startupMessages };
@@ -524,67 +556,59 @@ export default class Init extends BaseCommand {
     }
   }
 
-  private async handleInstallation({
-    result,
-    sourceResult,
-    sourceFlags,
-    installedAlready,
-  }: Selection): Promise<void> {
-    const projectDir = process.cwd();
-    const activeSkills = result.skills.filter((s) => !s.excluded);
-    const toInstall = activeSkills.filter((s) => !installedAlready.has(s.id));
-    const installMode = deriveInstallMode(toInstall);
-    const ejectedSkills = toInstall.filter((s) => s.origin === EJECT_SOURCE);
-    const pluginSkills = toInstall.filter((s) => s.origin !== EJECT_SOURCE);
-
-    this.logInstallPlan(installMode, ejectedSkills, pluginSkills);
+  private async handleInstallation(
+    { result, sourceResult, sourceFlags, installedAlready }: Selection,
+    projectDir: string,
+  ): Promise<void> {
+    const plan = planInstall(result, installedAlready);
+    this.logInstallPlan(plan);
 
     // Before any copy, so a failed resolution cannot leave a half-install with no config.ts.
-    const resolvedMarketplace =
-      pluginSkills.length > 0
-        ? await this.requireMarketplaceOrExit(
-            sourceResult,
-            "install plugin skills",
-            hostAt(projectDir),
-            (marketplace) => this.log(`Registering marketplace "${marketplace}"...`),
-          )
-        : null;
+    const resolvedMarketplace = await this.marketplaceForPluginSkills(
+      plan.pluginSkills,
+      sourceResult,
+      projectDir,
+    );
 
-    const copyResult =
-      ejectedSkills.length > 0
-        ? await this.copyEjectSkillsStep(ejectedSkills, projectDir, sourceResult, installMode)
-        : null;
+    const copyResult = await this.copyEjectedSkills(plan, projectDir, sourceResult);
 
     if (resolvedMarketplace !== null) {
       await this.installPluginSkillsReported(
-        pluginSkills,
+        plan.pluginSkills,
         resolvedMarketplace,
         projectDir,
         sourceResult.matrix,
       );
     }
-    // The install reporter hard-errors on any failure, so reaching here means plugins succeeded.
-    const pluginModeSucceeded = resolvedMarketplace !== null;
 
     try {
-      const { configResult, compileResult, agentScopeMap } = await this.writeConfigAndCompile(
+      const written = await this.writeConfigAndCompile(
         result,
         sourceResult,
         sourceFlags,
+        projectDir,
       );
-      this.reportSuccess(
-        configResult,
-        compileResult,
-        agentScopeMap,
-        installMode,
-        pluginModeSucceeded,
-        copyResult,
-      );
+      this.reportSuccess(written, copyResult, projectDir);
 
       await this.showPermissionNotice(projectDir);
     } catch (error) {
       this.handleError(error);
     }
+  }
+
+  private async marketplaceForPluginSkills(
+    pluginSkills: InstallSelection["skills"],
+    sourceResult: SourceLoadResult,
+    projectDir: string,
+  ): Promise<string | null> {
+    if (pluginSkills.length === 0) return null;
+
+    return this.requireMarketplaceOrExit(
+      sourceResult,
+      "install plugin skills",
+      hostAt(projectDir),
+      (marketplace) => this.log(`Registering marketplace "${marketplace}"...`),
+    );
   }
 
   /** One frame, then unmount: the notice has no exit of its own and `--from` must run headless. */
@@ -596,30 +620,21 @@ export default class Init extends BaseCommand {
     unmount();
   }
 
-  private logInstallPlan(
-    installMode: InstallMode,
-    ejectedSkills: InstallSelection["skills"],
-    pluginSkills: InstallSelection["skills"],
-  ): void {
+  private logInstallPlan(plan: InstallPlan): void {
     this.log("\n");
-    this.log(`Selected ${plural(ejectedSkills.length + pluginSkills.length, "skill")}`);
-    this.log(
-      `Install mode: ${
-        installMode === "mixed"
-          ? `${INSTALL_MODE_LABELS.mixed} (${ejectedSkills.length} eject, ${pluginSkills.length} plugin)`
-          : INSTALL_MODE_DESCRIPTIONS[installMode]
-      }`,
-    );
+    this.log(`Selected ${plural(plan.ejectedSkills.length + plan.pluginSkills.length, "skill")}`);
+    this.log(`Install mode: ${installModeDescription(plan)}`);
   }
 
-  private async copyEjectSkillsStep(
-    localSkills: InstallSelection["skills"],
+  private async copyEjectedSkills(
+    { ejectedSkills, installMode }: InstallPlan,
     projectDir: string,
     sourceResult: SourceLoadResult,
-    installMode: InstallMode,
-  ): Promise<SkillCopyResult> {
+  ): Promise<SkillCopyResult | null> {
+    if (ejectedSkills.length === 0) return null;
+
     this.log("Copying skills to local directory...");
-    const copyResult = await copyLocalSkills(localSkills, projectDir, sourceResult);
+    const copyResult = await copyLocalSkills(ejectedSkills, projectDir, sourceResult);
     this.log(skillsCopiedLine(copyResult, installMode, projectDir));
     return copyResult;
   }
@@ -628,16 +643,34 @@ export default class Init extends BaseCommand {
     result: InstallSelection,
     sourceResult: SourceLoadResult,
     flags: SourceFlags,
-  ): Promise<{
-    configResult: Awaited<ReturnType<typeof writeProjectConfig>>;
-    compileResult: CompilationResult;
-    agentScopeMap: Map<AgentName, SkillScope>;
-  }> {
+    projectDir: string,
+  ): Promise<WrittenInstall> {
+    const configResult = await this.writeConfigReported(result, sourceResult, flags, projectDir);
+    const agentScopeMap = buildAgentScopeMap(configResult.config);
+    const compileResult = await this.compileInstalledAgents(
+      configResult.propagation,
+      agentScopeMap,
+      projectDir,
+    );
+    this.reportCompilation(compileResult);
+    await this.reportWhatThisHostCannotCarry(projectDir);
+
+    this.reportFanOut(configResult.propagation);
+
+    return { configResult, compileResult, agentScopeMap };
+  }
+
+  private async writeConfigReported(
+    result: InstallSelection,
+    sourceResult: SourceLoadResult,
+    flags: SourceFlags,
+    projectDir: string,
+  ): Promise<ConfigWriteResult> {
     this.log("Generating configuration...");
     const configResult = await writeProjectConfig({
       selection: result,
       sourceResult,
-      projectDir: process.cwd(),
+      projectDir,
       ...(flags.marketplace !== undefined && { sourceFlag: flags.marketplace }),
     });
 
@@ -647,31 +680,31 @@ export default class Init extends BaseCommand {
 
     this.log(`Configuration saved (${plural(configResult.config.agents.length, "agent")})\n`);
     this.reportUnassignedSkills(configResult.config, result.skills);
+    return configResult;
+  }
 
+  private async compileInstalledAgents(
+    written: GateReport,
+    agentScopeMap: Map<AgentName, SkillScope>,
+    projectDir: string,
+  ): Promise<CompilationResult> {
     this.log(STATUS_MESSAGES.COMPILING_AGENTS);
-    const cwd = process.cwd();
+    // Sequential: both can reject and discovery warns, so the order decides what the user reads.
     const agentDefs = await loadAgentDefs();
-    const { allSkills } = await discoverInstalledSkills(cwd);
-    const agentScopeMap = buildAgentScopeMap(configResult.config);
-    const compile = compilesGlobalScope(cwd, configResult.propagation)
+    const { allSkills } = await discoverInstalledSkills(projectDir);
+    const compile = compilesGlobalScope(projectDir, written)
       ? compileAgentsAllScopes
       : compileProjectScope;
-    const compileResult = await compile({
-      projectDir: cwd,
+    return compile({
+      projectDir,
       sourcePath: agentDefs.sourcePath,
       skills: allSkills,
       agentScopeMap,
     });
-    this.reportCompilation(compileResult);
-    await this.reportWhatThisHostCannotCarry(cwd);
-
-    this.reportFanOut(configResult.propagation);
-
-    return { configResult, compileResult, agentScopeMap };
   }
 
-  private async reportWhatThisHostCannotCarry(cwd: string): Promise<void> {
-    for (const notice of await hostCompileNotices(providerInUse(cwd), cwd)) {
+  private async reportWhatThisHostCannotCarry(projectDir: string): Promise<void> {
+    for (const notice of await hostCompileNotices(providerInUse(projectDir), projectDir)) {
       this.log(notice);
     }
   }
@@ -698,106 +731,60 @@ export default class Init extends BaseCommand {
   }
 
   private reportSuccess(
-    configResult: Awaited<ReturnType<typeof writeProjectConfig>>,
-    compileResult: CompilationResult,
-    agentScopeMap: Map<AgentName, SkillScope>,
-    installMode: InstallMode,
-    pluginModeSucceeded: boolean,
+    { configResult, compileResult, agentScopeMap }: WrittenInstall,
     copyResult: SkillCopyResult | null,
+    projectDir: string,
   ): void {
     // A run with work owed ends on the failure account instead of claiming success.
     if (!this.hasIncompleteWork) this.log(`${initSucceeded(this.brandingName)}\n`);
 
-    const isEjectOutput =
-      installMode === "eject" || (installMode === "mixed" && !pluginModeSucceeded);
-    if (isEjectOutput && copyResult && copyResult.totalCopied > 0) {
-      this.reportSkillsCopied(copyResult);
+    if (copyResult !== null && copyResult.totalCopied > 0) {
+      this.logDirectoryBlocks("Skills copied to:", skillsCopiedBlocks(projectDir, copyResult));
     }
-    this.reportAgentsCompiled(compileResult.compiled, agentScopeMap);
-    this.reportConfiguration(configResult.configPath, agentScopeMap);
+    this.logDirectoryBlocks(
+      "Agents compiled to:",
+      agentsCompiledBlocks(projectDir, compileResult.compiled, agentScopeMap),
+    );
+    this.reportConfiguration(configResult, agentScopeMap, projectDir);
   }
 
-  /** Names the config(s) holding this install's assignments, split by agent scope. */
   private reportConfiguration(
-    projectConfigPath: string,
+    { configPath, propagation }: ConfigWriteResult,
     agentScopeMap: Map<AgentName, SkillScope>,
+    projectDir: string,
   ): void {
-    const cwd = process.cwd();
     const paths = {
-      global: resolveInstallPaths(cwd, "global").configPath,
-      project: projectConfigPath,
+      global: resolveInstallPaths(projectDir, "global").configPath,
+      project: configPath,
     };
-    const split = splitAgentScopes(cwd, agentScopeMap);
+    const split = splitAgentScopes(projectDir, agentScopeMap);
 
     this.log("Configuration:");
-    for (const configPath of configsHoldingAssignments(split, paths)) {
-      this.log(`  ${configPath}`);
+    for (const written of configsWritten(projectDir, paths, propagation.globalWritten)) {
+      this.log(`  ${written}`);
     }
     this.log("");
 
     this.log("To customize agent-skill assignments:");
-    for (const [index, step] of customizationSteps(split, paths.global, cwd).entries()) {
+    for (const [index, step] of customizationSteps(split, paths.global, projectDir).entries()) {
       this.log(`  ${index + 1}. ${step}`);
     }
     this.log("");
   }
 
-  /** One block per scope that received skills; entries are on-disk directory names (ids). */
-  private reportSkillsCopied(copyResult: SkillCopyResult): void {
-    const cwd = process.cwd();
-    const groups = isHomeDirectory(cwd)
-      ? [
-          {
-            dir: resolveInstallPaths(cwd, "project").skillsDir,
-            copied: [...copyResult.globalCopied, ...copyResult.projectCopied],
-          },
-        ]
-      : [
-          { dir: resolveInstallPaths(cwd, "global").skillsDir, copied: copyResult.globalCopied },
-          { dir: resolveInstallPaths(cwd, "project").skillsDir, copied: copyResult.projectCopied },
-        ].filter((group) => group.copied.length > 0);
-
-    for (const group of groups) {
-      this.log("Skills copied to:");
-      this.log(`  ${group.dir}`);
-      for (const copied of group.copied) {
-        this.log(`    ${copied.skillId}/`);
-      }
-      this.log("");
-    }
-  }
-
-  /** Mirrors `compileAgentsAllScopes`' scope split; each scope's host picks its file extension. */
-  private reportAgentsCompiled(
-    compiled: AgentName[],
-    agentScopeMap: Map<AgentName, SkillScope>,
-  ): void {
-    const cwd = process.cwd();
-    const groups = isHomeDirectory(cwd)
-      ? [{ ...compiledInto(cwd, "project"), agents: compiled }]
-      : [
-          {
-            ...compiledInto(cwd, "global"),
-            agents: compiled.filter((name) => agentScopeMap.get(name) === "global"),
-          },
-          {
-            ...compiledInto(cwd, "project"),
-            agents: compiled.filter((name) => agentScopeMap.get(name) !== "global"),
-          },
-        ].filter((group) => group.agents.length > 0);
-
-    for (const group of groups) {
-      this.log("Agents compiled to:");
-      this.log(`  ${group.dir}`);
-      for (const agentName of group.agents) {
-        this.log(`    ${agentName}${group.extension}`);
+  private logDirectoryBlocks(heading: string, blocks: DirectoryBlock[]): void {
+    for (const { dir, entries } of blocks) {
+      this.log(heading);
+      this.log(`  ${dir}`);
+      for (const entry of entries) {
+        this.log(`    ${entry}`);
       }
       this.log("");
     }
   }
 }
 
-/** `--ui`, or `--marketplace` without `--from`: the editor is where a marketplace is added. */
+/** The editor is where a marketplace is added, so `--marketplace` without `--from` opens it. */
 function opensTheEditor(
   flags: Pick<Interfaces.InferredFlags<typeof Init.flags>, "ui" | "from" | "marketplace">,
 ): boolean {
@@ -808,6 +795,43 @@ function opensTheEditor(
 function selectsNothing(result: InstallSelection): boolean {
   return result.skills.length === 0 && result.selectedAgents.length === 0;
 }
+
+/** At the home root the global config is the project's own, so there is no global install apart. */
+async function installedGlobalToHold(projectDir: string): Promise<InstalledGlobal | null> {
+  if (isHomeDirectory(projectDir)) return null;
+  return await readInstalledGlobal(projectDir);
+}
+
+type InstallPlan = {
+  installMode: InstallMode;
+  ejectedSkills: InstallSelection["skills"];
+  pluginSkills: InstallSelection["skills"];
+};
+
+function planInstall(
+  result: InstallSelection,
+  installedAlready: ReadonlySet<SkillId>,
+): InstallPlan {
+  const toInstall = result.skills.filter(
+    (skill) => !skill.excluded && !installedAlready.has(skill.id),
+  );
+  const [ejectedSkills, pluginSkills] = partition(
+    toInstall,
+    (skill) => skill.origin === EJECT_SOURCE,
+  );
+  return { installMode: deriveInstallMode(toInstall), ejectedSkills, pluginSkills };
+}
+
+function installModeDescription({ installMode, ejectedSkills, pluginSkills }: InstallPlan): string {
+  if (installMode !== "mixed") return INSTALL_MODE_DESCRIPTIONS[installMode];
+  return `${INSTALL_MODE_LABELS.mixed} (${ejectedSkills.length} eject, ${pluginSkills.length} plugin)`;
+}
+
+type WrittenInstall = {
+  configResult: ConfigWriteResult;
+  compileResult: CompilationResult;
+  agentScopeMap: Map<AgentName, SkillScope>;
+};
 
 /**
  * From a project, global sub-agents recompile only when the write changed their inputs;
@@ -837,11 +861,70 @@ function skillsCopiedLine(
   return `Copied ${copied} to ${resolveInstallPaths(projectDir, landedAt).skillsDir}/${lineEnd}`;
 }
 
-/** Per scope, because the project and global installs can be on different hosts. */
-function compiledInto(cwd: string, scope: SkillScope): { dir: string; extension: string } {
+/** Entries are on-disk names, so ids, never display names. */
+type DirectoryBlock = { dir: string; entries: string[] };
+
+function hasEntries(block: DirectoryBlock): boolean {
+  return block.entries.length > 0;
+}
+
+/** At home a Claude install's two scopes are one folder, which is named once. */
+function oneBlockPerDir(blocks: DirectoryBlock[]): DirectoryBlock[] {
+  const dirs = [...new Set(blocks.map((block) => block.dir))];
+  return dirs.map((dir) => ({
+    dir,
+    entries: blocks.filter((block) => block.dir === dir).flatMap((block) => block.entries),
+  }));
+}
+
+function skillsCopiedBlocks(projectDir: string, copyResult: SkillCopyResult): DirectoryBlock[] {
+  return oneBlockPerDir(
+    [
+      copiedSkillsBlock(projectDir, "global", copyResult.globalCopied),
+      copiedSkillsBlock(projectDir, "project", copyResult.projectCopied),
+    ].filter(hasEntries),
+  );
+}
+
+function copiedSkillsBlock(
+  projectDir: string,
+  scope: SkillScope,
+  copied: SkillCopyResult["projectCopied"],
+): DirectoryBlock {
   return {
-    dir: resolveInstallPaths(cwd, scope).agentsDir,
-    extension: agentCodec(providerInUse(installBaseDir(cwd, scope))).extension,
+    dir: resolveInstallPaths(projectDir, scope).skillsDir,
+    entries: copied.map(({ skillId }) => `${skillId}/`),
+  };
+}
+
+/** Mirrors `writeCompiledAgentsByScope`' routing. */
+function agentsCompiledBlocks(
+  projectDir: string,
+  compiled: AgentName[],
+  agentScopeMap: Map<AgentName, SkillScope>,
+): DirectoryBlock[] {
+  const [globalAgents, projectAgents] = partition(
+    compiled,
+    (name) => agentScopeMap.get(name) === "global",
+  );
+  return oneBlockPerDir(
+    [
+      compiledAgentsBlock(projectDir, "global", globalAgents),
+      compiledAgentsBlock(projectDir, "project", projectAgents),
+    ].filter(hasEntries),
+  );
+}
+
+/** Per scope, because the project and global installs can be on different hosts. */
+function compiledAgentsBlock(
+  projectDir: string,
+  scope: SkillScope,
+  agents: AgentName[],
+): DirectoryBlock {
+  const { extension } = agentCodec(providerInUse(installBaseDir(projectDir, scope)));
+  return {
+    dir: resolveInstallPaths(projectDir, scope).agentsDir,
+    entries: agents.map((name) => `${name}${extension}`),
   };
 }
 
@@ -861,11 +944,13 @@ function splitAgentScopes(cwd: string, agentScopeMap: Map<AgentName, SkillScope>
   };
 }
 
-/** The project `stack` holds only project-scoped agents, so a global-only install skips it. */
-function configsHoldingAssignments(split: AgentScopeSplit, paths: ConfigPaths): string[] {
-  if (split.isGlobalOnly) return [paths.global];
-  if (split.globalAgentCount > 0) return [paths.global, paths.project];
-  return [paths.project];
+/**
+ * From a project its own config is always written, and the global one whenever the run changed it,
+ * if only to register the project. At home the two are one file.
+ */
+function configsWritten(projectDir: string, paths: ConfigPaths, globalWritten: boolean): string[] {
+  if (isHomeDirectory(projectDir)) return [paths.project];
+  return globalWritten ? [paths.global, paths.project] : [paths.project];
 }
 
 /** `compile` in a project recompiles no global agent, hence the global hint. */
@@ -886,34 +971,19 @@ function customizationSteps(
 }
 
 export type DashboardData = {
-  /** `branding.name`, or {@link DEFAULT_BRANDING.NAME}; both dashboard branches read it. */
   name: string;
-  skillCount: number;
-  agentCount: number;
-  mode: InstallMode;
-  source?: string;
+  installations: ProviderInstallation[];
 };
 
-/** Both counts come from one scope-aware installation, so project and global never mix. */
-export async function getDashboardData(projectDir: string): Promise<DashboardData> {
-  // ABORT: an unloadable config throws here, as `loadProjectConfig` beside it already would.
-  const [info, loaded, branding] = await Promise.all([
-    getInstallationInfo(),
-    loadProjectConfig(projectDir),
+/** Each installation's counts come from its own scope-aware read, so project and global never mix. */
+async function getDashboardData(projectDir: string): Promise<DashboardData> {
+  // ABORT: an unloadable config throws here, as the installation check before it already would.
+  const [installations, branding] = await Promise.all([
+    getInstallationsByProvider(projectDir),
     resolveBranding(projectDir),
   ]);
+  // Every caller found an installation before drawing the dashboard.
+  if (installations.length === 0) throw new Error(ERROR_MESSAGES.NO_INSTALLATION);
 
-  const activeSkills = loaded?.config.skills.filter((s) => !s.excluded);
-  const skillCount = info?.skillCount ?? 0;
-  const agentCount = info?.agentCount ?? 0;
-  const mode = info?.mode ?? (activeSkills ? deriveInstallMode(activeSkills) : "eject");
-  const source = loaded?.config.marketplace;
-
-  return {
-    name: branding.name,
-    skillCount,
-    agentCount,
-    mode,
-    ...(source !== undefined && { source }),
-  };
+  return { name: branding.name, installations };
 }

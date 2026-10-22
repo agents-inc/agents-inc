@@ -44,6 +44,7 @@ describe("source-fetcher", () => {
 
       expect(result.path).toBe(localSource);
       expect(result.fromCache).toBe(false);
+      expect(result.unreachable, "a local marketplace is read where it is").toBe(false);
       expect(result.source).toBe(localSource);
     });
 

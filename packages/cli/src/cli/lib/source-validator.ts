@@ -36,7 +36,7 @@ import { matrix } from "./matrix/matrix-provider";
 import { getErrorMessage } from "../utils/errors";
 import { formatZodErrors } from "./schema-validator";
 
-export type SourceValidationIssue = {
+type SourceValidationIssue = {
   severity: "error" | "warning";
   file: string;
   message: string;
@@ -62,12 +62,11 @@ export async function isSourceRepo(dir: string): Promise<boolean> {
   return directoryExists(path.join(dir, sourceConfig?.skillsDir ?? SKILLS_DIR_PATH));
 }
 
-export function isSnakeCase(key: string): boolean {
+function isSnakeCase(key: string): boolean {
   return /[a-z]_[a-z]/.test(key);
 }
 
-/** Non-object input yields no issues. */
-export function checkSnakeCaseKeys(rawMetadata: unknown, relPath: string): SourceValidationIssue[] {
+function checkSnakeCaseKeys(rawMetadata: unknown, relPath: string): SourceValidationIssue[] {
   if (!isRecord(rawMetadata)) return [];
 
   return Object.keys(rawMetadata)
@@ -80,7 +79,7 @@ export function checkSnakeCaseKeys(rawMetadata: unknown, relPath: string): Sourc
 }
 
 /** A warning, not an error: the loader still registers the skill by its id. */
-export function checkDirNameMatchesSkillId(
+function checkDirNameMatchesSkillId(
   skillId: string,
   relPath: string,
   dirName: string,
@@ -95,7 +94,6 @@ export function checkDirNameMatchesSkillId(
   ];
 }
 
-/** Reports that the check could not run when the id cannot be read. */
 async function checkSkillDirName(
   skillsDir: string,
   skillsDirRelPath: string,
@@ -130,7 +128,7 @@ async function checkSkillDirName(
   }
 }
 
-export function validateSkillFilePairs(
+function validateSkillFilePairs(
   skillMdDirs: Set<string>,
   metadataDirs: Set<string>,
   skillsDir: string,
@@ -180,21 +178,11 @@ export async function validateSource(
     );
   }
 
-  const skillMdFiles = await glob(`**/${STANDARD_FILES.SKILL_MD}`, skillsDir);
-  const metadataFiles = await glob(`**/${STANDARD_FILES.METADATA_YAML}`, skillsDir);
-
-  const skillMdDirs = new Set(skillMdFiles.map((f) => path.dirname(f)));
-  const metadataDirs = new Set(metadataFiles.map((f) => path.dirname(f)));
-
-  const pairIssues = validateSkillFilePairs(skillMdDirs, metadataDirs, skillsDir);
-
-  // Pair violations were reported above; validate only complete pairs.
-  const validMetadataFiles = metadataFiles.filter((f) => skillMdDirs.has(path.dirname(f)));
+  const { pairIssues, validMetadataFiles } = await pairSkillFiles(skillsDir);
   const skillIssues = await validateSkillsInTurn(skillsDir, skillsDirRelPath, validMetadataFiles);
 
   const crossReferenceIssues = await checkCrossReferences(resolvedPath, reader);
 
-  // Optional source-repo targets, in parallel: stacks, agents, config/*.ts exports.
   const extraIssues = await Promise.all([
     validateStacks(resolvedPath),
     validateAgents(resolvedPath),
@@ -205,6 +193,22 @@ export async function validateSource(
     [...pairIssues, ...skillIssues, ...crossReferenceIssues, ...extraIssues.flat()],
     validMetadataFiles.length,
   );
+}
+
+/** A half pair is reported here, so only complete pairs go on to be validated. */
+async function pairSkillFiles(
+  skillsDir: string,
+): Promise<{ pairIssues: SourceValidationIssue[]; validMetadataFiles: string[] }> {
+  const skillMdFiles = await glob(`**/${STANDARD_FILES.SKILL_MD}`, skillsDir);
+  const metadataFiles = await glob(`**/${STANDARD_FILES.METADATA_YAML}`, skillsDir);
+
+  const skillMdDirs = new Set(skillMdFiles.map((f) => path.dirname(f)));
+  const metadataDirs = new Set(metadataFiles.map((f) => path.dirname(f)));
+
+  return {
+    pairIssues: validateSkillFilePairs(skillMdDirs, metadataDirs, skillsDir),
+    validMetadataFiles: metadataFiles.filter((f) => skillMdDirs.has(path.dirname(f))),
+  };
 }
 
 async function validateSkillsInTurn(
@@ -360,7 +364,6 @@ function consumedMarketplaceMessage(marketplacePath: string, details: string): s
   return `Marketplace '${marketplacePath}': ${details}. Nothing to fix here — the rule is that marketplace's, not this project's`;
 }
 
-/** Skips silently when src/stacks/ does not exist. */
 async function validateStacks(resolvedPath: string): Promise<SourceValidationIssue[]> {
   const stacksDir = path.join(resolvedPath, DIRS.stacks);
   if (!(await directoryExists(stacksDir))) return [];

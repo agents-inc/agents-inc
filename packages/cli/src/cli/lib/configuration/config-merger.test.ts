@@ -22,14 +22,16 @@ import { firstElement } from "../__tests__/helpers/element-at.js";
 /** A `branding` a config declares by hand — no shared configuration sets one. */
 const WHITE_LABEL = { name: "Northwind" };
 
-/** The five fields a source repository declares its own layout with, each set off its default. */
+/** The four fields a source repository declares its own layout with, each set off its default. */
 const SOURCE_LAYOUT = {
   skillsDir: "catalogue/skills",
-  agentsDir: "catalogue/agents",
   stacksFile: "catalogue/stacks.ts",
   categoriesFile: "catalogue/skill-categories.ts",
   rulesFile: "catalogue/skill-rules.ts",
 } satisfies Partial<ProjectConfig>;
+
+/** A sub-agent partials folder a config may still name from before the key was removed. */
+const STALE_AGENTS_DIR = "catalogue/agents";
 
 describe("config-merger", () => {
   let tempDir: string;
@@ -78,12 +80,39 @@ describe("config-merger", () => {
         projectDir: tempDir,
       });
 
-      // loadFullProjectConfig finds the config, so merged is true
       expect(result.merged).toBe(true);
       expect(result.config.author).toBe("@vince");
     });
 
-    it("should inherit agentsSource from existing config", async () => {
+    it("drops an agentsDir the existing config still names, keeping the skillsDir beside it", async () => {
+      await writeTestTsConfig(
+        tempDir,
+        buildSourceConfig({
+          marketplace: "github:my-org/skills",
+          skillsDir: SOURCE_LAYOUT.skillsDir,
+          agentsDir: STALE_AGENTS_DIR,
+        }),
+      );
+
+      const newConfig = buildProjectConfig({ name: "new-project", skills: [] });
+
+      const result = await mergeWithExistingConfig(newConfig, {
+        projectDir: tempDir,
+      });
+
+      expect(result.merged).toBe(true);
+      // A config naming no project is loaded under its folder's name, which the merge keeps.
+      expect(result.config).toStrictEqual(
+        buildProjectConfig({
+          name: path.basename(tempDir),
+          skills: [],
+          marketplace: "github:my-org/skills",
+          skillsDir: SOURCE_LAYOUT.skillsDir,
+        }),
+      );
+    });
+
+    it("drops an agentsSource the existing config still names", async () => {
       await writeTestTsConfig(
         tempDir,
         buildSourceConfig({
@@ -99,7 +128,14 @@ describe("config-merger", () => {
       });
 
       expect(result.merged).toBe(true);
-      expect(result.config.agentsSource).toBe("github:my-org/agents");
+      // A config naming no project is loaded under its folder's name, which the merge keeps.
+      expect(result.config).toStrictEqual(
+        buildProjectConfig({
+          name: path.basename(tempDir),
+          skills: [],
+          marketplace: "github:my-org/skills",
+        }),
+      );
     });
 
     it("drops a fully-deselected dual-scope agent's project entry and tombstone from the written config", async () => {
@@ -167,6 +203,10 @@ describe("config-merger", () => {
       const GLOBAL_INSTALL_NAME = DEFAULT_PLUGIN_NAME;
       /** The identity `configNameFor` seeds this project with — its own directory name. */
       const PROJECT_NAME = "acme-web";
+      /** What the global installation's stack described it as. */
+      const GLOBAL_DESCRIPTION = "Just the API skills";
+      /** What the configuration this project is installing describes it as. */
+      const OWN_DESCRIPTION = "Every web skill";
 
       it("keeps the project's own name rather than the global config's", async () => {
         await writeTestTsConfig(
@@ -222,6 +262,64 @@ describe("config-merger", () => {
         );
 
         expect(pick(result.config, typedKeys(SOURCE_LAYOUT))).toStrictEqual({});
+      });
+
+      it("describes the project as the configuration being installed does, not as the global config does", async () => {
+        await writeTestTsConfig(
+          fakeHome,
+          buildProjectConfig({
+            name: GLOBAL_INSTALL_NAME,
+            skills: [],
+            description: GLOBAL_DESCRIPTION,
+          }),
+        );
+
+        const result = await mergeWithExistingConfig(
+          buildProjectConfig({ name: PROJECT_NAME, skills: [], description: OWN_DESCRIPTION }),
+          { projectDir },
+        );
+
+        expect(result.config.description).toBe(OWN_DESCRIPTION);
+      });
+
+      it("lends the project none of the global config's description when the incoming one has none", async () => {
+        await writeTestTsConfig(
+          fakeHome,
+          buildProjectConfig({
+            name: GLOBAL_INSTALL_NAME,
+            skills: [],
+            description: GLOBAL_DESCRIPTION,
+          }),
+        );
+
+        const result = await mergeWithExistingConfig(
+          buildProjectConfig({ name: PROJECT_NAME, skills: [] }),
+          { projectDir },
+        );
+
+        expect(result.config).not.toHaveProperty("description");
+      });
+
+      it("keeps the description recorded in the project's OWN config over the incoming one", async () => {
+        await writeTestTsConfig(
+          fakeHome,
+          buildProjectConfig({
+            name: GLOBAL_INSTALL_NAME,
+            skills: [],
+            description: GLOBAL_DESCRIPTION,
+          }),
+        );
+        await writeTestTsConfig(
+          projectDir,
+          buildProjectConfig({ name: PROJECT_NAME, skills: [], description: "Written by hand" }),
+        );
+
+        const result = await mergeWithExistingConfig(
+          buildProjectConfig({ name: PROJECT_NAME, skills: [], description: OWN_DESCRIPTION }),
+          { projectDir },
+        );
+
+        expect(result.config.description).toBe("Written by hand");
       });
 
       it("still adopts the name recorded in the project's OWN config when it has one", async () => {
@@ -362,7 +460,6 @@ describe("config-merger", () => {
         });
 
         expect(result.merged).toBe(true);
-        // Empty existing agents, so new agents are used
         expectAgentConfigs(result.config, buildAgentConfigs(["web-developer"]));
       });
     });
@@ -672,28 +769,6 @@ describe("config-merger", () => {
           result.marketplaceName,
           "the name recorded beside one marketplace does not label another",
         ).toBe("plain");
-      });
-
-      it("should use existing agentsSource when present", () => {
-        const newConfig = buildProjectConfig({
-          name: "project",
-          skills: [],
-          agentsSource: "github:new/agents",
-        });
-        const existingConfig = buildProjectConfig({
-          name: "project",
-          skills: [],
-          agentsSource: "github:existing/agents",
-        });
-
-        const result = mergeConfigs(newConfig, existingConfig);
-
-        expect(result).toStrictEqual({
-          name: "project",
-          agentsSource: "github:existing/agents",
-          agents: buildAgentConfigs(["web-developer"]),
-          skills: [],
-        });
       });
 
       it("keeps the branding the existing config carried", () => {
@@ -1333,6 +1408,26 @@ describe("config-merger", () => {
         expect(reactEntries).toHaveLength(1);
         expect(firstElement(reactEntries).excluded).toBe(true);
       });
+
+      it("drops the mask of a skill selected again at its scope, and lists the skill where the new roster does", () => {
+        const newConfig = buildProjectConfig({
+          name: "project",
+          skills: buildSkillConfigs(["web-state-zustand", "web-framework-react"], {
+            scope: "global",
+          }),
+        });
+        const existingConfig = buildProjectConfig({
+          name: "project",
+          skills: [
+            ...buildSkillConfigs(["web-framework-react"], { scope: "global", excluded: true }),
+            ...buildSkillConfigs(["web-state-zustand"], { scope: "global" }),
+          ],
+        });
+
+        expect(mergeConfigs(newConfig, existingConfig).skills).toStrictEqual(
+          buildSkillConfigs(["web-state-zustand", "web-framework-react"], { scope: "global" }),
+        );
+      });
     });
 
     describe("excluded dual entries for agents", () => {
@@ -1396,6 +1491,26 @@ describe("config-merger", () => {
           name: "web-developer",
           scope: "global",
         });
+      });
+
+      it("drops the mask of an agent selected again at its scope, and lists the agent where the new roster does", () => {
+        const newConfig = buildProjectConfig({
+          name: "project",
+          agents: buildAgentConfigs(["web-developer", "api-developer"], { scope: "global" }),
+          skills: [],
+        });
+        const existingConfig = buildProjectConfig({
+          name: "project",
+          agents: [
+            ...buildAgentConfigs(["api-developer"], { scope: "global", excluded: true }),
+            ...buildAgentConfigs(["web-developer"], { scope: "global" }),
+          ],
+          skills: [],
+        });
+
+        expect(mergeConfigs(newConfig, existingConfig).agents).toStrictEqual(
+          buildAgentConfigs(["web-developer", "api-developer"], { scope: "global" }),
+        );
       });
 
       it("should preserve dual-scope tombstone when new config explicitly carries it", () => {

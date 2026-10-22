@@ -2,7 +2,7 @@ import path from "path";
 import { captureOutput } from "@oclif/test";
 import { storedConfigHandlerFor } from "@workspace/api-mocks";
 import { configMockServer } from "@workspace/api-mocks/node";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CLI_ROOT } from "../helpers/cli-runner.js";
 import { useMockWorker } from "../helpers/mock-worker.js";
@@ -17,7 +17,10 @@ import {
   type TestDirs,
 } from "../fixtures/create-test-source";
 import { DEFAULT_TEST_SKILLS } from "../mock-data/mock-skills";
-import { forgetTheProviderChosenForThisRun } from "../../installation/install-layout.js";
+import {
+  CODEX_HOME_VAR,
+  forgetTheProviderChosenForThisRun,
+} from "../../installation/install-layout.js";
 
 /**
  * Imported from source rather than run through `dist/`, so the provider `--provider` chose for the
@@ -35,11 +38,12 @@ const CODEX_CONFIG = ".agents-inc/codex/config.ts";
 describe("init --from with --provider", () => {
   useMockWorker();
   let projectDir: string;
+  let fakeHome: string;
   let cleanup: () => Promise<void>;
   let dirs: TestDirs;
 
   beforeEach(async () => {
-    ({ projectDir, cleanup } = await setupIsolatedHome("cc-init-from-provider-test-"));
+    ({ projectDir, fakeHome, cleanup } = await setupIsolatedHome("cc-init-from-provider-test-"));
     dirs = await createTestSource({ skills: inTestMarketplace(DEFAULT_TEST_SKILLS) });
     configMockServer.use(
       storedConfigHandlerFor(
@@ -84,5 +88,88 @@ describe("init --from with --provider", () => {
     expect(error).toBeUndefined();
     expect(await fileExists(path.join(projectDir, CLAUDE_CONFIG))).toBe(true);
     expect(await fileExists(path.join(projectDir, CODEX_CONFIG))).toBe(false);
+  });
+
+  /**
+   * Codex's global install lives under `$CODEX_HOME` (else `~/.codex`), apart from a project's
+   * `.agents/skills`, so at home the report names the global folders the files went to.
+   */
+  describe("at home, installing the global install for Codex", () => {
+    beforeEach(() => {
+      configMockServer.use(
+        storedConfigHandlerFor(
+          SEED_ID,
+          buildSeedPayload({
+            skills: {
+              [REACT]: buildSeedSkill({
+                install: "eject",
+                scope: "global",
+                assignments: { "web-developer": "lazy" },
+              }),
+            },
+            agents: { "web-developer": { scope: "global" } },
+          }),
+        ),
+      );
+      process.chdir(fakeHome);
+    });
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("copies the skills into Codex's global skills folder", async () => {
+      vi.stubEnv(CODEX_HOME_VAR, undefined);
+
+      const { error } = await initFrom("--provider", "codex");
+
+      expect(error).toBeUndefined();
+      expect(await fileExists(path.join(fakeHome, ".codex", "skills", REACT, "SKILL.md"))).toBe(
+        true,
+      );
+    });
+
+    it("names that folder as where it copied the skills", async () => {
+      vi.stubEnv(CODEX_HOME_VAR, undefined);
+
+      const { stdout } = await initFrom("--provider", "codex");
+
+      expect(stdout).toContain(
+        [
+          "Skills copied to:",
+          `  ${path.join(fakeHome, ".codex", "skills")}`,
+          `    ${REACT}/`,
+          "",
+          "Agents compiled to:",
+        ].join("\n"),
+      );
+    });
+
+    it("compiles the sub-agents into the agents folder under $CODEX_HOME", async () => {
+      const codexHome = path.join(fakeHome, "codex-home");
+      vi.stubEnv(CODEX_HOME_VAR, codexHome);
+
+      const { error } = await initFrom("--provider", "codex");
+
+      expect(error).toBeUndefined();
+      expect(await fileExists(path.join(codexHome, "agents", "web-developer.toml"))).toBe(true);
+    });
+
+    it("names that folder as where it compiled the sub-agents", async () => {
+      const codexHome = path.join(fakeHome, "codex-home");
+      vi.stubEnv(CODEX_HOME_VAR, codexHome);
+
+      const { stdout } = await initFrom("--provider", "codex");
+
+      expect(stdout).toContain(
+        [
+          "Agents compiled to:",
+          `  ${path.join(codexHome, "agents")}`,
+          "    web-developer.toml",
+          "",
+          "Configuration:",
+        ].join("\n"),
+      );
+    });
   });
 });

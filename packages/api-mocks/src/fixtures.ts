@@ -1,4 +1,4 @@
-import { CATALOG } from "@workspace/matrix"
+import { CATALOG, expandStack, resolveAssignment } from "@workspace/matrix"
 import { matrixSchema } from "@workspace/matrix/matrix-schema"
 import { SEED_VERSION, seedPayloadSchema } from "@workspace/matrix/seed"
 import {
@@ -6,10 +6,10 @@ import {
   skillIndexSchema,
 } from "@workspace/matrix/skill-index"
 
-import type { SeedPayload } from "@workspace/matrix/seed"
+import type { AssignmentTarget } from "@workspace/matrix"
+import type { SeedPayload, SeedSkill } from "@workspace/matrix/seed"
 
-// What the worker answers with, as plain values: no mocking library is imported here. GitHub is
-// the one other origin, because marketplace catalogues are fetched browser-direct.
+// Plain values: no mocking library is imported here.
 
 // The editor's default `VITE_API_URL`.
 export const WORKER_ORIGIN = "http://localhost:8787"
@@ -37,9 +37,9 @@ export const WORKER_EXPOSED_HEADERS = [
   "retry-after",
 ].join(",")
 
-// Real catalog ids, since the app prunes unknown ones. Parsed so a drifting fixture fails at
-// import. `web-developer` is pinned to the project because a project skill never reaches a
-// globally written sub-agent, and `init --from` throws without it.
+// Real catalog ids, since the app prunes unknown ones. `web-developer` is pinned to the project
+// because a project skill never reaches a globally written sub-agent, and `init --from` throws
+// without it.
 export const seedPayload = (
   overrides: Partial<SeedPayload> = {}
 ): SeedPayload =>
@@ -63,8 +63,67 @@ export const seedPayload = (
 
 export const STORED_PAYLOAD = seedPayload()
 
-// Every entry is a real skill in an allowlisted repo. `bytes` are real, so `docx` is past
-// `MAX_EXTERNAL_SKILL_BYTES` and the rest are inside it.
+// The CLI stamps the catalogue it was built with, never the editor's.
+const CLI_MATRIX_VERSION = "0.0.0-cli"
+
+const assignedAgents = (skills: SeedPayload["skills"]) =>
+  Object.values(skills).flatMap((skill) => Object.keys(skill.assignments))
+
+/**
+ * A selection as a bare `edit` mints it from an installation: no stack id, skills in id order,
+ * and every installed sub-agent named, switched on at its scope. `alsoOn` names the ones no
+ * skill reaches.
+ */
+export const cliMintedPayload = (
+  skills: SeedPayload["skills"],
+  alsoOn: readonly string[] = []
+): SeedPayload =>
+  seedPayloadSchema.parse({
+    v: SEED_VERSION,
+    matrixVersion: CLI_MATRIX_VERSION,
+    stackId: null,
+    skills: Object.fromEntries(
+      Object.entries(skills).sort(([a], [b]) => (a < b ? -1 : 1))
+    ),
+    agents: Object.fromEntries(
+      [...new Set([...assignedAgents(skills), ...alsoOn])]
+        .sort()
+        .map((agent) => [agent, { on: true, scope: "global" }])
+    ),
+  })
+
+// The selection defaults, as an installation of an untouched pick records them.
+const mintedSkill = (targets: readonly AssignmentTarget[]): SeedSkill => ({
+  install: "plugin",
+  scope: "global",
+  assignments: Object.fromEntries(
+    targets.map(({ agentId, load }) => [agentId, load])
+  ),
+})
+
+/** A skill picked fresh in the editor, installed, and minted back by a bare `edit`. */
+export const freshlyPickedSkill = (skillId: string): SeedSkill =>
+  mintedSkill(resolveAssignment(skillId))
+
+/** A built-in stack, installed by `init --from` and minted back by a bare `edit`. */
+export const cliMintedStackPayload = (stackId: string): SeedPayload => {
+  const expansion = expandStack(stackId)
+  if (!expansion)
+    throw new Error(`The vendored catalogue has no stack ${stackId}`)
+
+  return cliMintedPayload(
+    Object.fromEntries(
+      expansion.skillIds.map((skillId) => [
+        skillId,
+        mintedSkill(expansion.assignmentsBySkill[skillId] ?? []),
+      ])
+    ),
+    expansion.skillLessAgentIds
+  )
+}
+
+// Real skills in allowlisted repos, with real `bytes`: `docx` alone is past
+// `MAX_EXTERNAL_SKILL_BYTES`.
 export const SKILL_INDEX = skillIndexSchema.parse({
   builtAt: "2026-08-08T09:00:00.000Z",
   skills: [
@@ -77,7 +136,6 @@ export const SKILL_INDEX = skillIndexSchema.parse({
       stars: 268868,
       bytes: 80159,
     },
-// The one entry that can never be added.
     {
       name: "docx",
       description:
@@ -96,7 +154,7 @@ export const SKILL_INDEX = skillIndexSchema.parse({
       stars: 84036,
       bytes: 20555,
     },
-// Addable by weight, from a repo the content stub does not serve, to reach the late refusal.
+    // Addable by weight, from a repo the content stub does not serve, to reach the late refusal.
     {
       name: "webapp-testing",
       description:
@@ -109,13 +167,11 @@ export const SKILL_INDEX = skillIndexSchema.parse({
   ],
 })
 
-// Only `builtAt` and the freshness header mark it stale.
 export const STALE_SKILL_INDEX = skillIndexSchema.parse({
   ...SKILL_INDEX,
   builtAt: "2026-08-01T09:00:00.000Z",
 })
 
-// Nothing cached and an upstream that will not answer.
 export const SKILL_INDEX_UNAVAILABLE_BODY =
   "The skill index is not available yet"
 
@@ -138,14 +194,12 @@ export const UNAUTHORIZED_BODY = { error: "unauthorized" } as const
 export const GITHUB_AUTHORIZE_URL =
   "https://github.com/login/oauth/authorize?client_id=Iv1.0123456789abcdef&state=t9Yb2Qw4&scope=user%3Aemail"
 
-// Two instants: `updatedAt` is the sort key and what a rename changes.
+// `updatedAt` is the sort key and what a rename changes.
 export const STACK_SAVED_AT = "2026-08-28T00:00:00.000Z"
 export const STACK_RENAMED_AT = "2026-08-29T00:00:00.000Z"
 
-/**
- * A saved stack is a name and a pointer into `/configs`. The id is derived from the name where the
- * worker uses `crypto.randomUUID()`; nothing reads its form.
- */
+// The id is derived from the name where the worker uses `crypto.randomUUID()`; nothing reads its
+// form.
 export const savedStack = (
   name: string,
   configId: string = STORED_ID,
@@ -160,7 +214,7 @@ export const savedStack = (
 
 export type SavedStack = ReturnType<typeof savedStack>
 
-// Newest-first on `updatedAt`, as `GET /stacks` returns them; both point at the served config.
+// Newest-first on `updatedAt`, as `GET /stacks` returns them.
 export const SAVED_STACK = savedStack("Weekend project")
 export const OTHER_SAVED_STACK = savedStack(
   "Client work",
@@ -168,9 +222,6 @@ export const OTHER_SAVED_STACK = savedStack(
   "2026-08-27T00:00:00.000Z"
 )
 export const SAVED_STACKS = [SAVED_STACK, OTHER_SAVED_STACK]
-
-// The worker answers 404 for another person's id and for none alike.
-export const MISSING_STACK_ID = "s_not-yours"
 
 export const NO_STACK_BODY = { error: "not found" } as const
 
@@ -188,7 +239,6 @@ export const COMPOSED_PROPOSAL = {
   reason: "React for the app, and Vitest to test it.",
 }
 
-// `/compose` tells its two 400s apart by body, so `composeProposal` reads it for that status.
 export const COMPOSE_TOO_MANY_BODY = { error: "too many requests" } as const
 export const COMPOSE_FAILED_BODY = {
   error: "the model did not answer",
@@ -202,8 +252,8 @@ export const MARKETPLACE_REF = "acme/skills"
 // GitHub 404s a private repo for an unauthorized caller, so a 404 offers the token.
 export const PRIVATE_MARKETPLACE_REF = "acme/private-skills"
 
-// The canonical forms, written out rather than derived. A bare `owner/repo` would route as a local
-// directory.
+// Written out rather than derived: a bare `owner/repo` routes as a local directory, and
+// `seedPayloadSchema` cannot tell the forms apart.
 export const MARKETPLACE_CANONICAL_REF = "github:acme/skills"
 export const PRIVATE_MARKETPLACE_CANONICAL_REF = "github:acme/private-skills"
 
@@ -289,7 +339,7 @@ const [ACME_SKILL_ID] = Object.keys(MARKETPLACE_CATALOG.skills) as [string]
 
 export { ACME_SKILL_ID }
 
-/** An id no catalogue carries — the drift a payload has to survive out loud. */
+/** An id no catalogue carries. */
 export const RETIRED_SKILL_ID = "acme-web-retired"
 
 export const MARKETPLACE_IMPORT_ID = "AcmeMk_1"
@@ -315,34 +365,24 @@ const marketplacePayload = (marketplace: string, skillIds: string[]) =>
     agents: {},
   })
 
-// The canonical ref, never the bare one: a bare `acme/skills` routes as a local directory, and
-// `seedPayloadSchema` cannot tell the forms apart.
-
-/** A marketplace anyone may read. */
 export const MARKETPLACE_PAYLOAD = marketplacePayload(
   MARKETPLACE_CANONICAL_REF,
   [ACME_SKILL_ID]
 )
 
-/** One that needs a token. */
 export const PRIVATE_MARKETPLACE_PAYLOAD = marketplacePayload(
   PRIVATE_MARKETPLACE_CANONICAL_REF,
   [ACME_SKILL_ID]
 )
 
-/** One naming a skill its own marketplace has since retired. */
 export const DRIFTED_MARKETPLACE_PAYLOAD = marketplacePayload(
   MARKETPLACE_CANONICAL_REF,
   [ACME_SKILL_ID, RETIRED_SKILL_ID]
 )
 
-/** The id a link carrying a pair the two scopes rule out is addressed by. */
 export const OUT_OF_SCOPE_IMPORT_ID = "AcmeSc_4"
 
-/**
- * A project-scoped skill assigned to an agent the payload leaves at global, which `--from` refuses.
- * Older editor links carry this shape.
- */
+// A project-scoped skill assigned to an agent the payload leaves at global, which `--from` refuses.
 export const OUT_OF_SCOPE_PAYLOAD = seedPayloadSchema.parse({
   v: SEED_VERSION,
   matrixVersion: "1.0.0",
@@ -357,7 +397,6 @@ export const OUT_OF_SCOPE_PAYLOAD = seedPayloadSchema.parse({
   agents: {},
 })
 
-// A second marketplace, derived by renaming `acme` to `bigco`; prefixed ids keep them disjoint.
 export const BIGCO_REF = "bigco/skills"
 
 export const BIGCO_CANONICAL_REF = "github:bigco/skills"
@@ -376,8 +415,7 @@ export const GITHUB_RAW_ORIGIN = "https://raw.githubusercontent.com"
 /** Set on `window` if the SKILL.md below were ever executed rather than shown. */
 export const XSS_SENTINEL = "__agentsIncSkillContentsRan"
 
-// A whole directory (SKILL.md, metadata, a nested file), since "contents" is the directory. Its
-// SKILL.md carries live markup on purpose: the preview must neither run nor lose it.
+// Its SKILL.md carries live markup on purpose: the preview must neither run nor lose it.
 export const EXTERNAL_SKILL = {
   repo: "obra/superpowers",
   path: "skills/brainstorming",
@@ -392,7 +430,6 @@ export const EXTERNAL_SKILL = {
   },
 } as const
 
-// A second one, so a spec can stage two and assert on the pair.
 export const OTHER_EXTERNAL_SKILL = {
   repo: "addyosmani/agent-skills",
   path: "skills/code-review-and-quality",
@@ -402,7 +439,6 @@ export const OTHER_EXTERNAL_SKILL = {
   },
 } as const
 
-// Modelled on `anthropics/skills/skills/docx`, past the per-skill cap.
 export const OVERSIZED_EXTERNAL_SKILL = {
   repo: "anthropics/skills",
   path: "skills/docx",

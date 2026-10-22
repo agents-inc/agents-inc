@@ -1,5 +1,5 @@
 import React from "react";
-import { partition } from "remeda";
+import { unique } from "remeda";
 import path from "path";
 
 import { Flags } from "@oclif/core";
@@ -18,6 +18,7 @@ import {
   remove,
   removeDirIfEmpty,
 } from "../utils/fs";
+import { plural } from "../utils/string";
 import { listAgentFilesOf, splitAgentsByProvenance } from "../lib/agents";
 import { hostAt } from "../lib/hosts/host-for.js";
 import type { PluginHost, PluginRemovalOutcome } from "../lib/hosts/plugin-host.js";
@@ -27,9 +28,14 @@ import {
   buildMarketplacePluginRef,
   parseMarketplacePluginRef,
 } from "../lib/plugins/index";
-import { readForkedFromMetadata } from "../lib/skills/index";
+import { type ForkedFromMetadata, readForkedFromMetadata } from "../lib/skills/index";
 import { isHomeDirectory, resolveInstallPaths } from "../lib/installation/index";
-import { lazyGateDeps, mutateGlobal, propagateGlobalRemoval } from "../lib/config-gate/index.js";
+import {
+  lazyGateDeps,
+  mutateGlobal,
+  propagateGlobalRemoval,
+  type GateReport,
+} from "../lib/config-gate/index.js";
 import { loadSkillsMatrixFromSource } from "../lib/loading";
 import { loadAgentDefs } from "../lib/operations";
 import { ConfigLoadError, loadProjectConfigAt } from "../lib/configuration/project-config";
@@ -56,15 +62,17 @@ import {
   compiledAgentsRemoval,
   localSkillsRemoval,
   notInstalledHere,
+  pluginLeftRegistered,
   unmarkedAgentsKept,
   registeredProjectsUpdated,
   registeredProjectUpdateSkipped,
   registeredProjectsUpdateFailed,
   uninstallConfigUnreadable,
   uninstallNeedsTerminal,
+  uninstallSkillMetadataUnreadable,
 } from "../utils/messages";
 import type { AgentDefinition, AgentName, MergedSkillsMatrix, ProjectConfig } from "../types/index";
-import type { SkillScope } from "../types/config";
+import type { SkillConfig, SkillScope } from "../types/config";
 
 /** Paths and names, never display strings, so the preview and the removal read one value. */
 type RemovalEntry =
@@ -78,7 +86,6 @@ type SkillsRemoval = Extract<RemovalEntry, { kind: "skills" }>;
 type AgentsRemoval = Extract<RemovalEntry, { kind: "agents" }>;
 type ConfigManifestRemoval = Extract<RemovalEntry, { kind: "config" }>;
 
-/** Built once: the confirm UI and the executor read the same value. */
 type RemovalPlan = {
   entries: RemovalEntry[];
   kept: string[];
@@ -107,7 +114,6 @@ function pluginsEntry(target: UninstallTarget): PluginRemoval[] {
   return [{ kind: "plugins", pluginsDir: target.pluginsDir, names: [...target.cliPluginNames] }];
 }
 
-/** Only those carrying `forkedFrom`, so the plan names no removal the run will not make. */
 function localSkillsEntry(target: UninstallTarget): SkillsRemoval[] {
   if (target.cliSkills.length === 0) return [];
   return [{ kind: "skills", skillsDir: target.skillsDir, skillNames: [...target.cliSkills] }];
@@ -122,13 +128,12 @@ function compiledAgentsEntry(target: UninstallTarget): AgentsRemoval[] {
 
 /**
  * Only those with a file here, so the plan names no removal the run will not make: the config's
- * roster first (pre-marker installs carry none), else the provenance-marked files.
+ * roster (pre-marker installs carry no marker) and every provenance-marked file, each once.
  */
 function identifiableAgents(target: UninstallTarget): string[] {
-  if (target.configuredAgents.length === 0) return target.markedAgents;
-
   const agentFiles = new Set([...target.markedAgents, ...target.unmarkedAgents]);
-  return target.configuredAgents.filter((name) => agentFiles.has(name));
+  const configuredWithAFile = target.configuredAgents.filter((name) => agentFiles.has(name));
+  return unique([...configuredWithAFile, ...target.markedAgents]);
 }
 
 function configManifestEntries(target: UninstallTarget): ConfigManifestRemoval[] {
@@ -216,7 +221,7 @@ function sectionWithItems(label: string, items: string[]): RemovalPlanSection[] 
 const UNINSTALL_CONFIRM_MESSAGE = "Are you sure you want to uninstall?";
 
 export default class Uninstall extends BaseCommand {
-  /** Replaced in `run` before anything prints; a field so removers three calls deep can name it. */
+  /** Replaced in `run` before anything prints. */
   private brandingName: string = DEFAULT_BRANDING.NAME;
 
   static summary = `Remove ${DEFAULT_BRANDING.NAME} from this project`;
@@ -244,34 +249,31 @@ export default class Uninstall extends BaseCommand {
   async run(): Promise<void> {
     const { flags } = await this.parse(Uninstall);
     const projectDir = process.cwd();
+    const namedProvider = providerNamedBy(flags.provider);
 
     // Before anything is detected: removing the wrong one of two installations is destructive.
-    await refuseAnAmbiguousInstallation(
-      projectDir,
-      "uninstall",
-      providerNamedBy(flags.provider),
-      (message) => this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
+    await refuseAnAmbiguousInstallation(projectDir, "uninstall", namedProvider, (message) =>
+      this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
     );
 
     this.brandingName = await this.resolveBrandingName(projectDir);
 
     this.printHeader();
 
-    const target = await detectUninstallTarget(projectDir, (failure) =>
-      this.warn(uninstallConfigUnreadable(failure)),
-    );
+    const target = await detectUninstallTarget(projectDir, {
+      onConfigLoadFailed: (failure) => this.warn(uninstallConfigUnreadable(failure)),
+      // Aborts: guessing would either remove the user's skill or keep this CLI's.
+      onSkillMetadataUnreadable: (metadataPath) =>
+        this.error(uninstallSkillMetadataUnreadable(metadataPath), { exit: EXIT_CODES.ERROR }),
+    });
     const plan = buildRemovalPlan(target);
     if (!hasAnythingToRemove(plan)) {
-      this.reportNothingToUninstall(target.userSkills);
+      this.reportNothingToUninstall();
       return;
     }
 
-    const confirmed = flags.yes ? this.printRemovalPlan(plan) : await this.confirmRemoval(plan);
-    if (!confirmed) {
-      this.log("");
-      this.log("Uninstall cancelled");
-      this.exit(EXIT_CODES.CANCELLED);
-    }
+    const approved = await this.removalApproved(plan, flags.yes, namedProvider);
+    if (!approved) this.cancelUninstall();
 
     await this.executeUninstall(plan, target, projectDir);
     this.reportSuccess();
@@ -283,8 +285,7 @@ export default class Uninstall extends BaseCommand {
     this.log("");
   }
 
-  private reportNothingToUninstall(userSkills: readonly string[]): void {
-    this.warnUserSkillsKept(userSkills);
+  private reportNothingToUninstall(): void {
     this.warn("Nothing to uninstall.");
     this.log("");
     this.log(notInstalledHere(this.brandingName));
@@ -292,7 +293,24 @@ export default class Uninstall extends BaseCommand {
     this.log(INFO_MESSAGES.NO_CHANGES_MADE);
   }
 
-  private printRemovalPlan(plan: RemovalPlan): true {
+  private async removalApproved(
+    plan: RemovalPlan,
+    skipConfirmation: boolean,
+    namedProvider: Provider | undefined,
+  ): Promise<boolean> {
+    if (!skipConfirmation) return this.confirmRemoval(plan, namedProvider);
+
+    this.printRemovalPlan(plan);
+    return true;
+  }
+
+  private cancelUninstall(): never {
+    this.log("");
+    this.log("Uninstall cancelled");
+    this.exit(EXIT_CODES.CANCELLED);
+  }
+
+  private printRemovalPlan(plan: RemovalPlan): void {
     this.log(UNINSTALL_PLAN.PREVIEW_HEADING);
     this.log("");
 
@@ -309,13 +327,15 @@ export default class Uninstall extends BaseCommand {
     }
 
     this.log("");
-    return true;
   }
 
-  private async confirmRemoval(plan: RemovalPlan): Promise<boolean> {
+  private async confirmRemoval(
+    plan: RemovalPlan,
+    namedProvider: Provider | undefined,
+  ): Promise<boolean> {
     // A confirm nobody can answer must never become a yes.
     if (!process.stdin.isTTY) {
-      this.error(uninstallNeedsTerminal(), { exit: EXIT_CODES.ERROR });
+      this.error(uninstallNeedsTerminal(namedProvider), { exit: EXIT_CODES.ERROR });
     }
 
     const outcome = await promptConfirm(({ onConfirm, onCancel }) => (
@@ -343,24 +363,17 @@ export default class Uninstall extends BaseCommand {
       : null;
 
     await this.removePlannedPlugins(planEntry(plan, "plugins"), target.config, projectDir);
+    await this.removeLocalFilesOrFail(plan, target);
 
-    try {
-      await this.removeLocalFiles(plan, target);
-    } catch (error) {
-      this.log("Failed to remove local files");
-      this.error(getErrorMessage(error), {
-        exit: EXIT_CODES.ERROR,
-      });
-    }
-
-    if (isGlobalUninstall) {
-      if (propagation) {
-        await this.updateRegisteredProjects(propagation);
-      }
+    if (!isGlobalUninstall) {
+      await this.deregisterProject(projectDir);
       return;
     }
+    if (propagation) await this.updateRegisteredProjects(propagation);
+  }
 
-    // Degrades: a missing or corrupt global config must never fail the uninstall.
+  /** Degrades: a missing or corrupt global config must never fail the uninstall. */
+  private async deregisterProject(projectDir: string): Promise<void> {
     try {
       // Lazy deps: deregistering inlines nothing, so the uninstall stays offline.
       await mutateGlobal({ kind: "deregister-project", projectDir }, lazyGateDeps(projectDir));
@@ -410,19 +423,22 @@ export default class Uninstall extends BaseCommand {
         { matrix: propagation.matrix, agents: propagation.agents },
         propagation.provider,
       );
-      const { updated, unreadable, failed } = report.propagated;
-      this.reportProjectsOutOfReach(report.propagated);
-      for (const skippedPath of [...unreadable, ...failed]) {
-        this.warn(registeredProjectUpdateSkipped(skippedPath));
-      }
-      if (updated.length === 0) return;
-
-      this.logSuccess(registeredProjectsUpdated(updated.length));
-
-      this.reportPropagatedRecompile(report);
+      this.reportRegisteredProjectsUpdate(report);
     } catch (error) {
       this.warn(registeredProjectsUpdateFailed(getErrorMessage(error)));
     }
+  }
+
+  private reportRegisteredProjectsUpdate(report: GateReport): void {
+    const { updated, unreadable, failed } = report.propagated;
+    this.reportProjectsOutOfReach(report.propagated);
+    for (const skippedPath of [...unreadable, ...failed]) {
+      this.warn(registeredProjectUpdateSkipped(skippedPath));
+    }
+    if (updated.length === 0) return;
+
+    this.logSuccess(registeredProjectsUpdated(updated.length));
+    this.reportPropagatedRecompile(report);
   }
 
   private reportSuccess(): void {
@@ -433,8 +449,19 @@ export default class Uninstall extends BaseCommand {
     this.log("");
   }
 
+  private async removeLocalFilesOrFail(plan: RemovalPlan, target: UninstallTarget): Promise<void> {
+    try {
+      await this.removeLocalFiles(plan, target);
+    } catch (error) {
+      this.log("Failed to remove local files");
+      this.error(getErrorMessage(error), {
+        exit: EXIT_CODES.ERROR,
+      });
+    }
+  }
+
   private async removeLocalFiles(plan: RemovalPlan, target: UninstallTarget): Promise<void> {
-    await this.removePlannedSkills(planEntry(plan, "skills"), target.userSkills);
+    await this.removePlannedSkills(planEntry(plan, "skills"));
     await this.removePlannedAgents(planEntry(plan, "agents"));
 
     for (const statement of plan.kept) {
@@ -444,14 +471,8 @@ export default class Uninstall extends BaseCommand {
     const cleanup = await cleanupEmptyDirs(target, planEntries(plan, "config"));
 
     this.reportSourceFolderCleanup(cleanup.sourceFolder);
-
-    this.reportSourceRootCleanup(target.sourceRoot, cleanup);
-
-    if (cleanup.claudeDirRemoved) {
-      this.logSuccess(`Removed ${CLAUDE_DIR}/`);
-    } else if (cleanup.claudeDirKept) {
-      this.log(`Kept ${CLAUDE_DIR}/ (contains user content)`);
-    }
+    this.reportDirCleanup(target.sourceRoot.relName, cleanup.sourceRoot);
+    this.reportDirCleanup(CLAUDE_DIR, cleanup.claudeDir);
   }
 
   private reportSourceFolderCleanup(folder: SourceFolderCleanup): void {
@@ -464,13 +485,13 @@ export default class Uninstall extends BaseCommand {
     }
   }
 
-  private reportSourceRootCleanup(sourceRoot: SourceRoot, cleanup: CleanupResult): void {
-    if (cleanup.sourceRootRemoved) {
-      this.logSuccess(`Removed ${sourceRoot.relName}/`);
+  private reportDirCleanup(relName: string, cleanup: DirCleanup): void {
+    if (cleanup.removed) {
+      this.logSuccess(`Removed ${relName}/`);
       return;
     }
-    if (cleanup.sourceRootKept) {
-      this.log(`Kept ${sourceRoot.relName}/ (contains user content)`);
+    if (cleanup.kept) {
+      this.log(`Kept ${relName}/ (contains user content)`);
     }
   }
 
@@ -484,15 +505,14 @@ export default class Uninstall extends BaseCommand {
     this.log("Uninstalling plugins...");
 
     try {
-      const pluginResult = await uninstallPlugins(entry, config, projectDir, (name) =>
-        this.log(`  Uninstalled plugin '${name}'`),
-      );
+      const pluginResult = await uninstallPlugins(entry, config, projectDir, {
+        onUninstalled: (name) => this.log(`  Uninstalled plugin '${name}'`),
+        onLeftRegistered: (name, provider) => this.warn(pluginLeftRegistered(name, provider)),
+      });
 
       // Silent on zero: "0" beside a plan that named one reads as a failure, and is not one.
       if (pluginResult.totalUninstalled > 0) {
-        this.logSuccess(
-          `Uninstalled ${pluginResult.totalUninstalled} ${pluginResult.totalUninstalled === 1 ? "plugin" : "plugins"}`,
-        );
+        this.logSuccess(`Uninstalled ${plural(pluginResult.totalUninstalled, "plugin")}`);
       }
     } catch (error) {
       this.log("Plugin uninstall failed");
@@ -502,55 +522,35 @@ export default class Uninstall extends BaseCommand {
     }
   }
 
-  /** The user's skills are named whether or not the plan removes any skill beside them. */
-  private async removePlannedSkills(
-    entry: SkillsRemoval | undefined,
-    userSkills: readonly string[],
-  ): Promise<void> {
-    const removedNames = await this.removeSkillsNamedBy(entry);
-    this.warnUserSkillsKept(userSkills);
+  private async removePlannedSkills(entry: SkillsRemoval | undefined): Promise<void> {
+    if (!entry) return;
+
+    const removedNames = await removeMatchingSkills(entry, (dirName) =>
+      this.log(`  Uninstalled skill '${dirName}'`),
+    );
     if (removedNames.length === 0) return;
 
-    this.logSuccess(
-      `Removed ${removedNames.length} CLI-installed ${removedNames.length === 1 ? "skill" : "skills"}`,
-    );
-  }
-
-  private async removeSkillsNamedBy(entry: SkillsRemoval | undefined): Promise<string[]> {
-    if (entry === undefined) return [];
-    return removeMatchingSkills(entry, (dirName) => this.log(`  Uninstalled skill '${dirName}'`));
-  }
-
-  private warnUserSkillsKept(userSkills: readonly string[]): void {
-    for (const dirName of userSkills) {
-      this.warn(`Skipping '${dirName}': not created by ${this.brandingName} CLI`);
-    }
+    this.logSuccess(`Removed ${plural(removedNames.length, "CLI-installed skill")}`);
   }
 
   private async removePlannedAgents(entry: AgentsRemoval | undefined): Promise<void> {
     if (!entry) return;
 
-    const result = await removeMatchingAgents(entry, (agentName) =>
+    const removedNames = await removeMatchingAgents(entry, (agentName) =>
       this.log(`  Uninstalled agent '${agentName}'`),
     );
-    if (result.removedCount === 0) return;
+    if (removedNames.length === 0) return;
 
-    this.logSuccess(
-      `Removed ${result.removedCount} compiled ${result.removedCount === 1 ? "agent" : "agents"}`,
-    );
+    this.logSuccess(`Removed ${plural(removedNames.length, "compiled agent")}`);
   }
 }
 
-/** @internal Exported for testing */
-export type UninstallTarget = {
+type UninstallTarget = {
   hasPlugins: boolean;
-  pluginNames: string[];
   /** Only those this CLI installed, matched against config skills. */
   cliPluginNames: string[];
-  /** Carrying `forkedFrom`: this CLI installed them. */
+  /** Carrying `forkedFrom`: this CLI installed them. The rest are the user's, never removed. */
   cliSkills: string[];
-  /** Without it: the user's, never removed. */
-  userSkills: string[];
   hasClaudeDir: boolean;
   pluginsDir: string;
   skillsDir: string;
@@ -583,14 +583,14 @@ type GlobalPropagationData = {
   provider: Provider;
 };
 
-type AgentRemovalResult = {
-  removedCount: number;
-  removedNames: string[];
+type UninstallPluginsResult = {
+  totalUninstalled: number;
 };
 
-type UninstallPluginsResult = {
-  uninstalledNames: string[];
-  totalUninstalled: number;
+type PluginRemovalReporter = {
+  onUninstalled?: (pluginName: string) => void;
+  /** No host CLI to ask, so the plugin's registration outlives its folder. */
+  onLeftRegistered?: (pluginName: string, provider: Provider) => void;
 };
 
 type SourceFolderCleanup = {
@@ -601,12 +601,12 @@ type SourceFolderCleanup = {
   kept: boolean;
 };
 
+type DirCleanup = { removed: boolean; kept: boolean };
+
 type CleanupResult = {
-  claudeDirRemoved: boolean;
   sourceFolder: SourceFolderCleanup;
-  sourceRootRemoved: boolean;
-  sourceRootKept: boolean;
-  claudeDirKept: boolean;
+  sourceRoot: DirCleanup;
+  claudeDir: DirCleanup;
 };
 
 function collectConfiguredAgents(config: Partial<ProjectConfig> | null): AgentName[] {
@@ -614,19 +614,19 @@ function collectConfiguredAgents(config: Partial<ProjectConfig> | null): AgentNa
   return config.agents.map((a) => a.name);
 }
 
-/** @internal Exported for testing */
-export function getCliInstalledPluginKeys(config: Partial<ProjectConfig> | null): Set<string> {
+function getCliInstalledPluginKeys(config: Partial<ProjectConfig> | null): Set<string> {
   if (!config?.skills) return new Set();
   const { marketplaceName } = config;
-  return new Set(
-    config.skills.flatMap((skill) => [
-      buildMarketplacePluginRef(skill.id, skill.origin),
-      // Installed via the marketplace while `origin` names something else.
-      ...(marketplaceName && skill.origin !== marketplaceName && skill.origin !== EJECT_SOURCE
-        ? [buildMarketplacePluginRef(skill.id, marketplaceName)]
-        : []),
-    ]),
-  );
+  return new Set(config.skills.flatMap((skill) => pluginRefsOf(skill, marketplaceName)));
+}
+
+function pluginRefsOf(skill: SkillConfig, marketplaceName: string | undefined): string[] {
+  const ownRef = buildMarketplacePluginRef(skill.id, skill.origin);
+  if (!marketplaceName || skill.origin === marketplaceName || skill.origin === EJECT_SOURCE) {
+    return [ownRef];
+  }
+  // Installed via the marketplace while `origin` names something else.
+  return [ownRef, buildMarketplacePluginRef(skill.id, marketplaceName)];
 }
 
 /**
@@ -684,49 +684,42 @@ function activeConfigOf(config: ProjectConfig): ProjectConfig {
   };
 }
 
+type DetectionFailureHandlers = {
+  /** Degrades: see {@link loadUninstallConfig}. */
+  onConfigLoadFailed: (failure: ConfigLoadError) => void;
+  onSkillMetadataUnreadable: (metadataPath: string) => never;
+};
+
 async function detectUninstallTarget(
   projectDir: string,
-  onConfigLoadFailed: (failure: ConfigLoadError) => void,
+  handlers: DetectionFailureHandlers,
 ): Promise<UninstallTarget> {
   const pluginsDir = getProjectPluginsDir(projectDir);
   const { skillsDir, agentsDir } = resolveInstallPaths(projectDir);
   const claudeDir = path.join(projectDir, CLAUDE_DIR);
   const provider = providerInUse(projectDir);
+  const codec = agentCodec(provider);
 
-  const [skillProvenance, hasClaudeDir, sourceFolder, agentProvenance] = await Promise.all([
-    classifySkillDirs(skillsDir),
+  const [cliSkills, hasClaudeDir, sourceFolder, agentProvenance] = await Promise.all([
+    skillsThisCliInstalled(skillsDir, handlers.onSkillMetadataUnreadable),
     directoryExists(claudeDir),
     readSourceFolder(
       sourceFolderInUse(projectDir, provider),
       projectDir,
       provider,
-      onConfigLoadFailed,
+      handlers.onConfigLoadFailed,
     ),
-    splitAgentsByProvenance(agentsDir, agentCodec(provider)),
+    splitAgentsByProvenance(agentsDir, codec),
   ]);
 
   const { config } = sourceFolder;
-
-  let pluginNames: string[] = [];
-  try {
-    pluginNames = await listPluginNames(projectDir);
-  } catch {
-    // Best-effort: plugin detection may fail
-  }
-
   const activeConfig = config === null ? null : activeConfigOf(config);
-  const configuredAgents = collectConfiguredAgents(activeConfig);
-  const cliInstalledKeys = getCliInstalledPluginKeys(activeConfig);
-  const cliPluginNames = thisRunOwnsAnyPlugin(projectDir)
-    ? pluginNames.filter((name) => cliInstalledKeys.has(name))
-    : [];
+  const cliPluginNames = await pluginsThisRunRemoves(projectDir, activeConfig);
 
   return {
     hasPlugins: cliPluginNames.length > 0,
-    pluginNames,
     cliPluginNames,
-    cliSkills: skillProvenance.cliSkills,
-    userSkills: skillProvenance.userSkills,
+    cliSkills,
     hasClaudeDir,
     pluginsDir,
     skillsDir,
@@ -736,11 +729,22 @@ async function detectUninstallTarget(
     sourceRoot: sourceRootOf(projectDir),
     config,
     registeredProjects: config?.projects ?? [],
-    configuredAgents,
-    agentCodec: agentCodec(provider),
+    configuredAgents: collectConfiguredAgents(activeConfig),
+    agentCodec: codec,
     markedAgents: agentProvenance.marked,
     unmarkedAgents: agentProvenance.unmarked,
   };
+}
+
+async function pluginsThisRunRemoves(
+  projectDir: string,
+  activeConfig: ProjectConfig | null,
+): Promise<string[]> {
+  const installed = await listPluginNames(projectDir);
+  if (!thisRunOwnsAnyPlugin(projectDir)) return [];
+
+  const cliInstalledKeys = getCliInstalledPluginKeys(activeConfig);
+  return installed.filter((name) => cliInstalledKeys.has(name));
 }
 
 /**
@@ -752,23 +756,39 @@ function thisRunOwnsAnyPlugin(projectDir: string): boolean {
   return hostAt(projectDir).installsProjectScopedPlugins;
 }
 
-function shouldRemoveSkill(forkedFrom: { source?: string } | null): boolean {
-  return forkedFrom !== null;
-}
-
 /** Read before the plan is built, so the plan and the removal read one classification. */
-async function classifySkillDirs(
+async function skillsThisCliInstalled(
   skillsDir: string,
-): Promise<{ cliSkills: string[]; userSkills: string[] }> {
+  onMetadataUnreadable: (metadataPath: string) => never,
+): Promise<string[]> {
   const dirNames = await listDirectories(skillsDir);
-  const entries = await Promise.all(
+  const skills = await Promise.all(
     dirNames.map(async (name) => ({
       name,
-      forkedFrom: await readForkedFromMetadata(path.join(skillsDir, name)),
+      forkedFrom: await readSkillProvenance(skillsDir, name, onMetadataUnreadable),
     })),
   );
-  const [removable, kept] = partition(entries, (entry) => shouldRemoveSkill(entry.forkedFrom));
-  return { cliSkills: removable.map((e) => e.name), userSkills: kept.map((e) => e.name) };
+  return skills.filter((skill) => skill.forkedFrom !== null).map((skill) => skill.name);
+}
+
+/**
+ * A metadata.yaml that reads but does not parse is the user's (warned); one found but unreadable
+ * aborts. A skill folder that cannot be opened hides its metadata.yaml (`fileExists` answers
+ * false on EACCES), so that skill reads as the user's and is kept, even when this CLI made it.
+ */
+async function readSkillProvenance(
+  skillsDir: string,
+  dirName: string,
+  onUnreadable: (metadataPath: string) => never,
+): Promise<ForkedFromMetadata | null> {
+  const skillDir = path.join(skillsDir, dirName);
+  try {
+    return await readForkedFromMetadata(skillDir);
+  } catch {
+    // Cause dropped on purpose: the stop names the file and the fix only, and uninstall has no
+    // --verbose to carry it.
+    return onUnreadable(path.join(skillDir, STANDARD_FILES.METADATA_YAML));
+  }
 }
 
 /** The planned skills still there: the count is what the run removed, not what it planned. */
@@ -788,8 +808,8 @@ async function removeMatchingSkills(
 
 async function removeMatchingAgents(
   entry: AgentsRemoval,
-  onRemoved?: (agentName: string) => void,
-): Promise<AgentRemovalResult> {
+  onRemoved: (agentName: string) => void,
+): Promise<string[]> {
   const agentFiles = await listAgentFiles(entry.agentsDir, entry.codec);
   const removedNames = agentFiles
     .map((agentFile) => path.basename(agentFile, entry.codec.extension))
@@ -797,13 +817,9 @@ async function removeMatchingAgents(
 
   for (const agentName of removedNames) {
     await remove(path.join(entry.agentsDir, `${agentName}${entry.codec.extension}`));
-    onRemoved?.(agentName);
+    onRemoved(agentName);
   }
-
-  return {
-    removedCount: removedNames.length,
-    removedNames,
-  };
+  return removedNames;
 }
 
 const SCOPE_OF_AN_UNRECORDED_SKILL: SkillScope = "project";
@@ -839,19 +855,20 @@ async function removePluginWhereverItIsFiled(
   return outcome;
 }
 
-/**
- * `config` only supplies the scope each plugin is filed under; the entry decides which go.
- * @internal Exported for testing
- */
-export async function uninstallPlugins(
+/** `config` only supplies the scope each plugin is filed under; the entry decides which go. */
+async function uninstallPlugins(
   entry: PluginRemoval,
   config: ProjectConfig | null,
   projectDir: string,
-  onUninstalled?: (pluginName: string) => void,
+  { onUninstalled, onLeftRegistered }: PluginRemovalReporter = {},
 ): Promise<UninstallPluginsResult> {
   const host = hostAt(projectDir);
   const hostAvailable = await host.isAvailable();
   const observed: string[] = [];
+
+  if (!hostAvailable) {
+    for (const pluginName of entry.names) onLeftRegistered?.(pluginName, host.provider);
+  }
 
   for (const pluginName of entry.names) {
     const removal = hostAvailable
@@ -872,10 +889,7 @@ export async function uninstallPlugins(
   }
 
   // Observed, not intended: Codex `plugin remove` exits 0 whether or not the plugin existed.
-  return {
-    uninstalledNames: observed,
-    totalUninstalled: observed.length,
-  };
+  return { totalUninstalled: observed.length };
 }
 
 function scopeThePluginIsFiledUnder(config: ProjectConfig | null, pluginName: string): SkillScope {
@@ -918,19 +932,9 @@ async function cleanupEmptyDirs(
     manifestEntries.find((entry) => entry.sourceDir === target.sourceFolder.dir),
   );
   const sourceRoot = await cleanupSourceRoot(target.sourceRoot, sourceFolder.dirRemoved);
+  const claudeDir = await cleanupClaudeDir(target);
 
-  const claudeDirRemoved = target.hasClaudeDir && (await removeDirIfEmpty(target.claudeDir));
-  // Nothing else removes .claude itself, so "kept" is exactly "present but not removed".
-  const claudeDirKept =
-    !claudeDirRemoved && target.hasClaudeDir && (await directoryExists(target.claudeDir));
-
-  return {
-    claudeDirRemoved,
-    sourceFolder,
-    sourceRootRemoved: sourceRoot.removed,
-    sourceRootKept: sourceRoot.kept,
-    claudeDirKept,
-  };
+  return { sourceFolder, sourceRoot, claudeDir };
 }
 
 async function cleanupSourceFolder(
@@ -948,8 +952,6 @@ async function cleanupSourceFolder(
   };
 }
 
-type SourceRootCleanup = { removed: boolean; kept: boolean };
-
 /**
  * Only once the provider folder went, and only when empty: consuming repositories keep their own
  * state under `.agents-inc/`.
@@ -957,11 +959,22 @@ type SourceRootCleanup = { removed: boolean; kept: boolean };
 async function cleanupSourceRoot(
   sourceRoot: SourceRoot,
   providerDirRemoved: boolean,
-): Promise<SourceRootCleanup> {
+): Promise<DirCleanup> {
   if (!providerDirRemoved) return { removed: false, kept: false };
+  return removeDirUnlessUserContent(sourceRoot.dir);
+}
 
-  const removed = await removeDirIfEmpty(sourceRoot.dir);
-  return { removed, kept: !removed && (await directoryExists(sourceRoot.dir)) };
+async function cleanupClaudeDir(
+  target: Pick<UninstallTarget, "hasClaudeDir" | "claudeDir">,
+): Promise<DirCleanup> {
+  if (!target.hasClaudeDir) return { removed: false, kept: false };
+  return removeDirUnlessUserContent(target.claudeDir);
+}
+
+/** `kept` when it is still there: something of the user's is in it. */
+async function removeDirUnlessUserContent(dir: string): Promise<DirCleanup> {
+  const removed = await removeDirIfEmpty(dir);
+  return { removed, kept: !removed && (await directoryExists(dir)) };
 }
 
 async function listAgentFiles(agentsDir: string, codec: AgentCodec): Promise<string[]> {

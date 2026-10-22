@@ -5,7 +5,11 @@ import {
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
 import { TIMEOUTS } from "../pages/constants.js";
-import { applyFromSeed, e2eStackPayload, installFromSeed } from "../fixtures/e2e-stack-seed.js";
+import {
+  applyUnchangedFromSeed,
+  e2eStackPayload,
+  installFromSeed,
+} from "../fixtures/e2e-stack-seed.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import {
   cleanupFixture,
@@ -16,11 +20,6 @@ import {
 } from "../helpers/test-utils.js";
 import type { AgentName, Category } from "../../src/cli/types/index.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
-
-/**
- * The stack's `preloaded: true` flags (react, hono) survive init and an edit that changes nothing.
- * The writer stores preloaded assignments as `{ id, preloaded: true }` and others as bare ids.
- */
 
 /** A default init scopes every agent global, so pass the global home, not projectDir. */
 async function assertPreloadedInStack(
@@ -109,7 +108,7 @@ describe.skipIf(!claudeAvailable)("preloaded preservation across init and edit",
         );
         await assertPreloadedInStack(sharedHome, "api-developer", "api-api", E2E_SKILL.hono.id);
 
-        await applyFromSeed(store, "Stacked2", stack, site);
+        await applyUnchangedFromSeed(store, "Stacked2", stack, site);
 
         await assertPreloadedInStack(
           sharedHome,

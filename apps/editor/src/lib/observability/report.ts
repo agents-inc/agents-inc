@@ -27,3 +27,14 @@ export const reportIssue = (message: string, context?: IssueContext) =>
 
 export const reportError = (error: unknown, context?: IssueContext) =>
   sink.error(error, context)
+
+type ParseFailure = {
+  issues: readonly { path: readonly PropertyKey[]; code: string }[]
+}
+
+// The first path segment and the code, never a value: past that segment a
+// path can be a name the visitor or an org chose.
+export const reportableIssues = (failure: ParseFailure): string[] =>
+  failure.issues.map(
+    (issue) => `${String(issue.path[0] ?? "(root)")}: ${issue.code}`
+  )

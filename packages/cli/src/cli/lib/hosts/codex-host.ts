@@ -181,7 +181,7 @@ function codexPluginsRoot(
 }
 
 /** The state tree is pinned because even `codex --version` writes under `$CODEX_HOME/tmp/arg0/`. */
-export async function isCodexCLIAvailable(options?: CodexConfigOptions): Promise<boolean> {
+async function isCodexCLIAvailable(options?: CodexConfigOptions): Promise<boolean> {
   try {
     const result = await runCodex(["--version"], options, codexPluginCwd());
     return result.exitCode === 0;

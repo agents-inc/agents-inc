@@ -20,7 +20,6 @@ import {
   activeProjectAgentNames,
   isActiveAt,
   isGlobalTombstone,
-  type ScopedEntry,
 } from "../configuration/scope-predicates";
 import { generateConfigSource, type ConfigSourceOptions } from "../configuration/config-writer";
 import {
@@ -63,14 +62,7 @@ async function registerProjectPath(
 ): Promise<{ config: ProjectConfig; changed: boolean }> {
   const normalizedPath = normalizeProjectPath(projectDir);
   const existing = globalConfig.projects ?? [];
-
-  const staleChecks = await Promise.all(
-    existing.map(async (p) => ({
-      path: p,
-      hasConfig: await fileExists(getInstalledConfigPath(p)),
-    })),
-  );
-  const valid = staleChecks.filter((c) => c.hasConfig).map((c) => c.path);
+  const valid = await projectsStillInstalled(existing);
 
   if (valid.includes(normalizedPath)) {
     const changed = valid.length !== existing.length;
@@ -80,8 +72,11 @@ async function registerProjectPath(
   return { config: { ...globalConfig, projects: [...valid, normalizedPath] }, changed: true };
 }
 
-function isProjectScopedEntry(entry: ScopedEntry): boolean {
-  return entry.scope === "project";
+async function projectsStillInstalled(projects: string[]): Promise<string[]> {
+  const installed = await Promise.all(
+    projects.map((project) => fileExists(getInstalledConfigPath(project))),
+  );
+  return projects.filter((_, index) => installed[index] === true);
 }
 
 function globalHasActiveSkill(globalConfig: ProjectConfig, id: SkillId): boolean {
@@ -99,7 +94,7 @@ function retainProjectOwnedSkills(
 ): SkillConfig[] {
   return skills.filter(
     (entry) =>
-      isProjectScopedEntry(entry) ||
+      entry.scope === "project" ||
       (isGlobalTombstone(entry) && globalHasActiveSkill(globalConfig, entry.id)),
   );
 }
@@ -110,7 +105,7 @@ function retainProjectOwnedAgents(
 ): AgentScopeConfig[] {
   return agents.filter(
     (entry) =>
-      isProjectScopedEntry(entry) ||
+      entry.scope === "project" ||
       (isGlobalTombstone(entry) && globalHasActiveAgent(globalConfig, entry.name)),
   );
 }
@@ -258,11 +253,7 @@ function computeRemovedGlobalSkillIds(
   return new Set(
     priorProjectSkills
       .filter(
-        (s) =>
-          s.scope === "global" &&
-          !s.excluded &&
-          !activeGlobalIds.has(s.id) &&
-          !projectOwnedIds.has(s.id),
+        (s) => isActiveAt(s, "global") && !activeGlobalIds.has(s.id) && !projectOwnedIds.has(s.id),
       )
       .map((s) => s.id),
   );
@@ -493,6 +484,33 @@ async function propagateToRegisteredProject(
   } catch (error) {
     verbose(`Failed to propagate to ${projectPath}: ${getErrorMessage(error)}`);
     return error instanceof ConfigLoadError ? "unreadable" : "failed";
+  }
+}
+
+/**
+ * The registered projects a fan-out would rewrite, asked before one runs: the same skips it makes,
+ * so a project it would pass over is not promised a rewrite.
+ */
+export async function projectsAFanOutReaches(
+  projects: readonly string[],
+  provider: Provider,
+): Promise<string[]> {
+  const reached = await Promise.all(
+    projects.map(async (projectPath) =>
+      (await wouldBeRewritten(projectPath, provider)) ? [projectPath] : [],
+    ),
+  );
+  return reached.flat();
+}
+
+async function wouldBeRewritten(projectPath: string, provider: Provider): Promise<boolean> {
+  if (!(await holdsAnInstallation(projectPath))) return false;
+  if ((await whyThisProjectIsNotOurs(projectPath, provider)) !== null) return false;
+  try {
+    return (await loadInstalledConfig(projectPath)) !== null;
+  } catch {
+    // DEGRADE: the fan-out skips any project it cannot load, and says why once it has run.
+    return false;
   }
 }
 

@@ -12,8 +12,12 @@ import {
 } from "../../src/cli/lib/__tests__/content-generators.js";
 import { computeFileHash } from "../../src/cli/lib/versioning.js";
 import { BUILT_IN_MATRIX } from "../../src/cli/types/generated/matrix.js";
-import { DEFAULT_PLUGIN_NAME, SOURCE_SRC_DIR, STANDARD_FILES } from "../../src/cli/consts.js";
-import { isCategory } from "../../src/cli/utils/type-guards.js";
+import {
+  DEFAULT_PLUGIN_NAME,
+  LOCAL_PSEUDO_CATEGORY,
+  SOURCE_SRC_DIR,
+  STANDARD_FILES,
+} from "../../src/cli/consts.js";
 import { typedKeys } from "../../src/cli/utils/typed-object.js";
 import type { CategoryPath, SkillId } from "../../src/cli/types/index.js";
 
@@ -66,8 +70,15 @@ async function writeCatalogueSkill(cacheDir: string, skillId: SkillId): Promise<
 }
 
 function domainOfCategory(category: CategoryPath): string {
-  const declared = isCategory(category) ? BUILT_IN_MATRIX.categories[category]?.domain : undefined;
-  if (declared === undefined) throw new Error(`seedDefaultSourceCache: no category '${category}'`);
+  // `local` is the one category path the catalogue's table has no slot for.
+  if (category === LOCAL_PSEUDO_CATEGORY) throw undeclaredCategory(category);
+
+  const declared = BUILT_IN_MATRIX.categories[category]?.domain;
+  if (declared === undefined) throw undeclaredCategory(category);
 
   return declared;
+}
+
+function undeclaredCategory(category: CategoryPath): Error {
+  return new Error(`seedDefaultSourceCache: no category '${category}'`);
 }

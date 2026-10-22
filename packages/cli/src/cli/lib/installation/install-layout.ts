@@ -32,11 +32,6 @@ export type SourceFolder = {
   relName: string;
 };
 
-/** Every provider folder under `.agents-inc/`, for a `.gitignore` remedy naming them all. */
-export function everySourceFolderName(): string[] {
-  return PROVIDERS.map(sourceDirName);
-}
-
 export function sourceDir(root: string, provider: Provider): string {
   return path.join(root, SOURCE_ROOT_DIR, provider);
 }
@@ -227,14 +222,17 @@ function codexProjectRoles(projectDir: string): HostRoles {
   };
 }
 
-/**
- * `$CODEX_HOME` or `~/.codex`, read at call time. An empty variable counts as unset, since
- * `path.join("", ...)` would root every path at the cwd.
- */
+/** `$CODEX_HOME` or `~/.codex`, read at call time. */
 function codexUserRoot(): string {
-  const relocated = process.env[CODEX_HOME_VAR];
-  if (relocated === undefined || relocated === "") return path.join(os.homedir(), CODEX_DIR);
-  return relocated;
+  return relocatedTo(process.env[CODEX_HOME_VAR]) ?? path.join(os.homedir(), CODEX_DIR);
+}
+
+/**
+ * Empty counts as unset, since `path.join("", ...)` would root every path at the cwd. Takes the
+ * value, not the name, so every read still names its variable where the environment gate looks.
+ */
+function relocatedTo(variableValue: string | undefined): string | undefined {
+  return variableValue === "" ? undefined : variableValue;
 }
 
 /** The global Codex config, which decides whether a project's role files are read at all. */
@@ -250,11 +248,9 @@ export function claudeStateFile(): string {
   return path.join(claudeStateRoot(), CLAUDE_STATE_FILE);
 }
 
-/** `$CLAUDE_CONFIG_DIR` or home, read as {@link codexUserRoot} reads its variable. */
+/** `$CLAUDE_CONFIG_DIR` or home, read at call time. */
 function claudeStateRoot(): string {
-  const relocated = process.env[CLAUDE_CONFIG_DIR_VAR];
-  if (relocated === undefined || relocated === "") return os.homedir();
-  return relocated;
+  return relocatedTo(process.env[CLAUDE_CONFIG_DIR_VAR]) ?? os.homedir();
 }
 
 export function userConfigRoot(provider: Provider, scope: SkillScope, projectDir: string): string {

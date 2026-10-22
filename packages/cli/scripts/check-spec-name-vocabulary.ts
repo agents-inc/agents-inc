@@ -29,7 +29,7 @@ const CONSTANT_TOKEN = /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/g;
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-export type UnresolvedName = { spec: string; test: string; token: string };
+type UnresolvedName = { spec: string; test: string; token: string };
 
 export type VocabularyResult = { specs: string[]; modules: string[]; unresolved: UnresolvedName[] };
 

@@ -178,6 +178,38 @@ describe("POST /configs", () => {
     expect(response.status).toBe(201)
   })
 
+  // The case above is the control: the same skill under the id intake mints.
+  it.each([
+    ["climbs out of its own folder", "../victim"],
+    ["holds a terminal control", "external-x\u001b]0;PWNED\u0007"],
+  ])(
+    "refuses a carried skill whose id %s, and stores nothing",
+    async (_, id) => {
+      const put = vi.spyOn(env.CONFIGS, "put")
+
+      const response = await post(
+        payload({
+          skills: {
+            [id]: { install: "eject", scope: "project", assignments: {} },
+          },
+          external: {
+            [id]: {
+              displayName: "House",
+              description: "The house framework skill.",
+              categoryId: "web-framework",
+              repo: "acme/skills",
+              path: "skills/house",
+              files: { "SKILL.md": "# House\n" },
+            },
+          },
+        })
+      )
+
+      expect(response.status).toBe(400)
+      expect(put).not.toHaveBeenCalled()
+    }
+  )
+
   // A `+` or `/` in the id would break the share link the editor builds from it.
   it("names a payload by the base64url SHA-256 of what it stores", async () => {
     const response = await post(payload({ stackId: URL_UNSAFE_STACK_ID }))
@@ -303,12 +335,13 @@ describe("GET /configs/:id", () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {})
 
     await SELF.fetch(`${BASE}/configs/corrupt3`)
-
-    expect(logged).toHaveBeenCalledWith({
+    const unparsable: Record<string, unknown> = {
       event: "corrupt_payload",
       id: "corrupt3",
-      message: expect.stringMatching(/not valid JSON/) as string,
-    })
+      message: expect.stringMatching(/not valid JSON/),
+    }
+
+    expect(logged).toHaveBeenCalledWith(unparsable)
   })
 
   it("logs which stored payload no longer validates", async () => {
@@ -319,12 +352,13 @@ describe("GET /configs/:id", () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {})
 
     await SELF.fetch(`${BASE}/configs/corrupt4`)
-
-    expect(logged).toHaveBeenCalledWith({
+    const invalid: Record<string, unknown> = {
       event: "corrupt_payload",
       id: "corrupt4",
-      message: expect.stringContaining("skills") as string,
-    })
+      message: expect.stringContaining("skills"),
+    }
+
+    expect(logged).toHaveBeenCalledWith(invalid)
   })
 
   it("answers 503 and logs the failure when the store refuses the read", async () => {
@@ -520,6 +554,16 @@ describe("CORS", () => {
     expect(response.headers.get("access-control-allow-origin")).toBe(
       "http://localhost:5173"
     )
+  })
+
+  // The refusal beside the read above: CORS covers the routes it serves.
+  it("grants the web origin nothing on a path it serves nothing at", async () => {
+    const response = await SELF.fetch(`${BASE}/`, {
+      headers: { origin: "http://localhost:5173" },
+    })
+
+    expect(response.status).toBe(404)
+    expect(response.headers.get("access-control-allow-origin")).toBeNull()
   })
 
   // Each is sent with a content type or method that needs a preflight first.

@@ -7,6 +7,7 @@ import {
   E2E_MARKETPLACE_PREFIX,
   EXIT_CODES,
   FILES,
+  PUBLIC_MARKETPLACE_NAME,
   SOURCE_PATHS,
   STEP_TEXT,
   TIMEOUTS,
@@ -29,9 +30,11 @@ import {
   type TreeSnapshotEntry,
 } from "../helpers/test-utils.js";
 import { E2E_MARKETPLACE_NAME, E2E_SKILL, E2E_SKILL_IDS } from "../fixtures/expected-values.js";
-import { DEFAULT_PUBLIC_SOURCE_NAME } from "../../src/cli/consts.js";
 import { entryAt, firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
-import { renderUnparseableConfigTs } from "../../src/cli/lib/__tests__/factories/unloadable-config-factories.js";
+import {
+  renderConfigTsWithoutDefaultExport,
+  renderUnparseableConfigTs,
+} from "../../src/cli/lib/__tests__/factories/unloadable-config-factories.js";
 
 const SKILL_PLUGINS_COMPILED_LINE = `Compiled ${E2E_SKILL_IDS.length} skill plugins`;
 
@@ -41,7 +44,7 @@ const SKILL_PLUGINS_COMPILED_LINE = `Compiled ${E2E_SKILL_IDS.length} skill plug
  */
 const FOREIGN_MARKETPLACE_NAME = `${E2E_MARKETPLACE_PREFIX}other-marketplace`;
 
-const RESERVED_MARKETPLACE_NAME = DEFAULT_PUBLIC_SOURCE_NAME;
+const RESERVED_MARKETPLACE_NAME = PUBLIC_MARKETPLACE_NAME;
 
 /**
  * The fixture plugin's namespace, so `validateSkillIdNamespace` does not refuse before the refusal
@@ -424,6 +427,44 @@ describe("build commands", () => {
           entryAt(rebuilt, FILES.CATALOG_JSON).modifiedAtMs,
           "the catalog's bytes do not depend on the version, so only its mtime shows the rewrite",
         ).not.toBe(entryAt(previousBuild, FILES.CATALOG_JSON).modifiedAtMs);
+      });
+    });
+
+    describe("a marketplace repository whose own config declares nothing", () => {
+      /** Where the warning sends the reader; `loadConfig` reads this file as absent. */
+      const DECLARES_NOTHING = `${DIRS.SOURCE_ROOT}/${FILES.CONFIG_TS} is empty or exports nothing, so this build reads the marketplace with the default layout.`;
+
+      async function buildOver(configContents: string) {
+        tempDir = await createTempDir();
+        await writeTestPackageJson(tempDir, { name: FIXTURE_MARKETPLACE_NAME });
+        await writeMarketplacePlugin(tempDir);
+        await mkdir(path.join(tempDir, DIRS.SOURCE_ROOT), { recursive: true });
+        await writeFile(path.join(tempDir, DIRS.SOURCE_ROOT, FILES.CONFIG_TS), configContents);
+        return CLI.run(["build", "marketplace"], { dir: tempDir });
+      }
+
+      it.each([
+        ["empty", ""],
+        ["without an export", renderConfigTsWithoutDefaultExport({ skillsDir: "src/skills" })],
+      ])("should warn about a config that is %s and still build", async (_shape, contents) => {
+        const { exitCode, output } = await buildOver(contents);
+
+        expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+        expect(flattenCliOutput(output)).toContain(DECLARES_NOTHING);
+        expect(output).toContain(MARKETPLACE_GENERATED_LINE);
+        expect(await listFiles(path.join(tempDir, SOURCE_PATHS.PLUGIN_MANIFEST_DIR))).toStrictEqual(
+          [FILES.CATALOG_JSON, FILES.MARKETPLACE_JSON],
+        );
+      });
+
+      it("should say nothing of a config that declares the layout", async () => {
+        const { exitCode, output } = await buildOver(
+          renderConfigTs({ skillsDir: SOURCE_PATHS.SKILLS_DIR }),
+        );
+
+        expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+        expect(output).toContain(MARKETPLACE_GENERATED_LINE);
+        expect(output).not.toContain("exports nothing");
       });
     });
 

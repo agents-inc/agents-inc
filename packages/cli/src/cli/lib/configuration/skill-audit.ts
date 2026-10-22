@@ -1,11 +1,11 @@
 import type { SkillId, SkillSlug } from "../../types";
 
 /** A skill is fenced by category exclusivity, by a `requires` rule, or not at all. */
-export type AuditVerdict = "constrained-via-exclusivity-or-requires" | "universal";
+type AuditVerdict = "constrained-via-exclusivity-or-requires" | "universal";
 
-export type SkillClass = "A" | "B" | "C";
+type SkillClass = "A" | "B" | "C";
 
-export type BatchId =
+type BatchId =
   | "web-core"
   | "web-state"
   | "web-ui"
@@ -1629,5 +1629,5 @@ export const skillAudit: Record<SkillId, SkillAuditEntry> = {
   },
 };
 
-/** Rows whose verdict is ahead of its category disposition; both audit checks skip these. */
+/** Rows whose verdict is ahead of its category disposition. */
 export const auditVerdictsPendingApply: Partial<Record<SkillId, string>> = {};

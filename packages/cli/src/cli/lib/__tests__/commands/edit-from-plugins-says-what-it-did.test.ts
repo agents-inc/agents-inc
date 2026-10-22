@@ -22,8 +22,8 @@ import {
   type TestDirs,
 } from "../fixtures/create-test-source";
 import { DEFAULT_TEST_SKILLS } from "../mock-data/mock-skills";
-import { CLAUDE_DIR, STANDARD_FILES } from "../../../consts";
-import { fileExists } from "../test-fs-utils";
+import { CLAUDE_DIR, STANDARD_DIRS, STANDARD_FILES } from "../../../consts";
+import { directoryExists, fileExists } from "../test-fs-utils";
 import { delay, KEY_Y } from "../test-constants";
 
 /**
@@ -37,12 +37,19 @@ vi.mock("../../hosts/host-for.js", async () => {
 });
 
 const { default: Edit } = await import("../../../commands/edit.js");
+const { default: Init } = await import("../../../commands/init.js");
 
 const REACT = testMarketplaceSkillId("web-framework-react");
 const HONO = testMarketplaceSkillId("api-framework-hono");
 const VITEST = testMarketplaceSkillId("web-testing-vitest");
 const SEED_ID = "Next";
 const PROMPT_READY_MS = 600;
+
+/** Each command a spec here answers, run from source so the host mock reaches it. */
+const RUN_FROM_SEED = {
+  edit: () => Edit.run(["--from", SEED_ID], { root: CLI_ROOT }),
+  init: () => Init.run(["--from", SEED_ID], { root: CLI_ROOT }),
+};
 
 describe("what edit --from says of plugins", () => {
   useMockWorker();
@@ -92,7 +99,7 @@ describe("what edit --from says of plugins", () => {
   }
 
   /** Captures what the run prints, answering Ink's write callbacks, and answers the confirm. */
-  async function applyAnswered(key: string) {
+  async function applyAnswered(key: string, command: keyof typeof RUN_FROM_SEED = "edit") {
     const chunks: string[] = [];
     const painted = vi.spyOn(process.stdout, "write").mockImplementation((chunk, ...rest) => {
       chunks.push(String(chunk));
@@ -101,7 +108,7 @@ describe("what edit --from says of plugins", () => {
       return true;
     });
     try {
-      const run = Edit.run(["--from", SEED_ID], { root: CLI_ROOT }).then(
+      const run = RUN_FROM_SEED[command]().then(
         () => undefined,
         (error: Error & { oclif?: { exit?: number } }) => error,
       );
@@ -149,7 +156,7 @@ describe("what edit --from says of plugins", () => {
     );
   });
 
-  it("switches a local copy back to a plugin, installing it", async () => {
+  it("names the local copy a switch to a plugin overwrites before asking, then installs the plugin", async () => {
     await installPlugins([REACT]);
     serve(onWebDeveloper([REACT], "eject"));
     expect((await applyAnswered(KEY_Y)).error).toBeUndefined();
@@ -160,6 +167,17 @@ describe("what edit --from says of plugins", () => {
     expect(error).toBeUndefined();
     expect(stdout).toContain(
       [
+        "Into this project:",
+        "  Skills:",
+        `    ${REACT}`,
+        "Will be overwritten:",
+        `   ${REACT}`,
+        "",
+        "Apply this configuration?",
+      ].join("\n"),
+    );
+    expect(stdout).toContain(
+      [
         "Changes:",
         `  ~ ${REACT} (Eject → ${TEST_MARKETPLACE_NAME})`,
         "",
@@ -167,6 +185,7 @@ describe("what edit --from says of plugins", () => {
         "Installing skill plugins...",
         `  Installed ${REACT}@${TEST_MARKETPLACE_NAME}`,
         "Installed 1 skill plugin",
+        "",
         "",
       ].join("\n"),
     );
@@ -179,7 +198,9 @@ describe("what edit --from says of plugins", () => {
     const { stdout, error } = await applyAnswered(KEY_Y);
 
     expect(error).toBeUndefined();
-    expect(stdout).toContain(`Changes:\n  + ${HONO} [P]\n`);
+    expect(stdout).toContain(
+      `Changes:\n  + ${HONO} [P]\n  ~ web-developer (agent: skills reassigned)\n\n`,
+    );
     expect(stdout).toContain(`  Installed ${HONO}@${TEST_MARKETPLACE_NAME}\n`);
   });
 
@@ -219,7 +240,8 @@ describe("what edit --from says of plugins", () => {
     expect(stdout).toContain(`  ~ ${REACT} (Public → Eject)\n`);
   });
 
-  it("names a skill copied into the project beside its global plugin once, as a project add", async () => {
+  /** React a global plugin for web-developer; the project's own config adds Hono for api-developer. */
+  async function installReactGloballyBesideAProjectHono(): Promise<void> {
     const globalReact = buildSkillConfigs([REACT], {
       scope: "global",
       origin: TEST_MARKETPLACE_NAME,
@@ -250,15 +272,24 @@ describe("what edit --from says of plugins", () => {
         stack: { ...globalStack, "api-developer": { "api-api": [{ id: HONO, preloaded: false }] } },
       }),
     );
-    const onApiDeveloperAs = (install: "eject" | "plugin") =>
-      buildSeedSkill({ install, scope: "project", assignments: { "api-developer": "lazy" } });
-    serve(
-      buildSeedPayload({
-        marketplace: dirs.sourceDir,
-        skills: { [REACT]: onApiDeveloperAs("eject"), [HONO]: onApiDeveloperAs("plugin") },
-        agents: { "api-developer": { scope: "project" } },
-      }),
-    );
+  }
+
+  function onApiDeveloper(installs: Record<string, "eject" | "plugin">): SeedPayload {
+    return buildSeedPayload({
+      marketplace: dirs.sourceDir,
+      skills: Object.fromEntries(
+        Object.entries(installs).map(([id, install]) => [
+          id,
+          buildSeedSkill({ install, scope: "project", assignments: { "api-developer": "lazy" } }),
+        ]),
+      ),
+      agents: { "api-developer": { scope: "project" } },
+    });
+  }
+
+  it("names a skill copied into the project beside its global plugin once, as a project add", async () => {
+    await installReactGloballyBesideAProjectHono();
+    serve(onApiDeveloper({ [REACT]: "eject", [HONO]: "plugin" }));
 
     const { stdout, error } = await applyAnswered(KEY_Y);
 
@@ -271,5 +302,97 @@ describe("what edit --from says of plugins", () => {
     expect(
       await fileExists(path.join(projectDir, CLAUDE_DIR, "skills", REACT, STANDARD_FILES.SKILL_MD)),
     ).toBe(true);
+  });
+
+  it("says it copies a skill into the project beside its global plugin, rather than switching it", async () => {
+    await installReactGloballyBesideAProjectHono();
+    serve(onApiDeveloper({ [REACT]: "eject", [HONO]: "plugin" }));
+
+    const { stdout, error } = await applyAnswered(KEY_Y);
+
+    expect(error).toBeUndefined();
+    expect(stdout).toContain("\nCopying 1 skill into this project (the global plugin stays)\n");
+    expect(stdout).not.toContain("Switching 1 skill(s) to Eject (local copy)");
+  });
+
+  it("says which skill it copies beside its global plugin and which it switches, counting each", async () => {
+    await installReactGloballyBesideAProjectHono();
+    serve(onApiDeveloper({ [REACT]: "eject", [HONO]: "eject" }));
+
+    const { stdout, error } = await applyAnswered(KEY_Y);
+
+    expect(error).toBeUndefined();
+    expect(stdout).toContain(
+      [
+        "",
+        "Switching 1 skill(s) to Eject (local copy)",
+        "Copying 1 skill into this project (the global plugin stays)",
+        "Copied 2 local skill(s)",
+        "1 agent rewritten, 0 unchanged",
+      ].join("\n"),
+    );
+  });
+
+  const globalReactCopy = () => path.join(fakeHome, CLAUDE_DIR, STANDARD_DIRS.SKILLS, REACT);
+
+  /** React a global local copy, made by an `init --from` at home; the project's own init adds Hono. */
+  async function installReactGloballyAsACopyBesideAProjectHono(
+    honoInstall: "eject" | "plugin",
+  ): Promise<void> {
+    process.chdir(fakeHome);
+    serve(
+      buildSeedPayload({
+        marketplace: dirs.sourceDir,
+        skills: {
+          [REACT]: buildSeedSkill({
+            install: "eject",
+            scope: "global",
+            assignments: { "web-developer": "lazy" },
+          }),
+        },
+        agents: { "web-developer": { scope: "global" } },
+      }),
+    );
+    expect((await applyAnswered(KEY_Y, "init")).error).toBeUndefined();
+    expect(await directoryExists(globalReactCopy())).toBe(true);
+    process.chdir(projectDir);
+    serve(onApiDeveloper({ [HONO]: honoInstall }));
+    expect((await applyAnswered(KEY_Y, "init")).error).toBeUndefined();
+  }
+
+  it("says it installs a skill as a plugin in this project beside its global copy, rather than switching it", async () => {
+    await installReactGloballyAsACopyBesideAProjectHono("plugin");
+    serve(onApiDeveloper({ [REACT]: "plugin", [HONO]: "plugin" }));
+
+    const { stdout, error } = await applyAnswered(KEY_Y);
+
+    expect(error).toBeUndefined();
+    expect(stdout).toContain(
+      "\nInstalling 1 skill as a plugin in this project (the global copy stays)\n",
+    );
+    expect(stdout).not.toContain("Switching 1 skill(s) to Plugin (native install)");
+    expect(await directoryExists(globalReactCopy())).toBe(true);
+    // Subject guard for the absence below: the confirm was painted.
+    expect(stdout).toContain("Apply this configuration?");
+    expect(stdout, "the global copy stays, so nothing of it is overwritten").not.toContain(
+      "Will be overwritten:",
+    );
+  });
+
+  it("says which skill it installs as a plugin beside its global copy and which it switches, counting each", async () => {
+    await installReactGloballyAsACopyBesideAProjectHono("eject");
+    serve(onApiDeveloper({ [REACT]: "plugin", [HONO]: "plugin" }));
+
+    const { stdout, error } = await applyAnswered(KEY_Y);
+
+    expect(error).toBeUndefined();
+    expect(stdout).toContain(
+      [
+        "",
+        "Switching 1 skill(s) to Plugin (native install)",
+        "Installing 1 skill as a plugin in this project (the global copy stays)",
+        "Installing skill plugins...",
+      ].join("\n"),
+    );
   });
 });

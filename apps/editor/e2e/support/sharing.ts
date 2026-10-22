@@ -145,9 +145,36 @@ export const stubGetConfigMissing = (page: Page, id: string) =>
 export const stubCreateConfigRefusal = (page: Page, status: number) =>
   stubWith(page, [configRefusedHandlerFor(status)])
 
+/** The next POST refused with `status`; every later one falls through. */
+export const stubCreateConfigRefusalOnce = (page: Page, status: number) =>
+  stubWith(page, [
+    http.post(
+      CONFIGS_URL,
+      ({ request }) => getResponse([configRefusedHandlerFor(status)], request),
+      { once: true }
+    ),
+  ])
+
 /**
- * The POST never getting an answer at all, which is a different ending from
- * any refusal above — the worker never saw it, so there is no status to read.
+ * Every POST answered by the worker only once `release` is called, so a spec
+ * can read what the page shows while it waits.
  */
+export const holdCreateConfig = (page: Page) => {
+  let release = () => {}
+  const released = new Promise<void>((resolve) => {
+    release = resolve
+  })
+
+  stubWith(page, [
+    http.post(CONFIGS_URL, async ({ request }) => {
+      await released
+      return getResponse(configHandlers, request)
+    }),
+  ])
+
+  return release
+}
+
+/** The POST never answered: unlike a refusal, there is no status to read. */
 export const stubCreateConfigUnreachable = (page: Page) =>
   stubWith(page, [configUnreachableHandler])

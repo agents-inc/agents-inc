@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { matrix, initializeMatrix, getSkillById } from "./matrix-provider";
+import { matrix, initializeMatrix, getSkillById, getSkillDisplayName } from "./matrix-provider";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 import { SKILLS } from "../__tests__/test-fixtures";
 import { createMockMatrix } from "../__tests__/factories/matrix-factories.js";
@@ -45,6 +45,25 @@ describe("matrix-provider", () => {
       expect(() => getSkillById("web-framework-nonexistent" as SkillId)).toThrow(
         "Skill not found: web-framework-nonexistent",
       );
+    });
+  });
+
+  describe("getSkillDisplayName", () => {
+    it("renders a display name its author wrote with terminal controls without them", () => {
+      initializeMatrix(
+        createMockMatrix({
+          ...SKILLS.react,
+          displayName: "House\u001B[2J\u001B]0;TITLE\u0007Tool",
+        }),
+      );
+
+      expect(getSkillDisplayName(SKILLS.react.id)).toBe("HouseTool");
+    });
+
+    it("renders an honest display name whole", () => {
+      initializeMatrix(createMockMatrix(SKILLS.react));
+
+      expect(getSkillDisplayName(SKILLS.react.id)).toBe(SKILLS.react.displayName);
     });
   });
 });

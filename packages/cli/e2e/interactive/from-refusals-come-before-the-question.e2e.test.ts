@@ -1,4 +1,5 @@
 import path from "path";
+import { mkdir, writeFile } from "fs/promises";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
@@ -37,9 +38,9 @@ import type { TreeSnapshotEntry } from "../helpers/test-utils.js";
 
 /**
  * Every `--from` refusal is decided before the run lists or asks, and a refused run writes nothing.
- * Covered here: writing over a hand-written skill at a carried id, a configuration with nothing
- * placeable, and a placement the host does not offer. Each is paired with the run it must still
- * allow.
+ * Covered here: writing over a hand-written skill at a carried id, a carried id naming a path rather
+ * than one directory, a configuration with nothing placeable, and a placement the host does not
+ * offer. Each is paired with the run it must still allow.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -53,6 +54,19 @@ const REACT_ONLY_ID = "HandWritten0";
 const CARRYING_ID = "HandWritten1";
 const UNKNOWN_SKILL = "totally-unknown-skill";
 
+/**
+ * Carried skills whose ids are paths, which the worker never mints but a hand-posted link can carry:
+ * one climbs from a project's skills folder into `$HOME`, one out of the scratch folder `edit` judges
+ * a rewrite in.
+ */
+const ESCAPES_TO_HOME_ID = "EscapesHome1";
+const ESCAPED_DIR_NAME = "escaped-dir";
+const HOME_ESCAPING_CARRIED_ID = `../../../${ESCAPED_DIR_NAME}`;
+const ESCAPES_SCRATCH_ID = "EscapesTemp1";
+const VICTIM_DIR_NAME = "victim";
+const SCRATCH_ESCAPING_CARRIED_ID = `../${VICTIM_DIR_NAME}`;
+const VICTIM_FILE = "notes.txt";
+
 const NOTHING_PLACEABLE_ID = "NothingPlaceable1";
 const ONE_PLACEABLE_ID = "OnePlaceable1";
 /** The one cell Codex does not offer. */
@@ -63,6 +77,34 @@ type InstallSurfaces = {
   project: Record<string, TreeSnapshotEntry>;
   home: Record<string, TreeSnapshotEntry>[];
 };
+
+/** Carries a file named as the one a victim directory holds, so a write there overwrites it. */
+function carryingUnder(carriedId: string) {
+  return buildSeedPayload({
+    skills: {
+      [E2E_SKILL.react.id]: buildSeedSkill({
+        scope: "project",
+        assignments: { [WEB_DEV]: "lazy" },
+      }),
+      [carriedId]: buildSeedSkill({
+        install: "eject",
+        scope: "project",
+        assignments: { [WEB_DEV]: "lazy" },
+      }),
+    },
+    external: {
+      [carriedId]: buildSeedExternalSkill({
+        categoryId: CARRIED_CATEGORY,
+        repo: CARRIED_REPO,
+        files: {
+          [FILES.SKILL_MD]: renderSkillMd(UPSTREAM_SKILL_NAME, "Structured brainstorming"),
+          [VICTIM_FILE]: "written by a shared configuration\n",
+        },
+      }),
+    },
+    agents: { [WEB_DEV]: { scope: "project" } },
+  });
+}
 
 describe("--from refusals come before the lists and the question", () => {
   let store: SeedConfigStore;
@@ -109,6 +151,8 @@ describe("--from refusals come before the lists and the question", () => {
         agents: { [WEB_DEV]: { scope: "project" } },
       }),
     );
+    store.publish(ESCAPES_TO_HOME_ID, carryingUnder(HOME_ESCAPING_CARRIED_ID));
+    store.publish(ESCAPES_SCRATCH_ID, carryingUnder(SCRATCH_ESCAPING_CARRIED_ID));
     store.publish(
       NOTHING_PLACEABLE_ID,
       buildSeedPayload({
@@ -351,7 +395,7 @@ describe("--from refusals come before the lists and the question", () => {
     );
 
     it(
-      "control: over the directory a previous apply of the same configuration wrote, asks",
+      "control: over the directory a previous apply of the same configuration wrote, is not refused",
       { timeout: TIMEOUTS.INTERACTIVE },
       async () => {
         env = await createTestEnvironment();
@@ -361,15 +405,124 @@ describe("--from refusals come before the lists and the question", () => {
         const before = await snapshotInstallSurfaces(env);
 
         prompt = launchEdit(env, CARRYING_ID);
-        await prompt.waitForTextOrExit(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
 
-        expect(prompt.getOutput()).toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
+        // The same configuration again changes nothing, so the run ends past the refusal
+        // without asking.
+        expect(await prompt.waitForExit(TIMEOUTS.WIZARD_LOAD)).toBe(EXIT_CODES.SUCCESS);
+        expect(prompt.getOutput()).toContain(STEP_TEXT.EDIT_UNCHANGED);
         expect(flattenCliOutput(prompt.getOutput())).not.toContain(
           STEP_TEXT.SHARED_CONFIG_UNCARRIED_DESTINATION,
+        );
+        expect(await snapshotInstallSurfaces(env)).toStrictEqual(before);
+      },
+    );
+  });
+
+  describe("init --from a carried skill whose id climbs out of the skills folder", () => {
+    it(
+      "with no terminal, refuses before it lists, and writes nothing where the id points",
+      { timeout: TIMEOUTS.INTERACTIVE },
+      async () => {
+        env = await createTestEnvironment();
+        // Where `<project>/.claude/skills/../../../escaped-dir` lands: the project sits in HOME.
+        const escapeTarget = path.join(env.fakeHome, ESCAPED_DIR_NAME);
+        const before = await snapshotInstallSurfaces(env);
+
+        const { exitCode, output } = await runInitFrom(
+          store,
+          ESCAPES_TO_HOME_ID,
+          { dir: env.projectDir, globalHome: env.fakeHome },
+          E2E_SOURCE.sourceDir,
+        );
+
+        // First, because it is the defect: unguarded, the carried files land here and stay.
+        expect(await readTreeSnapshot(escapeTarget)).toStrictEqual({});
+        expect(exitCode).toBe(EXIT_CODES.ERROR);
+        expect(flattenCliOutput(output)).toContain(STEP_TEXT.SHARED_CONFIG_ID_NAMES_NO_DIRECTORY);
+        expect(flattenCliOutput(output)).toContain(HOME_ESCAPING_CARRIED_ID);
+        expect(output, "a refused install must not first list what it would install").not.toContain(
+          STEP_TEXT.SHARED_CONFIG_LIST_PROJECT,
+        );
+        expect(await snapshotInstallSurfaces(env)).toStrictEqual(before);
+      },
+    );
+  });
+
+  describe("edit --from a carried skill whose id climbs out of the scratch folder", () => {
+    /** The folder `edit` judges a carried skill's rewrite in, holding a directory of the user's own. */
+    async function seedScratchParentWithVictim(environment: TestEnvironment): Promise<string> {
+      const scratchParent = path.join(environment.tempDir, "tmp");
+      await mkdir(path.join(scratchParent, VICTIM_DIR_NAME), { recursive: true });
+      await writeFile(path.join(scratchParent, VICTIM_DIR_NAME, VICTIM_FILE), "original\n");
+      return scratchParent;
+    }
+
+    function launchEditJudgingIn(
+      environment: TestEnvironment,
+      id: string,
+      scratchParent: string,
+    ): InteractivePrompt {
+      return new InteractivePrompt(["edit", "--from", id], environment.projectDir, {
+        env: { AGENTS_INC_API_URL: store.url, HOME: environment.fakeHome, TMPDIR: scratchParent },
+      });
+    }
+
+    it(
+      "refuses before it writes anything, shows the plan or asks",
+      { timeout: TIMEOUTS.INTERACTIVE },
+      async () => {
+        env = await createTestEnvironment();
+        await installIntoProject(env, REACT_ONLY_ID);
+        const scratchParent = await seedScratchParentWithVictim(env);
+        const victim = path.join(scratchParent, VICTIM_DIR_NAME);
+        const victimBefore = await readTreeSnapshot(victim);
+        const before = await snapshotInstallSurfaces(env);
+
+        prompt = launchEditJudgingIn(env, ESCAPES_SCRATCH_ID, scratchParent);
+        await prompt.waitForTextOrExit(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
+
+        // First, because it is the defect: unguarded, the user's file is overwritten while the
+        // question is still on screen, and a No does not restore it.
+        expect(await readTreeSnapshot(victim)).toStrictEqual(victimBefore);
+        expect(
+          prompt.getOutput(),
+          "a refused apply must be refused before the user is asked to confirm it",
+        ).not.toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
+
+        expect(await prompt.waitForExit(TIMEOUTS.EXIT_WAIT)).toBe(EXIT_CODES.ERROR);
+        const said = flattenCliOutput(prompt.getOutput());
+        expect(said).toContain(STEP_TEXT.SHARED_CONFIG_ID_NAMES_NO_DIRECTORY);
+        expect(said).toContain(SCRATCH_ESCAPING_CARRIED_ID);
+        expect(await snapshotInstallSurfaces(env)).toStrictEqual(before);
+      },
+    );
+
+    it(
+      "control: a carried skill under the id intake mints shows the plan and asks, and leaves the user's directory beside the scratch folder alone",
+      { timeout: TIMEOUTS.INTERACTIVE },
+      async () => {
+        env = await createTestEnvironment();
+        await installIntoProject(env, REACT_ONLY_ID);
+        const scratchParent = await seedScratchParentWithVictim(env);
+        // Not the folder whole: loading the config caches a transpiled copy there.
+        const victim = path.join(scratchParent, VICTIM_DIR_NAME);
+        const victimBefore = await readTreeSnapshot(victim);
+        const before = await snapshotInstallSurfaces(env);
+
+        prompt = launchEditJudgingIn(env, CARRYING_ID, scratchParent);
+        await prompt.waitForTextOrExit(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
+        const shown = prompt.getOutput();
+
+        expect(shown).toContain(STEP_TEXT.SHARED_CONFIG_LIST_PROJECT);
+        expect(shown).toContain(CARRIED_ID);
+        expect(shown).toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
+        expect(flattenCliOutput(shown)).not.toContain(
+          STEP_TEXT.SHARED_CONFIG_ID_NAMES_NO_DIRECTORY,
         );
 
         await prompt.deny();
         expect(await prompt.waitForExit(TIMEOUTS.EXIT_WAIT)).toBe(EXIT_CODES.CANCELLED);
+        expect(await readTreeSnapshot(victim)).toStrictEqual(victimBefore);
         expect(await snapshotInstallSurfaces(env)).toStrictEqual(before);
       },
     );

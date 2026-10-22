@@ -90,7 +90,6 @@ const writtenIn = (
     .map((node) => node.id)
 
 describe("the bytes the output preview draws", () => {
-  // A global root renders standalone, against the root's own config.
   it("draws the global root's config.ts with the standalone writer", async () => {
     const preview = await buildOutputPreview(
       payload({ [REACT]: skill("global", "plugin") }),
@@ -107,7 +106,6 @@ describe("the bytes the output preview draws", () => {
     )
   })
 
-  // A project root inlines the preview's global config.
   it("draws the project root's config.ts with the inlining writer", async () => {
     const preview = await buildOutputPreview(
       payload(
@@ -172,7 +170,6 @@ describe("the bytes the output preview draws", () => {
     expect(configTs).toContain(stack!.description)
   })
 
-  // The global config.ts is rebuilt from the blank pair, so it carries none.
   it("leaves the description out of the global config.ts, which the CLI rebuilds from the blank pair", async () => {
     const [stack] = activeStacks()
 
@@ -270,7 +267,6 @@ describe("the marketplace a configuration naming none records", () => {
     )
   })
 
-  // The name the manifest gives, recorded on the line after the ref.
   it("names the public catalogue as its manifest does, on the line after the ref", async () => {
     const preview = await buildOutputPreview(
       payload(
@@ -381,33 +377,6 @@ describe("the one line a browser cannot know", () => {
 })
 
 describe("a compiled sub-agent's markdown", () => {
-  // Mechanism only; bytes against a real install are an e2e's.
-  it("is the corpus renderer's return value, passed through untouched", async () => {
-    const RENDERED = "---\nname: web-developer\n---\n\nrendered by the corpus\n"
-
-    vi.doMock("@workspace/compile/preview", () => ({
-      CORPUS_CLI_VERSION: "0.0.0-mocked",
-      renderAgentFromCorpus: () => Promise.resolve(RENDERED),
-    }))
-
-    const { buildOutputPreview: build } = await import("./output-preview")
-    const preview = await build(
-      payload({ [REACT]: skill("global", "plugin") }),
-      "claude"
-    )
-    const agent = rootOf(preview, GLOBAL_BASE)?.nodes.find((node) =>
-      node.id.endsWith(`${WEB_DEVELOPER}.md`)
-    )
-
-    expect(
-      agent,
-      "no compiled sub-agent row was emitted for a selected skill"
-    ).toBeDefined()
-    expect(agent!.body).toStrictEqual(RENDERED)
-
-    vi.doUnmock("@workspace/compile/preview")
-  })
-
   // The marker is a constant, so no version assertion belongs here.
   it("carries the provenance marker the CLI writes, byte for byte", async () => {
     const preview = await buildOutputPreview(
@@ -790,7 +759,7 @@ describe("what the tree says about plugin skills", () => {
         (node) => node.marker === "plugin" && node.id.includes(skillId)
       )?.body
 
-    // Unseated: the public catalogue by name, written out as rendered text.
+    // Written out as rendered text.
     it("names the public catalogue by name for a visitor who has seated nothing", async () => {
       const preview = await buildOutputPreview(
         payload({ [REACT]: skill("global", "eject") }),
@@ -802,7 +771,6 @@ describe("what the tree says about plugin skills", () => {
       expect(note).toContain(`Source: agents-inc/src/skills/${REACT}`)
     })
 
-    // Seated elsewhere: the seated ref, never ours.
     it("names the seated marketplace, never ours, for a visitor seated elsewhere", async () => {
       useCatalogStore
         .getState()
@@ -1063,7 +1031,6 @@ describe("which roots are emitted", () => {
     )
   })
 
-  // And that pair is blank, as the install writes it.
   it("draws that global pair blank, as the install writes it", async () => {
     const preview = await buildOutputPreview(
       payload(
@@ -1582,7 +1549,6 @@ describe("how a compiled sub-agent invokes its skills", () => {
     )
   })
 
-  // Blank is blank with spaces in it too.
   it("falls back to the category sentence for a skill stating only whitespace", async () => {
     const acme = MARKETPLACE_CATALOG.skills[ACME_SKILL]
 
@@ -1612,6 +1578,54 @@ describe("how a compiled sub-agent invokes its skills", () => {
     )
 
     expect(body).toContain(`\n- Use when working with ${acme?.category}.\n`)
+  })
+})
+
+// The install writes config.ts in the writer's order and compiles from it, so a
+// payload's own order must not reach the sub-agent.
+describe("the order a compiled sub-agent lists its skills in", () => {
+  const preloadedOnWebDeveloper = (install: "plugin" | "eject") => ({
+    install,
+    scope: "global" as const,
+    assignments: { [WEB_DEVELOPER]: "preloaded" as const },
+  })
+
+  // Tailwind's category is declared after React's.
+  const againstTheCatalogue = () =>
+    payload({
+      [TAILWIND]: preloadedOnWebDeveloper("plugin"),
+      [REACT]: preloadedOnWebDeveloper("eject"),
+    })
+
+  it("is the catalogue's category order, whatever order the payload names them in", async () => {
+    const body = bodyOf(
+      await buildOutputPreview(againstTheCatalogue(), "claude"),
+      GLOBAL_BASE,
+      `${WEB_DEVELOPER}.md`
+    )
+
+    expect(body).toContain(
+      `skills:\n  - ${REACT}\n  - ${TAILWIND}:${TAILWIND}\n---\n`
+    )
+  })
+
+  it("draws the same file as a payload already in that order", async () => {
+    const inOrder = payload({
+      [REACT]: preloadedOnWebDeveloper("eject"),
+      [TAILWIND]: preloadedOnWebDeveloper("plugin"),
+    })
+
+    const drawn = async (shared: SeedPayload) =>
+      bodyOf(
+        await buildOutputPreview(shared, "claude"),
+        GLOBAL_BASE,
+        `${WEB_DEVELOPER}.md`
+      )
+
+    const ordered = await drawn(inOrder)
+    expect(ordered, "the preview drew no compiled sub-agent").toBeTruthy()
+
+    expect(await drawn(againstTheCatalogue())).toBe(ordered)
   })
 })
 

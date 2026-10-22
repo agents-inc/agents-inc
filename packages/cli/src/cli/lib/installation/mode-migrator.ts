@@ -10,6 +10,7 @@ import { buildMarketplacePluginRef } from "../plugins/plugin-ref";
 import { resolveInstallPaths } from "./install-base-dir";
 import { verbose } from "../../utils/logger";
 import { getErrorMessage } from "../../utils/errors";
+import { plural } from "../../utils/string";
 import { CLI_INVOKE_COMMAND, EJECT_SOURCE } from "../../consts";
 
 export type SkillMigration = {
@@ -41,6 +42,19 @@ export type MigrationResult = {
 
 export function ejectCopyFailureError(failedCount: number): string {
   return `Failed to copy ${failedCount} skill(s) for eject. Eject intent could not be honored. Check that the destination skills directory is writable, then apply the same id again with '${CLI_INVOKE_COMMAND} edit --from <id>' — or switch the affected skills back to plugin mode.`;
+}
+
+/** The global plugin keeps serving every other project, so nothing switches: a copy is added. */
+export function copyingBesideGlobalPlugins(count: number): string {
+  const kept = count === 1 ? "the global plugin stays" : "the global plugins stay";
+  return `Copying ${plural(count, "skill")} into this project (${kept})`;
+}
+
+/** The global copy keeps serving every other project, so nothing switches: a plugin is added. */
+export function installingBesideGlobalCopies(count: number): string {
+  const installedAs = count === 1 ? "a plugin" : "plugins";
+  const kept = count === 1 ? "the global copy stays" : "the global copies stay";
+  return `Installing ${plural(count, "skill")} as ${installedAs} in this project (${kept})`;
 }
 
 export function detectMigrations(
@@ -181,8 +195,11 @@ function migrationsWhoseCopyLanded(
   return migrations.filter((migration) => landed.has(migration.id));
 }
 
-/** Global→project keeps the global plugin for others; `excluded: true` keeps this project off it. */
-function keepsGlobalPluginRegistration(migration: SkillMigration): boolean {
+/**
+ * Global→project leaves the global install, plugin or copy, serving every other project. The one
+ * test both directions read, so what a run keeps and what it says it keeps cannot disagree.
+ */
+export function keepsGlobalInstall(migration: SkillMigration): boolean {
   return migration.oldScope === "global" && migration.newScope === "project";
 }
 
@@ -196,7 +213,7 @@ async function uninstallMigratedPlugins(
   const warnings: string[] = [];
 
   for (const migration of migrations) {
-    if (keepsGlobalPluginRegistration(migration)) {
+    if (keepsGlobalInstall(migration)) {
       verbose(`Keeping global plugin for ${migration.id} (migrated to project-eject)`);
       continue;
     }
@@ -219,12 +236,11 @@ async function uninstallMigratedPlugins(
   return warnings;
 }
 
-/** A global copy is kept when the skill moves to project scope, for other projects. */
 async function deleteEjectedWorkingCopy(
   migration: SkillMigration,
   projectDir: string,
 ): Promise<void> {
-  if (migration.oldScope === "global" && migration.newScope === "project") {
+  if (keepsGlobalInstall(migration)) {
     verbose(`Keeping global local skill for ${migration.id} (migrated to project-plugin)`);
     return;
   }

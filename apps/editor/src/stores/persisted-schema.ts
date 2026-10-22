@@ -19,10 +19,10 @@ import type { Provider } from "@workspace/compile"
 // Bump when the persisted shape changes; older blobs are discarded on load.
 export const PERSIST_VERSION = 8
 
-export const loadStateSchema = z.enum(["lazy", "preloaded"])
+const loadStateSchema = z.enum(["lazy", "preloaded"])
 
 // `enabled: false` keeps the row, so switching it back on restores its load.
-export const assignmentSchema = z.object({
+const assignmentSchema = z.object({
   load: loadStateSchema,
   enabled: z.boolean(),
 })
@@ -31,7 +31,7 @@ export const assignmentSchema = z.object({
 export const SKILL_INSTALL_MODES = ["plugin", "eject"] as const
 export const SKILL_SCOPES = ["project", "global"] as const
 
-export const skillEntrySchema = z.object({
+const skillEntrySchema = z.object({
   install: z.enum(SKILL_INSTALL_MODES),
   scope: z.enum(SKILL_SCOPES),
   // Sub-agent id → how it carries the skill: the one source of assignment.
@@ -42,9 +42,9 @@ export const AGENT_MODELS = ["opus", "fable", "sonnet", "haiku"] as const
 export const AGENT_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const
 export const AGENT_SCOPES = ["project", "global"] as const
 
-export const agentModelSchema = z.enum(AGENT_MODELS)
+const agentModelSchema = z.enum(AGENT_MODELS)
 export const agentEffortSchema = z.enum(AGENT_EFFORTS)
-export const agentScopeSchema = z.enum(AGENT_SCOPES)
+const agentScopeSchema = z.enum(AGENT_SCOPES)
 
 // The session's own model, which a Codex role runs on unless pinned.
 const INHERIT = "inherit"
@@ -59,12 +59,12 @@ const CODEX_MODEL_LABELS = {
 } as const satisfies Record<CodexModelName, string>
 
 export const ROSTER_GROUP_BYS = ["domain", "scope"] as const
-export const rosterGroupBySchema = z.enum(ROSTER_GROUP_BYS)
+const rosterGroupBySchema = z.enum(ROSTER_GROUP_BYS)
 export type RosterGroupBy = z.infer<typeof rosterGroupBySchema>
 
 // `system` keeps following the machine, which a stored light/dark cannot.
-export const THEME_PREFERENCES = ["system", "light", "dark"] as const
-export const themePreferenceSchema = z.enum(THEME_PREFERENCES)
+const THEME_PREFERENCES = ["system", "light", "dark"] as const
+const themePreferenceSchema = z.enum(THEME_PREFERENCES)
 export type ThemePreference = z.infer<typeof themePreferenceSchema>
 
 const isCodexModelName = (value: unknown): value is CodexModelName =>
@@ -90,7 +90,7 @@ const withOfferedCodexModel = (entry: unknown) => {
 
 // Every decision about one sub-agent. `on` is tri-state: absent means "ask the
 // assignments", so an entry holding only a model pins nothing.
-export const agentEntrySchema = z.preprocess(
+const agentEntrySchema = z.preprocess(
   withOfferedCodexModel,
   z.object({
     on: z.boolean().optional(),
@@ -113,12 +113,15 @@ export const persistedConfigSchema = z.object({
   remembered: z.record(z.string(), skillEntrySchema),
   // Sparse: only agents someone decided something about.
   agents: z.record(z.string(), agentEntrySchema),
+  // What a shared configuration arrived calling itself, sent on with it.
+  // Optional, so a configuration saved before it parses unchanged.
+  description: z.string().optional(),
 })
 
 export type LoadState = z.infer<typeof loadStateSchema>
 export type Assignment = z.infer<typeof assignmentSchema>
 export type SkillEntry = z.infer<typeof skillEntrySchema>
-export type AgentModel = z.infer<typeof agentModelSchema>
+type AgentModel = z.infer<typeof agentModelSchema>
 export type AgentEffort = z.infer<typeof agentEffortSchema>
 export type AgentScope = z.infer<typeof agentScopeSchema>
 export type AgentEntry = z.infer<typeof agentEntrySchema>
@@ -250,19 +253,20 @@ export type PersistedUi = z.infer<typeof persistedUiSchema>
 
 // Drops references the seated catalogue does not know; `adoptSeedPayload` seats
 // added skills first.
-const isKnownSkill = (skillId: string) => skillId in activeCatalog().skillsById
+export const isKnownSkill = (skillId: string) =>
+  skillId in activeCatalog().skillsById
 const isKnownAgent = (agentId: string) => agentId in SUB_AGENTS_BY_ID
 const isKnownStack = (stackId: string | null) =>
   activeStacks().some((stack) => stack.id === stackId)
 
-const pruneAssignments = (assignments: SkillEntry["assignments"]) =>
+const onlyKnownAgents = <T>(byAgent: Record<string, T>) =>
   Object.fromEntries(
-    Object.entries(assignments).filter(([agentId]) => isKnownAgent(agentId))
+    Object.entries(byAgent).filter(([agentId]) => isKnownAgent(agentId))
   )
 
 const pruneEntry = (entry: SkillEntry): SkillEntry => ({
   ...entry,
-  assignments: pruneAssignments(entry.assignments),
+  assignments: onlyKnownAgents(entry.assignments),
 })
 
 const pruneSkillMap = (skills: PersistedConfig["skills"]) =>
@@ -272,13 +276,13 @@ const pruneSkillMap = (skills: PersistedConfig["skills"]) =>
       .map(([skillId, entry]) => [skillId, pruneEntry(entry)])
   )
 
+// Spread first, so a field naming no id passes through untouched.
 export const pruneUnknownIds = (config: PersistedConfig): PersistedConfig => ({
+  ...config,
   stackId: isKnownStack(config.stackId) ? config.stackId : null,
   skills: pruneSkillMap(config.skills),
   remembered: pruneSkillMap(config.remembered),
-  agents: Object.fromEntries(
-    Object.entries(config.agents).filter(([agentId]) => isKnownAgent(agentId))
-  ),
+  agents: onlyKnownAgents(config.agents),
 })
 
 // No migrations: any other version is discarded, and reported, since `merge`

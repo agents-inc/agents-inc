@@ -143,7 +143,12 @@ describe("source-fetcher download", () => {
       force: true,
       offline: false,
     });
-    expect(result).toStrictEqual({ path: cacheDir, fromCache: false, source: SOURCE });
+    expect(result).toStrictEqual({
+      path: cacheDir,
+      fromCache: false,
+      unreachable: false,
+      source: SOURCE,
+    });
   });
 
   it("downloads a subdirectory of the source and reports it as the source fetched", async () => {
@@ -206,7 +211,12 @@ describe("source-fetcher download", () => {
 
     const result = await fetchFromSource(SOURCE);
 
-    expect(result).toStrictEqual({ path: cacheDir, fromCache: true, source: SOURCE });
+    expect(result).toStrictEqual({
+      path: cacheDir,
+      fromCache: true,
+      unreachable: false,
+      source: SOURCE,
+    });
     expect(mockDownloadTemplate).not.toHaveBeenCalled();
     expect(verbose).toHaveBeenCalledWith(
       `${TARBALL} answered without an ETag — keeping the cached copy`,

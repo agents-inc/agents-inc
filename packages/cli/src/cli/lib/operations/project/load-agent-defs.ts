@@ -1,4 +1,4 @@
-import { getAgentDefinitions } from "../../agents/index.js";
+import { getLocalAgentDefinitions } from "../../agents/index.js";
 import { loadMergedAgents } from "../../loading/index.js";
 import type { AgentDefinition, AgentName, AgentSourcePaths } from "../../../types/index.js";
 
@@ -14,7 +14,7 @@ export type AgentDefs = {
  * emitted `AgentName` union; a marketplace's sub-agents are never included.
  */
 export async function loadAgentDefs(): Promise<AgentDefs> {
-  const agentSourcePaths = await getAgentDefinitions();
+  const agentSourcePaths = await getLocalAgentDefinitions();
   const agents = await loadMergedAgents(agentSourcePaths.sourcePath);
 
   return {

@@ -2,7 +2,7 @@ import os from "os";
 import path from "path";
 import { partition } from "remeda";
 import { getErrorMessage } from "../utils/errors.js";
-import { PLUGIN_MANIFEST_DIR, STANDARD_FILES } from "../consts.js";
+import { STANDARD_FILES } from "../consts.js";
 import { directoryExists, fileExists, listDirectories } from "../utils/fs.js";
 import { listAgentMdFiles, splitAgentsByProvenance } from "./agents/index.js";
 import { readSkillMetadata } from "./loading/index.js";
@@ -18,10 +18,12 @@ import {
 } from "./configuration/index.js";
 import { isHomeDirectory, resolveInstallPaths } from "./installation/index.js";
 import { getInstalledConfigPath } from "./installation/install-base-dir.js";
+import type { AgentCodec } from "./installation/install-layout.js";
 import {
   getInstalledPluginsRegistryPath,
   getProjectPluginsDir,
   getUserPluginsDir,
+  listPluginDirNames,
   listRegisteredPluginInstalls,
   validateAgentFrontmatter,
   validateAllPlugins,
@@ -39,9 +41,6 @@ import type { ValidationResult } from "../types/index.js";
 
 /** How a source repository under the cwd is labelled when it is not a registered source. */
 const CWD_SOURCE_NAME = "current directory";
-
-/** What a compiled agent is called on disk; `splitAgentsByProvenance` answers in bare names. */
-const AGENT_FILE_EXTENSION = ".md";
 
 export type ContentIssue = {
   severity: "error" | "warning";
@@ -192,7 +191,7 @@ async function validatePluginsDirectory(pluginsDir: string): Promise<ContentVali
     if (registryValidation !== undefined) return registryValidation;
   }
 
-  const pluginDirs = await findPluginDirectories(pluginsDir);
+  const pluginDirs = await listPluginDirNames(pluginsDir);
   if (pluginDirs.length === 0) return NOTHING_VALIDATED;
 
   const { results } = await validateAllPlugins(pluginsDir);
@@ -233,17 +232,6 @@ async function validateRegistryPlugins(pluginsDir: string): Promise<ContentValid
   );
 
   return { count: installs.length, issues: results.flat(), notes: [] };
-}
-
-async function findPluginDirectories(pluginsDir: string): Promise<string[]> {
-  const entries = await listDirectories(pluginsDir);
-  const checks = await Promise.all(
-    entries.map(async (name) => ({
-      name,
-      isPlugin: await directoryExists(path.join(pluginsDir, name, PLUGIN_MANIFEST_DIR)),
-    })),
-  );
-  return checks.filter((check) => check.isPlugin).map((check) => check.name);
 }
 
 /**
@@ -287,49 +275,46 @@ function installedDirs(projectDir: string, key: "skillsDir" | "agentsDir"): stri
   return [global, resolveInstallPaths(projectDir, "project")[key]];
 }
 
-/** What an installed-content pass walked, named rather than validated. */
-export type InstalledArtifacts = {
-  /** Every skill directory this CLI can prove it wrote, both scopes, as display paths. */
-  skills: string[];
-  /** Every compiled agent file this CLI can prove it wrote, both scopes, as display paths. */
-  agents: string[];
-};
+/** Skill folders this CLI provably wrote, as `uninstall` takes them, as display paths. */
+export async function skillDirsWithOurProvenanceIn(skillsDir: string): Promise<string[]> {
+  return listDisplayPaths(skillsDir, listSkillDirsWithOurProvenance);
+}
 
-/** For `doctor` with no config: names what this installation owns, as `uninstall` would take. */
-export async function listInstalledArtifacts(projectDir: string): Promise<InstalledArtifacts> {
-  const [skills, agents] = await Promise.all([
-    listAcrossScopes(installedDirs(projectDir, "skillsDir"), listSkillDirsWithOurProvenance),
-    listAcrossScopes(installedDirs(projectDir, "agentsDir"), listAgentFilesWithOurProvenance),
-  ]);
-  return { skills, agents };
+/** Compiled agent files this CLI provably wrote, as `uninstall` takes them, as display paths. */
+export async function agentFilesWithOurProvenanceIn(
+  agentsDir: string,
+  codec: AgentCodec,
+): Promise<string[]> {
+  return listDisplayPaths(agentsDir, (dir) => listAgentFilesWithOurProvenance(dir, codec));
 }
 
 /**
  * Asks `splitAgentsByProvenance`, as `uninstall` does, so this lists exactly what it would remove.
  */
-async function listAgentFilesWithOurProvenance(agentsDir: string): Promise<string[]> {
-  const { marked } = await splitAgentsByProvenance(agentsDir);
-  return marked.map((name) => `${name}${AGENT_FILE_EXTENSION}`);
+async function listAgentFilesWithOurProvenance(
+  agentsDir: string,
+  codec: AgentCodec,
+): Promise<string[]> {
+  const { marked } = await splitAgentsByProvenance(agentsDir, codec);
+  return marked.map((name) => `${name}${codec.extension}`);
 }
 
 /** By `forkedFrom` alone, as `uninstall` reads it; unreadable metadata carries none. */
-async function listSkillDirsWithOurProvenance(skillsDir: string): Promise<string[]> {
-  const names = await listDirectories(skillsDir);
-  const judged = await Promise.all(
-    names.map(async (name) => ({ name, ours: await carriesOurProvenance(skillsDir, name) })),
+export async function listSkillDirsWithOurProvenance(skillsDir: string): Promise<string[]> {
+  const [ours] = await partitionByVerdict(await listDirectories(skillsDir), (name) =>
+    carriesOurProvenance(skillsDir, name),
   );
-  return judged.filter((entry) => entry.ours).map((entry) => entry.name);
+  return ours;
 }
 
-async function listAcrossScopes(
-  dirs: string[],
-  listEntries: (dir: string) => Promise<string[]>,
-): Promise<string[]> {
-  const perDir = await Promise.all(dirs.map((dir) => listDisplayPaths(dir, listEntries)));
-  return perDir.flat();
+async function partitionByVerdict(
+  names: string[],
+  verdict: (name: string) => Promise<boolean>,
+): Promise<[string[], string[]]> {
+  const verdicts = await Promise.all(names.map(verdict));
+  return partition(names, (_, index) => verdicts[index] === true);
 }
 
-/** One directory's entries as display paths, or nothing when the directory is absent. */
 async function listDisplayPaths(
   dir: string,
   listEntries: (dir: string) => Promise<string[]>,
@@ -348,16 +333,12 @@ async function validateSkillsDirectory(
   const skillDirs = await listDirectories(skillsDir);
   if (skillDirs.length === 0) return NOTHING_VALIDATED;
 
-  const judged = await Promise.all(
-    skillDirs.map(async (name) => ({
-      name,
-      ours: await isOurSkillDirectory(skillsDir, name, configuredIds),
-    })),
+  const [ours, foreign] = await partitionByVerdict(skillDirs, (name) =>
+    isOurSkillDirectory(skillsDir, name, configuredIds),
   );
-  const [ours, foreign] = partition(judged, (entry) => entry.ours);
 
   const results = await Promise.all(
-    ours.map(async ({ name }) => {
+    ours.map(async (name) => {
       const skillDir = path.join(skillsDir, name);
       return toIssues(displayDir(skillDir), await validateInstalledSkill(skillDir));
     }),
@@ -366,7 +347,7 @@ async function validateSkillsDirectory(
   return {
     count: ours.length,
     issues: results.flat(),
-    notes: foreign.map(({ name }) => foreignSkillNote(skillsDir, name)),
+    notes: foreign.map((name) => foreignSkillNote(skillsDir, name)),
   };
 }
 
@@ -407,16 +388,10 @@ async function validateAgentsDirectory(agentsDir: string): Promise<ContentValida
 }
 
 async function validateInstalledSkill(skillDir: string): Promise<ValidationResult> {
-  const skillMd = await validateSkillFile(
-    skillDir,
-    STANDARD_FILES.SKILL_MD,
-    validateSkillFrontmatter,
-  );
-  const metadata = await validateSkillFile(
-    skillDir,
-    STANDARD_FILES.METADATA_YAML,
-    validateInstalledSkillMetadata,
-  );
+  const [skillMd, metadata] = await Promise.all([
+    validateSkillFile(skillDir, STANDARD_FILES.SKILL_MD, validateSkillFrontmatter),
+    validateSkillFile(skillDir, STANDARD_FILES.METADATA_YAML, validateInstalledSkillMetadata),
+  ]);
 
   return mergeValidationResults([skillMd, metadata]);
 }
@@ -445,7 +420,6 @@ async function validateInstalledSkillMetadata(metadataPath: string): Promise<Val
     return validResult();
   }
 
-  // Over-length cliDescription is advisory — only hard schema violations invalidate the skill
   const { errors, warnings } = splitMetadataValidationIssues(result.error, metadata);
   return {
     valid: errors.length === 0,

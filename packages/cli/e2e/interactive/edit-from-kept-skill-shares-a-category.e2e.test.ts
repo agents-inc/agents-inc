@@ -165,6 +165,7 @@ describe("edit --from <id> keeps the configuration's skill beside a kept one in 
     );
   }
 
+  /** A run that changes nothing ends without asking, so there is nothing to approve. */
   async function applyApproved(
     id: string,
     projectDir: string,
@@ -173,9 +174,9 @@ describe("edit --from <id> keeps the configuration's skill beside a kept one in 
     prompt = new InteractivePrompt(["edit", "--from", id], projectDir, {
       env: { AGENTS_INC_API_URL: store.url, ...(home !== undefined && { HOME: home }) },
     });
-    await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM, TIMEOUTS.WIZARD_LOAD);
+    await prompt.waitForTextOrExit(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM, TIMEOUTS.WIZARD_LOAD);
     const planned = prompt.getOutput();
-    await prompt.confirm();
+    if (planned.includes(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM)) await prompt.confirm();
     const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
     expect(exitCode, `apply failed: ${prompt.getOutput()}`).toBe(EXIT_CODES.SUCCESS);
     return { planned, output: prompt.getOutput() };
@@ -195,6 +196,9 @@ describe("edit --from <id> keeps the configuration's skill beside a kept one in 
       const { planned, output } = await applyApproved(APPLY_ID, env.projectDir, env.fakeHome);
 
       expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_KEPT_AUTHORED);
+      expect(output, "keeping the skill written here is all this apply does").toContain(
+        STEP_TEXT.EDIT_UNCHANGED,
+      );
       expect(
         (await loadConfigOrFail(env.projectDir)).stack?.[WEB_DEV],
         "the configuration's skill must stay assigned beside the kept one in its category",
@@ -228,6 +232,9 @@ describe("edit --from <id> keeps the configuration's skill beside a kept one in 
 
       // Subject guard: the skip was read as a skill kept.
       expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_KEPT_UNPLACEABLE);
+      expect(output, "keeping the unplaceable skill is all this apply does").toContain(
+        STEP_TEXT.EDIT_UNCHANGED,
+      );
       expect(
         (await loadConfigOrFail(project.dir)).stack?.[WEB_DEV],
         "the configuration's skill must stay assigned beside the one this catalogue cannot place",
@@ -254,7 +261,7 @@ describe("edit --from <id> keeps the configuration's skill beside a kept one in 
         const keptFiles = await readTreeSnapshot(path.join(skillsPath(env.projectDir), REACT));
         expect(Object.keys(keptFiles), "the kept skill's directory must exist").not.toHaveLength(0);
 
-        // First, because it is the defect: joining both into the slot was refused after the yes.
+        // First, because it is the defect: joining both into the slot is refused after the yes.
         const { planned } = await applyApproved(VUE_APPLY_ID, env.projectDir, env.fakeHome);
 
         expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_KEPT_AUTHORED);

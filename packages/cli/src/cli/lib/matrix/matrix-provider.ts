@@ -1,8 +1,8 @@
 import { seatCatalog } from "@workspace/compile";
 
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
+import { stripTerminalControls } from "../../utils/string";
 import type { Category, Domain, MergedSkillsMatrix, ResolvedSkill, SkillId } from "../../types";
-import { typedValues } from "../../utils/typed-object";
 
 /** The current matrix — starts as BUILT_IN_MATRIX, replaced after local skill merge on startup */
 export let matrix: MergedSkillsMatrix = BUILT_IN_MATRIX;
@@ -21,13 +21,12 @@ export function getSkillById(id: SkillId): ResolvedSkill {
   return skill;
 }
 
-/** Falls back to the raw id: callers render ids that may be absent from the current matrix. */
+/**
+ * Falls back to the raw id: callers render ids that may be absent from the current matrix. Inert,
+ * since every caller prints it and a marketplace or a shared link wrote it.
+ */
 export function getSkillDisplayName(id: SkillId): string {
-  return matrix.skills[id]?.displayName ?? id;
-}
-
-export function allSkills(): ResolvedSkill[] {
-  return typedValues(matrix.skills);
+  return stripTerminalControls(matrix.skills[id]?.displayName ?? id);
 }
 
 export function getCategoryDomain(category: string): Domain | undefined {

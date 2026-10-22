@@ -222,8 +222,11 @@ describe("source-loader: a marketplace fetched from a remote ref", () => {
   let fakeHome: string;
   let savedHome: string | undefined;
   let fetched: TestDirs;
+  /** Whether the stand-in fetch reports the ref as unreachable, its cache standing in. */
+  let unreachable: boolean;
 
   beforeEach(async () => {
+    unreachable = false;
     fakeHome = await createTempDir("cc-loader-remote-home-");
     savedHome = process.env.HOME;
     process.env.HOME = fakeHome;
@@ -232,7 +235,7 @@ describe("source-loader: a marketplace fetched from a remote ref", () => {
     fetched = await createTestSource({ skills: PROJECT_SKILLS });
     vi.mocked(fetchFromSource).mockImplementation(async (source) =>
       source === REMOTE_SOURCE
-        ? { path: fetched.sourceDir, fromCache: false, source }
+        ? { path: fetched.sourceDir, fromCache: unreachable, unreachable, source }
         : actualFetcher.fetchFromSource(source),
     );
     vi.mocked(fetchMarketplace).mockImplementation(async (source) =>
@@ -260,6 +263,7 @@ describe("source-loader: a marketplace fetched from a remote ref", () => {
     });
 
     expect(result.isLocal).toBe(false);
+    expect(result.unreachable).toBe(false);
     expect(result.sourcePath).toBe(fetched.sourceDir);
     expect(result.marketplace).toBe(TEST_MARKETPLACE_NAME);
     expect(Object.keys(result.matrix.skills)).toContain(SHARED_SKILL.id);
@@ -267,5 +271,18 @@ describe("source-loader: a marketplace fetched from a remote ref", () => {
       `  Fetching skills from remote source: ${REMOTE_SOURCE}`,
     );
     expect(consoleSpies.log).toHaveBeenCalledWith(`  Fetched to: ${fetched.sourceDir}`);
+  });
+
+  it("says the fetched copy stood in for a ref it could not reach", async () => {
+    unreachable = true;
+
+    const result = await loadSkillsMatrixFromSource({
+      sourceFlag: REMOTE_SOURCE,
+      projectDir: fetched.projectDir,
+      skipExtraSources: true,
+    });
+
+    expect(result.unreachable).toBe(true);
+    expect(result.sourcePath).toBe(fetched.sourceDir);
   });
 });

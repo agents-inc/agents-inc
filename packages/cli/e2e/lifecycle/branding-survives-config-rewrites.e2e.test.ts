@@ -40,11 +40,8 @@ import type { ProjectConfig } from "../../src/cli/types/index.js";
 import { typedKeys } from "../../src/cli/utils/typed-object.js";
 
 /**
- * `branding.name` (and a source repository's five layout fields) are hand-written, so every
- * command rewriting the config must carry them across: `init --from` over a project config, and
- * `edit --from` at home and in a project. Each leg proves the rewrite happened first. A project's
- * name must not reach the global config, and a project inheriting the global name must not pin a
- * copy of it.
+ * `branding.name` and a source repository's layout fields are hand-written, so every command
+ * rewriting the config must carry them across.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -65,7 +62,6 @@ const GLOBAL_EDIT_FROM_ID = "Rewrite5";
 /** Each names a path the repository chose over the default; no shared configuration sets them. */
 const SOURCE_LAYOUT = {
   skillsDir: "catalogue/skills",
-  agentsDir: "catalogue/agents",
   stacksFile: "catalogue/stacks.ts",
   categoriesFile: "catalogue/skill-categories.ts",
   rulesFile: "catalogue/skill-rules.ts",
@@ -393,7 +389,6 @@ describe("what a hand-written config declares, across the commands that rewrite 
       expect(
         {
           skillsDir: projectConfig.skillsDir,
-          agentsDir: projectConfig.agentsDir,
           stacksFile: projectConfig.stacksFile,
           categoriesFile: projectConfig.categoriesFile,
           rulesFile: projectConfig.rulesFile,

@@ -1,9 +1,10 @@
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir } from "fs/promises";
 import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
 import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
+import { stubBrowserOpener } from "../fixtures/browser-opener.js";
 import { CLI } from "../fixtures/cli.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
@@ -16,12 +17,19 @@ import {
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
+  createLocalSkillIn,
   createPermissionsFile,
   createTempDir,
+  readTestFile,
   readTreeSnapshot,
+  renderMetadataYaml,
+  runCLI,
+  writeConfigTypes,
   writeProjectConfig,
+  writeProjectConfigIn,
 } from "../helpers/test-utils.js";
-import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { metadataFieldsFor } from "../fixtures/project-builder.js";
 import { DashboardSession } from "../pages/dashboard-session.js";
 import {
   buildAgentConfigs,
@@ -33,12 +41,12 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
-import { browserOpenerCommand } from "../../src/cli/utils/open-url.js";
+import type { AgentName } from "../../src/cli/types/index.js";
 
 /**
  * A bare `init` over an installation shows its dashboard (Edit, Compile, Doctor, List); with
  * nothing installed it takes the editor route. Launches point at the seed store, so a misread key
- * mints its id here.
+ * mints its id here. A scope holding a Claude and a Codex installation shows one block for each.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -225,18 +233,11 @@ describe("init over an existing installation", () => {
         expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
         store.reset();
 
-        const binDir = path.join(env.tempDir, "bin");
-        await mkdir(binDir, { recursive: true });
-        const opener = browserOpenerCommand(process.platform, STEP_TEXT.EDITOR_URL).command;
-        await writeFile(path.join(binDir, opener), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+        const opener = await stubBrowserOpener(env.tempDir);
 
         dashboard = await DashboardSession.launch({
           projectDir: env.projectDir,
-          env: {
-            HOME: env.fakeHome,
-            AGENTS_INC_API_URL: store.url,
-            PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
-          },
+          env: { HOME: env.fakeHome, AGENTS_INC_API_URL: store.url, PATH: opener.path },
         });
         await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
         const treeBefore = await readTreeSnapshot(env.projectDir);
@@ -247,8 +248,12 @@ describe("init over an existing installation", () => {
         const output = dashboard.getOutput();
         expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
         expect(store.minted).toHaveLength(1);
-        expect(output).toContain(`Shared as ${firstElement(store.minted)}`);
+        const mintedId = firstElement(store.minted);
+        expect(output).toContain(`Shared as ${mintedId}`);
         expect(output).toContain(STEP_TEXT.EDITOR_URL);
+        const opened = await readTestFile(opener.logPath);
+        expect(opened, "the browser must be handed the editor").toContain(STEP_TEXT.EDITOR_URL);
+        expect(opened, "the browser must be handed the id just minted").toContain(mintedId);
         expect(
           await readTreeSnapshot(env.projectDir),
           "opening the editor reads the installation and rewrites nothing",
@@ -444,6 +449,100 @@ describe("init over an existing installation", () => {
       expect(stdout).not.toContain(STEP_TEXT.DASHBOARD);
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       await expectNoSourceFolder(projectDir, "the editor route installs nothing");
+    });
+  });
+
+  /** Each installation compiled for real, so the counts are what each host's folder holds. */
+  describe("over a scope holding a Claude and a Codex installation", () => {
+    const SKILL_ID = E2E_SKILL.vitest.id;
+    const CLAUDE_AGENTS = [WEB_DEV];
+    const CODEX_AGENTS = ["cli-developer", "pm"] as const satisfies readonly AgentName[];
+
+    async function installAndCompile(
+      projectDir: string,
+      home: string,
+      provider: "claude" | "codex",
+    ): Promise<void> {
+      const sourceFolder = provider === "claude" ? DIRS.SOURCE_CLAUDE : DIRS.SOURCE_CODEX;
+      const skillsDir =
+        provider === "claude" ? path.join(DIRS.CLAUDE, DIRS.SKILLS) : DIRS.CODEX_PROJECT_SKILLS;
+      await writeProjectConfigIn(
+        projectDir,
+        sourceFolder,
+        buildProjectConfig({
+          name: `dashboard-${provider}`,
+          skills: buildSkillConfigs([SKILL_ID], { scope: "project", origin: "eject" }),
+          agents: buildAgentConfigs(provider === "claude" ? CLAUDE_AGENTS : [...CODEX_AGENTS], {
+            scope: "project",
+          }),
+        }),
+      );
+      await writeConfigTypes(projectDir, sourceFolder);
+      await createLocalSkillIn(path.join(projectDir, skillsDir), SKILL_ID, {
+        description: "Ejected so each installation has content to compile",
+        metadata: renderMetadataYaml({
+          ...metadataFieldsFor(SKILL_ID),
+          contentHash: "hash-dashboard-providers",
+        }),
+      });
+      const compiled = await runCLI(["compile", "--provider", provider], projectDir, {
+        env: { HOME: home },
+      });
+      expect(compiled.exitCode, compiled.combined).toBe(EXIT_CODES.SUCCESS);
+    }
+
+    it("prints one block per provider, each with its own counts", async () => {
+      tempDir = await createTempDir();
+      const projectDir = path.join(tempDir, "project");
+      const home = path.join(tempDir, "home");
+      await mkdir(projectDir, { recursive: true });
+      await mkdir(home, { recursive: true });
+      await installAndCompile(projectDir, home, "claude");
+      await installAndCompile(projectDir, home, "codex");
+
+      const { exitCode, stdout } = await runCLI(["init"], projectDir, { env: { HOME: home } });
+
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(stdout).toContain(
+        [
+          "",
+          `  ${STEP_TEXT.DASHBOARD_PROVIDER}     claude`,
+          "  Skills:       1 installed",
+          `  Agents:       ${CLAUDE_AGENTS.length} compiled`,
+          "  Mode:         Eject",
+          "",
+          `  ${STEP_TEXT.DASHBOARD_PROVIDER}     codex`,
+          "  Skills:       1 installed",
+          `  Agents:       ${CODEX_AGENTS.length} compiled`,
+          "  Mode:         Eject",
+          "",
+          "  [Edit in the web editor]",
+        ].join("\n"),
+      );
+    });
+
+    it("prints the one block, naming no provider, where the scope holds one installation", async () => {
+      tempDir = await createTempDir();
+      const projectDir = path.join(tempDir, "project");
+      const home = path.join(tempDir, "home");
+      await mkdir(projectDir, { recursive: true });
+      await mkdir(home, { recursive: true });
+      await installAndCompile(projectDir, home, "codex");
+
+      const { exitCode, stdout } = await runCLI(["init"], projectDir, { env: { HOME: home } });
+
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(stdout).toContain(
+        [
+          "",
+          "  Skills:       1 installed",
+          `  Agents:       ${CODEX_AGENTS.length} compiled`,
+          "  Mode:         Eject",
+          "",
+          "  [Edit in the web editor]",
+        ].join("\n"),
+      );
+      expect(stdout).not.toContain(STEP_TEXT.DASHBOARD_PROVIDER);
     });
   });
 });

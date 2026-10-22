@@ -11,19 +11,27 @@ import {
 import {
   activeExternalSkill,
   activeMarketplace,
+  activeStacks,
   activeVersion,
   useCatalogStore,
   type ExternalSkill,
 } from "@/stores/catalog-store"
+import { activeDescription, stackSelection } from "@/stores/config-store"
 import {
   isAgentOn,
   pruneUnknownIds,
+  resolveAgentOptions,
   type AgentEntry,
   type PersistedConfig,
   type SkillEntry,
 } from "@/stores/persisted-schema"
 
 import type { ConfigSelection } from "./derive"
+
+const mapValues = <T, U>(record: Record<string, T>, to: (value: T) => U) =>
+  Object.fromEntries(
+    Object.entries(record).map(([key, value]) => [key, to(value)])
+  )
 
 // Presence on the wire means "installs". A row whose scopes cannot meet still
 // travels: it is an on-screen error, not a row to strip.
@@ -99,42 +107,30 @@ const travellingAgents = (config: ConfigSelection) =>
 // travels.
 export const toSeedPayload = (config: ConfigSelection): SeedPayload => {
   const marketplace = activeMarketplace()
+  const description = activeDescription()
   const external = travellingExternal(config)
 
   return seedPayloadSchema.parse({
     v: SEED_VERSION,
     matrixVersion: activeVersion(),
     stackId: config.stackId,
+    ...(description !== undefined && { description }),
     ...(marketplace !== null && { marketplace }),
-    skills: Object.fromEntries(
-      Object.entries(config.skills).map(([skillId, entry]) => [
-        skillId,
-        toSeedSkill(entry, (agentId) => isAgentOn(config, agentId)),
-      ])
+    skills: mapValues(config.skills, (entry) =>
+      toSeedSkill(entry, (agentId) => isAgentOn(config, agentId))
     ),
     agents: Object.fromEntries(travellingAgents(config)),
     ...(external.length > 0 && { external: Object.fromEntries(external) }),
   })
 }
 
-// The saved snapshot has no id, so compare serialized payloads; a reorder
-// reads as a difference, erring towards asking first.
-export const matchesSavedStack = (
-  config: ConfigSelection,
-  saved: SeedPayload | null
-): boolean =>
-  saved !== null &&
-  JSON.stringify(toSeedPayload(config)) === JSON.stringify(saved)
-
 const fromSeedSkill = (skill: SeedSkill): SkillEntry => ({
   install: skill.install,
   scope: skill.scope,
-  assignments: Object.fromEntries(
-    Object.entries(skill.assignments).map(([agentId, load]) => [
-      agentId,
-      { load, enabled: true },
-    ])
-  ),
+  assignments: mapValues(skill.assignments, (load) => ({
+    load,
+    enabled: true,
+  })),
 })
 
 // "No choice" is the missing key, never `undefined`.
@@ -146,24 +142,115 @@ const fromSeedAgent = (agent: SeedAgent): AgentEntry => ({
   ...(agent.scope !== undefined && { scope: agent.scope }),
 })
 
+// Unpruned: a save minted on another catalogue keeps every id it names.
+const asSelection = (payload: SeedPayload) => ({
+  skills: mapValues(payload.skills, fromSeedSkill),
+  agents: mapValues(payload.agents, fromSeedAgent),
+})
+
 // Unknown ids are pruned, skip-don't-fail, as the CLI does.
 export const fromSeedPayload = (payload: SeedPayload): PersistedConfig =>
   pruneUnknownIds({
     stackId: payload.stackId,
-    skills: Object.fromEntries(
-      Object.entries(payload.skills).map(([skillId, skill]) => [
-        skillId,
-        fromSeedSkill(skill),
-      ])
-    ),
+    ...asSelection(payload),
     remembered: {},
-    agents: Object.fromEntries(
-      Object.entries(payload.agents).map(([agentId, agent]) => [
-        agentId,
-        fromSeedAgent(agent),
-      ])
-    ),
+    ...(payload.description !== undefined && {
+      description: payload.description,
+    }),
   })
+
+// The saved snapshot has no id, so it is recognised by what it installs.
+export const matchesSavedStack = (
+  config: ConfigSelection,
+  saved: SeedPayload | null
+): boolean => saved !== null && meaningOfSelection(config) === meaningOf(saved)
+
+/**
+ * A link minted without a stack id, as the CLI mints, opens on the built-in
+ * stack it is, as that stack applied; anything else opens as it arrived.
+ */
+export const recogniseStack = (
+  payload: SeedPayload,
+  adopted: PersistedConfig
+): PersistedConfig => {
+  if (payload.stackId !== null) return adopted
+
+  const arrived = meaningOfSelection(adopted)
+  const recognised = appliedStacks().find(
+    (applied) => meaningOfSelection(applied) === arrived
+  )
+
+  return recognised ?? adopted
+}
+
+// What a receiver installs, and nothing of how it was spelled: no stack id,
+// matrix version or key order.
+const meaningOf = (payload: SeedPayload): string => {
+  const selection = asSelection(payload)
+  const isOn = (agentId: string) => isAgentOn(selection, agentId)
+
+  return JSON.stringify(
+    inKeyOrder({
+      marketplace: payload.marketplace,
+      skills: mapValues(payload.skills, (skill) => installedRows(skill, isOn)),
+      agents: resolvedRoster(
+        agentsNamedIn(payload).filter(isOn),
+        selection.agents
+      ),
+      external: payload.external ?? {},
+    })
+  )
+}
+
+const meaningOfSelection = (config: ConfigSelection) =>
+  meaningOf(toSeedPayload(config))
+
+const appliedStacks = () =>
+  activeStacks()
+    .map((stack) => stackSelection(stack.id))
+    .filter((applied) => applied !== undefined)
+
+// A row to a sub-agent that is off installs nothing.
+const installedRows = (
+  { install, scope, assignments }: SeedSkill,
+  isOn: (agentId: string) => boolean
+) => ({
+  install,
+  scope,
+  assignments: Object.fromEntries(
+    Object.entries(assignments).filter(([agentId]) => isOn(agentId))
+  ),
+})
+
+const agentsNamedIn = (payload: SeedPayload) => [
+  ...new Set([
+    ...Object.keys(payload.agents),
+    ...Object.values(payload.skills).flatMap((skill) =>
+      Object.keys(skill.assignments)
+    ),
+  ]),
+]
+
+// Resolved, so a choice spelled out at its resting value reads as none.
+const resolvedRoster = (
+  agentIds: readonly string[],
+  agents: PersistedConfig["agents"]
+) =>
+  Object.fromEntries(
+    agentIds.map((agentId) => [agentId, resolveAgentOptions(agents, agentId)])
+  )
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+const inKeyOrder = (value: unknown): unknown =>
+  isRecord(value)
+    ? Object.fromEntries(
+        Object.keys(value)
+          .sort()
+          .map((key) => [key, inKeyOrder(value[key])])
+      )
+    : value
 
 // The ids the import pruned, so a link that arrives smaller says so.
 export const unknownPayloadIds = (

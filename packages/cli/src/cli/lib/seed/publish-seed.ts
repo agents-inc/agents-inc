@@ -1,10 +1,11 @@
 import { STATUS_CODES } from "node:http";
 
+import { retryAfterSeconds } from "@workspace/api";
 import { z } from "zod";
 
-import { SEED_API_URL, SEED_USER_AGENT } from "./fetch-seed.js";
+import { arrivedAsText, jsonBodyOrUndefined, SEED_API_URL, SEED_USER_AGENT } from "./fetch-seed.js";
 import { CLI_INVOKE_COMMAND } from "../../consts.js";
-import { truncateText } from "../../utils/string.js";
+import { plural, truncateText } from "../../utils/string.js";
 
 import type { SeedPayload } from "@workspace/matrix/seed";
 
@@ -27,9 +28,14 @@ const refusedIssuesSchema = z
 /** Holds about two of the store's refusal sentences; a longer body must not paint the terminal. */
 const EXPLANATION_BUDGET = 300;
 
-const QUOTABLE_TYPE = "text/plain";
-
 const CONTRACT_MISMATCH = 409;
+
+const RATE_LIMITED = 429;
+
+/** The editor's `limitReachedNote` wording, so both front doors say it alike. */
+const LIMIT_REACHED = "rate limit reached — try again in";
+
+const SECONDS_PER_MINUTE = 60;
 
 /**
  * The store's 409 body says "Reload the page", which a terminal cannot do. The seed version is
@@ -44,11 +50,20 @@ export type PublishSeedResult = { ok: true; id: string } | { ok: false; error: s
 
 /** Every failure is a message rather than a throw. */
 export async function publishSeedConfig(payload: SeedPayload): Promise<PublishSeedResult> {
-  const url = `${SEED_API_URL}/configs`;
+  const response = await postToStore(payload);
+  if (response === null) {
+    return { ok: false, error: `Could not reach ${SEED_API_URL} — check your connection.` };
+  }
 
-  let response: Response;
+  if (!response.ok) return { ok: false, error: await refusalMessage(response) };
+
+  return mintedIdIn(await jsonBodyOrUndefined(response));
+}
+
+/** Null where the store could not be reached at all. */
+async function postToStore(payload: SeedPayload): Promise<Response | null> {
   try {
-    response = await fetch(url, {
+    return await fetch(`${SEED_API_URL}/configs`, {
       method: "POST",
       headers: {
         accept: "application/json",
@@ -59,15 +74,12 @@ export async function publishSeedConfig(payload: SeedPayload): Promise<PublishSe
       body: JSON.stringify(payload),
     });
   } catch {
-    return { ok: false, error: `Could not reach ${SEED_API_URL} — check your connection.` };
+    return null;
   }
+}
 
-  if (!response.ok) return { ok: false, error: await refusalMessage(response) };
-
-  let body: unknown;
-  try {
-    body = await response.json();
-  } catch {
+function mintedIdIn(body: unknown): PublishSeedResult {
+  if (body === undefined) {
     return { ok: false, error: "The configuration store returned something that is not JSON." };
   }
 
@@ -81,13 +93,29 @@ export async function publishSeedConfig(payload: SeedPayload): Promise<PublishSe
 
 /** Always names the status, and quotes the store's own explanation when it gives one. */
 async function refusalMessage(response: Response): Promise<string> {
-  const refused = `Sharing this configuration failed (HTTP ${response.status}).`;
+  const failed = `Sharing this configuration failed (HTTP ${response.status})`;
+  const refused = `${failed}.`;
 
   if (response.status === CONTRACT_MISMATCH) return `${refused} ${OUT_OF_DATE_AGAINST_STORE}`;
+
+  const window = rateLimitWindow(response);
+  if (window !== null) return `${failed}: ${LIMIT_REACHED} ${waitOf(window)}.`;
 
   const explanation = explanationOf(response, await refusalBody(response));
 
   return explanation === undefined ? refused : `${refused} The store said: ${explanation}`;
+}
+
+/** Seconds to wait out, or `null` where this is no 429 or its window is unreadable. */
+function rateLimitWindow(response: Response): number | null {
+  return response.status === RATE_LIMITED ? retryAfterSeconds(response) : null;
+}
+
+/** Minutes round up, so nobody is sent back early. */
+function waitOf(seconds: number): string {
+  return seconds < SECONDS_PER_MINUTE
+    ? plural(seconds, "second")
+    : plural(Math.ceil(seconds / SECONDS_PER_MINUTE), "minute");
 }
 
 /** Not gated on content type: this route refuses as JSON and as plain text. */
@@ -134,11 +162,6 @@ function quotableProseIn(response: Response, body: string): string | undefined {
   if (restatesItsOwnStatus(said, response.status)) return undefined;
 
   return said;
-}
-
-/** Anything but `text/plain` is a proxy or gateway answering for the store, usually markup. */
-function arrivedAsText(response: Response): boolean {
-  return (response.headers.get("content-type") ?? "").startsWith(QUOTABLE_TYPE);
 }
 
 /** Case-insensitive: the worker writes sentence case where the reason phrase is title case. */

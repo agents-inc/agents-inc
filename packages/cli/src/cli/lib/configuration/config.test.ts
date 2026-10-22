@@ -23,10 +23,13 @@ import {
   isPublicCatalogueCheckout,
   loadProjectSourceConfig,
   loadSourceRepoConfig,
+  readSourceRepoConfig,
   resolveBranding,
   resolvePrimarySourceEntry,
+  NAMED_MARKETPLACE,
   resolveSource,
   validateSourceFormat,
+  type MarketplaceCarrier,
 } from "./config";
 import { ConfigDefaultExportError, ConfigSchemaError } from "./config-loader";
 import {
@@ -35,6 +38,7 @@ import {
   renderUnparseableConfigTs,
 } from "../__tests__/factories/unloadable-config-factories.js";
 import { DEFAULT_BRANDING, STANDARD_FILES } from "../../consts";
+import { sourceFolderInUse } from "../installation/install-layout";
 
 /** A source named by the config that lives at the home root — i.e. the global one. */
 const HOME_CONFIG_SOURCE = "github:home/skills";
@@ -54,17 +58,69 @@ const NETWORK_SHARE = "//attacker.example/share";
 const PUBLIC_MARKETPLACE = "https://gitlab.company.com/team/skills";
 const LOCALHOST_MARKETPLACE = "http://localhost:47322/source.tar.gz";
 
+/** Out of the refusal's own words, so a negative over the message can only find an echo. */
+const FIXTURE_PASSWORD = "hunter2";
+const FIXTURE_TOKEN = "ghp_fixture0token";
+
+/** A marketplace URL carrying a username and password, and one carrying a token as its username. */
+const CREDENTIALED_MARKETPLACE = `https://user:${FIXTURE_PASSWORD}@github.com/acme/skills`;
+const TOKEN_MARKETPLACE = `https://${FIXTURE_TOKEN}@github.com/acme/skills`;
+
+/** Credentials and a `..`: the traversal refusal echoes the URL, so it must not be the one raised. */
+const CREDENTIALED_TRAVERSAL_MARKETPLACE = `https://user:${FIXTURE_PASSWORD}@github.com/acme/../skills`;
+
+/** The URL parser skips the extra slash, and reads the username and password after it. */
+const SLASHED_CREDENTIALED_MARKETPLACE = `https:///user:${FIXTURE_PASSWORD}@github.com/acme/skills`;
+
+/** An `@` inside the username, then inside the password: the URL parser cuts at the last `@`. */
+const AT_IN_USERNAME_MARKETPLACE = `https://me@example.com:${FIXTURE_PASSWORD}@github.com/acme/skills`;
+const AT_IN_PASSWORD_MARKETPLACE = `https://user:p@${FIXTURE_PASSWORD}@github.com/acme/skills`;
+
+/**
+ * Credentials the URL parser reads although the text after `https://` does not start with them: it
+ * drops tabs and newlines wherever they are, then skips any run of `/` and `\` after the scheme.
+ */
+const RESPELLED_CREDENTIALS: [respelling: string, value: string, credential: string][] = [
+  ["an extra slash", SLASHED_CREDENTIALED_MARKETPLACE, FIXTURE_PASSWORD],
+  ["a backslash", `https://\\user:${FIXTURE_PASSWORD}@github.com/acme/skills`, FIXTURE_PASSWORD],
+  [
+    "two extra slashes before a token",
+    `https:////${FIXTURE_TOKEN}@github.com/acme/skills`,
+    FIXTURE_TOKEN,
+  ],
+  ["a tab", `https://\t/user:${FIXTURE_PASSWORD}@github.com/acme/skills`, FIXTURE_PASSWORD],
+  [
+    "a line ending",
+    `https://\r\n/user:${FIXTURE_PASSWORD}@github.com/acme/skills`,
+    FIXTURE_PASSWORD,
+  ],
+  [
+    "an extra slash, before a private address whose refusal echoes the URL",
+    `http:///user:${FIXTURE_PASSWORD}@10.0.0.5/repo`,
+    FIXTURE_PASSWORD,
+  ],
+  [
+    "an extra slash, before a host the URL parser cannot read",
+    `https:///user:${FIXTURE_PASSWORD}@git hub.com/acme/skills`,
+    FIXTURE_PASSWORD,
+  ],
+];
+
 /** A literal: a test reading the product's own constant cannot fail when its value changes. */
 const MARKETPLACE_ENV_VAR = "CC_MARKETPLACE";
 
 /** Read by nothing: an exported `CC_SOURCE` must act as if unset. */
 const WITHDRAWN_SOURCE_ENV_VAR = "CC_SOURCE";
 
-/** Mirrored like the env var; passed as `flagName`, which the messages interpolate. */
+/** Mirrored like the env var; the examples of a refusal of a named marketplace write it. */
 const MARKETPLACE_FLAG = "--marketplace";
 
 /** A second, deliberately different label — proves the messages interpolate what they are given. */
 const OTHER_FLAG_LABEL = "--agent-marketplace";
+const OTHER_FLAG_CARRIER: MarketplaceCarrier = {
+  subject: OTHER_FLAG_LABEL,
+  writes: (marketplace) => `${OTHER_FLAG_LABEL} ${marketplace}`,
+};
 
 /** Whole word, so `sourcehut:` and paths spelling it do not match. */
 const WITHDRAWN_NOUN = /\bsources?\b/i;
@@ -151,12 +207,10 @@ describe("config", () => {
     });
 
     it("should return true for paths without protocol prefix", () => {
-      // Bare directory names are ambiguous but treated as local
       expect(isLocalSource("my-skills")).toBe(true);
     });
 
     it("should throw error for path traversal in bare names", () => {
-      // Bare names (no / or . prefix) with traversal patterns are suspicious
       expect(() => isLocalSource("my-skills/../../../etc")).toThrow(
         /Path traversal patterns like '\.\.' and '~' are not allowed for security reasons/,
       );
@@ -170,7 +224,6 @@ describe("config", () => {
     });
 
     it("should allow legitimate relative paths with ..", () => {
-      // Paths starting with . are recognized as relative and allowed
       expect(isLocalSource("../../../other-project/skills")).toBe(true);
       expect(isLocalSource("../skills")).toBe(true);
     });
@@ -200,94 +253,96 @@ describe("config", () => {
   describe("validateSourceFormat", () => {
     describe("valid sources", () => {
       it("should accept valid github: shorthand", () => {
-        expect(() => validateSourceFormat("github:user/repo", MARKETPLACE_FLAG)).not.toThrow();
-        expect(() => validateSourceFormat("github:org/my-skills", MARKETPLACE_FLAG)).not.toThrow();
+        expect(() => validateSourceFormat("github:user/repo", NAMED_MARKETPLACE)).not.toThrow();
+        expect(() => validateSourceFormat("github:org/my-skills", NAMED_MARKETPLACE)).not.toThrow();
       });
 
       it("should accept valid gh: shorthand", () => {
-        expect(() => validateSourceFormat("gh:user/repo", MARKETPLACE_FLAG)).not.toThrow();
+        expect(() => validateSourceFormat("gh:user/repo", NAMED_MARKETPLACE)).not.toThrow();
       });
 
       it("should accept valid gitlab: shorthand", () => {
-        expect(() => validateSourceFormat("gitlab:user/repo", MARKETPLACE_FLAG)).not.toThrow();
+        expect(() => validateSourceFormat("gitlab:user/repo", NAMED_MARKETPLACE)).not.toThrow();
       });
 
       it("should accept valid bitbucket: shorthand", () => {
-        expect(() => validateSourceFormat("bitbucket:user/repo", MARKETPLACE_FLAG)).not.toThrow();
+        expect(() => validateSourceFormat("bitbucket:user/repo", NAMED_MARKETPLACE)).not.toThrow();
       });
 
       it("should accept valid sourcehut: shorthand", () => {
-        expect(() => validateSourceFormat("sourcehut:user/repo", MARKETPLACE_FLAG)).not.toThrow();
+        expect(() => validateSourceFormat("sourcehut:user/repo", NAMED_MARKETPLACE)).not.toThrow();
       });
 
       it("should accept valid https:// URLs", () => {
         expect(() =>
-          validateSourceFormat("https://github.com/user/repo", MARKETPLACE_FLAG),
+          validateSourceFormat("https://github.com/user/repo", NAMED_MARKETPLACE),
         ).not.toThrow();
         expect(() =>
-          validateSourceFormat("https://gitlab.company.com/team/skills", MARKETPLACE_FLAG),
+          validateSourceFormat("https://gitlab.company.com/team/skills", NAMED_MARKETPLACE),
         ).not.toThrow();
       });
 
       it("should accept valid http:// URLs", () => {
         expect(() =>
-          validateSourceFormat("http://github.com/user/repo", MARKETPLACE_FLAG),
+          validateSourceFormat("http://github.com/user/repo", NAMED_MARKETPLACE),
         ).not.toThrow();
       });
 
       it("should accept localhost URLs", () => {
         expect(() =>
-          validateSourceFormat("https://localhost/repo", MARKETPLACE_FLAG),
+          validateSourceFormat("https://localhost/repo", NAMED_MARKETPLACE),
         ).not.toThrow();
       });
 
       it("should accept valid local paths", () => {
-        expect(() => validateSourceFormat("./my-skills", MARKETPLACE_FLAG)).not.toThrow();
+        expect(() => validateSourceFormat("./my-skills", NAMED_MARKETPLACE)).not.toThrow();
         expect(() =>
-          validateSourceFormat("../other-project/skills", MARKETPLACE_FLAG),
+          validateSourceFormat("../other-project/skills", NAMED_MARKETPLACE),
         ).not.toThrow();
-        expect(() => validateSourceFormat("/home/user/skills", MARKETPLACE_FLAG)).not.toThrow();
-        expect(() => validateSourceFormat("my-skills", MARKETPLACE_FLAG)).not.toThrow();
+        expect(() => validateSourceFormat("/home/user/skills", NAMED_MARKETPLACE)).not.toThrow();
+        expect(() => validateSourceFormat("my-skills", NAMED_MARKETPLACE)).not.toThrow();
       });
     });
 
     describe("invalid remote sources", () => {
       it("should reject incomplete github: shorthand", () => {
-        expect(() => validateSourceFormat("github:", MARKETPLACE_FLAG)).toThrow(/incomplete URL/);
-        expect(() => validateSourceFormat("github:x", MARKETPLACE_FLAG)).toThrow(/incomplete URL/);
+        expect(() => validateSourceFormat("github:", NAMED_MARKETPLACE)).toThrow(/incomplete URL/);
+        expect(() => validateSourceFormat("github:x", NAMED_MARKETPLACE)).toThrow(/incomplete URL/);
       });
 
       it("should reject github: without owner/repo format", () => {
-        expect(() => validateSourceFormat("github:just-a-name", MARKETPLACE_FLAG)).toThrow(
+        expect(() => validateSourceFormat("github:just-a-name", NAMED_MARKETPLACE)).toThrow(
           /owner\/repo format/,
         );
       });
 
       it("should reject incomplete gh: shorthand", () => {
-        expect(() => validateSourceFormat("gh:", MARKETPLACE_FLAG)).toThrow(/incomplete URL/);
+        expect(() => validateSourceFormat("gh:", NAMED_MARKETPLACE)).toThrow(/incomplete URL/);
       });
 
       it("should reject gh: without owner/repo format", () => {
-        expect(() => validateSourceFormat("gh:just-a-name", MARKETPLACE_FLAG)).toThrow(
+        expect(() => validateSourceFormat("gh:just-a-name", NAMED_MARKETPLACE)).toThrow(
           /owner\/repo format/,
         );
       });
 
       it("should reject incomplete https:// URLs", () => {
-        expect(() => validateSourceFormat("https://", MARKETPLACE_FLAG)).toThrow(/incomplete URL/);
-        expect(() => validateSourceFormat("https://x", MARKETPLACE_FLAG)).toThrow(/incomplete URL/);
+        expect(() => validateSourceFormat("https://", NAMED_MARKETPLACE)).toThrow(/incomplete URL/);
+        expect(() => validateSourceFormat("https://x", NAMED_MARKETPLACE)).toThrow(
+          /incomplete URL/,
+        );
       });
 
       it("should reject https:// URLs without valid hostname", () => {
-        expect(() => validateSourceFormat("https://not-a-host/repo", MARKETPLACE_FLAG)).toThrow(
+        expect(() => validateSourceFormat("https://not-a-host/repo", NAMED_MARKETPLACE)).toThrow(
           /invalid URL/,
         );
       });
 
       it("should reject http:// URLs without valid hostname", () => {
-        expect(() => validateSourceFormat("http://", MARKETPLACE_FLAG)).toThrow(/incomplete URL/);
-        expect(() => validateSourceFormat("http://x", MARKETPLACE_FLAG)).toThrow(/incomplete URL/);
-        expect(() => validateSourceFormat("http://not-a-host/repo", MARKETPLACE_FLAG)).toThrow(
+        expect(() => validateSourceFormat("http://", NAMED_MARKETPLACE)).toThrow(/incomplete URL/);
+        expect(() => validateSourceFormat("http://x", NAMED_MARKETPLACE)).toThrow(/incomplete URL/);
+        expect(() => validateSourceFormat("http://not-a-host/repo", NAMED_MARKETPLACE)).toThrow(
           /invalid URL/,
         );
       });
@@ -295,22 +350,22 @@ describe("config", () => {
 
     describe("invalid local sources", () => {
       it("should reject paths with control characters", () => {
-        expect(() => validateSourceFormat("my-skills\x00", MARKETPLACE_FLAG)).toThrow(
+        expect(() => validateSourceFormat("my-skills\x00", NAMED_MARKETPLACE)).toThrow(
           /invalid characters/,
         );
-        expect(() => validateSourceFormat("my\x07skills", MARKETPLACE_FLAG)).toThrow(
+        expect(() => validateSourceFormat("my\x07skills", NAMED_MARKETPLACE)).toThrow(
           /invalid characters/,
         );
       });
 
       it("should reject UNC paths (Windows network paths)", () => {
-        expect(() => validateSourceFormat("//attacker.com/payload", MARKETPLACE_FLAG)).toThrow(
+        expect(() => validateSourceFormat("//attacker.com/payload", NAMED_MARKETPLACE)).toThrow(
           /UNC network path/,
         );
-        expect(() => validateSourceFormat("\\\\attacker.com\\share", MARKETPLACE_FLAG)).toThrow(
+        expect(() => validateSourceFormat("\\\\attacker.com\\share", NAMED_MARKETPLACE)).toThrow(
           /UNC network path/,
         );
-        expect(() => validateSourceFormat("//192.168.1.1/share", MARKETPLACE_FLAG)).toThrow(
+        expect(() => validateSourceFormat("//192.168.1.1/share", NAMED_MARKETPLACE)).toThrow(
           /UNC network path/,
         );
       });
@@ -318,13 +373,13 @@ describe("config", () => {
 
     describe("null byte validation", () => {
       it("should reject null bytes in any source type", () => {
-        expect(() => validateSourceFormat("github:user/repo\x00", MARKETPLACE_FLAG)).toThrow(
+        expect(() => validateSourceFormat("github:user/repo\x00", NAMED_MARKETPLACE)).toThrow(
           /null bytes/,
         );
         expect(() =>
-          validateSourceFormat("https://github.com/user/repo\x00", MARKETPLACE_FLAG),
+          validateSourceFormat("https://github.com/user/repo\x00", NAMED_MARKETPLACE),
         ).toThrow(/null bytes/);
-        expect(() => validateSourceFormat("./my-\x00skills", MARKETPLACE_FLAG)).toThrow(
+        expect(() => validateSourceFormat("./my-\x00skills", NAMED_MARKETPLACE)).toThrow(
           /null bytes/,
         );
       });
@@ -332,116 +387,116 @@ describe("config", () => {
 
     describe("path traversal in remote sources", () => {
       it("should reject .. in git shorthand paths", () => {
-        expect(() => validateSourceFormat("github:user/repo/../other", MARKETPLACE_FLAG)).toThrow(
+        expect(() => validateSourceFormat("github:user/repo/../other", NAMED_MARKETPLACE)).toThrow(
           /path traversal/,
         );
-        expect(() => validateSourceFormat("gh:user/../../etc", MARKETPLACE_FLAG)).toThrow(
+        expect(() => validateSourceFormat("gh:user/../../etc", NAMED_MARKETPLACE)).toThrow(
           /path traversal/,
         );
       });
 
       it("should reject .. in HTTP URL paths", () => {
         expect(() =>
-          validateSourceFormat("https://github.com/user/../admin/repo", MARKETPLACE_FLAG),
+          validateSourceFormat("https://github.com/user/../admin/repo", NAMED_MARKETPLACE),
         ).toThrow(/path traversal/);
         expect(() =>
-          validateSourceFormat("http://gitlab.com/user/repo/../../etc", MARKETPLACE_FLAG),
+          validateSourceFormat("http://gitlab.com/user/repo/../../etc", NAMED_MARKETPLACE),
         ).toThrow(/path traversal/);
       });
 
       it("should reject .. in git ref query parameters", () => {
         expect(() =>
-          validateSourceFormat("github:user/repo?branch=../../etc/passwd", MARKETPLACE_FLAG),
+          validateSourceFormat("github:user/repo?branch=../../etc/passwd", NAMED_MARKETPLACE),
         ).toThrow(/path traversal/);
-        expect(() => validateSourceFormat("gh:user/repo#../sensitive", MARKETPLACE_FLAG)).toThrow(
+        expect(() => validateSourceFormat("gh:user/repo#../sensitive", NAMED_MARKETPLACE)).toThrow(
           /path traversal/,
         );
       });
 
       it("should accept legitimate paths without traversal", () => {
-        expect(() => validateSourceFormat("github:user/repo", MARKETPLACE_FLAG)).not.toThrow();
+        expect(() => validateSourceFormat("github:user/repo", NAMED_MARKETPLACE)).not.toThrow();
         expect(() =>
-          validateSourceFormat("https://github.com/user/repo/tree/main", MARKETPLACE_FLAG),
+          validateSourceFormat("https://github.com/user/repo/tree/main", NAMED_MARKETPLACE),
         ).not.toThrow();
-        expect(() => validateSourceFormat("gitlab:team/skills", MARKETPLACE_FLAG)).not.toThrow();
+        expect(() => validateSourceFormat("gitlab:team/skills", NAMED_MARKETPLACE)).not.toThrow();
       });
     });
 
     describe("private IP address validation", () => {
       it("should reject loopback addresses", () => {
-        expect(() => validateSourceFormat("https://127.0.0.1/repo", MARKETPLACE_FLAG)).toThrow(
+        expect(() => validateSourceFormat("https://127.0.0.1/repo", NAMED_MARKETPLACE)).toThrow(
           /private or reserved IP/,
         );
-        expect(() => validateSourceFormat("http://127.0.0.1/repo", MARKETPLACE_FLAG)).toThrow(
+        expect(() => validateSourceFormat("http://127.0.0.1/repo", NAMED_MARKETPLACE)).toThrow(
           /private or reserved IP/,
         );
         expect(() =>
-          validateSourceFormat("https://127.255.255.255/repo", MARKETPLACE_FLAG),
+          validateSourceFormat("https://127.255.255.255/repo", NAMED_MARKETPLACE),
         ).toThrow(/private or reserved IP/);
       });
 
       it("should reject private network addresses (10.x.x.x)", () => {
-        expect(() => validateSourceFormat("https://10.0.0.1/repo", MARKETPLACE_FLAG)).toThrow(
+        expect(() => validateSourceFormat("https://10.0.0.1/repo", NAMED_MARKETPLACE)).toThrow(
           /private or reserved IP/,
         );
-        expect(() => validateSourceFormat("https://10.255.255.255/repo", MARKETPLACE_FLAG)).toThrow(
-          /private or reserved IP/,
-        );
+        expect(() =>
+          validateSourceFormat("https://10.255.255.255/repo", NAMED_MARKETPLACE),
+        ).toThrow(/private or reserved IP/);
       });
 
       it("should reject private network addresses (172.16-31.x.x)", () => {
-        expect(() => validateSourceFormat("https://172.16.0.1/repo", MARKETPLACE_FLAG)).toThrow(
+        expect(() => validateSourceFormat("https://172.16.0.1/repo", NAMED_MARKETPLACE)).toThrow(
           /private or reserved IP/,
         );
-        expect(() => validateSourceFormat("https://172.31.255.255/repo", MARKETPLACE_FLAG)).toThrow(
-          /private or reserved IP/,
-        );
+        expect(() =>
+          validateSourceFormat("https://172.31.255.255/repo", NAMED_MARKETPLACE),
+        ).toThrow(/private or reserved IP/);
       });
 
       it("should reject private network addresses (192.168.x.x)", () => {
-        expect(() => validateSourceFormat("https://192.168.0.1/repo", MARKETPLACE_FLAG)).toThrow(
+        expect(() => validateSourceFormat("https://192.168.0.1/repo", NAMED_MARKETPLACE)).toThrow(
           /private or reserved IP/,
         );
-        expect(() => validateSourceFormat("https://192.168.1.100/repo", MARKETPLACE_FLAG)).toThrow(
+        expect(() => validateSourceFormat("https://192.168.1.100/repo", NAMED_MARKETPLACE)).toThrow(
           /private or reserved IP/,
         );
       });
 
       it("should reject 0.0.0.0", () => {
-        expect(() => validateSourceFormat("https://0.0.0.0/repo", MARKETPLACE_FLAG)).toThrow(
+        expect(() => validateSourceFormat("https://0.0.0.0/repo", NAMED_MARKETPLACE)).toThrow(
           /private or reserved IP/,
         );
       });
 
       it("should reject link-local addresses (169.254.x.x)", () => {
-        expect(() => validateSourceFormat("https://169.254.1.1/repo", MARKETPLACE_FLAG)).toThrow(
+        expect(() => validateSourceFormat("https://169.254.1.1/repo", NAMED_MARKETPLACE)).toThrow(
           /private or reserved IP/,
         );
       });
 
       it("should reject IPv6 loopback", () => {
-        expect(() => validateSourceFormat("https://[::1]/repo", MARKETPLACE_FLAG)).toThrow(
+        expect(() => validateSourceFormat("https://[::1]/repo", NAMED_MARKETPLACE)).toThrow(
           /private or reserved IP/,
         );
       });
 
       it("should allow public IP addresses", () => {
-        expect(() => validateSourceFormat("https://8.8.8.8/repo", MARKETPLACE_FLAG)).not.toThrow();
-        expect(() => validateSourceFormat("https://1.2.3.4/repo", MARKETPLACE_FLAG)).not.toThrow();
+        expect(() => validateSourceFormat("https://8.8.8.8/repo", NAMED_MARKETPLACE)).not.toThrow();
+        expect(() => validateSourceFormat("https://1.2.3.4/repo", NAMED_MARKETPLACE)).not.toThrow();
       });
 
       it("should allow non-private 172.x addresses", () => {
         expect(() =>
-          validateSourceFormat("https://172.32.0.1/repo", MARKETPLACE_FLAG),
+          validateSourceFormat("https://172.32.0.1/repo", NAMED_MARKETPLACE),
         ).not.toThrow();
         expect(() =>
-          validateSourceFormat("https://172.15.0.1/repo", MARKETPLACE_FLAG),
+          validateSourceFormat("https://172.15.0.1/repo", NAMED_MARKETPLACE),
         ).not.toThrow();
       });
 
       it("should still allow localhost by hostname", () => {
         expect(() =>
-          validateSourceFormat("https://localhost/repo", MARKETPLACE_FLAG),
+          validateSourceFormat("https://localhost/repo", NAMED_MARKETPLACE),
         ).not.toThrow();
       });
     });
@@ -449,27 +504,27 @@ describe("config", () => {
     describe("length validation", () => {
       it("should reject sources exceeding max length", () => {
         const longSource = "a".repeat(513);
-        expect(() => validateSourceFormat(longSource, MARKETPLACE_FLAG)).toThrow(/too long/);
+        expect(() => validateSourceFormat(longSource, NAMED_MARKETPLACE)).toThrow(/too long/);
       });
 
       it("should accept sources at max length", () => {
         const maxSource = "./a".repeat(170); // 510 chars, under 512
-        expect(() => validateSourceFormat(maxSource, MARKETPLACE_FLAG)).not.toThrow();
+        expect(() => validateSourceFormat(maxSource, NAMED_MARKETPLACE)).not.toThrow();
       });
     });
 
     describe("error message quality", () => {
       it("should include flag name in error messages", () => {
-        expect(() => validateSourceFormat("github:", MARKETPLACE_FLAG)).toThrow(MARKETPLACE_FLAG);
-        expect(() => validateSourceFormat("github:", OTHER_FLAG_LABEL)).toThrow(OTHER_FLAG_LABEL);
+        expect(() => validateSourceFormat("github:", NAMED_MARKETPLACE)).toThrow(MARKETPLACE_FLAG);
+        expect(() => validateSourceFormat("github:", OTHER_FLAG_CARRIER)).toThrow(OTHER_FLAG_LABEL);
       });
 
       it("should include examples in error messages", () => {
-        expect(() => validateSourceFormat("github:", MARKETPLACE_FLAG)).toThrow(/Examples/);
+        expect(() => validateSourceFormat("github:", NAMED_MARKETPLACE)).toThrow(/Examples/);
       });
     });
 
-    /** Messages interpolate `flagName`; the prose around it must not say "source". */
+    /** Messages interpolate the carrier's words; the prose around them must not say "source". */
     describe("the prose around the flag name", () => {
       const REFUSALS: [name: string, value: string][] = [
         ["null byte", "github:user/repo\x00"],
@@ -485,8 +540,8 @@ describe("config", () => {
 
       it.each(REFUSALS)("should not say 'source' when refusing a %s", (_name, value) => {
         // Subject guard: `not.toThrow` would also pass for a call that never refused.
-        expect(() => validateSourceFormat(value, MARKETPLACE_FLAG)).toThrow(MARKETPLACE_FLAG);
-        expect(() => validateSourceFormat(value, MARKETPLACE_FLAG)).not.toThrow(WITHDRAWN_NOUN);
+        expect(() => validateSourceFormat(value, NAMED_MARKETPLACE)).toThrow(MARKETPLACE_FLAG);
+        expect(() => validateSourceFormat(value, NAMED_MARKETPLACE)).not.toThrow(WITHDRAWN_NOUN);
       });
 
       it("should refuse a path traversal in a bare name without naming a source", () => {
@@ -921,6 +976,19 @@ describe("config", () => {
         );
       });
 
+      it("refuses a project config's URL carrying a username or password, naming the file it is in", async () => {
+        const configPath = await writeTestTsConfig(
+          tempDir,
+          buildSourceConfig({ marketplace: CREDENTIALED_MARKETPLACE }),
+        );
+
+        await expect(resolveSource({ caller: "stored", projectDir: tempDir })).rejects.toThrow(
+          expect.objectContaining({
+            message: `The marketplace in ${configPath} carries a username or password in its URL: "https://***@github.com/acme/skills"\n\nCredentials in a marketplace URL end up in config files, shared configurations and logs.\nFor a private repository, set the GIGET_AUTH environment variable instead:\n  export GIGET_AUTH=ghp_your_github_token\nExamples:\n  marketplace: 'https://github.com/user/repo'\n  marketplace: 'https://gitlab.company.com/team/skills'`,
+          }),
+        );
+      });
+
       it("refuses a network share a config names", async () => {
         await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: NETWORK_SHARE }));
 
@@ -958,6 +1026,44 @@ describe("config", () => {
 
         expect(result.source).toBe(PUBLIC_MARKETPLACE);
         expect(result.sourceOrigin).toBe("flag");
+      });
+    });
+
+    /** The first line names whoever carried the value; the examples write it the way they do. */
+    describe("the refusal's examples, written as the value's origin writes a marketplace", () => {
+      const consoleSpies = silenceConsole(["warn"]);
+
+      it("writes a marketplace this run names as the flag", async () => {
+        await expect(
+          resolveSource({ caller: "init", flag: METADATA_ENDPOINT, projectDir: tempDir }),
+        ).rejects.toThrow(
+          expect.objectContaining({
+            message: `The marketplace points to a private or reserved IP address: "${METADATA_ENDPOINT}"\n\nMarketplace URLs must not target private network addresses.\nUse a public hostname instead.\nExamples:\n  --marketplace https://github.com/user/repo\n  --marketplace https://gitlab.company.com/team/skills`,
+          }),
+        );
+      });
+
+      it("writes a marketplace a config names as the config's own line", async () => {
+        const configPath = await writeTestTsConfig(
+          tempDir,
+          buildSourceConfig({ marketplace: METADATA_ENDPOINT }),
+        );
+
+        await expect(resolveSource({ caller: "stored", projectDir: tempDir })).rejects.toThrow(
+          expect.objectContaining({
+            message: `The marketplace in ${configPath} points to a private or reserved IP address: "${METADATA_ENDPOINT}"\n\nMarketplace URLs must not target private network addresses.\nUse a public hostname instead.\nExamples:\n  marketplace: 'https://github.com/user/repo'\n  marketplace: 'https://gitlab.company.com/team/skills'`,
+          }),
+        );
+      });
+
+      it("writes the environment's marketplace as the assignment that sets it", async () => {
+        process.env[MARKETPLACE_ENV_VAR] = METADATA_ENDPOINT;
+
+        await resolveSource({ caller: "init", projectDir: tempDir });
+
+        expect(consoleSpies.warn).toHaveBeenCalledWith(
+          `  Warning: CC_MARKETPLACE has an invalid value — ignoring and falling back to the next rung.\nCC_MARKETPLACE points to a private or reserved IP address: "${METADATA_ENDPOINT}"\n\nMarketplace URLs must not target private network addresses.\nUse a public hostname instead.\nExamples:\n  CC_MARKETPLACE=https://github.com/user/repo\n  CC_MARKETPLACE=https://gitlab.company.com/team/skills`,
+        );
       });
     });
 
@@ -1031,6 +1137,34 @@ describe("config", () => {
 
         expect(result.source).toBe(STORED_MARKETPLACE);
         expect(result.marketplace).toBe(STORED_NAME);
+      });
+    });
+
+    /** Read without setting the run's provider, so one run can ask of each installation. */
+    describe("a project holding a Claude and a Codex installation", () => {
+      beforeEach(async () => {
+        await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: STORED_MARKETPLACE }));
+        await writeTestTsConfig(
+          tempDir,
+          buildSourceConfig({ marketplace: OTHER_MARKETPLACE }),
+          sourceFolderInUse(tempDir, "codex").relName,
+        );
+      });
+
+      it("reads the marketplace the named installation's config stores", async () => {
+        const result = await resolveSource({
+          caller: "stored",
+          projectDir: tempDir,
+          provider: "codex",
+        });
+
+        expect(result).toStrictEqual({ source: OTHER_MARKETPLACE, sourceOrigin: "project" });
+      });
+
+      it("reads the folder in use where the request names no installation", async () => {
+        const result = await resolveSource({ caller: "stored", projectDir: tempDir });
+
+        expect(result).toStrictEqual({ source: STORED_MARKETPLACE, sourceOrigin: "project" });
       });
     });
 
@@ -1125,13 +1259,6 @@ describe("config", () => {
       expect(config?.skillsDir).toBe("lib/skills");
     });
 
-    it("should load agentsDir from project config", async () => {
-      await writeTestTsConfig(tempDir, buildSourceConfig({ agentsDir: "lib/agents" }));
-
-      const config = await loadProjectSourceConfig(tempDir);
-      expect(config?.agentsDir).toBe("lib/agents");
-    });
-
     it("should load stacksFile from project config", async () => {
       await writeTestTsConfig(tempDir, buildSourceConfig({ stacksFile: "data/stacks.ts" }));
 
@@ -1161,7 +1288,6 @@ describe("config", () => {
 
       const config = await loadProjectSourceConfig(tempDir);
       expect(config?.skillsDir).toBeUndefined();
-      expect(config?.agentsDir).toBeUndefined();
       expect(config?.stacksFile).toBeUndefined();
       expect(config?.categoriesFile).toBeUndefined();
       expect(config?.rulesFile).toBeUndefined();
@@ -1173,6 +1299,7 @@ describe("config", () => {
         buildSourceConfig({
           marketplace: "github:myorg/skills",
           skillsDir: "lib/skills",
+          // A key nothing reads: pins that a config naming it still loads.
           agentsDir: "lib/agents",
           stacksFile: "data/stacks.ts",
           categoriesFile: "data/categories.yaml",
@@ -1183,24 +1310,13 @@ describe("config", () => {
       const config = await loadProjectSourceConfig(tempDir);
       expect(config?.marketplace).toBe("github:myorg/skills");
       expect(config?.skillsDir).toBe("lib/skills");
-      expect(config?.agentsDir).toBe("lib/agents");
       expect(config?.stacksFile).toBe("data/stacks.ts");
       expect(config?.categoriesFile).toBe("data/categories.yaml");
       expect(config?.rulesFile).toBe("data/rules.yaml");
     });
   });
 
-  describe("loadProjectSourceConfig with agentsSource", () => {
-    it("should load agentsSource from project config", async () => {
-      await writeTestTsConfig(
-        tempDir,
-        buildSourceConfig({ agentsSource: "https://my-company.com/agents" }),
-      );
-
-      const config = await loadProjectSourceConfig(tempDir);
-      expect(config?.agentsSource).toBe("https://my-company.com/agents");
-    });
-
+  describe("loadProjectSourceConfig, given a config still naming agentsSource", () => {
     it("should load all config fields together", async () => {
       await writeTestTsConfig(
         tempDir,
@@ -1214,7 +1330,6 @@ describe("config", () => {
       const config = await loadProjectSourceConfig(tempDir);
       expect(config?.marketplace).toBe("github:myorg/skills");
       expect(config?.marketplaceName).toBe("https://market.example.com");
-      expect(config?.agentsSource).toBe("https://agents.example.com");
     });
   });
 
@@ -1322,73 +1437,136 @@ describe("config", () => {
   });
 });
 
-/** Each refusal, word for word, as the flag that carried the value reads it back. */
+/** Each refusal of a marketplace this run names, word for word; its examples write the flag. */
 const SOURCE_REFUSALS: [name: string, value: string, message: string][] = [
   [
     "a null byte",
     "github:user/repo\x00",
-    "--marketplace contains invalid characters.\n\nMarketplace values must not contain null bytes.\nExamples:\n  --marketplace ./my-skills\n  --marketplace github:user/repo",
+    "The marketplace contains invalid characters.\n\nMarketplace values must not contain null bytes.\nExamples:\n  --marketplace ./my-skills\n  --marketplace github:user/repo",
   ],
   [
     "an over-long value",
     "a".repeat(513),
-    "--marketplace value is too long (513 characters, max 512).\n\nProvide a shorter marketplace path or URL.\nExamples:\n  --marketplace ./my-skills\n  --marketplace github:user/repo",
+    "The marketplace value is too long (513 characters, max 512).\n\nProvide a shorter marketplace path or URL.\nExamples:\n  --marketplace ./my-skills\n  --marketplace github:user/repo",
   ],
   [
     "an incomplete remote",
     "github:x",
-    '--marketplace has an incomplete URL: "github:x"\n\nA repository path is required after the protocol prefix.\nExamples:\n  --marketplace github:user/repo\n  --marketplace https://github.com/user/repo',
+    'The marketplace has an incomplete URL: "github:x"\n\nA repository path is required after the protocol prefix.\nExamples:\n  --marketplace github:user/repo\n  --marketplace https://github.com/user/repo',
   ],
   [
     "a path traversal",
     "github:user/repo/../other",
-    "--marketplace contains path traversal in URL: \"github:user/repo/../other\"\n\nRemote marketplace URLs must not contain '..' sequences.\nExamples:\n  --marketplace github:user/repo\n  --marketplace https://github.com/user/repo",
+    "The marketplace contains path traversal in URL: \"github:user/repo/../other\"\n\nRemote marketplace URLs must not contain '..' sequences.\nExamples:\n  --marketplace github:user/repo\n  --marketplace https://github.com/user/repo",
   ],
   [
     "a URL with no hostname",
     "https://not-a-host/repo",
-    '--marketplace has an invalid URL: "https://not-a-host/repo"\n\nThe URL must include a valid hostname.\nExamples:\n  --marketplace https://github.com/user/repo\n  --marketplace https://gitlab.company.com/team/skills',
+    'The marketplace has an invalid URL: "https://not-a-host/repo"\n\nThe URL must include a valid hostname.\nExamples:\n  --marketplace https://github.com/user/repo\n  --marketplace https://gitlab.company.com/team/skills',
   ],
   [
     "a private address",
     "https://192.168.1.100/repo",
-    '--marketplace points to a private or reserved IP address: "https://192.168.1.100/repo"\n\nMarketplace URLs must not target private network addresses.\nUse a public hostname instead.\nExamples:\n  --marketplace https://github.com/user/repo\n  --marketplace https://gitlab.company.com/team/skills',
+    'The marketplace points to a private or reserved IP address: "https://192.168.1.100/repo"\n\nMarketplace URLs must not target private network addresses.\nUse a public hostname instead.\nExamples:\n  --marketplace https://github.com/user/repo\n  --marketplace https://gitlab.company.com/team/skills',
   ],
   [
     "a git shorthand with no owner",
     "github:just-a-name",
-    '--marketplace has an invalid repository reference: "github:just-a-name"\n\nGit shorthand marketplaces require an owner/repo format.\nExamples:\n  --marketplace github:user/repo\n  --marketplace gh:organization/skills',
+    'The marketplace has an invalid repository reference: "github:just-a-name"\n\nGit shorthand marketplaces require an owner/repo format.\nExamples:\n  --marketplace github:user/repo\n  --marketplace gh:organization/skills',
   ],
   [
     "a control character",
     "my\x07skills",
-    '--marketplace contains invalid characters: "my\x07skills"\n\nMarketplace paths must not contain control characters.\nExamples:\n  --marketplace ./my-skills\n  --marketplace /home/user/skills',
+    'The marketplace contains invalid characters: "my\x07skills"\n\nMarketplace paths must not contain control characters.\nExamples:\n  --marketplace ./my-skills\n  --marketplace /home/user/skills',
   ],
   [
     "a UNC path",
     "//attacker.com/payload",
-    '--marketplace contains a UNC network path: "//attacker.com/payload"\n\nNetwork paths (\\\\server\\share or //server/share) are not allowed for security reasons.\nUse a local directory path or a remote URL instead.\nExamples:\n  --marketplace ./my-skills\n  --marketplace /home/user/skills\n  --marketplace https://github.com/user/repo',
+    'The marketplace contains a UNC network path: "//attacker.com/payload"\n\nNetwork paths (\\\\server\\share or //server/share) are not allowed for security reasons.\nUse a local directory path or a remote URL instead.\nExamples:\n  --marketplace ./my-skills\n  --marketplace /home/user/skills\n  --marketplace https://github.com/user/repo',
+  ],
+  [
+    "a username and password in the URL",
+    CREDENTIALED_MARKETPLACE,
+    'The marketplace carries a username or password in its URL: "https://***@github.com/acme/skills"\n\nCredentials in a marketplace URL end up in config files, shared configurations and logs.\nFor a private repository, set the GIGET_AUTH environment variable instead:\n  export GIGET_AUTH=ghp_your_github_token\nExamples:\n  --marketplace https://github.com/user/repo\n  --marketplace https://gitlab.company.com/team/skills',
+  ],
+  [
+    "a username alone in the URL, as a pasted token sits",
+    TOKEN_MARKETPLACE,
+    'The marketplace carries a username or password in its URL: "https://***@github.com/acme/skills"\n\nCredentials in a marketplace URL end up in config files, shared configurations and logs.\nFor a private repository, set the GIGET_AUTH environment variable instead:\n  export GIGET_AUTH=ghp_your_github_token\nExamples:\n  --marketplace https://github.com/user/repo\n  --marketplace https://gitlab.company.com/team/skills',
+  ],
+  [
+    "a username and password after an extra slash, shown as the URL parser reads the URL",
+    SLASHED_CREDENTIALED_MARKETPLACE,
+    'The marketplace carries a username or password in its URL: "https://***@github.com/acme/skills"\n\nCredentials in a marketplace URL end up in config files, shared configurations and logs.\nFor a private repository, set the GIGET_AUTH environment variable instead:\n  export GIGET_AUTH=ghp_your_github_token\nExamples:\n  --marketplace https://github.com/user/repo\n  --marketplace https://gitlab.company.com/team/skills',
+  ],
+  [
+    "a username holding an @, masked up to the last @ before the host",
+    AT_IN_USERNAME_MARKETPLACE,
+    'The marketplace carries a username or password in its URL: "https://***@github.com/acme/skills"\n\nCredentials in a marketplace URL end up in config files, shared configurations and logs.\nFor a private repository, set the GIGET_AUTH environment variable instead:\n  export GIGET_AUTH=ghp_your_github_token\nExamples:\n  --marketplace https://github.com/user/repo\n  --marketplace https://gitlab.company.com/team/skills',
+  ],
+  [
+    "a password holding an @, masked up to the last @ before the host",
+    AT_IN_PASSWORD_MARKETPLACE,
+    'The marketplace carries a username or password in its URL: "https://***@github.com/acme/skills"\n\nCredentials in a marketplace URL end up in config files, shared configurations and logs.\nFor a private repository, set the GIGET_AUTH environment variable instead:\n  export GIGET_AUTH=ghp_your_github_token\nExamples:\n  --marketplace https://github.com/user/repo\n  --marketplace https://gitlab.company.com/team/skills',
   ],
 ];
 
 describe("the marketplace value checks, at their edges", () => {
-  it.each(SOURCE_REFUSALS)("refuses %s in these words", (_name, value, message) => {
-    expect(() => validateSourceFormat(value, MARKETPLACE_FLAG)).toThrow(
+  it.each(SOURCE_REFUSALS)("refuses %s in these words", async (_name, value, message) => {
+    await expect(resolveSource({ caller: "init", flag: value })).rejects.toThrow(
       expect.objectContaining({ message }),
     );
   });
 
+  it.each([
+    [CREDENTIALED_MARKETPLACE, FIXTURE_PASSWORD],
+    [TOKEN_MARKETPLACE, FIXTURE_TOKEN],
+    [CREDENTIALED_TRAVERSAL_MARKETPLACE, FIXTURE_PASSWORD],
+    [AT_IN_USERNAME_MARKETPLACE, FIXTURE_PASSWORD],
+    [AT_IN_PASSWORD_MARKETPLACE, FIXTURE_PASSWORD],
+  ])("refuses %s without repeating the credential it carries", async (value, credential) => {
+    const refusal = resolveSource({ caller: "init", flag: value });
+
+    await expect(refusal).rejects.toThrow("carries a username or password in its URL");
+    await expect(refusal).rejects.not.toThrow(credential);
+  });
+
+  it.each(RESPELLED_CREDENTIALS)(
+    "refuses a URL carrying credentials behind %s, without repeating them",
+    async (_respelling, value, credential) => {
+      const refusal = resolveSource({ caller: "init", flag: value });
+
+      await expect(refusal).rejects.toThrow("carries a username or password in its URL");
+      await expect(refusal).rejects.not.toThrow(credential);
+    },
+  );
+
+  it("refuses a URL ending right after a token, showing no more of it than the mask", async () => {
+    await expect(
+      resolveSource({ caller: "init", flag: `https://${FIXTURE_TOKEN}@` }),
+    ).rejects.toThrow(
+      expect.objectContaining({
+        message:
+          'The marketplace carries a username or password in its URL: "https://***@"\n\nCredentials in a marketplace URL end up in config files, shared configurations and logs.\nFor a private repository, set the GIGET_AUTH environment variable instead:\n  export GIGET_AUTH=ghp_your_github_token\nExamples:\n  --marketplace https://github.com/user/repo\n  --marketplace https://gitlab.company.com/team/skills',
+      }),
+    );
+  });
+
+  it("reads only an http(s) URL for credentials: a shorthand with an @ before its first slash passes", () => {
+    expect(() => validateSourceFormat("github:user@org/repo", NAMED_MARKETPLACE)).not.toThrow();
+  });
+
   it("accepts a value of exactly the maximum length", () => {
-    expect(() => validateSourceFormat(`./${"a".repeat(510)}`, MARKETPLACE_FLAG)).not.toThrow();
+    expect(() => validateSourceFormat(`./${"a".repeat(510)}`, NAMED_MARKETPLACE)).not.toThrow();
   });
 
   it("accepts the shortest repository path after a protocol, and refuses one shorter", () => {
-    expect(() => validateSourceFormat("github:a/b", MARKETPLACE_FLAG)).not.toThrow();
-    expect(() => validateSourceFormat("github:ab", MARKETPLACE_FLAG)).toThrow(/incomplete URL/);
+    expect(() => validateSourceFormat("github:a/b", NAMED_MARKETPLACE)).not.toThrow();
+    expect(() => validateSourceFormat("github:ab", NAMED_MARKETPLACE)).toThrow(/incomplete URL/);
   });
 
   it("measures the repository path without the spaces around it", () => {
-    expect(() => validateSourceFormat("github:   ab  ", MARKETPLACE_FLAG)).toThrow(
+    expect(() => validateSourceFormat("github:   ab  ", NAMED_MARKETPLACE)).toThrow(
       /incomplete URL/,
     );
   });
@@ -1396,7 +1574,7 @@ describe("the marketplace value checks, at their edges", () => {
   it.each(["https://:8080/repo", "https:///repo", "https://[::1/repo", "https://host]/repo"])(
     "refuses %s, whose hostname is empty or half-bracketed",
     (value) => {
-      expect(() => validateSourceFormat(value, MARKETPLACE_FLAG)).toThrow(/invalid URL/);
+      expect(() => validateSourceFormat(value, NAMED_MARKETPLACE)).toThrow(/invalid URL/);
     },
   );
 
@@ -1405,19 +1583,19 @@ describe("the marketplace value checks, at their edges", () => {
     "https://[fe80::1]:443/repo",
     "https://[::ffff:10.0.0.1]:80/repo",
   ])("refuses a private IPv6 address with a port as it refuses one without: %s", (value) => {
-    expect(() => validateSourceFormat(value, MARKETPLACE_FLAG)).toThrow(/private or reserved IP/);
+    expect(() => validateSourceFormat(value, NAMED_MARKETPLACE)).toThrow(/private or reserved IP/);
   });
 
   it("accepts a public IPv6 address with a port", () => {
     expect(() =>
-      validateSourceFormat("https://[2001:db8::1]:8443/repo", MARKETPLACE_FLAG),
+      validateSourceFormat("https://[2001:db8::1]:8443/repo", NAMED_MARKETPLACE),
     ).not.toThrow();
   });
 
   /** Written out in full, with no `::`, and ending in a one-digit group. */
   it("accepts a public IPv6 address that has no zeros to elide", () => {
     expect(() =>
-      validateSourceFormat("https://[2606:4700:4700:1111:0:1:2:3]/repo", MARKETPLACE_FLAG),
+      validateSourceFormat("https://[2606:4700:4700:1111:0:1:2:3]/repo", NAMED_MARKETPLACE),
     ).not.toThrow();
   });
 
@@ -1515,6 +1693,21 @@ describe("what the config readers say and raise", () => {
     );
   });
 
+  it("tells a marketplace config that declares nothing apart from an absent one", async () => {
+    expect(await readSourceRepoConfig(tempDir)).toStrictEqual({ kind: "absent" });
+
+    const configPath = await writeRawTestConfig(tempDir, "", ".agents-inc");
+
+    expect(await readSourceRepoConfig(tempDir)).toStrictEqual({
+      kind: "declares-nothing",
+      configPath,
+    });
+    expect(
+      await loadSourceRepoConfig(tempDir),
+      "a reader of the layout reads it as absent",
+    ).toBeNull();
+  });
+
   it("refuses a config that exports nothing as having no valid default export", async () => {
     await writeRawTestConfig(tempDir, "export default {};\n");
 
@@ -1571,7 +1764,7 @@ describe("the private-address refusal, octet by octet", () => {
     "[fd12:3456::1]",
     "[fe80::abcd]",
   ])("refuses https://%s/repo, every octet more than one digit long", (host) => {
-    expect(() => validateSourceFormat(`https://${host}/repo`, MARKETPLACE_FLAG)).toThrow(
+    expect(() => validateSourceFormat(`https://${host}/repo`, NAMED_MARKETPLACE)).toThrow(
       /private or reserved IP/,
     );
   });
@@ -1579,7 +1772,7 @@ describe("the private-address refusal, octet by octet", () => {
   it.each(["172.15.20.30", "172.32.20.30", "10.20.30.40.example.com", "110.20.30.40"])(
     "accepts https://%s/repo, which lies outside every private range",
     (host) => {
-      expect(() => validateSourceFormat(`https://${host}/repo`, MARKETPLACE_FLAG)).not.toThrow();
+      expect(() => validateSourceFormat(`https://${host}/repo`, NAMED_MARKETPLACE)).not.toThrow();
     },
   );
 
@@ -1592,7 +1785,7 @@ describe("the private-address refusal, octet by octet", () => {
     "[fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]",
     "[fe80:ffff:ffff:ffff:ffff:ffff:ffff:ffff]",
   ])("refuses https://%s/repo, the last address of its private range", (host) => {
-    expect(() => validateSourceFormat(`https://${host}/repo`, MARKETPLACE_FLAG)).toThrow(
+    expect(() => validateSourceFormat(`https://${host}/repo`, NAMED_MARKETPLACE)).toThrow(
       /private or reserved IP/,
     );
   });
@@ -1609,19 +1802,16 @@ describe("the private-address refusal, octet by octet", () => {
     "169.253.255.255",
     "169.255.0.0",
   ])("accepts https://%s/repo, a public address just outside a private range", (host) => {
-    expect(() => validateSourceFormat(`https://${host}/repo`, MARKETPLACE_FLAG)).not.toThrow();
+    expect(() => validateSourceFormat(`https://${host}/repo`, NAMED_MARKETPLACE)).not.toThrow();
   });
 
   it("accepts a local path that merely holds a double slash", () => {
-    expect(() => validateSourceFormat("./skills//nested", MARKETPLACE_FLAG)).not.toThrow();
+    expect(() => validateSourceFormat("./skills//nested", NAMED_MARKETPLACE)).not.toThrow();
   });
 });
 
 describe("the private-address refusal, for a host written in a form a URL parser reads differently", () => {
   it.each([
-    "https://user.name@10.0.0.5/repo",
-    "https://github.com@192.168.1.1:8080/repo",
-    "https://a.b@[::1]/repo",
     "https://10.0.0.5?ref=main",
     "https://[::1]:8080?ref=main",
     "https://10.0.0.5#main",
@@ -1639,24 +1829,46 @@ describe("the private-address refusal, for a host written in a form a URL parser
     "https://[::ffff:0.0.0.0]/repo",
     "https://[::ffff:7f00:1]/repo",
   ])("refuses %s, which reaches a private address", (value) => {
-    expect(() => validateSourceFormat(value, MARKETPLACE_FLAG)).toThrow(/private or reserved IP/);
+    expect(() => validateSourceFormat(value, NAMED_MARKETPLACE)).toThrow(/private or reserved IP/);
   });
 
   it.each([
-    "https://user.name@github.com/repo",
     "https://github.com?ref=main",
     "https://8.8.8.8#main",
     "https://0x8.8.8.8/repo",
     "https://github.com./repo",
     "https://[::ffff:8.8.8.8]/repo",
   ])("accepts %s, the same spelling of a public host", (value) => {
-    expect(() => validateSourceFormat(value, MARKETPLACE_FLAG)).not.toThrow();
+    expect(() => validateSourceFormat(value, NAMED_MARKETPLACE)).not.toThrow();
+  });
+
+  /** A username in front of the host, private or public, is refused before the host is read. */
+  it.each([
+    "https://user.name@10.0.0.5/repo",
+    "https://github.com@192.168.1.1:8080/repo",
+    "https://a.b@[::1]/repo",
+    "https://user.name@github.com/repo",
+  ])("refuses %s for the username it carries", (value) => {
+    expect(() => validateSourceFormat(value, NAMED_MARKETPLACE)).toThrow(
+      /carries a username or password in its URL/,
+    );
+  });
+
+  /** The URL parser ends the host at `/`, `?`, `#` or `\`, so an `@` after one names no user. */
+  it.each([
+    "https://github.com/acme/skills@v1",
+    "https://github.com/acme/skills?ref=user@example",
+    "https://github.com/acme/skills#v1@main",
+    "https://github.com\\@evil.example/skills",
+    "https:///github.com/acme/skills@v1",
+  ])("accepts %s, whose @ comes after the host", (value) => {
+    expect(() => validateSourceFormat(value, NAMED_MARKETPLACE)).not.toThrow();
   });
 
   it.each(["https://a10.20.30.40/repo", "https://git hub.com/repo"])(
     "refuses %s, whose host the URL parser cannot read",
     (value) => {
-      expect(() => validateSourceFormat(value, MARKETPLACE_FLAG)).toThrow(/invalid URL/);
+      expect(() => validateSourceFormat(value, NAMED_MARKETPLACE)).toThrow(/invalid URL/);
     },
   );
 });
@@ -1688,8 +1900,11 @@ describe("the private-address refusal, for the reserved ranges", () => {
     ["[febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff]", "fe80::/10, link-local"],
     ["[ff02::1]", "ff00::/8, multicast"],
     ["[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]", "ff00::/8, multicast"],
+    ["[64:ff9b:1::7f00:1]", "64:ff9b:1::/48, NAT64 local use"],
+    ["[64:ff9b:1::a9fe:a9fe]", "64:ff9b:1::/48, NAT64 local use"],
+    ["[64:ff9b:1:ffff:ffff:ffff:ffff:ffff]", "64:ff9b:1::/48, NAT64 local use"],
   ])("refuses https://%s/repo, in %s", (host) => {
-    expect(() => validateSourceFormat(`https://${host}/repo`, MARKETPLACE_FLAG)).toThrow(
+    expect(() => validateSourceFormat(`https://${host}/repo`, NAMED_MARKETPLACE)).toThrow(
       /private or reserved IP/,
     );
   });
@@ -1704,7 +1919,7 @@ describe("the private-address refusal, for the reserved ranges", () => {
     ["198.20.0.0", "198.18.0.0/15"],
     ["223.255.255.255", "224.0.0.0/4"],
   ])("accepts https://%s/repo, a public address just outside %s", (host) => {
-    expect(() => validateSourceFormat(`https://${host}/repo`, MARKETPLACE_FLAG)).not.toThrow();
+    expect(() => validateSourceFormat(`https://${host}/repo`, NAMED_MARKETPLACE)).not.toThrow();
   });
 });
 
@@ -1721,7 +1936,7 @@ describe("the private-address refusal, for an IPv6 address that carries an IPv4 
     ["[2001:0:a00:1:8000:63bf:f7f7:f7f7]", "Teredo, carrying the server 10.0.0.1"],
     ["[2001:0:c0a8:101:8000:63bf:f7f7:f7f7]", "Teredo, carrying the server 192.168.1.1"],
   ])("refuses https://%s/repo, %s", (host) => {
-    expect(() => validateSourceFormat(`https://${host}/repo`, MARKETPLACE_FLAG)).toThrow(
+    expect(() => validateSourceFormat(`https://${host}/repo`, NAMED_MARKETPLACE)).toThrow(
       /private or reserved IP/,
     );
   });
@@ -1742,6 +1957,6 @@ describe("the private-address refusal, for an IPv6 address that carries an IPv4 
       "Teredo, carrying the same two, with flags and port of 0 written as ::",
     ],
   ])("accepts https://%s/repo, %s", (host) => {
-    expect(() => validateSourceFormat(`https://${host}/repo`, MARKETPLACE_FLAG)).not.toThrow();
+    expect(() => validateSourceFormat(`https://${host}/repo`, NAMED_MARKETPLACE)).not.toThrow();
   });
 });

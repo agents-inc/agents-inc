@@ -5,7 +5,7 @@ import { GITHUB_PREFIX, STANDARD_FILES } from "./paths.js"
 import type { SeedExternalSkill, SeedSkillTree } from "@workspace/matrix"
 
 // What an install does to a skill the configuration carries (its whole directory travels in the
-// payload). The CLI writes with these; the editor preview draws {@link installedSkillTree}.
+// payload). The CLI writes {@link installedSkillTree}'s bytes; the editor preview draws them.
 
 const FRONTMATTER_BLOCK = /^---\r?\n([\s\S]*?)\r?\n---/
 const NAME_FIELD = /^name:.*$/m
@@ -129,7 +129,7 @@ const METADATA_SCHEMA_COMMENT =
 // `YAML_FORMATTING.LINE_WIDTH_NONE`.
 const NO_LINE_FOLDING = 0
 
-/** `registerSkillOnDisk`'s two writes: the shared metadata, then the `forkedFrom` stamp. */
+/** The shared metadata, then the `forkedFrom` stamp. */
 async function metadataYaml(
   install: CarriedSkillInstall,
   manifest: string
@@ -156,24 +156,22 @@ async function provenanceStamp(
   }
 }
 
-/** The bytes `writeMetadataYaml` leaves. */
+/** The bytes `writeMetadataYaml` writes. */
 const asMetadataFile = (metadata: Record<string, unknown>): string =>
   `${METADATA_SCHEMA_COMMENT}\n${stringifyYaml(metadata, {
     lineWidth: NO_LINE_FOLDING,
   })}`
 
 /**
- * Where `injectForkedFromMetadata` puts the stamp: `localSkillMetadataSchema` parses its declared
- * key first, so a shipped `forkedFrom` puts it at the top and none puts it last.
+ * Always last, in place of any shipped stamp: a re-install reads its own earlier output as what
+ * was shipped, so any other place would move the stamp on every write.
  */
 function withForkedFrom(
   metadata: Record<string, unknown>,
   forkedFrom: Record<string, string>
 ): Record<string, unknown> {
-  if (!Object.hasOwn(metadata, "forkedFrom")) return { ...metadata, forkedFrom }
-
-  const { forkedFrom: _shipped, ...rest } = metadata
-  return { forkedFrom, ...rest }
+  const { forkedFrom: _replaced, ...rest } = metadata
+  return { ...rest, forkedFrom }
 }
 
 /** Read as `readLocalSkillMetadata` does: unparseable, non-mapping or bad `forkedFrom` is none. */

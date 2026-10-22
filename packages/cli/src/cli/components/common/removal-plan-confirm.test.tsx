@@ -35,6 +35,53 @@ describe("RemovalPlanConfirm", () => {
 
     expect(lastFrame()).toContain(" Skills:\n   Zustand (web-state-zustand)");
   });
+
+  it("lists what is overwritten under a heading of its own, below the removals", () => {
+    const { lastFrame, unmount } = render(
+      <RemovalPlanConfirm
+        heading="Applying this configuration will remove:"
+        sections={[{ label: "Skills:", items: ["Zustand (web-state-zustand)"] }]}
+        overwritten={{ label: "Will be overwritten:", items: ["React (web-framework-react)"] }}
+        statements={[]}
+        message="Apply this configuration?"
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    cleanup = unmount;
+
+    expect(lastFrame()).toContain(
+      [
+        "Applying this configuration will remove:",
+        "",
+        " Skills:",
+        "   Zustand (web-state-zustand)",
+        "",
+        "Will be overwritten:",
+        "   React (web-framework-react)",
+        "",
+        "Apply this configuration?",
+      ].join("\n"),
+    );
+  });
+
+  it("opens on what is overwritten where there is no heading above it", () => {
+    const { lastFrame, unmount } = render(
+      <RemovalPlanConfirm
+        sections={[]}
+        overwritten={{ label: "Will be overwritten:", items: ["React (web-framework-react)"] }}
+        statements={[]}
+        message="Apply this configuration?"
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    cleanup = unmount;
+
+    expect(
+      lastFrame()?.startsWith("Will be overwritten:\n   React (web-framework-react)\n\n"),
+    ).toBe(true);
+  });
 });
 
 /** Mounted beside the prompt: the app exiting unmounts it too, which is how an exit is seen. */

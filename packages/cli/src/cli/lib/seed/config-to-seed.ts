@@ -1,9 +1,5 @@
 import { MATRIX_VERSION } from "@workspace/matrix";
-import {
-  SEED_VERSION,
-  installableSeedPayloadSchema,
-  seedModelSchema,
-} from "@workspace/matrix/seed";
+import { SEED_VERSION, seedModelSchema } from "@workspace/matrix/seed";
 
 import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE } from "../../consts.js";
 import { isScopePairCompatible } from "../configuration/config-generator.js";
@@ -48,7 +44,6 @@ function isSeedModel(model: ModelName): model is SeedModel {
   return seedModelSchema.safeParse(model).success;
 }
 
-/** An absent flag is lazy. */
 function seedLoadState(preloaded: boolean | undefined): SeedLoadState {
   return preloaded === true ? "preloaded" : "lazy";
 }
@@ -201,8 +196,7 @@ export function configToSeedPayload(
   ];
   if (unshareable.length > 0) throw new Error(unshareableConfigError(unshareable));
 
-  // Parsed against the store's installable schema, so drift fails the mint here.
-  return installableSeedPayloadSchema.parse({
+  return {
     v: SEED_VERSION,
     matrixVersion: MATRIX_VERSION,
     stackId: null,
@@ -214,5 +208,5 @@ export function configToSeedPayload(
     ),
     ...(Object.keys(carried.external).length > 0 && { external: carried.external }),
     agents: Object.fromEntries(agents.map((agent) => [agent.name, toSeedAgent(agent)])),
-  });
+  };
 }

@@ -16,10 +16,13 @@ import {
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
+import {
+  startTarballSourceServer,
+  type TarballSourceServer,
+} from "../helpers/tarball-source-server.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { E2E_SKILL, E2E_SKILL_IDS } from "../fixtures/expected-values.js";
 import { CLI } from "../fixtures/cli.js";
-import { UI_SYMBOLS } from "../../src/cli/consts.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -195,6 +198,51 @@ describe("doctor diagnostics", () => {
     });
   });
 
+  /** A served tarball, since a local marketplace is read where it is and never cached. */
+  describe("a remote marketplace, reached once and then not", () => {
+    let server: TarballSourceServer;
+    let reached: { exitCode: number; stdout: string };
+    let unreached: { exitCode: number; stdout: string };
+
+    beforeAll(async () => {
+      server = await startTarballSourceServer(source.sourceDir);
+      tempDir = await createTempDir();
+      await writeProjectConfig(
+        tempDir,
+        buildProjectConfig({
+          name: "unreachable-marketplace",
+          skills: [],
+          agents: buildAgentConfigs(["web-developer"]),
+          marketplace: server.url,
+        }),
+      );
+      await writeAgentFile(tempDir, "web-developer", { frontmatter: true });
+
+      reached = await CLI.run(["doctor"], { dir: tempDir });
+      await server.close();
+      unreached = await CLI.run(["doctor"], { dir: tempDir });
+    });
+
+    afterAll(async () => {
+      await server.close();
+    });
+
+    it("says it connected while the marketplace answers", () => {
+      expect(reached.stdout).toMatch(/Marketplace Reachable\s+✓\s+Connected to remote: /);
+    });
+
+    it("warns that the cached copy stood in while the marketplace could not be reached", () => {
+      expect(unreached.exitCode, unreached.stdout).toBe(EXIT_CODES.SUCCESS);
+      expect(unreached.stdout).toMatch(/Marketplace Reachable\s+!\s+Could not reach /);
+      expect(unreached.stdout).toContain(
+        `Could not reach ${server.url} — read its cached copy instead\n`,
+      );
+      expect(unreached.stdout, "a stale copy is not a connection").not.toMatch(
+        /Marketplace Reachable\s+✓/,
+      );
+    });
+  });
+
   describe("orphaned agent files check", () => {
     it("should warn when orphaned .md files exist in agents dir", async () => {
       const project = await ProjectBuilder.editable({
@@ -214,6 +262,33 @@ describe("doctor diagnostics", () => {
       expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_NO_ORPHANS);
       expect(stdout).toContain("1 orphaned agent file");
       expect(stdout).toContain("- orphan-agent.md (not in config)");
+    });
+
+    it("should warn about a skill folder this CLI installed that the config does not claim", async () => {
+      const project = await ProjectBuilder.editable({ agents: ["web-developer"] });
+      tempDir = path.dirname(project.dir);
+      await writeAgentFile(project.dir, "web-developer", { frontmatter: true });
+      await createLocalSkill(project.dir, E2E_SKILL.vitest.id, { metadata: FORKED_FROM_METADATA });
+      await recordInstallSource([project.dir], source.sourceDir);
+
+      const { exitCode, stdout } = await CLI.run(["doctor"], { dir: project.dir });
+
+      expect(exitCode, stdout).toBe(EXIT_CODES.SUCCESS);
+      expect(stdout).toMatch(/No Orphans\s+!\s+1 orphaned skill\n/);
+      expect(stdout).toContain(`- ${E2E_SKILL.vitest.id} (not in config)\n`);
+    });
+
+    it("should leave a skill folder alone that carries no provenance, the user's own", async () => {
+      const project = await ProjectBuilder.editable({ agents: ["web-developer"] });
+      tempDir = path.dirname(project.dir);
+      await writeAgentFile(project.dir, "web-developer", { frontmatter: true });
+      await mkdir(path.join(skillsPath(project.dir), FOREIGN_SKILL_DIR), { recursive: true });
+      await recordInstallSource([project.dir], source.sourceDir);
+
+      const { exitCode, stdout } = await CLI.run(["doctor"], { dir: project.dir });
+
+      expect(exitCode, stdout).toBe(EXIT_CODES.SUCCESS);
+      expect(stdout).toMatch(/No Orphans\s+✓\s+No orphaned skills or agent files\n/);
     });
 
     /**
@@ -246,7 +321,7 @@ describe("doctor diagnostics", () => {
 
       expect(exitCode).toBe(EXIT_CODES.ERROR);
       expect(stdout).toMatch(
-        new RegExp(`${STEP_TEXT.DOCTOR_ROW_NO_ORPHANS}\\s+${UI_SYMBOLS.CROSS}\\s`),
+        new RegExp(`${STEP_TEXT.DOCTOR_ROW_NO_ORPHANS}\\s+${STEP_TEXT.DOCTOR_STATUS_FAIL}\\s`),
       );
       expect(stdout).toContain(STEP_TEXT.DOCTOR_UNOWNED_INSTALL);
       for (const name of [...skillIds, ...agentFiles]) {

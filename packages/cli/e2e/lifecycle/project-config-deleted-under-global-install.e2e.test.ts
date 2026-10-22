@@ -12,15 +12,9 @@ import {
   type TreeSnapshotEntry,
 } from "../helpers/test-utils.js";
 import { DIRS, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
-import { UI_SYMBOLS } from "../../src/cli/consts.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 
-/**
- * `doctor`'s Config Valid row names whose config it read (`This project:` or
- * `The global installation:`), across a project with its own config, the home directory, a
- * never-configured directory, and the project once its config is deleted.
- */
-
-const CONFIG_ROW_PASSING = `${STEP_TEXT.DOCTOR_CONFIG_CHECK}\\s+${UI_SYMBOLS.CHECK}\\s+`;
+const CONFIG_ROW_PASSING = `${STEP_TEXT.DOCTOR_CONFIG_CHECK}\\s+✓\\s+`;
 
 const CONFIG_RELATIVE = `${DIRS.SOURCE_CLAUDE}/${FILES.CONFIG_TS}`;
 
@@ -111,6 +105,28 @@ describe("doctor's Config Valid row under a live global installation", () => {
         new RegExp(
           `${CONFIG_ROW_PASSING}${STEP_TEXT.DOCTOR_CONFIG_THIS_PROJECT} [^\\n]*${STEP_TEXT.DOCTOR_CONFIG_USING_GLOBAL} \\(~/${CONFIG_RELATIVE}\\)`,
         ),
+      );
+    });
+
+    /** What the project's own configuration put there (`DUAL_SCOPE`), now declared by nothing. */
+    it("names the project's stranded skill and agent, which no configuration declares", () => {
+      const inTheProject = (...segments: string[]) =>
+        path.join("~", path.relative(env.fakeHome, env.projectDir), ...segments);
+
+      expect(deleted.stdout, deleted.output).toMatch(
+        /No Orphans\s+✗\s+1 skill and 1 agent installed here, and no configuration declares them\n/,
+      );
+      expect(deleted.stdout).toContain(
+        `- ${inTheProject(DIRS.CLAUDE, DIRS.SKILLS, E2E_SKILL.hono.id)}\n`,
+      );
+      expect(deleted.stdout).toContain(
+        `- ${inTheProject(DIRS.CLAUDE, DIRS.AGENTS, `${E2E_AGENT["api-developer"].name}.md`)}\n`,
+      );
+    });
+
+    it("finds nothing stranded while the project still has its own config", () => {
+      expect(ownConfig.stdout, ownConfig.output).toMatch(
+        /No Orphans\s+✓\s+No orphaned skills or agent files\n/,
       );
     });
 

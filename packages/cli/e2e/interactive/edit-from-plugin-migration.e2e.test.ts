@@ -100,7 +100,7 @@ describe.skipIf(!claudeAvailable)("edit --from — plugin mode migration", () =>
 
   describe("mode migration local -> plugin", () => {
     it(
-      "should switch skills from local to plugin mode",
+      "names the local copy it overwrites, then switches the skill to a plugin",
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         const project = await ejectedProject();
@@ -115,6 +115,12 @@ describe.skipIf(!claudeAvailable)("edit --from — plugin mode migration", () =>
           `${STEP_TEXT.SWITCHING_SKILLS_PREFIX} 1 ${STEP_TEXT.SWITCHING_SKILLS_SUFFIX} ${STEP_TEXT.PLUGIN_NATIVE}`,
         );
         expect(result.rawOutput).not.toContain(STEP_TEXT.EJECT_LOCAL_COPY);
+        expect(
+          result.rawOutput,
+          "the switch deletes the ejected copy, so the plan must name it as overwritten",
+        ).toMatch(
+          new RegExp(`${STEP_TEXT.SHARED_CONFIG_OVERWRITTEN}[\\s\\S]*${E2E_SKILL.react.id}`),
+        );
 
         await expect(project).toHaveConfig({
           skillIds: [E2E_SKILL.react.id],

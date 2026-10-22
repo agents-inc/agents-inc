@@ -56,10 +56,8 @@ describe("what compile says", () => {
     return dirs.projectDir;
   }
 
-  it("narrates each step of a project compile, then the trust notice for what it wrote", async () => {
-    const projectDir = await installProject(
-      buildTestProjectConfig(["web-developer", "api-developer"], []),
-    );
+  it("narrates each step of a project compile", async () => {
+    await installProject(buildTestProjectConfig(["web-developer", "api-developer"], []));
 
     const { stdout, error } = await runCliCommand(["compile"]);
 
@@ -81,7 +79,6 @@ describe("what compile says", () => {
         "",
         "✓ Project compile complete!",
         "",
-        `Claude Code runs a project sub-agent's completion gate (its Stop hook — the project's typecheck, unless the sub-agent declares its own) only once you trust the folder: open Claude Code in ${projectDir} and accept the trust prompt. Until then, 2 sub-agents' completion gates will not run, and nothing will say so.`,
         "",
       ].join("\n"),
     );
@@ -417,8 +414,13 @@ describe("what compile says", () => {
 
       const { stdout, error } = await runCliCommand(["compile"]);
 
-      expect(stdout).toContain(
+      expect(stdout).toBe(
         [
+          "Resolving marketplace...",
+          "Marketplace: default",
+          "Loading agent partials...",
+          "Agent partials loaded",
+          "",
           "Compiling project agents...",
           "",
           "Discovering skills...",
@@ -584,7 +586,7 @@ describe("what compile says", () => {
           "Recompiling agents...",
           "1 global agent rewritten, 0 unchanged",
           "Refreshed config-types.ts",
-          "Recompiled agents in 1 registered project, 0 unchanged",
+          "Registered projects: 1 rewritten, 0 unchanged",
           "",
           "✓ Global compile complete!",
           "",

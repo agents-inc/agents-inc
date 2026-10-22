@@ -2,7 +2,12 @@ import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
-import { E2E_AGENT, E2E_SKILL, e2eSkillId } from "../fixtures/expected-values.js";
+import {
+  E2E_AGENT,
+  E2E_BUILTIN_AGENT,
+  E2E_SKILL,
+  e2eSkillId,
+} from "../fixtures/expected-values.js";
 import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import {
@@ -13,6 +18,7 @@ import {
 import { PINNED_WIRE_VERSION, ejectedGlobalSkill } from "../fixtures/seed-wire-contract.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import {
+  agentsPath,
   cleanupFixture,
   cleanupTempDir,
   createLocalSkillIn,
@@ -33,7 +39,9 @@ import {
 /**
  * `init --from` and `edit --from` print the marketplace load's warnings, cause above effect; an
  * unparseable metadata.yaml stands for the class. The clean marketplace is the control: the capture
- * also holds narration that must not be replayed.
+ * also holds narration that must not be replayed. Observed red against the unfixed build: both
+ * `--from` runs printed the effect and not the cause, while the clean control, the installed files
+ * and the declined apply were green and must stay so.
  */
 
 const BROKEN_SKILL_ID = e2eSkillId("web-broken-metadata");
@@ -44,6 +52,8 @@ const BROKEN_FILE = `${BROKEN_SKILL_ID}/${FILES.METADATA_YAML}`;
 const EFFECT = `${STEP_TEXT.CATALOG_DOES_NOT_KNOW} ${BROKEN_SKILL_ID}`;
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
+const API_DEV = E2E_AGENT["api-developer"].name;
+const WEB_TESTER = E2E_BUILTIN_AGENT["web-tester"].name;
 
 async function shipSkillWithUnparseableMetadata(sourceDir: string): Promise<void> {
   await createLocalSkillIn(path.join(sourceDir, SOURCE_PATHS.SKILLS_DIR), BROKEN_SKILL_ID, {
@@ -122,6 +132,50 @@ describe("--from runs say what the marketplace load raised", () => {
         E2E_SKILL.react.id,
       ]);
       expect(await listFiles(skillsPath(tempDir))).toStrictEqual([E2E_SKILL.react.id]);
+    },
+  );
+
+  it(
+    "init --from names the sub-agents it skipped with that skill, which carried nothing else",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async () => {
+      tempDir = await createTempDir();
+      store.publish(
+        "Broken03",
+        buildSeedPayload({
+          v: PINNED_WIRE_VERSION,
+          skills: {
+            [E2E_SKILL.react.id]: ejectedGlobalSkill(),
+            [BROKEN_SKILL_ID]: ejectedGlobalSkill({
+              assignments: { [WEB_DEV]: "lazy", [API_DEV]: "lazy", [WEB_TESTER]: "lazy" },
+            }),
+          },
+          agents: {
+            [WEB_DEV]: { scope: "global" },
+            [API_DEV]: { scope: "global" },
+            [WEB_TESTER]: { scope: "global" },
+          },
+        }),
+      );
+
+      const { exitCode, output, stderr } = await runInitFrom(
+        store,
+        "Broken03",
+        { dir: tempDir },
+        broken.sourceDir,
+      );
+
+      expect(exitCode, `init --from output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
+      expect(
+        flattenCliOutput(stderr),
+        "web-developer carries React too, so only the other two go with the skipped skill",
+      ).toContain(
+        `${EFFECT} sub-agent(s) skipped with ${BROKEN_SKILL_ID}, ${STEP_TEXT.SKIPPED_WITH_THE_SKILL} ${API_DEV}, ${WEB_TESTER}`,
+      );
+      expect(
+        await listFiles(agentsPath(tempDir)),
+        "what the run says it skipped, it did not compile",
+      ).toStrictEqual([`${WEB_DEV}.md`]);
     },
   );
 

@@ -158,13 +158,13 @@ test.describe("the provider step", () => {
     expect(provider.x).toBeCloseTo(stacks.x, 0)
   })
 
-  test("draws each card's line on its ::after", async ({ configure }) => {
+  test("draws each card one line, one pixel wide", async ({ configure }) => {
     await expect(configure.provider.cards).toHaveCount(2)
 
-    const content = await configure.provider.cards
-      .first()
-      .evaluate((cell) => getComputedStyle(cell, "::after").content)
-    expect(content).not.toBe("none")
+    for (const card of await configure.provider.cards.all()) {
+      const strokes = await configure.strokes(card)
+      expect(strokes.map(({ width }) => width)).toStrictEqual([1])
+    }
   })
 
   test("folds away under its title", async ({ configure }) => {
@@ -214,26 +214,21 @@ test.describe("the provider control", () => {
     await expect(configure.provider.chosen).toHaveText(/codex/i)
   })
 
-  test("is one tab stop, on the chosen card", async ({ configure }) => {
-    await expect(configure.provider.option("claude")).toHaveAttribute(
-      "tabindex",
-      "0"
-    )
-    await expect(configure.provider.option("codex")).toHaveAttribute(
-      "tabindex",
-      "-1"
-    )
+  // In from the step's title, and straight out again.
+  test("is one tab stop, on the chosen card", async ({ configure, page }) => {
+    const title = configure.stepTitle("choose your provider")
+    const inTheControl = configure.provider.root.locator(":focus")
 
-    await configure.provider.choose("codex")
+    for (const provider of ["claude", "codex"] as const) {
+      await configure.provider.choose(provider)
+      await title.focus()
 
-    await expect(configure.provider.option("codex")).toHaveAttribute(
-      "tabindex",
-      "0"
-    )
-    await expect(configure.provider.option("claude")).toHaveAttribute(
-      "tabindex",
-      "-1"
-    )
+      await page.keyboard.press("Tab")
+      await expect(configure.provider.option(provider)).toBeFocused()
+
+      await page.keyboard.press("Tab")
+      await expect(inTheControl).toHaveCount(0)
+    }
   })
 
   test("chooses with Enter and Space", async ({ configure, page }) => {
@@ -538,6 +533,9 @@ test.describe("the payload", () => {
     await expect(configure.installDialog.command(CLAUDE_COMMAND)).toBeVisible()
     await configure.installDialog.close()
 
+    // A mounted dialog keeps its id for an unchanged selection, so only a
+    // fresh page posts the payload again.
+    await configure.goto()
     await configure.provider.choose("codex")
     await configure.roster.installButton.click()
     // Subject guard: a control that did nothing would also send equal bodies.

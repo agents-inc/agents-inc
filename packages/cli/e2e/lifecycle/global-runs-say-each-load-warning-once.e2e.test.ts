@@ -31,9 +31,8 @@ import { DIRS, EXIT_CODES, FILES, SOURCE_PATHS, STEP_TEXT, TIMEOUTS } from "../p
 import type { AgentName, ProjectConfig, SkillSlug } from "../../src/cli/types/index.js";
 
 /**
- * A global `compile`, `edit --from` or `doctor` says each marketplace load warning once, however
- * many projects its fan-out reloads. Two projects, asserted as visited, and each run held to what
- * it does to the installation, so saying less cannot come from doing less.
+ * Each run is held to what it does to the installation, so saying less cannot come from doing
+ * less.
  */
 
 /** Unparseable metadata.yaml, selected by nobody. */
@@ -65,7 +64,9 @@ const WITHOUT_WEB_DEV_ID = "Warn39E1";
 
 const PROJECTS = ["project-one", "project-two"] as const;
 
-const BOTH_PROJECTS_VISITED = `${STEP_TEXT.PROPAGATED_RECOMPILE} 0 registered projects, 2 ${STEP_TEXT.UNCHANGED}`;
+/** A project counts as rewritten when its config pair changed, so each run is counted its own way. */
+const BOTH_PROJECTS_VISITED_UNCHANGED = `${STEP_TEXT.PROPAGATED_RECOMPILE} 0 rewritten, 2 ${STEP_TEXT.UNCHANGED}`;
+const BOTH_PROJECTS_REWRITTEN = `${STEP_TEXT.PROPAGATED_RECOMPILE} 2 rewritten, 0 ${STEP_TEXT.UNCHANGED}`;
 
 type ScopeState = {
   config: ProjectConfig;
@@ -204,7 +205,7 @@ describe("a global run says each warning once, however many projects are registe
 
     it("succeeds, having fanned out to both projects", () => {
       expect(run.exitCode, `compile at HOME failed: ${run.output}`).toBe(EXIT_CODES.SUCCESS);
-      expect(said, "the fan-out reached both projects").toContain(BOTH_PROJECTS_VISITED);
+      expect(said, "the fan-out reached both projects").toContain(BOTH_PROJECTS_VISITED_UNCHANGED);
     });
 
     it("says the unparseable file once", () => {
@@ -258,7 +259,7 @@ describe("a global run says each warning once, however many projects are registe
 
     it("succeeds, having fanned out to both projects", () => {
       expect(run.exitCode, `edit --from at HOME failed: ${run.output}`).toBe(EXIT_CODES.SUCCESS);
-      expect(said, "the fan-out reached both projects").toContain(BOTH_PROJECTS_VISITED);
+      expect(said, "the fan-out rewrote both projects' configs").toContain(BOTH_PROJECTS_REWRITTEN);
     });
 
     it("says the unparseable file once", () => {

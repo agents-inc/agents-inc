@@ -1,102 +1,26 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { AgentDefinition, AgentName, AgentSourcePaths } from "../../../types/index.js";
+import path from "path";
+import { describe, it, expect } from "vitest";
 
-vi.mock("../../agents/index.js", () => ({
-  getAgentDefinitions: vi.fn(),
-}));
-
-vi.mock("../../loading/index.js", () => ({
-  loadMergedAgents: vi.fn(),
-}));
-
-vi.mock("../../../consts.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../consts.js")>();
-  return {
-    ...actual,
-    PROJECT_ROOT: "/mock/cli/root",
-  };
-});
-
-import { loadAgentDefs } from "./load-agent-defs";
-import { getAgentDefinitions } from "../../agents/index.js";
-import { loadMergedAgents } from "../../loading/index.js";
-
-const mockGetAgentDefinitions = vi.mocked(getAgentDefinitions);
-const mockLoadMergedAgents = vi.mocked(loadMergedAgents);
-
-const MOCK_AGENT_SOURCE_PATHS: AgentSourcePaths = {
-  agentsDir: "/tmp/source/src/agents",
-  sourcePath: "/tmp/source",
-};
-
-function createMockAgentDef(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
-  return {
-    title: "Mock Agent",
-    description: "A mock agent for testing",
-    tools: [],
-    ...overrides,
-  };
-}
-
-const SOURCE_AGENT: AgentDefinition = createMockAgentDef({
-  title: "Source Web Developer",
-  description: "Source-overridden web developer",
-});
-
-const CLI_ONLY_AGENT: AgentDefinition = createMockAgentDef({
-  title: "CLI Reviewer",
-  description: "Built-in reviewer",
-});
+import { loadAgentDefs } from "./load-agent-defs.js";
+import { AGENT_NAMES } from "../../../types/agents.js";
+import { DIRS } from "../../../consts.js";
+import { typedKeys } from "../../../utils/typed-object.js";
+import { CLI_ROOT } from "../../__tests__/helpers/cli-runner.js";
 
 describe("loadAgentDefs", () => {
-  beforeEach(() => {
-    vi.resetAllMocks();
-    mockGetAgentDefinitions.mockResolvedValue(MOCK_AGENT_SOURCE_PATHS);
+  it("answers exactly the CLI's own sub-agents, the roster every AgentName union is generated from", async () => {
+    const { agents } = await loadAgentDefs();
+
+    expect(typedKeys(agents).toSorted()).toStrictEqual([...AGENT_NAMES].toSorted());
   });
 
-  it("should return merged agents from loadMergedAgents(sourcePath)", async () => {
-    const mergedAgents: Partial<Record<AgentName, AgentDefinition>> = {
-      "web-developer": SOURCE_AGENT,
-      reviewer: CLI_ONLY_AGENT,
-    };
+  it("names the CLI itself as the source its sub-agents compile from", async () => {
+    const defs = await loadAgentDefs();
 
-    mockLoadMergedAgents.mockResolvedValue(mergedAgents);
-
-    const result = await loadAgentDefs();
-
-    expect(mockLoadMergedAgents).toHaveBeenCalledTimes(1);
-    expect(mockLoadMergedAgents).toHaveBeenCalledWith("/tmp/source");
-
-    // loadMergedAgents is mocked: this pins forwarding, not merge precedence.
-    expect(result.agents["web-developer"]).toStrictEqual(SOURCE_AGENT);
-    expect(result.agents["reviewer"]).toStrictEqual(CLI_ONLY_AGENT);
-    expect(result.agents).toStrictEqual({
-      "web-developer": SOURCE_AGENT,
-      reviewer: CLI_ONLY_AGENT,
+    expect(defs.sourcePath).toBe(CLI_ROOT);
+    expect(defs.agentSourcePaths).toStrictEqual({
+      agentsDir: path.join(CLI_ROOT, DIRS.agents),
+      sourcePath: CLI_ROOT,
     });
-  });
-
-  it("asks for agent partials with no arguments at all", async () => {
-    mockLoadMergedAgents.mockResolvedValue({});
-
-    await loadAgentDefs();
-
-    expect(mockGetAgentDefinitions).toHaveBeenCalledWith();
-  });
-
-  it("should return sourcePath from agentSourcePaths", async () => {
-    mockLoadMergedAgents.mockResolvedValue({});
-
-    const result = await loadAgentDefs();
-
-    expect(result.sourcePath).toBe("/tmp/source");
-  });
-
-  it("should return complete agentSourcePaths", async () => {
-    mockLoadMergedAgents.mockResolvedValue({});
-
-    const result = await loadAgentDefs();
-
-    expect(result.agentSourcePaths).toStrictEqual(MOCK_AGENT_SOURCE_PATHS);
   });
 });

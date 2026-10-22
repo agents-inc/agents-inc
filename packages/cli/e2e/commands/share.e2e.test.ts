@@ -10,6 +10,7 @@ import {
   isClaudeCLIAvailable,
   listFiles,
   loadConfigOrFail,
+  readTreeSnapshot,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import {
@@ -25,8 +26,7 @@ import {
 import { CLI } from "../fixtures/cli.js";
 import { PINNED_WIRE_VERSION } from "../fixtures/seed-wire-contract.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
-import { DEFAULT_PUBLIC_SOURCE_NAME } from "../../src/cli/consts.js";
+import { EXIT_CODES, PUBLIC_MARKETPLACE_NAME, TIMEOUTS } from "../pages/constants.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -37,7 +37,7 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
-import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.js";
+import { pluginKeyFor } from "../fixtures/plugin-install-state.js";
 
 /**
  * `share` round trip: install, share, install the minted id into a fresh directory, compare. Shares
@@ -80,7 +80,7 @@ describe("share", () => {
         name: "plugin-share",
         skills: buildSkillConfigs([E2E_SKILL.react.id], {
           scope: "global",
-          origin: DEFAULT_PUBLIC_SOURCE_NAME,
+          origin: PUBLIC_MARKETPLACE_NAME,
         }),
         agents: buildAgentConfigs([WEB_DEV], { scope: "global" }),
       }),
@@ -97,6 +97,22 @@ describe("share", () => {
     expect(firstElement(store.requests).method).toBe("POST");
     expect(firstElement(store.requests).url).toBe("/configs");
     expect(firstElement(store.requests).userAgent).toBe("agents-inc-cli");
+  });
+
+  it("says the store's rate limit was reached and when to try again, and writes nothing", async () => {
+    const origin = await takeTempDir();
+    await writePluginInstallation(origin);
+    const before = await readTreeSnapshot(origin);
+    store.limitMints();
+
+    const { exitCode, output } = await runShare(store, { dir: origin });
+
+    expect(exitCode, output).toBe(EXIT_CODES.ERROR);
+    expect(flattenCliOutput(output)).toContain(
+      "Sharing this configuration failed (HTTP 429): rate limit reached — try again in 1 minute.",
+    );
+    expect(store.minted, "a refused mint files nothing").toStrictEqual([]);
+    expect(await readTreeSnapshot(origin)).toStrictEqual(before);
   });
 
   it("refuses a directory with nothing installed, without spending a write", async () => {
@@ -196,7 +212,7 @@ describe.skipIf(!claudeAvailable)("share, with plugins installed at both ends", 
         await listFiles(agentsPath(origin)),
       );
       for (const skillId of [E2E_SKILL.react.id, E2E_SKILL.vitest.id]) {
-        const ref = buildMarketplacePluginRef(skillId, fixture.marketplaceName);
+        const ref = pluginKeyFor(skillId, fixture.marketplaceName);
         await expect({ dir: rebuilt }).toHavePluginInRegistry(ref, "user");
         await expect({ dir: rebuilt }).toHavePlugin(ref);
       }

@@ -19,7 +19,7 @@ import {
   readTestFile,
 } from "../helpers/test-utils.js";
 import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.js";
+import { pluginKeyFor } from "../fixtures/plugin-install-state.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
@@ -118,7 +118,7 @@ describe.skipIf(!claudeAvailable)("edit --from — plugin mode operations", () =
         [E2E_SKILL.vitest.id]: projectPlugin,
       });
       const { project, home } = installation;
-      const vitestRef = buildMarketplacePluginRef(E2E_SKILL.vitest.id, fixture.marketplaceName);
+      const vitestRef = pluginKeyFor(E2E_SKILL.vitest.id, fixture.marketplaceName);
       // Subject guard: the plugin to remove really is registered.
       await expect({ dir: home }).toHavePluginInRegistry(vitestRef);
 
@@ -158,7 +158,7 @@ describe.skipIf(!claudeAvailable)("edit --from — plugin mode operations", () =
 
       expect(result.exitCode, result.rawOutput).toBe(EXIT_CODES.SUCCESS);
       expect(result.rawOutput).toContain(
-        `Installed ${buildMarketplacePluginRef(E2E_SKILL.pinia.id, fixture.marketplaceName)}`,
+        `Installed ${pluginKeyFor(E2E_SKILL.pinia.id, fixture.marketplaceName)}`,
       );
       await expect(project).toHaveConfig({
         skillIds: [E2E_SKILL.react.id, E2E_SKILL.pinia.id],
@@ -171,21 +171,26 @@ describe.skipIf(!claudeAvailable)("edit --from — plugin mode operations", () =
   );
 
   it(
-    "completes an unchanged apply without installing a plugin",
+    "completes an unchanged apply without asking or installing a plugin",
     { timeout: TIMEOUTS.PLUGIN_TEST },
     async () => {
       const installation = await installedWith({ [E2E_SKILL.react.id]: projectPlugin });
-      const { project } = installation;
+      const { project, home } = installation;
+      store.publish("PlugSame1", configurationOf({ [E2E_SKILL.react.id]: projectPlugin }));
 
-      const result = await applyApproved(
-        installation,
-        "PlugSame1",
-        configurationOf({ [E2E_SKILL.react.id]: projectPlugin }),
+      prompt = new InteractivePrompt(["edit", "--from", "PlugSame1"], project.dir, {
+        ...TERMINAL_SIZE.TALL,
+        env: { AGENTS_INC_API_URL: store.url, HOME: home },
+      });
+      const exitCode = await prompt.waitForExit(TIMEOUTS.WIZARD_LOAD);
+      const rawOutput = prompt.getRawOutput();
+
+      expect(exitCode, rawOutput).toBe(EXIT_CODES.SUCCESS);
+      expect(rawOutput).toContain(STEP_TEXT.EDIT_UNCHANGED);
+      expect(rawOutput, "a run with nothing to change has nothing to ask").not.toContain(
+        STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM,
       );
-
-      expect(result.exitCode, result.rawOutput).toBe(EXIT_CODES.SUCCESS);
-      expect(result.rawOutput).toContain(STEP_TEXT.EDIT_UNCHANGED);
-      expect(result.rawOutput).not.toContain(STEP_TEXT.INSTALLING_PLUGINS);
+      expect(rawOutput).not.toContain(STEP_TEXT.INSTALLING_PLUGINS);
       await expect(project).toHaveConfig({ skillIds: [E2E_SKILL.react.id] });
     },
   );

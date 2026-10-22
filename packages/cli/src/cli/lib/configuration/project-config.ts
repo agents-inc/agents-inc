@@ -1,5 +1,6 @@
 import os from "os";
 import path from "path";
+import type { z } from "zod";
 import { fileExists } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
 import { getErrorMessage } from "../../utils/errors";
@@ -10,6 +11,7 @@ import { projectConfigLoaderSchema } from "../schemas";
 import { formatZodErrors } from "../schema-validator";
 import { getProjectConfigPath } from "../installation/install-base-dir";
 import { providerInUse } from "../installation/install-layout";
+import { providerToNameAt } from "../installation/provider-to-name";
 import { isHomeDirectory } from "../installation/is-home-directory";
 import type { ScopeKind } from "../installation/source-scopes";
 import { loadConfig, NO_VALID_DEFAULT_EXPORT } from "./config-loader";
@@ -26,16 +28,20 @@ export type LoadedProjectConfig = {
  */
 export class ConfigLoadError extends Error {
   readonly scope: ScopeKind;
+  /** Named with `--provider` in a remedy handed out for this installation; beside another only. */
+  readonly providerToName: Provider | undefined;
 
   constructor(
     readonly configPath: string,
     readonly reason: string,
     /** The directory whose installation this config is: a project, or the home directory. */
     readonly scopeRoot: string,
+    provider: Provider,
   ) {
     super(`Config at '${configPath}' could not be loaded: ${reason}`);
     this.name = "ConfigLoadError";
     this.scope = isHomeDirectory(scopeRoot) ? "global" : "project";
+    this.providerToName = providerToNameAt(scopeRoot, provider);
   }
 }
 
@@ -62,25 +68,57 @@ export async function loadProjectConfigAt(
   }
 
   // The file exists: from here any failure is a ConfigLoadError, never `null`.
+  const refuse = (reason: string) => new ConfigLoadError(configPath, reason, projectDir, provider);
+  const parsed = await parseConfigFile(configPath, refuse);
+  const config = asProjectConfig(parsed, projectDir);
+  warnOfDefaultedFields(parsed, configPath);
+
+  verbose(`Loaded ${scope} config from ${configPath}`);
+  return {
+    config,
+    configPath,
+    provider,
+  };
+}
+
+type ParsedProjectConfig = z.infer<typeof projectConfigLoaderSchema>;
+
+/** The file's default export, held to the lenient loader schema. */
+async function parseConfigFile(
+  configPath: string,
+  refuse: (reason: string) => ConfigLoadError,
+): Promise<ParsedProjectConfig> {
   let raw: unknown;
   try {
     raw = await loadConfig<ProjectConfig>(configPath);
   } catch (error) {
-    throw new ConfigLoadError(configPath, getErrorMessage(error), projectDir);
+    throw refuse(getErrorMessage(error));
   }
 
-  if (!raw || typeof raw !== "object") {
-    throw new ConfigLoadError(configPath, NO_VALID_DEFAULT_EXPORT, projectDir);
-  }
+  if (!raw || typeof raw !== "object") throw refuse(NO_VALID_DEFAULT_EXPORT);
 
   const result = projectConfigLoaderSchema.safeParse(raw);
-  if (!result.success) {
-    throw new ConfigLoadError(configPath, formatZodErrors(result.error).join("; "), projectDir);
-  }
+  if (!result.success) throw refuse(formatZodErrors(result.error).join("; "));
+  return result.data;
+}
 
-  // Normalize the stack before claiming ProjectConfig, so the cast below is the only one.
-  const parsed = result.data;
+/** Normalizes the stack before claiming ProjectConfig, so the cast below is the only one. */
+function asProjectConfig(parsed: ParsedProjectConfig, projectDir: string): ProjectConfig {
   const normalizedStack = parsed.stack ? normalizeStackRecord(parsed.stack) : undefined;
+
+  // Boundary cast: the loader schema is lenient about the string unions; validateProjectConfig
+  // enforces the strict shape after load.
+  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- see above
+  return {
+    ...parsed,
+    name: parsed.name ?? path.basename(projectDir),
+    skills: parsed.skills ?? [],
+    agents: parsed.agents ?? [],
+    ...(normalizedStack && { stack: normalizedStack }),
+  } as ProjectConfig;
+}
+
+function warnOfDefaultedFields(parsed: ParsedProjectConfig, configPath: string): void {
   if (parsed.name === undefined) {
     warn(
       `Project config at '${configPath}' is missing required 'name' field — defaulting to directory name`,
@@ -89,24 +127,6 @@ export async function loadProjectConfigAt(
   if (parsed.skills === undefined) {
     warn(`Project config at '${configPath}' is missing 'skills' array — defaulting to empty`);
   }
-
-  // Boundary cast: the loader schema is lenient about the string unions; validateProjectConfig
-  // enforces the strict shape after load.
-  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- see above
-  const config = {
-    ...parsed,
-    name: parsed.name ?? path.basename(projectDir),
-    skills: parsed.skills ?? [],
-    agents: parsed.agents ?? [],
-    ...(normalizedStack && { stack: normalizedStack }),
-  } as ProjectConfig;
-
-  verbose(`Loaded ${scope} config from ${configPath}`);
-  return {
-    config,
-    configPath,
-    provider,
-  };
 }
 
 /** The config of whichever installation `dir` holds, read off the folder. */
@@ -141,9 +161,8 @@ export async function loadProjectConfig(projectDir: string): Promise<LoadedProje
   const projectResult = await loadProjectConfigFromDir(projectDir, provider);
   if (projectResult) return projectResult;
 
-  const homeDir = os.homedir();
   if (!isHomeDirectory(projectDir)) {
-    return loadProjectConfigFromDir(homeDir, provider);
+    return loadProjectConfigFromDir(os.homedir(), provider);
   }
 
   return null;

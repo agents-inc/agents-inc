@@ -46,7 +46,8 @@ import {
   writeProjectConfigPair,
   type PropagationResult,
 } from "./propagate.js";
-import { NOTHING_RECOMPILED, recompilePropagated } from "./recompile.js";
+import { NOTHING_RECOMPILED, pairRewriteSummary, recompilePropagated } from "./recompile.js";
+import { pairsRewrittenSince, snapshotProjectPairs } from "./pair-snapshot.js";
 import type { PropagatedRecompileSummary } from "../operations/project/recompile-project-agents.js";
 
 export type { GateDeps } from "./deps.js";
@@ -90,6 +91,34 @@ function report(
   return { globalWritten, changes, propagated, recompile };
 }
 
+type FanOut = { propagated: PropagationResult; recompile: PropagatedRecompileSummary };
+
+/**
+ * Runs `propagate` over the registered projects, then recompiles what it updated where `recompiles`.
+ * A project whose config pair changed counts as rewritten whether or not its sub-agents did.
+ */
+async function fanOut(
+  projects: readonly string[],
+  provider: Provider,
+  propagate: () => Promise<PropagationResult>,
+  recompiles: boolean,
+): Promise<FanOut> {
+  const pairsBefore = await snapshotProjectPairs(projects, provider);
+  const propagated = await propagate();
+  const pairsRewritten = await pairsRewrittenSince(pairsBefore, propagated.updated, provider);
+
+  const recompile = recompiles
+    ? await recompilePropagated(propagated.updated, pairsRewritten)
+    : pairRewriteSummary(propagated.updated, pairsRewritten);
+  return { propagated, recompile };
+}
+
+function sayPropagated(propagated: PropagationResult): void {
+  if (propagated.updated.length > 0) {
+    verbose(`Propagated global changes to ${propagated.updated.length} project(s)`);
+  }
+}
+
 /** `currentProjectDir` is left out of the fan-out: its pair and agents are the caller's. */
 async function applyConsequences(
   globalConfig: ProjectConfig,
@@ -97,28 +126,25 @@ async function applyConsequences(
   deps: LoadedGateDeps,
   provider: Provider,
   currentProjectDir?: string,
-): Promise<{ propagated: PropagationResult; recompile: PropagatedRecompileSummary }> {
+): Promise<FanOut> {
   const tier = consequenceTier(changes);
-  if (!tierPropagates(tier) || !globalConfig.projects?.length) {
+  const projects = globalConfig.projects ?? [];
+  if (!tierPropagates(tier) || projects.length === 0) {
     return { propagated: NOTHING_PROPAGATED, recompile: NOTHING_RECOMPILED };
   }
 
-  const propagated = await propagateGlobalChangesToProjects(
-    globalConfig,
-    deps.agents,
+  const regenerateTypes = tierRegeneratesTypes(tier);
+  const reached = await fanOut(
+    projects,
     provider,
-    currentProjectDir,
-    { regenerateTypes: tierRegeneratesTypes(tier) },
+    () =>
+      propagateGlobalChangesToProjects(globalConfig, deps.agents, provider, currentProjectDir, {
+        regenerateTypes,
+      }),
+    regenerateTypes,
   );
-  if (propagated.updated.length > 0) {
-    verbose(`Propagated global changes to ${propagated.updated.length} project(s)`);
-  }
-
-  const recompile = tierRegeneratesTypes(tier)
-    ? await recompilePropagated(propagated.updated)
-    : NOTHING_RECOMPILED;
-
-  return { propagated, recompile };
+  sayPropagated(reached.propagated);
+  return reached;
 }
 
 /**
@@ -158,24 +184,36 @@ export type WriteConfigByScopeArgs = {
 /** From a project, splits config and types by scope; from home, writes one standalone config. */
 export async function writeConfigByScope(args: WriteConfigByScopeArgs): Promise<GateReport> {
   return withGateToken(async () => {
-    const { finalConfig, matrix, agents, projectDir, projectConfigPath } = args;
+    const { matrix, agents, projectDir } = args;
     // os.homedir() at call time, matching getGlobalConfigImportPath().
     const homeDir = os.homedir();
     const deps: LoadedGateDeps = { matrix, agents };
 
-    if (!isHomeDirectory(projectDir)) {
-      return writeFromProjectContext(args, homeDir, deps);
-    }
-
-    // At home the project IS the global installation, so the provider is home's own.
-    const provider = providerInUse(homeDir);
-    const priorGlobal = await loadProjectConfigFromDir(homeDir, provider);
-    const changes = classifyGlobalChange(priorGlobal?.config, finalConfig);
-    const globalWritten = await writeGlobalPair(finalConfig, projectConfigPath, matrix, agents);
-
-    const { propagated, recompile } = await applyConsequences(finalConfig, changes, deps, provider);
-    return report(globalWritten, changes, propagated, recompile);
+    return isHomeDirectory(projectDir)
+      ? writeFromHome(args, homeDir, deps)
+      : writeFromProjectContext(args, homeDir, deps);
   });
+}
+
+/** At home the project IS the global installation, so the provider is home's own. */
+async function writeFromHome(
+  args: WriteConfigByScopeArgs,
+  homeDir: string,
+  deps: LoadedGateDeps,
+): Promise<GateReport> {
+  const { finalConfig, projectConfigPath } = args;
+  const provider = providerInUse(homeDir);
+  const priorGlobal = await loadProjectConfigFromDir(homeDir, provider);
+  const changes = classifyGlobalChange(priorGlobal?.config, finalConfig);
+  const globalWritten = await writeGlobalPair(
+    finalConfig,
+    projectConfigPath,
+    deps.matrix,
+    deps.agents,
+  );
+
+  const { propagated, recompile } = await applyConsequences(finalConfig, changes, deps, provider);
+  return report(globalWritten, changes, propagated, recompile);
 }
 
 async function writeFromProjectContext(
@@ -327,16 +365,15 @@ export async function reconcileTypesFromDisk(
     if (!isHomeDirectory(projectDir)) return report(false, changes);
     if (!config.projects?.length) return report(globalWritten, changes);
 
-    const propagated = await propagateGlobalChangesToProjects(
-      config,
-      deps.agents,
-      providerInUse(projectDir),
-      options?.currentProjectDir,
+    const provider = providerInUse(projectDir);
+    const { propagated, recompile } = await fanOut(
+      config.projects,
+      provider,
+      () =>
+        propagateGlobalChangesToProjects(config, deps.agents, provider, options?.currentProjectDir),
+      true,
     );
-    if (propagated.updated.length > 0) {
-      verbose(`Propagated global changes to ${propagated.updated.length} project(s)`);
-    }
-    const recompile = await recompilePropagated(propagated.updated);
+    sayPropagated(propagated);
 
     return report(globalWritten, changes, propagated, recompile);
   });
@@ -435,12 +472,12 @@ export async function propagateGlobalRemoval(
       agents: [],
     });
 
-    const propagated = await pruneGlobalEntriesFromRegisteredProjects(
-      preRemovalGlobalConfig,
-      deps.agents,
+    const { propagated, recompile } = await fanOut(
+      preRemovalGlobalConfig.projects ?? [],
       provider,
+      () => pruneGlobalEntriesFromRegisteredProjects(preRemovalGlobalConfig, deps.agents, provider),
+      true,
     );
-    const recompile = await recompilePropagated(propagated.updated);
 
     return report(false, changes, propagated, recompile);
   });
@@ -485,3 +522,6 @@ export async function writeProjectPartial(
 
 /** Exported so readers match registrations by the stored rule; it writes nothing. */
 export { mergeGlobalConfigs, normalizeProjectPath };
+
+/** Read-only: names what a fan-out would reach, so a run can say so before it writes. */
+export { projectsAFanOutReaches } from "./propagate.js";

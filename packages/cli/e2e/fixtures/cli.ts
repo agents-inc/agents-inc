@@ -20,8 +20,9 @@ export type CLIResult = {
 
 export class CLI {
   // HOME defaults to the handle's global home. Developer-shell overrides (CC_MARKETPLACE, XDG_CACHE_HOME,
-  // GIGET_AUTH, VITEST) are cleared; CLAUDE_CONFIG_DIR and CODEX_HOME are pinned after `options.env`
-  // because they beat HOME. e2e-runner-environment.test.ts keeps the runners' lists in step.
+  // GIGET_AUTH, AGENTS_INC_EDITOR_URL, VITEST) are cleared; CLAUDE_CONFIG_DIR and CODEX_HOME are pinned
+  // after `options.env` because they beat HOME. e2e-runner-environment.test.ts keeps the runners' lists
+  // in step.
   static async run(
     args: string[],
     project: ProjectHandle,
@@ -42,6 +43,7 @@ export class CLI {
         CC_MARKETPLACE: undefined,
         XDG_CACHE_HOME: undefined,
         GIGET_AUTH: undefined,
+        AGENTS_INC_EDITOR_URL: undefined,
         VITEST: undefined,
         ...options?.env,
         HOME: home,

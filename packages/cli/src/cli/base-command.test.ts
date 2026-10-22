@@ -32,7 +32,7 @@ import type { GateReport } from "./lib/config-gate/index.js";
 import type { PluginHost } from "./lib/hosts/plugin-host.js";
 import type { PluginInstallResult } from "./lib/operations/skills/install-plugin-skills.js";
 import type { InstallSelection } from "@workspace/compile/seed-to-config";
-import type { MergedSkillsMatrix, ProjectConfig, SkillConfig } from "./types";
+import type { MergedSkillsMatrix, ProjectConfig, SelectionValidation, SkillConfig } from "./types";
 import type { SourceLoadResult } from "./lib/loading/source-loader.js";
 
 /** What a probe run does with the command; set by each spec before it runs. */
@@ -100,6 +100,10 @@ class Probe extends BaseCommand {
 
   brandingName(projectDir: string): Promise<string> {
     return this.resolveBrandingName(projectDir);
+  }
+
+  validationErrors(validation: SelectionValidation): void {
+    this.reportValidationErrors(validation);
   }
 
   incomplete(what: string, recovery: string): void {
@@ -327,7 +331,7 @@ describe("BaseCommand", () => {
       expect(flattenCliOutput(stderr)).toBe(
         `Warning: Skipped ${at("unreadable")}: its config.ts can't be read. Warning: one agent could not be written`,
       );
-      expect(stdout).toBe("Recompiled agents in 1 registered project, 2 unchanged (1 failed)\n");
+      expect(stdout).toBe("Registered projects: 1 rewritten, 2 unchanged (1 failed)\n");
     });
 
     it("says nothing of a recompile when no registered project was updated", async () => {
@@ -349,6 +353,34 @@ describe("BaseCommand", () => {
       expect(flattenCliOutput(stderr)).toBe(
         `Warning: Skipped ${at("gone")}: nothing is installed there any more. Warning: Skipped ${at("codex-one")}: it is another provider's installation.`,
       );
+    });
+  });
+
+  describe("reporting what a selection's validation found", () => {
+    function invalidWith(message: string): SelectionValidation {
+      return {
+        valid: false,
+        errors: [{ type: "conflict", message, skills: ["web-framework-react"] }],
+      };
+    }
+
+    it("warns each message with the terminal controls a payload could carry taken out", async () => {
+      const { stderr } = await runProbe(
+        (probe) =>
+          probe.validationErrors(invalidWith("React \u001b]0;pwned\u0007conflicts\u001b[2J")),
+        { raw: true },
+      );
+
+      expect(stderr).toBe(" ›   Warning: React conflicts\n");
+    });
+
+    it("warns a message with no terminal control in it word for word", async () => {
+      const { stderr } = await runProbe(
+        (probe) => probe.validationErrors(invalidWith("React conflicts with Vue")),
+        { raw: true },
+      );
+
+      expect(stderr).toBe(" ›   Warning: React conflicts with Vue\n");
     });
   });
 

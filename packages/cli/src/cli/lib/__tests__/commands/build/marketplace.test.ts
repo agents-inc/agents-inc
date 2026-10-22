@@ -6,11 +6,19 @@ import { readTestJson, writeTestPackageJson } from "../../helpers/config-io.js";
 import { writeTestPluginManifest } from "../../helpers/disk-writers.js";
 import { setupIsolatedHome } from "../../helpers/isolated-home.js";
 import { fileExists } from "../../test-fs-utils";
-import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE, PLUGINS_DIST_PATH } from "../../../../consts";
+import {
+  PLUGIN_MANIFEST_DIR,
+  PLUGIN_MANIFEST_FILE,
+  PLUGINS_DIST_PATH,
+  SOURCE_ROOT_DIR,
+  STANDARD_FILES,
+} from "../../../../consts";
 import { EXIT_CODES } from "../../../exit-codes";
 import { VALID_PACKAGE_JSON_FILE } from "../../mock-data/mock-source-files.js";
 import type { Marketplace, PluginManifest } from "../../../../types";
 import { firstElement } from "../../helpers/element-at.js";
+import { renderConfigTs } from "../../content-generators.js";
+import { renderConfigTsWithoutDefaultExport } from "../../factories/unloadable-config-factories.js";
 
 const MARKETPLACE_NAME = VALID_PACKAGE_JSON_FILE.name;
 
@@ -952,6 +960,7 @@ describe("build:marketplace command", () => {
           "    Tool e",
           "  ... and 2 more",
           "",
+          "",
         ].join("\n"),
       );
     });
@@ -1131,6 +1140,59 @@ describe("build:marketplace command", () => {
       const scanLine = `  Scanning plugins directory: ${pluginsDir}`;
       expect(quiet.stdout).not.toContain(scanLine);
       expect(verbose.stdout).toContain(scanLine);
+    });
+  });
+  /** `loadConfig` answers `null` for an absent file and for one that declares nothing alike. */
+  describe("a marketplace whose own config declares nothing", () => {
+    /** Mirrored rather than imported, so a reworded warning reddens here. */
+    const DECLARES_NOTHING = `${SOURCE_ROOT_DIR}/${STANDARD_FILES.CONFIG_TS} is empty or exports nothing, so this build reads the marketplace with the default layout. Give it a default export, or delete it.`;
+
+    let pluginsDir: string;
+    let outputPath: string;
+
+    beforeEach(async () => {
+      await writeTestPackageJson(projectDir);
+      pluginsDir = path.join(projectDir, "dist", "plugins");
+      outputPath = path.join(projectDir, "marketplace.json");
+      await createPluginDir(pluginsDir, skillId("web-framework-react"), "React");
+    });
+
+    async function writeMarketplaceConfig(contents: string): Promise<void> {
+      await mkdir(path.join(projectDir, SOURCE_ROOT_DIR), { recursive: true });
+      await writeFile(path.join(projectDir, SOURCE_ROOT_DIR, STANDARD_FILES.CONFIG_TS), contents);
+    }
+
+    it.each([
+      ["empty", ""],
+      ["without an export", renderConfigTsWithoutDefaultExport({ skillsDir: "src/skills" })],
+    ])("warns about a config that is %s, and still builds", async (_shape, contents) => {
+      await writeMarketplaceConfig(contents);
+
+      const { error, stderr } = await runBuildMarketplace(pluginsDir, outputPath);
+
+      expect(error).toBeUndefined();
+      expect(stderr).toContain(DECLARES_NOTHING);
+      expect(firstElement((await readMarketplaceJson(outputPath)).plugins).name).toBe(
+        skillId("web-framework-react"),
+      );
+    });
+
+    it("says nothing of a config that declares the layout", async () => {
+      await writeMarketplaceConfig(renderConfigTs({ skillsDir: "src/skills" }));
+
+      const { error, stderr } = await runBuildMarketplace(pluginsDir, outputPath);
+
+      expect(error).toBeUndefined();
+      expect(await fileExists(outputPath)).toBe(true);
+      expect(stderr).not.toContain("exports nothing");
+    });
+
+    it("says nothing where there is no config at all", async () => {
+      const { error, stderr } = await runBuildMarketplace(pluginsDir, outputPath);
+
+      expect(error).toBeUndefined();
+      expect(await fileExists(outputPath)).toBe(true);
+      expect(stderr).not.toContain("exports nothing");
     });
   });
 });

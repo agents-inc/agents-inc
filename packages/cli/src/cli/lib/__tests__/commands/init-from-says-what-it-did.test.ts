@@ -82,9 +82,6 @@ describe("what init --from says", () => {
     return runCliCommand(["init", "--from", SEED_ID, "--marketplace", dirs.sourceDir, ...extra]);
   }
 
-  const trustNotice = (sub: string) =>
-    `Claude Code runs a project sub-agent's completion gate (its Stop hook — the project's typecheck, unless the sub-agent declares its own) only once you trust the folder: open Claude Code in ${projectDir} and accept the trust prompt. Until then, ${sub} will not run, and nothing will say so.`;
-
   it("narrates an install split across both scopes, then where each part went", async () => {
     serve(
       buildSeedPayload({
@@ -128,7 +125,6 @@ describe("what init --from says", () => {
         "Compiling agents...",
         "Compiled 2 agents",
         "",
-        trustNotice("1 sub-agent's completion gate"),
         "Agents Inc. initialized successfully!",
         "",
         "Skills copied to:",
@@ -161,7 +157,7 @@ describe("what init --from says", () => {
     );
   });
 
-  it("names the one folder a project-only install landed in, with no global step", async () => {
+  it("names the one folder a project-only install landed in, and both configs it wrote, with no global step", async () => {
     serve(
       buildSeedPayload({
         skills: { [REACT]: ejected("project", "web-developer") },
@@ -188,6 +184,7 @@ describe("what init --from says", () => {
           "    web-developer.md",
           "",
           "Configuration:",
+          `  ${path.join(fakeHome, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS)}`,
           `  ${path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS)}`,
           "",
           "To customize agent-skill assignments:",
@@ -200,7 +197,7 @@ describe("what init --from says", () => {
     ).toBe(true);
   });
 
-  it("points a global-only install at the global config and at compiling from home", async () => {
+  it("points a global-only install at the global config and at compiling from home, naming both configs it wrote", async () => {
     serve(
       buildSeedPayload({
         skills: { [HONO]: ejected("global", "api-developer") },
@@ -217,6 +214,7 @@ describe("what init --from says", () => {
         [
           "Configuration:",
           `  ${globalConfig}`,
+          `  ${path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS)}`,
           "",
           "To customize agent-skill assignments:",
           `  1. Edit ${globalConfig}`,
@@ -258,6 +256,7 @@ describe("what init --from says", () => {
         "  1. Edit .agents-inc/claude/config.ts",
         "  2. Run 'npx agents-inc compile' to regenerate agents",
         "",
+        "",
       ].join("\n"),
     );
   });
@@ -276,9 +275,41 @@ describe("what init --from says", () => {
     const { stderr, error } = await initFrom();
 
     expect(error).toBeUndefined();
-    expect(flattenCliOutput(stderr)).toContain(
+    expect(
+      flattenCliOutput(stderr),
+      "web-developer carries a skill the catalogue knows, so it is not skipped with the other",
+    ).toBe(
       "Warning: Skipped 1 skill(s) this catalog does not know: web-framework-angular-standalone",
     );
+  });
+
+  it("names the sub-agents it skips with a skill the catalogue does not know, which carried only that skill", async () => {
+    const unknown = "web-framework-angular-standalone";
+    serve(
+      buildSeedPayload({
+        skills: {
+          [REACT]: ejected("project", "web-developer"),
+          [unknown]: ejected("project", "api-developer"),
+        },
+        agents: { "web-developer": { scope: "project" }, "api-developer": { scope: "project" } },
+      }),
+    );
+
+    const { stderr, error } = await initFrom();
+
+    expect(error).toBeUndefined();
+    expect(flattenCliOutput(stderr)).toBe(
+      flattenCliOutput(
+        [
+          `Warning: Skipped 1 skill(s) this catalog does not know: ${unknown}`,
+          `  sub-agent(s) skipped with ${unknown}, carrying nothing else this catalog knows: api-developer`,
+        ].join("\n"),
+      ),
+    );
+    expect(
+      await fileExists(path.join(projectDir, CLAUDE_DIR, "agents", "api-developer.md")),
+      "a sub-agent the run says it skipped must not be compiled",
+    ).toBe(false);
   });
 
   it("refuses a configuration that names nothing this catalogue can install", async () => {
@@ -410,17 +441,18 @@ describe("what init --from says", () => {
         "Skipped, already in the global install:",
         "  Skills:",
         `    ${HONO}`,
+        "  Sub-agents:",
+        "    api-developer",
         "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
         `  skill ${HONO}`,
         "  sub-agent api-developer",
-        "Change them with 'npx agents-inc edit' from your home directory.",
         "",
         "Installing 1 skill(s) across 2 sub-agent(s)",
       ].join("\n"),
     );
   });
 
-  it("installs nothing new when every skill is already in the global install, and says no count", async () => {
+  it("installs nothing new when every entry is already in the global install, says no count, and names the run from home that changes them", async () => {
     await writeTestTsConfig(
       fakeHome,
       buildProjectConfig({
@@ -439,7 +471,18 @@ describe("what init --from says", () => {
     const { stdout } = await initFrom();
 
     expect(stdout).toContain(
-      ["Skipped, already in the global install:", "  Skills:", `    ${HONO}`].join("\n"),
+      [
+        "Skipped, already in the global install:",
+        "  Skills:",
+        `    ${HONO}`,
+        "  Sub-agents:",
+        "    api-developer",
+        "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
+        "  sub-agent api-developer",
+        `Change them with 'npx agents-inc edit --from ${SEED_ID}' from your home directory.`,
+        "",
+        "",
+      ].join("\n"),
     );
     expect(stdout).not.toContain("Installing ");
   });
@@ -474,9 +517,10 @@ describe("what init --from says", () => {
     expect(stdout).toContain(
       [
         `    ${HONO}`,
+        "  Sub-agents:",
+        "    api-developer",
         "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
         `  skill ${HONO}`,
-        "Change them with 'npx agents-inc edit' from your home directory.",
         "",
         "Installing 1 skill(s) across 2 sub-agent(s)",
       ].join("\n"),
@@ -508,9 +552,10 @@ describe("what init --from says", () => {
     expect(stdout).toContain(
       [
         `    ${HONO}`,
+        "  Sub-agents:",
+        "    api-developer",
         "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
         "  sub-agent api-developer",
-        "Change them with 'npx agents-inc edit' from your home directory.",
         "",
         "Installing 1 skill(s) across 2 sub-agent(s)",
       ].join("\n"),
@@ -602,7 +647,7 @@ describe("what init --from says", () => {
     const { stdout, error } = await initFrom();
 
     expect(error).toBeUndefined();
-    expect(stdout).toContain("\nRecompiled agents in 1 registered project, 0 unchanged\n");
+    expect(stdout).toContain("\nRegistered projects: 1 rewritten, 0 unchanged\n");
   });
 
   it("installs a sub-agent on its own, with no skill", async () => {
@@ -619,7 +664,7 @@ describe("what init --from says", () => {
     );
   });
 
-  it("installs a skill no sub-agent carries, warns that nothing loads it, and points at the project's config", async () => {
+  it("installs a skill no sub-agent carries, warns that nothing loads it, and points at the configs it wrote", async () => {
     serve(
       buildSeedPayload({
         skills: {
@@ -639,6 +684,7 @@ describe("what init --from says", () => {
       stdout.endsWith(
         [
           "Configuration:",
+          `  ${path.join(fakeHome, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS)}`,
           `  ${path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS)}`,
           "",
           "To customize agent-skill assignments:",
@@ -920,6 +966,83 @@ describe("what init says on its way to the editor", () => {
     expect(stdout).toContain(
       "./my-marketplace is a folder on this machine, which the editor cannot read — push it to GitHub, then add it from the editor's Marketplace button.\n",
     );
+  });
+
+  it("says how to add a marketplace URL from the editor", async () => {
+    const { stdout, error } = await runCliCommand([
+      "init",
+      "--marketplace",
+      "https://github.com/acme/skills",
+    ]);
+
+    expect(error).toBeUndefined();
+    expect(stdout).toBe(
+      [
+        "Build it at https://agentsinc.sh/editor",
+        "Add https://github.com/acme/skills from the editor's Marketplace button.",
+        "Then install what it gives you with 'npx agents-inc init --from <id>'.",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("refuses a marketplace URL carrying a username or password before saying anything, and never shows them", async () => {
+    const { stdout, stderr, error } = await runCliCommand([
+      "init",
+      "--marketplace",
+      "https://user:hunter2@github.com/acme/skills",
+    ]);
+
+    expect(stdout).toBe("");
+    expect(error?.message).toBe(
+      [
+        'The marketplace carries a username or password in its URL: "https://***@github.com/acme/skills"',
+        "",
+        "Credentials in a marketplace URL end up in config files, shared configurations and logs.",
+        "For a private repository, set the GIGET_AUTH environment variable instead:",
+        "  export GIGET_AUTH=ghp_your_github_token",
+        "Examples:",
+        "  --marketplace https://github.com/user/repo",
+        "  --marketplace https://gitlab.company.com/team/skills",
+      ].join("\n"),
+    );
+    expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+    expect(stderr, "the password must reach no output").not.toContain("hunter2");
+  });
+
+  it("refuses a marketplace URL at a NAT64 local-use address before saying anything", async () => {
+    const { stdout, error } = await runCliCommand([
+      "init",
+      "--marketplace",
+      "http://[64:ff9b:1::7f00:1]/skills.tar.gz",
+    ]);
+
+    expect(stdout).toBe("");
+    expect(error?.message).toBe(
+      [
+        'The marketplace points to a private or reserved IP address: "http://[64:ff9b:1::7f00:1]/skills.tar.gz"',
+        "",
+        "Marketplace URLs must not target private network addresses.",
+        "Use a public hostname instead.",
+        "Examples:",
+        "  --marketplace https://github.com/user/repo",
+        "  --marketplace https://gitlab.company.com/team/skills",
+      ].join("\n"),
+    );
+    expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+  });
+
+  it.each([
+    ["an empty", ""],
+    ["an all-blank", "   "],
+  ])("refuses %s marketplace before saying anything", async (_kind, marketplace) => {
+    const { stdout, error } = await runCliCommand(["init", "--marketplace", marketplace]);
+
+    expect(stdout).toBe("");
+    expect(error?.message).toBe(
+      "The marketplace cannot be empty. Provide a valid marketplace: a local directory path or a git repository URL (e.g., './my-skills' or 'https://github.com/user/repo')",
+    );
+    expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
   });
 
   it("refuses --provider without --from, as a usage error", async () => {

@@ -1,7 +1,5 @@
 export {
-  type LoadSkillsFromDirOptions,
   type LoadedSkills,
-  type SkillMetadataRead,
   type UnusableSkillMetadata,
   namesPlaceholderCategory,
   parseFrontmatter,
@@ -14,18 +12,11 @@ export {
 } from "./loader";
 
 export {
-  type SourceLoadOptions,
   type SourceLoadResult,
   loadMarketplaceMatrix,
   loadSkillsMatrixFromSource,
 } from "./source-loader";
 
-export {
-  type FetchOptions,
-  type FetchResult,
-  sanitizeSourceForCache,
-  fetchFromSource,
-  fetchMarketplace,
-} from "./source-fetcher";
+export { fetchMarketplace } from "./source-fetcher";
 
-export { isLocalOnlySkill, loadSkillsFromAllSources } from "./multi-source-loader";
+export { loadSkillsFromAllSources } from "./multi-source-loader";

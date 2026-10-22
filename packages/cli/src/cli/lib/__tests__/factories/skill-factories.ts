@@ -11,7 +11,6 @@ import type {
   SkillSource,
   SkillSourceType,
 } from "../../../types";
-import type { CopiedSkill } from "../../skills";
 import type { TestSkill } from "../fixtures/create-test-source";
 
 /** `string` fields: fixtures use categories and slugs the shipped catalogue lacks. */
@@ -354,16 +353,6 @@ export const saUnflagged = <Id extends string>(
 ): Omit<SkillAssignment, "id"> & { id: Id } => ({
   id,
 });
-
-export function createMockCopiedSkill(id: SkillId, overrides?: Partial<CopiedSkill>): CopiedSkill {
-  return {
-    skillId: id,
-    contentHash: "abc123",
-    sourcePath: `/source/skills/${id}`,
-    destPath: `/project/.claude/skills/${id}`,
-    ...overrides,
-  };
-}
 
 /** Tagged with `availableSources` as multi-source-loader.ts does. */
 export function createMockMultiSourceSkill(

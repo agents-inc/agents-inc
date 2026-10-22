@@ -6,7 +6,7 @@ import { BaseCommand } from "../base-command.js";
 import { loadSource } from "../lib/operations/index.js";
 import type { ResolvedSkill } from "../types/index.js";
 import { STATUS_MESSAGES } from "../utils/messages.js";
-import { stripTerminalControls, truncateText } from "../utils/string.js";
+import { plural, stripTerminalControls, truncateText } from "../utils/string.js";
 import { typedValues } from "../utils/typed-object.js";
 
 const MAX_DESCRIPTION_WIDTH = 50;
@@ -57,13 +57,7 @@ export default class Search extends BaseCommand {
   private async runSearch(query: string): Promise<void> {
     try {
       this.log(STATUS_MESSAGES.LOADING_SKILLS);
-
-      const allSkills = await loadSearchableSkills();
-
-      const results = sortBy(
-        allSkills.filter((skill) => matchesQuery(skill, query)),
-        (r) => r.displayName.toLowerCase(),
-      );
+      const results = skillsMatching(await loadSearchableSkills(), query);
 
       this.log("");
       if (results.length === 0) {
@@ -71,22 +65,9 @@ export default class Search extends BaseCommand {
         return;
       }
 
-      this.logInfo(
-        `Found ${results.length} skill${results.length === 1 ? "" : "s"} matching "${query}"`,
-      );
+      this.log(`Found ${plural(results.length, "skill")} matching "${query}"`);
       this.log("");
-
-      printTable({
-        data: results.map(toResultRow),
-        columns: [
-          { key: "id", name: "ID" },
-          { key: "name", name: "Name" },
-          { key: "source", name: "Origin" },
-          { key: "category", name: "Category" },
-          { key: "description", name: "Description" },
-        ],
-        headerOptions: { bold: true },
-      });
+      printResultsTable(results);
       this.log("");
     } catch (error) {
       this.handleError(error);
@@ -99,6 +80,28 @@ async function loadSearchableSkills(): Promise<ResolvedSkill[]> {
   const { sourceResult } = await loadSource({ projectDir: process.cwd() });
 
   return typedValues(sourceResult.matrix.skills);
+}
+
+/** In display-name order, case aside. */
+function skillsMatching(skills: ResolvedSkill[], query: string): ResolvedSkill[] {
+  return sortBy(
+    skills.filter((skill) => matchesQuery(skill, query)),
+    (skill) => skill.displayName.toLowerCase(),
+  );
+}
+
+function printResultsTable(results: ResolvedSkill[]): void {
+  printTable({
+    data: results.map(toResultRow),
+    columns: [
+      { key: "id", name: "ID" },
+      { key: "name", name: "Name" },
+      { key: "source", name: "Origin" },
+      { key: "category", name: "Category" },
+      { key: "description", name: "Description" },
+    ],
+    headerOptions: { bold: true },
+  });
 }
 
 /** Strips terminal controls: a third-party marketplace's text could otherwise repaint the table. */

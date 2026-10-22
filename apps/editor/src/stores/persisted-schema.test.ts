@@ -45,8 +45,7 @@ const GONE_SKILL = "removed-in-a-later-release"
 const GONE_AGENT = "retired-agent"
 const PINNED_CODEX_MODEL = "gpt-5.6-terra" as const
 
-// A Codex pin is a new optional field, so it rides v8 rather than bumping it:
-// a bump discards every visitor's saved configuration.
+// A bump discards every visitor's saved configuration.
 describe("PERSIST_VERSION", () => {
   it("is 8", () => {
     expect(PERSIST_VERSION).toBe(8)
@@ -75,8 +74,7 @@ describe("AGENT_EFFORTS", () => {
 })
 
 describe("persistedConfigSchema", () => {
-  // Raw rather than typed: a stale blob is `unknown`, and a skill can no longer
-  // be typed with a model.
+  // Raw rather than typed: a stale blob is `unknown`.
   it("no longer keeps a model or an effort on a skill", () => {
     const parsed = persistedConfigSchema.parse({
       ...persistedConfig(),
@@ -121,6 +119,14 @@ describe("persistedConfigSchema", () => {
     expect(
       parsed.error?.issues.map((issue) => issue.path.join("."))
     ).toContainEqual(expect.stringContaining(`agents.${KNOWN_AGENT}`))
+  })
+
+  it("keeps the description a configuration arrived with", () => {
+    const parsed = persistedConfigSchema.parse(
+      persistedConfig({ description: "The house web app." })
+    )
+
+    expect(parsed.description).toBe("The house web app.")
   })
 
   it("refuses a v6 blob that has pins instead of agents", () => {
@@ -539,6 +545,15 @@ describe("pruneUnknownIds", () => {
     )
 
     expect(pruned.agents).toStrictEqual({ [KNOWN_AGENT]: { on: true } })
+  })
+
+  it("keeps the description, which names no id", () => {
+    const described = persistedConfig({
+      stackId: "deleted-stack",
+      description: "The house web app.",
+    })
+
+    expect(pruneUnknownIds(described).description).toBe("The house web app.")
   })
 
   it("falls back to no stack when the stack is gone", () => {
