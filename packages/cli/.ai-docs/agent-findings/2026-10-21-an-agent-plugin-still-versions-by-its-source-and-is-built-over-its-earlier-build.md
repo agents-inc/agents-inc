@@ -4,6 +4,8 @@ severity: low
 affected_files:
   - src/cli/lib/agents/agent-plugin-compiler.ts
   - src/cli/lib/versioning.ts
+  - src/cli/lib/skills/skill-plugin-compiler.ts
+  - src/cli/lib/plugins/earlier-build.ts
 standards_docs:
   - .ai-docs/standards/clean-code-standards.md
 date: 2026-10-21
@@ -11,7 +13,17 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: scope-discipline-deferred
-status: open
+status: resolved
+resolved_by: >-
+  `compileAgentPlugin` now builds the way `compileSkillPlugin` does. It refuses a folder holding
+  its own source or files no build made, reads the earlier build (`readEarlierBuild`), clears it
+  (`clearEarlierBuild`), writes the manifest at that build's version, copies the agent, and settles
+  the version with `versionAfterRebuild` over `computeShippedHash`. The clearing helpers moved from
+  `skill-plugin-compiler.ts` to `lib/plugins/earlier-build.ts`, so both compilers share them. The
+  source-keyed version function and its manifest reader had no caller left and are deleted; their
+  bump cases moved onto `versionAfterRebuild`'s specs. Guarded by the `rebuilding an agent plugin
+  over its earlier build` specs in `agent-plugin-compiler.test.ts` and the same-named describe in
+  `e2e/commands/build-agent-plugins.e2e.test.ts`.
 ---
 
 ## What Was Wrong
@@ -37,8 +49,8 @@ The default marketplace is not affected. It ships no agent plugins:
 
 ## Fix Applied
 
-None. This is discovery only, from the lane that fixed the skill half. `agent-plugin-compiler.ts`
-was outside that lane's files.
+None at discovery: `agent-plugin-compiler.ts` was outside the lane that fixed the skill half. The
+fix landed later; `resolved_by` above names it.
 
 ## Proposed Standard
 

@@ -23,8 +23,6 @@ resolved_by: >-
   `.content-hash` file is still written, because every plugin built so far ships it and dropping it
   would bump them all. Guarded by `e2e/commands/build-plugins-bumps-a-plugin-whose-build-changed.e2e.test.ts`
   and the `rebuilding a plugin over its earlier build` specs in `skill-plugin-compiler.test.ts`.
-  Agent plugins still version by their source alone, through `determinePluginVersion` in
-  `agent-plugin-compiler.ts`.
 ---
 
 ## What Was Wrong
