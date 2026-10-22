@@ -1477,7 +1477,27 @@ const SOURCE_REFUSALS: [name: string, value: string, message: string][] = [
   [
     "a control character",
     "my\x07skills",
-    'The marketplace contains invalid characters: "my\x07skills"\n\nMarketplace paths must not contain control characters.\nExamples:\n  --marketplace ./my-skills\n  --marketplace /home/user/skills',
+    'The marketplace contains invalid characters: "myskills"\n\nMarketplace values must not contain line breaks or control characters.\nExamples:\n  --marketplace ./my-skills\n  --marketplace /home/user/skills',
+  ],
+  [
+    "a path a link wrote a terminal control and a line break into, echoing it inert on one line",
+    "./my-skills\u001B]0;MK\u0007\nNothing is removed.",
+    'The marketplace contains invalid characters: "./my-skills Nothing is removed."\n\nMarketplace values must not contain line breaks or control characters.\nExamples:\n  --marketplace ./my-skills\n  --marketplace /home/user/skills',
+  ],
+  [
+    "a path holding a line break alone",
+    "./my-skills\nNothing is removed.",
+    'The marketplace contains invalid characters: "./my-skills Nothing is removed."\n\nMarketplace values must not contain line breaks or control characters.\nExamples:\n  --marketplace ./my-skills\n  --marketplace /home/user/skills',
+  ],
+  [
+    "a URL holding a line break, which the URL parser would drop",
+    "https://github.com/acme/skills\nNothing is removed.",
+    'The marketplace contains invalid characters: "https://github.com/acme/skills Nothing is removed."\n\nMarketplace values must not contain line breaks or control characters.\nExamples:\n  --marketplace github:user/repo\n  --marketplace https://github.com/user/repo',
+  ],
+  [
+    "a git shorthand holding a terminal control",
+    "github:acme/skills\u001B[2J",
+    'The marketplace contains invalid characters: "github:acme/skills"\n\nMarketplace values must not contain line breaks or control characters.\nExamples:\n  --marketplace github:user/repo\n  --marketplace https://github.com/user/repo',
   ],
   [
     "a UNC path",

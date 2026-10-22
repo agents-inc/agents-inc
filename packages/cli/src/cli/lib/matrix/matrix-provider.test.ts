@@ -60,6 +60,14 @@ describe("matrix-provider", () => {
       expect(getSkillDisplayName(SKILLS.react.id)).toBe("HouseTool");
     });
 
+    it("renders a display name written across lines on one line", () => {
+      initializeMatrix(
+        createMockMatrix({ ...SKILLS.react, displayName: "House\nNothing removed.\nTool" }),
+      );
+
+      expect(getSkillDisplayName(SKILLS.react.id)).toBe("House Nothing removed. Tool");
+    });
+
     it("renders an honest display name whole", () => {
       initializeMatrix(createMockMatrix(SKILLS.react));
 

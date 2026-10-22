@@ -6,6 +6,7 @@ import { DEFAULT_SOURCE } from "@workspace/compile";
 import { fileExists, readFileOptional } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
 import { getErrorMessage } from "../../utils/errors";
+import { inertLine } from "../../utils/string";
 import {
   DEFAULT_BRANDING,
   GITHUB_SOURCE,
@@ -25,7 +26,7 @@ import {
 } from "./config-loader";
 import { getInstalledConfigPath, getProjectConfigPath } from "../installation/install-base-dir";
 import { providerInUse } from "../installation/install-layout";
-import { providerToNameAt } from "../installation/provider-to-name";
+import { initProviderToNameAt, providerToNameAt } from "../installation/provider-to-name";
 import { isHomeDirectory } from "../installation/is-home-directory";
 import type { ScopeKind } from "../installation/source-scopes";
 
@@ -104,9 +105,12 @@ function refuseInstallationConfig(
   provider: Provider,
 ): RefuseUnreadable {
   const providerToName = providerToNameAt(scopeRoot, provider);
+  const initProviderToName = initProviderToNameAt(scopeRoot, provider);
   return (reason, cause) =>
     new Error(
-      installationConfigsUnreadable([{ configPath, reason, scope, scopeRoot, providerToName }]),
+      installationConfigsUnreadable([
+        { configPath, reason, scope, scopeRoot, providerToName, initProviderToName },
+      ]),
       { cause },
     );
 }
@@ -524,6 +528,7 @@ function validateRemoteSource(source: string, protocol: string, carrier: Marketp
 
   // First: every refusal below echoes the URL, and this one must not.
   if (isHttp) refuseCredentials(source, protocol, carrier);
+  refuseLineBreaksAndControls(source, carrier, REMOTE_EXAMPLES);
 
   const pathAfterProtocol = source.slice(protocol.length).trim();
 
@@ -728,17 +733,28 @@ function validateGitShorthand(source: string, repoPath: string, carrier: Marketp
   }
 }
 
+/**
+ * Every line naming a marketplace echoes it, so it must be one line of plain text; the refusal's
+ * own echo is made inert. A tab is kept, as the sanitiser keeps it.
+ */
+function refuseLineBreaksAndControls(
+  source: string,
+  carrier: MarketplaceCarrier,
+  examples: readonly string[],
+): void {
+  const inert = inertLine(source);
+  if (inert === source) return;
+
+  throw refusal(
+    carrier,
+    `contains invalid characters: "${inert}"`,
+    ["Marketplace values must not contain line breaks or control characters."],
+    examples,
+  );
+}
+
 function validateLocalPath(source: string, carrier: MarketplaceCarrier): void {
-  // eslint-disable-next-line no-control-regex -- control characters (bar common whitespace) are what this rejects
-  const CONTROL_CHAR_PATTERN = /[\x00-\x08\x0E-\x1F\x7F]/u;
-  if (CONTROL_CHAR_PATTERN.test(source)) {
-    throw refusal(
-      carrier,
-      `contains invalid characters: "${source}"`,
-      ["Marketplace paths must not contain control characters."],
-      LOCAL_EXAMPLES,
-    );
-  }
+  refuseLineBreaksAndControls(source, carrier, LOCAL_EXAMPLES);
 
   if (UNC_PATH_PATTERN.test(source)) {
     throw refusal(

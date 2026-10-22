@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { bytewise, plural, stripTerminalControls, truncateText } from "./string";
+import { bytewise, inertLine, plural, stripTerminalControls, truncateText } from "./string";
 
 // Lithuanian sorts `y` right after `i`, reversing this pair against code units.
 const DIVERGENT_COLLATION_LOCALE = "lt";
@@ -94,6 +94,30 @@ describe("stripTerminalControls", () => {
 
   it("removes the control bytes that are neither escape nor newline", () => {
     expect(stripTerminalControls("a\u0000b\u0008c\u007Fd\u000Be")).toBe("abcde");
+  });
+});
+
+describe("inertLine", () => {
+  it("turns each line break into a space, so a value cannot print a line of its own", () => {
+    expect(inertLine("House\nNothing is removed.\nTool")).toBe("House Nothing is removed. Tool");
+  });
+
+  it("removes what the sanitiser removes", () => {
+    expect(inertLine("m\u001B]0;CM\u0007")).toBe("m");
+    expect(inertLine("a\u001B[2Jb")).toBe("ab");
+  });
+
+  it("leaves one space for a carriage return and line feed", () => {
+    expect(inertLine("a\r\nb")).toBe("a b");
+  });
+
+  it("strips before it folds, so an escape before a line break costs only the escape", () => {
+    expect(inertLine("a\u001B\nb")).toBe("a b");
+  });
+
+  it("keeps a tab, and every printable character a value is written from", () => {
+    const authored = "Zod\tschemas — type inference 100%";
+    expect(inertLine(authored)).toBe(authored);
   });
 });
 

@@ -125,6 +125,31 @@ describe("init --from <id>", () => {
     expect(await listFiles(skillsPath(tempDir))).toContain(E2E_SKILL.react.id);
   });
 
+  it("refuses a marketplace the payload wrote across lines before installing, naming it on one line", async () => {
+    tempDir = await createTempDir();
+    store.publish(
+      "MarketLF",
+      buildSeedPayload({
+        v: PINNED_WIRE_VERSION,
+        skills: { [E2E_SKILL.react.id]: ejectedGlobalSkill() },
+        marketplace: `${sourceDir}\nNothing is removed.`,
+      }),
+    );
+
+    const { exitCode, output } = await CLI.run(
+      ["init", "--from", "MarketLF"],
+      { dir: tempDir },
+      { env: { AGENTS_INC_API_URL: store.url } },
+    );
+
+    expect(exitCode, output).toBe(EXIT_CODES.ERROR);
+    // Flattened, because the refusal wraps at the width; it is new, so this can fail.
+    expect(flattenCliOutput(output)).toContain(
+      `The marketplace contains invalid characters: "${sourceDir} Nothing is removed."`,
+    );
+    await expectNoSourceFolder(tempDir, "a marketplace written across lines is refused first");
+  });
+
   it("lets an explicit marketplace outrank the one the payload names", async () => {
     tempDir = await createTempDir();
     // A ref that resolves to nothing, so only the flag's can succeed.
@@ -321,14 +346,37 @@ describe("init --from <id>", () => {
       "AllUnknown",
       buildSeedPayload({
         v: PINNED_WIRE_VERSION,
-        skills: { "totally-unknown-skill": ejectedGlobalSkill() },
+        skills: { "totally-unknown-skill": ejectedGlobalSkill({ assignments: {} }) },
       }),
     );
 
     const { exitCode, output } = await runInit("AllUnknown");
 
     expect(exitCode).toBe(EXIT_CODES.ERROR);
-    expect(flattenCliOutput(output)).toContain("no skills this catalog can install");
+    expect(flattenCliOutput(output)).toContain(STEP_TEXT.SHARED_CONFIG_NOTHING_INSTALLABLE);
+    await expectNoSourceFolder(tempDir, "a configuration with nothing to install writes nothing");
+  });
+
+  it("installs the sub-agents a skill this catalog does not know names, though nothing else installs", async () => {
+    tempDir = await createTempDir();
+    store.publish(
+      "AllUnkAg",
+      buildSeedPayload({
+        v: PINNED_WIRE_VERSION,
+        skills: { "totally-unknown-skill": ejectedGlobalSkill() },
+      }),
+    );
+
+    const { exitCode, output } = await runInit("AllUnkAg");
+
+    expect(exitCode, `init --from output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
+    expect(flattenCliOutput(output)).not.toContain(STEP_TEXT.SHARED_CONFIG_NOTHING_INSTALLABLE);
+    const config = await loadConfigOrFail(tempDir);
+    expect({ skills: config.skills, agents: config.agents }).toStrictEqual({
+      skills: [],
+      agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
+    });
+    await expect({ dir: tempDir }).toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
   });
 
   it("refuses an existing installation rather than showing the dashboard", async () => {

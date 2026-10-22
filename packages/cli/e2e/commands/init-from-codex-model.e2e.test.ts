@@ -56,6 +56,12 @@ const ROLE_FILE = `${WEB_DEV}${FILES.CODEX_AGENT_EXTENSION}`;
 const PINNED_CODEX_MODEL = "gpt-5.6-terra";
 /** A real Codex id this CLI does not offer. */
 const NOT_OFFERED = "gpt-4o";
+/**
+ * Rings the bell, then prints a sentence on a line of its own. A bell, not a title: `CLI.run` strips
+ * a whole OSC before a spec can see it, and a lone BEL survives.
+ */
+const FORGED_CODEX_MODEL = "gpt-forged\u0007\nNothing removed.";
+const BELL = "\u0007";
 const IN_PROJECT = { scope: "project" } as const;
 
 function payloadWith(agents: Partial<Record<string, SeedAgent>>) {
@@ -260,6 +266,30 @@ describe("init --from <id>: a sub-agent's Codex model", () => {
     expect((await webDevRoleLines(env)).filter((line) => /^model\s*=/.test(line))).toStrictEqual(
       [],
     );
+  });
+
+  it("names a Codex id it does not offer inert and on one line, where the link wrote a control and a line break into it", async () => {
+    const env = await takeEnvironment();
+    store.publish(
+      "CdxModl8",
+      payloadWith({ [WEB_DEV]: { model: "haiku", codexModel: FORGED_CODEX_MODEL } }),
+    );
+
+    const installed = await runInitFromOnCodex(
+      store,
+      "CdxModl8",
+      { dir: env.projectDir, globalHome: env.fakeHome },
+      source.sourceDir,
+    );
+
+    expect(installed.exitCode, flattenCliOutput(installed.output)).toBe(EXIT_CODES.SUCCESS);
+    // Unflattened: flattening folds every line break into a space, which is the fix itself.
+    expect(installed.stderr).toContain(
+      `asks for Codex model 'gpt-forged Nothing removed.', ${STEP_TEXT.CODEX_MODEL_NOT_OFFERED}`,
+    );
+    expect(installed.stderr).not.toContain(BELL);
+    expect(installed.stderr).not.toContain("\nNothing removed.");
+    expect(await readTestFile(configTsPath(env.projectDir))).not.toContain("gpt-forged");
   });
 
   it("refuses a hand-written Codex model it does not offer exactly as it refuses a bad model", async () => {

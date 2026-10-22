@@ -1,3 +1,5 @@
+import path from "path";
+
 import {
   CLI_INVOKE_COMMAND,
   DEFAULT_BRANDING,
@@ -8,16 +10,19 @@ import {
   PLUGIN_MANIFEST_DIR,
   STANDARD_FILES,
   editorConfigUrl,
+  sourceDirName,
   type Provider,
 } from "../consts.js";
 import type { UnusableSkillMetadata } from "../lib/loading/index.js";
 import type { ScopeKind } from "../lib/installation/source-scopes.js";
 import type { ConfigLoadError } from "../lib/configuration/project-config.js";
 import type { JoinedAgent } from "../lib/seed/seed-apply.js";
+import type { AgentChange, SettingChange } from "../lib/configuration/scope-diff.js";
+import { getSkillDisplayName } from "../lib/matrix/matrix-provider.js";
 import type { SkippedSkillAgents } from "@workspace/compile/seed-to-config";
 import { RETIRED_SOURCE_FOLDER } from "../lib/installation/install-layout.js";
 import { charactersOutsideKebabCase } from "../lib/validate-kebab-name.js";
-import { plural, stripTerminalControls } from "./string.js";
+import { inertLine, plural } from "./string.js";
 import type { AgentName, Category, SkillId } from "../types/index.js";
 
 export const ERROR_MESSAGES = {
@@ -143,14 +148,10 @@ function failureLines({ what, recovery }: IncompleteWork): string[] {
   return [`  ${what}`, `    ${recovery}`];
 }
 
-/** A project counts as rewritten when its config pair or its compiled sub-agents changed. */
-export function propagatedRecompileSummary(
-  rewritten: number,
-  unchanged: number,
-  failed: number,
-): string {
+/** Every project the fan-out reached counts, whether or not its files came out changed. */
+export function propagatedRecompileSummary(recompiled: number, failed: number): string {
   const failureSuffix = failed > 0 ? ` (${failed} failed)` : "";
-  return `Registered projects: ${rewritten} rewritten, ${unchanged} unchanged${failureSuffix}`;
+  return `Registered projects: ${recompiled} recompiled${failureSuffix}`;
 }
 
 export function skillAssignedToNoAgent(skillId: SkillId): string {
@@ -320,7 +321,7 @@ export function sharedConfigDestinations(id: string): string[] {
 export function applySharedConfigHere(
   id: string | undefined,
   installedHere: boolean,
-  provider: Provider | undefined,
+  provider: ProviderToName,
 ): string {
   const command = `${CLI_INVOKE_COMMAND} ${installedHere ? "edit" : "init"} --from`;
   const verb = installedHere ? "apply" : "install";
@@ -354,9 +355,15 @@ export function sharedConfigExistingInstall(
   return `An installation already exists at ${configPath}. Run '${CLI_INVOKE_COMMAND} uninstall${providerArgument(provider)}' first — ${SHARED_CONFIG_GREENFIELD_HINT}. ${applySharedConfigHere(id, true, provider)}`;
 }
 
+/**
+ * `installedHere`: a link of the global install's own carries every global entry, so changing it
+ * that way loses nothing; a project's link lacks the global copies of what the project replaces.
+ */
 export function sharedConfigProjectScopeAtHome(
   skillIds: readonly SkillId[],
   agentNames: readonly AgentName[],
+  installedHere: boolean,
+  provider: Provider | undefined,
 ): string {
   return [
     "This configuration cannot be installed here: the home directory is the global scope, and a " +
@@ -364,24 +371,30 @@ export function sharedConfigProjectScopeAtHome(
       "have nowhere to be written:",
     ...skillIds.map((id) => `  skill ${id} (scope: project)`),
     ...agentNames.map((name) => `  sub-agent ${name} (scope: project)`),
-    "Run this from inside a project directory, or re-share it with each entry above at global scope.",
+    installedHere
+      ? changeTheGlobalInstallFromHome(providerArgument(provider))
+      : "Run this from inside a project directory, or re-share it with each entry above at global scope.",
   ].join("\n");
+}
+
+function changeTheGlobalInstallFromHome(named: string): string {
+  return `Run this from inside a project directory, or change the global install from here: run '${CLI_INVOKE_COMMAND} edit${named}', make the change in the editor, then apply the id it gives you with '${CLI_INVOKE_COMMAND} edit --from <id>${named}'.`;
 }
 
 /** A key no catalogue knows came off the wire as written, so it is printed inert. */
 function unknownKeys(keys: readonly string[]): string {
-  return keys.map(stripTerminalControls).join(", ");
+  return keys.map(inertLine).join(", ");
 }
 
 export function skippedUnknownSkills(
   skillIds: readonly string[],
-  skippedWith: readonly SkippedSkillAgents[],
+  installedWithout: readonly SkippedSkillAgents[],
 ): string {
   return [
     `Skipped ${skillIds.length} skill(s) this catalog does not know: ${unknownKeys(skillIds)}`,
-    ...skippedWith.map(
+    ...installedWithout.map(
       ({ skillId, agentNames }) =>
-        `  sub-agent(s) skipped with ${unknownKeys([skillId])}, carrying nothing else this catalog knows: ${agentNames.join(", ")}`,
+        `  sub-agent(s) installed without ${unknownKeys([skillId])}, carrying nothing else this catalog knows: ${agentNames.join(", ")}`,
     ),
   ].join("\n");
 }
@@ -395,35 +408,25 @@ export function carriedSkillsWritten(skillIds: readonly string[]): string {
 }
 
 export const SHARED_CONFIG_APPLY = {
-  PREVIEW_HEADING: "Applying this configuration will remove:",
-  SKILLS_HEADING: "Skills:",
-  AGENTS_HEADING: "Sub-agents:",
-  NOTHING_REMOVED: "Nothing is removed — this configuration only adds and re-tunes.",
-  OVERWRITTEN_HEADING: "Will be overwritten:",
   CONFIRM: "Apply this configuration?",
 } as const;
 
-export function projectCopyRemoved(subject: string): string {
-  return `${subject}: this project's copy is removed; the global one takes over`;
-}
-
-export function projectCopyMovedToGlobal(subject: string): string {
-  return `${subject}: moves to the global install, so this project's copy is removed`;
-}
-
-export function registeredProjectsRewritten(projectPaths: readonly string[]): string {
+export function registeredProjectsRecompiled(projectPaths: readonly string[]): string {
   return [
-    "Each project registered with this global install is rewritten to match:",
+    "Each project registered with this global install is recompiled to match:",
     ...projectPaths.map((projectPath) => `  ${projectPath}`),
   ].join("\n");
 }
 
-/** `provider` is the one the run named, which its commands must name again. */
-export function sharedConfigNeedsTerminal(id: string, provider: Provider | undefined): string {
-  const named = providerArgument(provider);
+/** Each half names the installation its own command would otherwise miss. */
+export function sharedConfigNeedsTerminal(
+  id: string,
+  editProvider: Provider | undefined,
+  initProvider: Provider | undefined,
+): string {
   return [
     `Applying configuration '${id}' removes whatever it leaves out, so it has to be confirmed — and there is no terminal here to confirm it at.`,
-    `Run '${CLI_INVOKE_COMMAND} edit --from ${id}${named}' from a terminal, or '${CLI_INVOKE_COMMAND} init --from ${id}${named}' in a clean directory, which installs without removing anything.`,
+    `Run '${CLI_INVOKE_COMMAND} edit --from ${id}${providerArgument(editProvider)}' from a terminal, or '${CLI_INVOKE_COMMAND} init --from ${id}${providerArgument(initProvider)}' in a clean directory, which installs without removing anything.`,
   ].join("\n");
 }
 
@@ -447,17 +450,18 @@ export function addMarketplaceInTheEditor(ref: string, isFolder: boolean): strin
 }
 
 export const SHARED_CONFIG_ARRIVALS = {
-  PROJECT_HEADING: "Into this project:",
-  GLOBAL_HEADING: "Into the global install:",
-  SKIPPED_HEADING: "Skipped, already in the global install:",
   INSTALL_CONFIRM: "Install this configuration?",
 } as const;
 
-/** `idAppliedAtHome` is the id only where a run from home would take the configuration. */
+/**
+ * `idAppliedAtHome` is the id only where a run from home would take the configuration;
+ * `provider`, the installation that run must name beside another at home.
+ */
 export function keptAsInstalledGlobally(
   skillIds: readonly SkillId[],
   agentNames: readonly AgentName[],
   idAppliedAtHome: string | undefined,
+  provider: Provider | undefined,
 ): string {
   return [
     "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
@@ -466,9 +470,38 @@ export function keptAsInstalledGlobally(
     ...(idAppliedAtHome === undefined
       ? []
       : [
-          `Change them with '${CLI_INVOKE_COMMAND} edit --from ${idAppliedAtHome}' from your home directory.`,
+          `Change them with '${CLI_INVOKE_COMMAND} edit --from ${idAppliedAtHome}${providerArgument(provider)}' from your home directory.`,
         ]),
   ].join("\n");
+}
+
+function skillsMoved(verb: "gains" | "loses", skillIds: readonly SkillId[]): string[] {
+  return skillIds.length === 0 ? [] : [`${verb} ${listed(skillIds.map(getSkillDisplayName))}`];
+}
+
+/** Unset on either side is the default. */
+function settingMoved({ setting, from, to }: SettingChange): string {
+  return `${setting} ${from ?? "default"} \u2192 ${to ?? "default"}`;
+}
+
+/** `A`, `A and B`, `A, B and C`. */
+function listed(names: readonly string[]): string {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
+
+/** Rows that moved without a skill arriving or leaving: a category or a preload changed. */
+const SKILLS_REASSIGNED = "skills reassigned";
+
+/** One line under the panel for a sub-agent it marks `~`. */
+export function subAgentChanged({ name, scope, gains, loses, settings }: AgentChange): string {
+  const details = [
+    ...skillsMoved("gains", gains),
+    ...skillsMoved("loses", loses),
+    ...settings.map(settingMoved),
+  ];
+  const where = scope === "global" ? " (global)" : "";
+  return `~ ${name}${where}: ${details.length > 0 ? details.join(", ") : SKILLS_REASSIGNED}`;
 }
 
 export function addedToGlobalSubAgents(joined: readonly JoinedAgent[]): string {
@@ -505,7 +538,7 @@ function doctorReportsTheSame(count: number): string {
 
 type UnreadableConfig = Pick<
   ConfigLoadError,
-  "configPath" | "reason" | "scope" | "scopeRoot" | "providerToName"
+  "configPath" | "reason" | "scope" | "scopeRoot" | "providerToName" | "initProviderToName"
 >;
 
 export function installationConfigsUnreadable(failures: readonly UnreadableConfig[]): string {
@@ -534,14 +567,18 @@ export function uninstallSkillMetadataUnreadable(metadataPath: string): string {
 export function recreateConfigFrom({
   scopeRoot,
   providerToName,
-}: Pick<UnreadableConfig, "scopeRoot" | "providerToName">): string {
-  const named = providerArgument(providerToName);
-  return `'${CLI_INVOKE_COMMAND} uninstall${named}' from '${scopeRoot}', which still works on a config it cannot read, then '${CLI_INVOKE_COMMAND} init --from <id>${named}' with an id from ${EDITOR_URL}`;
+  initProviderToName,
+}: Pick<UnreadableConfig, "scopeRoot" | "providerToName" | "initProviderToName">): string {
+  return `'${CLI_INVOKE_COMMAND} uninstall${providerArgument(providerToName)}' from '${scopeRoot}', which still works on a config it cannot read, then '${CLI_INVOKE_COMMAND} init --from <id>${providerArgument(initProviderToName)}' with an id from ${EDITOR_URL}`;
 }
 
+/** The installation a handed-out command names: one, a choice between several, or none. */
+export type ProviderToName = Provider | readonly Provider[] | undefined;
+
 /** Beside a second installation an acting command refuses until it is told which one. */
-export function providerArgument(provider: Provider | undefined): string {
-  return provider === undefined ? "" : ` --provider ${provider}`;
+export function providerArgument(provider: ProviderToName): string {
+  if (provider === undefined) return "";
+  return ` --provider ${typeof provider === "string" ? provider : `<${provider.join("|")}>`}`;
 }
 
 export function configUnreadableError(configLoadFailure: string): string {
@@ -560,19 +597,9 @@ export function unmarkedAgentsKept(agentsDir: string, count: number): string {
   return `Kept ${plural(count, "agent")} in ${agentsDir}/ — no ${DEFAULT_PLUGIN_NAME} marker, so this CLI did not compile ${object}.`;
 }
 
-export const UNINSTALL_PLAN = {
-  PREVIEW_HEADING: "The following will be removed:",
-  PLUGINS_HEADING: "Plugins:",
-  CLI_MANAGED_FILES_HEADING: "CLI-managed files:",
-  CONFIG_HEADING: "Config:",
-} as const;
-
-export function localSkillsRemoval(skillsDir: string): string {
-  return `${skillsDir}/ (matching the marketplace)`;
-}
-
-export function compiledAgentsRemoval(agentsDir: string): string {
-  return `${agentsDir}/ (CLI-compiled)`;
+/** A config file uninstall deletes, under the panel and marked as the panel marks a removal. */
+export function configFileRemoved(filePath: string): string {
+  return `- ${filePath}`;
 }
 
 export function scopeNoun(kind: ScopeKind): string {
@@ -591,6 +618,7 @@ export function layoutIsCurrent(label: string, to: string): string {
   return `${label} is on ${to}/`;
 }
 
-export function retiredSourceFolderUnsupported(replacement: string): string {
-  return `${RETIRED_SOURCE_FOLDER}/ is no longer supported (agents-inc now serves Claude and Codex). Move it to ${replacement}/.`;
+/** The folder was Claude's, so its contents belong in Claude's folder under the same root. */
+export function retiredSourceFolderUnsupported(root: string): string {
+  return `${path.join(root, RETIRED_SOURCE_FOLDER)}/ is no longer supported (agents-inc now serves Claude and Codex). Move it to ${path.join(root, sourceDirName("claude"))}/.`;
 }

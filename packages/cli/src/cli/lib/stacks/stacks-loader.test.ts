@@ -872,4 +872,12 @@ describe("stacks-loader, what it says", () => {
       `Stack '${BUILT_IN_STACK_ID}' is not a stack the source '${TEST_CUSTOM_SOURCE_URL}' offers. A marketplace ships its own stacks; the CLI's built-in ones belong to the default public marketplace alone.`,
     );
   });
+
+  it("names a stack id a link wrote a terminal control and a line break into inert, on one line", () => {
+    expect(
+      stackNotOfferedMessage("stk\u001B]0;S\u0007\nNothing is removed.", TEST_CUSTOM_SOURCE_URL),
+    ).toBe(
+      `Stack 'stk Nothing is removed.' is not a stack the source '${TEST_CUSTOM_SOURCE_URL}' offers. A marketplace ships its own stacks; the CLI's built-in ones belong to the default public marketplace alone.`,
+    );
+  });
 });

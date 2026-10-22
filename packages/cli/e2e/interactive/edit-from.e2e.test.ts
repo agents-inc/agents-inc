@@ -34,9 +34,12 @@ import {
   E2E_MARKETPLACE_NAME,
   EXIT_CODES,
   FILES,
+  OVERWRITTEN_MARKER,
   REMOVED_MARKER,
   STEP_TEXT,
   TIMEOUTS,
+  UNCHANGED_MARKER,
+  panelRow,
 } from "../pages/constants.js";
 import {
   buildSeedExternalSkill,
@@ -155,11 +158,11 @@ describe("edit --from <id> interactive", () => {
       publishReactOnly(APPLY_ID);
 
       prompt = launch(APPLY_ID, projectDir);
-      await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_PREVIEW, TIMEOUTS.WIZARD_LOAD);
+      await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM, TIMEOUTS.WIZARD_LOAD);
 
       const output = prompt.getOutput();
-      // Named, not counted: the id is what a user weighs a yes against.
-      expect(output).toContain(E2E_SKILL.vitest.display);
+      // Named, not counted: the skill is what a user weighs a yes against.
+      expect(output).toContain(panelRow(REMOVED_MARKER, E2E_SKILL.vitest.display));
       expect(output).toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
       // The plan precedes every mutation: the named skill is still on disk.
       expect(await listFiles(skillsPath(projectDir))).toContain(E2E_SKILL.vitest.id);
@@ -235,15 +238,14 @@ describe("edit --from <id> interactive", () => {
       expect(exitCode, `apply failed: ${prompt.getOutput()}`).toBe(EXIT_CODES.SUCCESS);
       // The question is the subject guard: the plan was on screen.
       expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
+      expect(planned, "a project apply shows the global skill it keeps as it stands").toContain(
+        panelRow(UNCHANGED_MARKER, E2E_SKILL.vitest.display),
+      );
       expect(
         planned,
-        "a project apply must not plan anything for the global install",
-      ).not.toContain(STEP_TEXT.SHARED_CONFIG_LIST_GLOBAL);
-      expect(
-        planned,
-        "nothing is removed here, so the plan must not open by promising removals",
-      ).not.toContain(STEP_TEXT.SHARED_CONFIG_APPLY_PREVIEW);
-      // "Nothing is removed" with no name under it reads as the configuration arriving whole.
+        "nothing global is removed here, so the panel must not mark it removed",
+      ).not.toContain(panelRow(REMOVED_MARKER, E2E_SKILL.vitest.display));
+      // An unchanged row alone reads as the configuration arriving whole.
       expect(
         planned,
         "a project apply must name the global skill it keeps though the configuration leaves it out",
@@ -364,7 +366,7 @@ describe("edit --from <id> interactive", () => {
       expect(exitCode, `apply failed: ${prompt.getOutput()}`).toBe(EXIT_CODES.SUCCESS);
       // Subject guard: the skip read as kept and Vitest really was removed.
       expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_KEPT_UNPLACEABLE);
-      expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_APPLY_PREVIEW);
+      expect(planned).toContain(panelRow(REMOVED_MARKER, E2E_SKILL.vitest.display));
       const config = await loadConfigOrFail(projectDir);
       expect(
         config.agents.map((agent) => agent.name).sort(),
@@ -387,6 +389,7 @@ describe("edit --from <id> interactive", () => {
     const CARRIED_ID_FIRST = "CarriedApply1";
     const CARRIED_ID_SECOND = "CarriedApply2";
     const CARRIED_ID_GLOBAL = "CarriedApply3";
+    const CARRIED_ID_RENAMED = "CarriedApply4";
     const ORIGINAL_DESCRIPTION = "Structured brainstorming";
     const REVISED_DESCRIPTION = "Revised upstream brainstorming";
 
@@ -397,6 +400,7 @@ describe("edit --from <id> interactive", () => {
       id: string,
       description: string,
       carriedScope: "project" | "global" = "project",
+      displayName?: string,
     ): void {
       store.publish(
         id,
@@ -413,6 +417,7 @@ describe("edit --from <id> interactive", () => {
           },
           external: {
             [CARRIED_ID]: buildSeedExternalSkill({
+              ...(displayName !== undefined && { displayName }),
               description,
               categoryId: CARRIED_CATEGORY,
               repo: CARRIED_REPO,
@@ -449,8 +454,8 @@ describe("edit --from <id> interactive", () => {
         expect(exitCode, `re-apply failed: ${prompt.getOutput()}`).toBe(EXIT_CODES.SUCCESS);
         expect(
           planned,
-          "the apply writes over the installed copy, so the plan must name it before asking",
-        ).toMatch(new RegExp(`${STEP_TEXT.SHARED_CONFIG_OVERWRITTEN}[\\s\\S]*${CARRIED_ID}`));
+          "the apply writes over the installed copy, so the panel must mark it before asking",
+        ).toContain(panelRow(OVERWRITTEN_MARKER, buildSeedExternalSkill().displayName));
         // Both surfaces: either alone can look right.
         const config = await loadConfigOrFail(project.dir);
         expect(config.skills.map((skill) => skill.id).sort()).toStrictEqual(
@@ -468,6 +473,39 @@ describe("edit --from <id> interactive", () => {
         expect(await readTestFile(path.join(carriedDir, FILES.METADATA_YAML))).toContain(
           `path: ${buildSeedExternalSkill().path}`,
         );
+      },
+    );
+
+    it(
+      "names the carried skill it overwrites on one line, where the configuration's name for it is written across lines",
+      { timeout: TIMEOUTS.INTERACTIVE },
+      async () => {
+        const env = await createTestEnvironment({ permissions: false });
+        tempDirs.push(env.tempDir);
+        const project = { dir: env.projectDir, globalHome: env.fakeHome };
+        publishCarrying(CARRIED_ID_RENAMED, ORIGINAL_DESCRIPTION);
+        const installed = await runInitFrom(store, CARRIED_ID_RENAMED, project, sourceDir);
+        expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
+
+        publishCarrying(
+          CARRIED_ID_RENAMED,
+          ORIGINAL_DESCRIPTION,
+          "project",
+          "House\nNothing removed.\nTool",
+        );
+
+        prompt = new InteractivePrompt(["edit", "--from", CARRIED_ID_RENAMED], project.dir, {
+          env: { AGENTS_INC_API_URL: store.url, HOME: project.globalHome },
+        });
+        await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM, TIMEOUTS.WIZARD_LOAD);
+        const planned = prompt.getOutput();
+        await prompt.deny();
+        const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
+
+        expect(exitCode).toBe(EXIT_CODES.CANCELLED);
+        expect(planned).toContain(panelRow(OVERWRITTEN_MARKER, "House Nothing removed. Tool"));
+        // Anchored: Ink indents a row the name forges, so a bare "\n…\n" check could not fail.
+        expect(planned).not.toMatch(/^\s*Nothing removed\.\s*$/m);
       },
     );
 

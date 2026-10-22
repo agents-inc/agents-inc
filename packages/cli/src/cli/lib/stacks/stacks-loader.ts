@@ -2,6 +2,7 @@ import path from "path";
 import { flatMap, groupBy, mapValues, partition, pipe, unique, uniqueBy } from "remeda";
 import { getErrorMessage } from "../../utils/errors";
 import { verbose, warn } from "../../utils/logger";
+import { inertLine } from "../../utils/string";
 import { matrix } from "../matrix/matrix-provider";
 import type {
   AgentName,
@@ -173,7 +174,7 @@ export async function loadStackById(
 /** One wording for both callers that turn a null from `loadStackById` into a failure. */
 export function stackNotOfferedMessage(stackId: string, source: string): string {
   return (
-    `Stack '${stackId}' is not a stack the source '${source}' offers. ` +
+    `Stack '${inertLine(stackId)}' is not a stack the source '${source}' offers. ` +
     `A marketplace ships its own stacks; the CLI's built-in ones belong to the default ` +
     `public marketplace alone.`
   );

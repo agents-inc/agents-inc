@@ -28,7 +28,7 @@ import {
   readTreeSnapshot,
   skillsPath,
 } from "../helpers/test-utils.js";
-import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { ADDED_MARKER, EXIT_CODES, STEP_TEXT, TIMEOUTS, panelRow } from "../pages/constants.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
@@ -49,8 +49,12 @@ const WEB_DEV = E2E_AGENT["web-developer"].name;
 /** Composed from the shipped id, so the two cannot coincide. */
 const UNSHIPPED_STACK_ID = `${E2E_STACK_ID}-before-the-rename`;
 
+/** Short, so its refusal's first line ends well inside the width oclif wraps at. */
+const ACROSS_LINES_STACK_ID = "stk\nNothing is removed.";
+
 const REACT_ONLY_ID = "ReactOnly1";
 const UNSHIPPED_EJECT_ID = "UnshippedEject1";
+const ACROSS_LINES_EJECT_ID = "AcrossLinesEject1";
 const UNSHIPPED_PLUGIN_ID = "UnshippedPlugin1";
 const SHIPPED_EJECT_ID = "ShippedEject1";
 const UNSHIPPED_APPLY_ID = "UnshippedApply1";
@@ -85,6 +89,10 @@ describe("--from refuses a stack its marketplace does not ship before writing an
     store.publish(
       UNSHIPPED_EJECT_ID,
       projectConfiguration(UNSHIPPED_STACK_ID, { [E2E_SKILL.react.id]: projectSkill() }),
+    );
+    store.publish(
+      ACROSS_LINES_EJECT_ID,
+      projectConfiguration(ACROSS_LINES_STACK_ID, { [E2E_SKILL.react.id]: projectSkill() }),
     );
     store.publish(
       UNSHIPPED_PLUGIN_ID,
@@ -160,9 +168,28 @@ describe("--from refuses a stack its marketplace does not ship before writing an
         await readTreeSnapshot(env.tempDir),
         "a configuration naming a stack its marketplace does not ship must be refused before any skill is copied",
       ).toStrictEqual(before);
-      expect(output, "a refused install must not first list what it would install").not.toContain(
-        STEP_TEXT.SHARED_CONFIG_LIST_PROJECT,
+      expect(
+        output,
+        "a refused install must not first show the panel of what it would install",
+      ).not.toContain(STEP_TEXT.PANEL_HEADER);
+    });
+
+    it("with no terminal, names a stack id written across lines on one line of its refusal", async () => {
+      env = await createTestEnvironment();
+
+      const { exitCode, output } = await runInitFrom(
+        store,
+        ACROSS_LINES_EJECT_ID,
+        { dir: env.projectDir, globalHome: env.fakeHome },
+        E2E_SOURCE.sourceDir,
       );
+
+      expect(exitCode, output).toBe(EXIT_CODES.ERROR);
+      // Unflattened: flattening turns the line break into the space this asserts.
+      expect(output).toContain(
+        `Error: Stack 'stk Nothing is removed.' ${STEP_TEXT.SHARED_CONFIG_STACK_NOT_OFFERED}`,
+      );
+      expect(output).not.toMatch(/^[\s›]*Nothing is removed\./m);
     });
 
     it.skipIf(!claudeAvailable)(
@@ -190,9 +217,10 @@ describe("--from refuses a stack its marketplace does not ship before writing an
           await readTreeSnapshot(env.tempDir),
           "a configuration naming a stack its marketplace does not ship must be refused before a marketplace is registered or a plugin installed",
         ).toStrictEqual(before);
-        expect(output, "a refused install must not first list what it would install").not.toContain(
-          STEP_TEXT.SHARED_CONFIG_LIST_PROJECT,
-        );
+        expect(
+          output,
+          "a refused install must not first show the panel of what it would install",
+        ).not.toContain(STEP_TEXT.PANEL_HEADER);
       },
     );
 
@@ -247,8 +275,8 @@ describe("--from refuses a stack its marketplace does not ship before writing an
         ).not.toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
         expect(
           shown,
-          "a refused apply must not first show a plan for what it would install",
-        ).not.toContain(STEP_TEXT.SHARED_CONFIG_LIST_PROJECT);
+          "a refused apply must not first show the panel of what it would install",
+        ).not.toContain(STEP_TEXT.PANEL_HEADER);
 
         // Subject guard: the run reached its decision and refused for this reason.
         expect(await prompt.waitForExit(TIMEOUTS.EXIT_WAIT)).toBe(EXIT_CODES.ERROR);
@@ -271,8 +299,8 @@ describe("--from refuses a stack its marketplace does not ship before writing an
         await prompt.waitForTextOrExit(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
         const shown = prompt.getOutput();
 
-        expect(shown).toContain(STEP_TEXT.SHARED_CONFIG_LIST_PROJECT);
-        expect(shown).toContain(E2E_SKILL.vitest.id);
+        expect(shown).toContain(STEP_TEXT.PANEL_HEADER);
+        expect(shown).toContain(panelRow(ADDED_MARKER, E2E_SKILL.vitest.display));
         expect(shown).toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
         expect(flattenCliOutput(shown)).not.toContain(STEP_TEXT.SHARED_CONFIG_STACK_NOT_OFFERED);
 

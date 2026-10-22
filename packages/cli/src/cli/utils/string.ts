@@ -30,6 +30,15 @@ export function stripTerminalControls(text: string): string {
   return text.replace(TERMINAL_CONTROLS, "");
 }
 
+/**
+ * For a foreign value printed inside a line of the CLI's own: inert, and a line break becomes a
+ * space, so it cannot print a line that reads as the CLI's. Strips first: folding first would hand
+ * `OTHER_ESCAPE` the space a line break became.
+ */
+export function inertLine(text: string): string {
+  return stripTerminalControls(text).replaceAll("\n", " ");
+}
+
 /** Strips terminal controls first, so the cut can never land inside an escape sequence. */
 export function truncateText(text: string, maxLength: number): string {
   const inert = stripTerminalControls(text);

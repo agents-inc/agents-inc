@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { beforeEach, describe, it, expect } from "vitest";
 import {
   ERROR_MESSAGES,
   SUCCESS_MESSAGES,
@@ -11,6 +11,7 @@ import {
   authoredHereKept,
   carriedSkillsWritten,
   completedWithFailures,
+  configFileRemoved,
   configUnreadableError,
   editorSkillMetadataUnusableError,
   globalScopedAgentsHint,
@@ -21,7 +22,6 @@ import {
   keptUnassigned,
   layoutIsCurrent,
   localSkillsCopied,
-  localSkillsRemoval,
   marketplaceHasNoVersion,
   marketplaceManifestMissing,
   marketplaceManifestUnreadable,
@@ -33,11 +33,9 @@ import {
   nothingInstalledToApplyTo,
   notInstalledHere,
   pluginsInstalled,
-  projectCopyMovedToGlobal,
-  projectCopyRemoved,
   propagatedRecompileSummary,
   recompileSummary,
-  registeredProjectsRewritten,
+  registeredProjectsRecompiled,
   registeredProjectConfigUnreadable,
   registeredProjectGone,
   registeredProjectOnAnotherProvider,
@@ -61,6 +59,7 @@ import {
   skippedUnknownAgents,
   skippedUnknownSkills,
   sourceUnreachableUsingCache,
+  subAgentChanged,
   uninstallConfigUnreadable,
   uninstallNeedsTerminal,
   unmarkedAgentsKept,
@@ -68,12 +67,13 @@ import {
 } from "./messages";
 import { DEFAULT_BRANDING, PROVIDERS } from "../consts";
 import { SKILLS } from "../lib/__tests__/test-fixtures";
+import { initializeMatrix } from "../lib/matrix/matrix-provider";
+import { WEB_TRIO_MATRIX } from "../lib/__tests__/mock-data/mock-matrices";
 import type { AgentName } from "../types";
 
 /** Whole word, so `resource` is not matched. */
 const WITHDRAWN_NOUN = /\bsources?\b/i;
 
-const SKILLS_DIR = "/project/.claude/skills";
 /** Echoed verbatim, so it must not itself be a marketplace word. */
 const UNREACHABLE_REF = "github:org/repo";
 
@@ -160,11 +160,6 @@ describe("the vocabulary the message tables print in", () => {
     }
   });
 
-  it("should not call the matching skills 'sources' in the removal plan", () => {
-    expect(localSkillsRemoval(SKILLS_DIR)).toContain(SKILLS_DIR);
-    expect(localSkillsRemoval(SKILLS_DIR)).not.toMatch(WITHDRAWN_NOUN);
-  });
-
   it("should keep the unreachable-cache warning, which already names no source", () => {
     expect(sourceUnreachableUsingCache(UNREACHABLE_REF)).toBe(
       `Could not reach ${UNREACHABLE_REF} — using the cached copy, which may be out of date.`,
@@ -192,13 +187,9 @@ describe("the count lines an install and a recompile end on", () => {
     expect(recompileSummary(2, 0, "global agent")).toBe("2 global agents rewritten, 0 unchanged");
   });
 
-  it("counts the registered projects a fan-out rewrote, which need not hold a sub-agent", () => {
-    expect(propagatedRecompileSummary(1, 0, 0)).toBe(
-      "Registered projects: 1 rewritten, 0 unchanged",
-    );
-    expect(propagatedRecompileSummary(2, 1, 1)).toBe(
-      "Registered projects: 2 rewritten, 1 unchanged (1 failed)",
-    );
+  it("counts the registered projects a fan-out recompiled, with no count of those that came out the same", () => {
+    expect(propagatedRecompileSummary(1, 0)).toBe("Registered projects: 1 recompiled");
+    expect(propagatedRecompileSummary(3, 1)).toBe("Registered projects: 3 recompiled (1 failed)");
   });
 
   it("refers to one global-scoped agent as it, and to more than one as them", () => {
@@ -221,12 +212,13 @@ describe("the way out of a config that will not load", () => {
           scope: "project",
           scopeRoot: "/home/me/project",
           providerToName: undefined,
+          initProviderToName: undefined,
         },
       ]),
     ).toBe(
       [
         "This project's config at '/home/me/project/.agents-inc/claude/config.ts' could not be loaded: ParseError: Missing semicolon",
-        "There is no automatic repair for this — fix the file, or recreate the configuration by running 'npx agents-inc uninstall' from '/home/me/project', which still works on a config it cannot read, then 'npx agents-inc init --from <id>' with an id from https://agentsinc.sh/editor.",
+        "There is no automatic repair for this — fix the file, or recreate the configuration by running 'npx agents-inc uninstall' from '/home/me/project', which still works on a config it cannot read, then 'npx agents-inc init --from <id>' with an id from http://localhost:5173/editor.",
         "'npx agents-inc doctor' reports the same file, alongside whatever else is wrong here.",
       ].join("\n"),
     );
@@ -241,12 +233,34 @@ describe("the way out of a config that will not load", () => {
           scope: "global",
           scopeRoot: "/home/me",
           providerToName: "claude",
+          initProviderToName: "claude",
         },
       ]),
     ).toBe(
       [
         "The global installation's config at '/home/me/.agents-inc/claude/config.ts' could not be loaded: ParseError: Missing semicolon",
-        "There is no automatic repair for this — fix the file, or recreate the configuration by running 'npx agents-inc uninstall --provider claude' from '/home/me', which still works on a config it cannot read, then 'npx agents-inc init --from <id> --provider claude' with an id from https://agentsinc.sh/editor.",
+        "There is no automatic repair for this — fix the file, or recreate the configuration by running 'npx agents-inc uninstall --provider claude' from '/home/me', which still works on a config it cannot read, then 'npx agents-inc init --from <id> --provider claude' with an id from http://localhost:5173/editor.",
+        "'npx agents-inc doctor' reports the same file, alongside whatever else is wrong here.",
+      ].join("\n"),
+    );
+  });
+
+  it("names a lone installation a bare init would not recreate in the init half alone", () => {
+    expect(
+      installationConfigsUnreadable([
+        {
+          configPath: "/home/me/project/.agents-inc/codex/config.ts",
+          reason: "ParseError: Missing semicolon",
+          scope: "project",
+          scopeRoot: "/home/me/project",
+          providerToName: undefined,
+          initProviderToName: "codex",
+        },
+      ]),
+    ).toBe(
+      [
+        "This project's config at '/home/me/project/.agents-inc/codex/config.ts' could not be loaded: ParseError: Missing semicolon",
+        "There is no automatic repair for this — fix the file, or recreate the configuration by running 'npx agents-inc uninstall' from '/home/me/project', which still works on a config it cannot read, then 'npx agents-inc init --from <id> --provider codex' with an id from http://localhost:5173/editor.",
         "'npx agents-inc doctor' reports the same file, alongside whatever else is wrong here.",
       ].join("\n"),
     );
@@ -529,6 +543,21 @@ describe("the lines that point a shared configuration at where it can be applied
     );
   });
 
+  it("names the choice of installation where two are in play and the run named neither", () => {
+    expect(applySharedConfigHere("abc123", true, ["claude", "codex"])).toBe(
+      "To apply it here instead, run 'npx agents-inc edit --from abc123 --provider <claude|codex>'.",
+    );
+    expect(applySharedConfigHere(undefined, true, ["claude", "codex"])).toBe(
+      "Then apply what it gives you with 'npx agents-inc edit --from <id> --provider <claude|codex>'.",
+    );
+  });
+
+  it("names the installation the run named, and no choice", () => {
+    expect(applySharedConfigHere("abc123", true, "codex")).toBe(
+      "To apply it here instead, run 'npx agents-inc edit --from abc123 --provider codex'.",
+    );
+  });
+
   it("refuses init --from over an existing installation and points at edit --from", () => {
     expect(
       sharedConfigExistingInstall(
@@ -542,7 +571,7 @@ describe("the lines that point a shared configuration at where it can be applied
   });
 
   it("refuses to apply over an installation without a terminal to confirm at", () => {
-    expect(sharedConfigNeedsTerminal("abc123", undefined)).toBe(
+    expect(sharedConfigNeedsTerminal("abc123", undefined, undefined)).toBe(
       [
         "Applying configuration 'abc123' removes whatever it leaves out, so it has to be confirmed — and there is no terminal here to confirm it at.",
         "Run 'npx agents-inc edit --from abc123' from a terminal, or 'npx agents-inc init --from abc123' in a clean directory, which installs without removing anything.",
@@ -563,10 +592,19 @@ describe("the lines that point a shared configuration at where it can be applied
   });
 
   it("names the installation the run named in both commands of a refused apply", () => {
-    expect(sharedConfigNeedsTerminal("abc123", "codex")).toBe(
+    expect(sharedConfigNeedsTerminal("abc123", "codex", "codex")).toBe(
       [
         "Applying configuration 'abc123' removes whatever it leaves out, so it has to be confirmed — and there is no terminal here to confirm it at.",
         "Run 'npx agents-inc edit --from abc123 --provider codex' from a terminal, or 'npx agents-inc init --from abc123 --provider codex' in a clean directory, which installs without removing anything.",
+      ].join("\n"),
+    );
+  });
+
+  it("names a lone installation a bare init would not create in the init half alone", () => {
+    expect(sharedConfigNeedsTerminal("abc123", undefined, "codex")).toBe(
+      [
+        "Applying configuration 'abc123' removes whatever it leaves out, so it has to be confirmed — and there is no terminal here to confirm it at.",
+        "Run 'npx agents-inc edit --from abc123' from a terminal, or 'npx agents-inc init --from abc123 --provider codex' in a clean directory, which installs without removing anything.",
       ].join("\n"),
     );
   });
@@ -620,13 +658,29 @@ describe("the lines share prints about what a shared id can carry", () => {
 
 describe("the lines init --from prints about what a configuration brings", () => {
   it("lists each project-scoped skill and sub-agent a home-directory install cannot write", () => {
-    expect(sharedConfigProjectScopeAtHome([REACT], [WEB_DEVELOPER])).toBe(
+    expect(sharedConfigProjectScopeAtHome([REACT], [WEB_DEVELOPER], false, undefined)).toBe(
       [
         "This configuration cannot be installed here: the home directory is the global scope, and a global installation holds only global-scoped content — so these project-scoped entries have nowhere to be written:",
         `  skill ${REACT} (scope: project)`,
         "  sub-agent web-developer (scope: project)",
         "Run this from inside a project directory, or re-share it with each entry above at global scope.",
       ].join("\n"),
+    );
+  });
+
+  it("sends a global install to change itself through its own link, which keeps what a project replaced", () => {
+    expect(sharedConfigProjectScopeAtHome([REACT], [], true, undefined)).toBe(
+      [
+        "This configuration cannot be installed here: the home directory is the global scope, and a global installation holds only global-scoped content — so these project-scoped entries have nowhere to be written:",
+        `  skill ${REACT} (scope: project)`,
+        "Run this from inside a project directory, or change the global install from here: run 'npx agents-inc edit', make the change in the editor, then apply the id it gives you with 'npx agents-inc edit --from <id>'.",
+      ].join("\n"),
+    );
+  });
+
+  it("names the installation in both commands of that route where another sits beside it", () => {
+    expect(sharedConfigProjectScopeAtHome([], [WEB_DEVELOPER], true, "codex")).toContain(
+      "run 'npx agents-inc edit --provider codex', make the change in the editor, then apply the id it gives you with 'npx agents-inc edit --from <id> --provider codex'.",
     );
   });
 
@@ -642,7 +696,7 @@ describe("the lines init --from prints about what a configuration brings", () =>
     );
   });
 
-  it("names, under each skipped skill, the sub-agents skipped because they carried only it", () => {
+  it("names, under each skipped skill, the sub-agents installed without it that carry nothing else", () => {
     expect(
       skippedUnknownSkills(
         [REACT, HONO],
@@ -651,7 +705,7 @@ describe("the lines init --from prints about what a configuration brings", () =>
     ).toBe(
       [
         `Skipped 2 skill(s) this catalog does not know: ${REACT}, ${HONO}`,
-        `  sub-agent(s) skipped with ${HONO}, carrying nothing else this catalog knows: web-developer, api-developer`,
+        `  sub-agent(s) installed without ${HONO}, carrying nothing else this catalog knows: web-developer, api-developer`,
       ].join("\n"),
     );
   });
@@ -667,28 +721,35 @@ describe("the lines init --from prints about what a configuration brings", () =>
     ).toBe(
       [
         "Skipped 1 skill(s) this catalog does not know: web-x",
-        "  sub-agent(s) skipped with web-x, carrying nothing else this catalog knows: web-developer",
+        "  sub-agent(s) installed without web-x, carrying nothing else this catalog knows: web-developer",
       ].join("\n"),
     );
     expect(skippedUnknownAgents([keyWithControls])).toBe("Skipped 1 unknown sub-agent(s): web-x");
   });
 
-  it("says a project's copy gives way to the global one", () => {
-    expect(projectCopyRemoved(REACT)).toBe(
-      `${REACT}: this project's copy is removed; the global one takes over`,
-    );
-  });
+  it("names a configuration's own key written across lines on one line", () => {
+    const keyAcrossLines = "web-x\nNothing removed.";
 
-  it("says a project's copy goes when its entry moves to the global install", () => {
-    expect(projectCopyMovedToGlobal(REACT)).toBe(
-      `${REACT}: moves to the global install, so this project's copy is removed`,
-    );
-  });
-
-  it("names each registered project a global run rewrites", () => {
-    expect(registeredProjectsRewritten(["/work/one", "/work/two"])).toBe(
+    expect(
+      skippedUnknownSkills(
+        [keyAcrossLines],
+        [{ skillId: keyAcrossLines, agentNames: [WEB_DEVELOPER] }],
+      ),
+    ).toBe(
       [
-        "Each project registered with this global install is rewritten to match:",
+        "Skipped 1 skill(s) this catalog does not know: web-x Nothing removed.",
+        "  sub-agent(s) installed without web-x Nothing removed., carrying nothing else this catalog knows: web-developer",
+      ].join("\n"),
+    );
+    expect(skippedUnknownAgents([keyAcrossLines])).toBe(
+      "Skipped 1 unknown sub-agent(s): web-x Nothing removed.",
+    );
+  });
+
+  it("names each registered project a global run recompiles", () => {
+    expect(registeredProjectsRecompiled(["/work/one", "/work/two"])).toBe(
+      [
+        "Each project registered with this global install is recompiled to match:",
         "  /work/one",
         "  /work/two",
       ].join("\n"),
@@ -696,7 +757,7 @@ describe("the lines init --from prints about what a configuration brings", () =>
   });
 
   it("lists what the global install keeps as installed, and the run from home that changes it", () => {
-    expect(keptAsInstalledGlobally([REACT], [WEB_DEVELOPER], "Abc123")).toBe(
+    expect(keptAsInstalledGlobally([REACT], [WEB_DEVELOPER], "Abc123", undefined)).toBe(
       [
         "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
         `  skill ${REACT}`,
@@ -706,8 +767,18 @@ describe("the lines init --from prints about what a configuration brings", () =>
     );
   });
 
+  it("names the installation in the run from home where home holds another beside it", () => {
+    expect(keptAsInstalledGlobally([], [WEB_DEVELOPER], "Abc123", "claude")).toBe(
+      [
+        "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
+        "  sub-agent web-developer",
+        "Change them with 'npx agents-inc edit --from Abc123 --provider claude' from your home directory.",
+      ].join("\n"),
+    );
+  });
+
   it("names no run from home for a configuration home would refuse", () => {
-    expect(keptAsInstalledGlobally([REACT], [], undefined)).toBe(
+    expect(keptAsInstalledGlobally([REACT], [], undefined, undefined)).toBe(
       [
         "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
         `  skill ${REACT}`,
@@ -761,6 +832,7 @@ describe("the lines uninstall prints about what it cannot read or leaves behind"
           scope: "project",
           scopeRoot: PROJECT_DIR,
           providerToName: undefined,
+          initProviderToName: undefined,
         },
         {
           configPath: "/home/me/.agents-inc/claude/config.ts",
@@ -768,14 +840,15 @@ describe("the lines uninstall prints about what it cannot read or leaves behind"
           scope: "global",
           scopeRoot: "/home/me",
           providerToName: undefined,
+          initProviderToName: undefined,
         },
       ]),
     ).toBe(
       [
         `This project's config at '${PROJECT_DIR}/.agents-inc/claude/config.ts' could not be loaded: ParseError: Missing semicolon`,
-        `There is no automatic repair for this — fix the file, or recreate the configuration by running 'npx agents-inc uninstall' from '${PROJECT_DIR}', which still works on a config it cannot read, then 'npx agents-inc init --from <id>' with an id from https://agentsinc.sh/editor.`,
+        `There is no automatic repair for this — fix the file, or recreate the configuration by running 'npx agents-inc uninstall' from '${PROJECT_DIR}', which still works on a config it cannot read, then 'npx agents-inc init --from <id>' with an id from http://localhost:5173/editor.`,
         "The global installation's config at '/home/me/.agents-inc/claude/config.ts' could not be loaded: ParseError: Unexpected token",
-        "There is no automatic repair for this — fix the file, or recreate the configuration by running 'npx agents-inc uninstall' from '/home/me', which still works on a config it cannot read, then 'npx agents-inc init --from <id>' with an id from https://agentsinc.sh/editor.",
+        "There is no automatic repair for this — fix the file, or recreate the configuration by running 'npx agents-inc uninstall' from '/home/me', which still works on a config it cannot read, then 'npx agents-inc init --from <id>' with an id from http://localhost:5173/editor.",
         "'npx agents-inc doctor' reports the same files, alongside whatever else is wrong here.",
       ].join("\n"),
     );
@@ -810,6 +883,12 @@ describe("the lines uninstall prints about what it cannot read or leaves behind"
     );
   });
 
+  it("marks a config file it deletes the way the panel marks a removal", () => {
+    expect(configFileRemoved(`${PROJECT_DIR}/.agents-inc/claude/config.ts`)).toBe(
+      `- ${PROJECT_DIR}/.agents-inc/claude/config.ts`,
+    );
+  });
+
   it("refers to one kept agent as it, and to several as them", () => {
     expect(unmarkedAgentsKept(`${PROJECT_DIR}/.claude/agents`, 1)).toBe(
       `Kept 1 agent in ${PROJECT_DIR}/.claude/agents/ — no agents-inc marker, so this CLI did not compile it.`,
@@ -831,9 +910,66 @@ describe("the words a scope and a layout are named in", () => {
     expect(layoutIsCurrent("Skills", ".claude/skills")).toBe("Skills is on .claude/skills/");
   });
 
-  it("refuses the retired source folder and names where it moves to", () => {
-    expect(retiredSourceFolderUnsupported(".agents-inc/claude")).toBe(
-      ".claude-src/ is no longer supported (agents-inc now serves Claude and Codex). Move it to .agents-inc/claude/.",
+  it("refuses the retired source folder under the root that holds it, and names where it moves to there", () => {
+    expect(retiredSourceFolderUnsupported("/home/me/project")).toBe(
+      "/home/me/project/.claude-src/ is no longer supported (agents-inc now serves Claude and Codex). Move it to /home/me/project/.agents-inc/claude/.",
     );
+  });
+});
+
+describe("the line under the panel naming what a sub-agent that stays changes", () => {
+  beforeEach(() => {
+    initializeMatrix(WEB_TRIO_MATRIX);
+  });
+
+  it("names the skills a sub-agent gains and loses by their display names", () => {
+    expect(
+      subAgentChanged({
+        name: WEB_DEVELOPER,
+        scope: "project",
+        gains: [SKILLS.vitest.id],
+        loses: [SKILLS.zustand.id],
+        settings: [],
+      }),
+    ).toBe("~ web-developer: gains Vitest, loses Zustand");
+  });
+
+  it("names a global sub-agent as global, and each setting that moves", () => {
+    expect(
+      subAgentChanged({
+        name: API_DEVELOPER,
+        scope: "global",
+        gains: [],
+        loses: [],
+        settings: [
+          { setting: "model", from: "sonnet", to: "opus" },
+          { setting: "effort", from: undefined, to: "high" },
+        ],
+      }),
+    ).toBe("~ api-developer (global): model sonnet → opus, effort default → high");
+  });
+
+  it("joins three skills or more into one list", () => {
+    expect(
+      subAgentChanged({
+        name: WEB_DEVELOPER,
+        scope: "project",
+        gains: [SKILLS.react.id, SKILLS.vitest.id, SKILLS.zustand.id],
+        loses: [],
+        settings: [],
+      }),
+    ).toBe("~ web-developer: gains React, Vitest and Zustand");
+  });
+
+  it("says the skills were reassigned where none arrives or leaves", () => {
+    expect(
+      subAgentChanged({
+        name: WEB_DEVELOPER,
+        scope: "project",
+        gains: [],
+        loses: [],
+        settings: [],
+      }),
+    ).toBe("~ web-developer: skills reassigned");
   });
 });

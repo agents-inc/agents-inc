@@ -1,5 +1,6 @@
 import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { parse as parseYaml } from "yaml";
 
 import "../matchers/setup.js";
 import { expectFourSurfaces } from "../assertions/four-surfaces.js";
@@ -27,9 +28,17 @@ import {
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
 import { applyEditFrom } from "../fixtures/e2e-stack-seed.js";
+import { runInitFromOnCodex } from "../fixtures/codex-install.js";
 import { flattenCliOutput } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import {
+  ADDED_MARKER,
+  EXIT_CODES,
+  FILES,
+  STEP_TEXT,
+  TIMEOUTS,
+  panelRow,
+} from "../pages/constants.js";
 import {
   UPSTREAM_SKILL_NAME,
   buildSeedExternalSkill,
@@ -101,36 +110,38 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
     env = undefined;
   });
 
+  /** React from the catalogue beside one carried skill, both ejected into the project. */
+  function carryingExternal(displayName: string) {
+    return buildSeedPayload({
+      skills: {
+        [E2E_SKILL.react.id]: buildSeedSkill({
+          install: "eject",
+          scope: "project",
+          assignments: { [WEB_DEV]: "lazy" },
+        }),
+        [EXTERNAL_ID]: buildSeedSkill({
+          install: "eject",
+          scope: "project",
+          assignments: { [WEB_DEV]: "lazy" },
+        }),
+      },
+      external: {
+        [EXTERNAL_ID]: buildSeedExternalSkill({
+          displayName,
+          categoryId: EXTERNAL_CATEGORY,
+          repo: EXTERNAL_REPO,
+          files: EXTERNAL_FILES,
+        }),
+      },
+      agents: { [WEB_DEV]: PINNED_TO_PROJECT },
+    });
+  }
+
   it("installs a skill no catalogue knows, from the bytes the payload carries", async () => {
     env = await createTestEnvironment({ permissions: false });
-    store.publish(
-      "External1",
-      buildSeedPayload({
-        skills: {
-          [E2E_SKILL.react.id]: buildSeedSkill({
-            install: "eject",
-            scope: "project",
-            assignments: { [WEB_DEV]: "lazy" },
-          }),
-          [EXTERNAL_ID]: buildSeedSkill({
-            install: "eject",
-            scope: "project",
-            assignments: { [WEB_DEV]: "lazy" },
-          }),
-        },
-        external: {
-          [EXTERNAL_ID]: buildSeedExternalSkill({
-            displayName: EXTERNAL_DISPLAY,
-            categoryId: EXTERNAL_CATEGORY,
-            repo: EXTERNAL_REPO,
-            files: EXTERNAL_FILES,
-          }),
-        },
-        agents: { [WEB_DEV]: PINNED_TO_PROJECT },
-      }),
-    );
+    store.publish("External1", carryingExternal(EXTERNAL_DISPLAY));
 
-    const { exitCode, output } = await runInitFrom(
+    const { exitCode, stdout, output } = await runInitFrom(
       store,
       "External1",
       { dir: env.projectDir, globalHome: env.fakeHome },
@@ -140,6 +151,9 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
 
     // Carries the red: reported as unknown while its content sat unread in the payload.
     expect(flattenCliOutput(output)).not.toContain("does not know");
+    // The panel names it by its display name; the line under the panel names its id.
+    expect(stdout).toContain(panelRow(ADDED_MARKER, EXTERNAL_DISPLAY));
+    expect(stdout).toContain(`\nWrote 1 skill(s) this configuration carries: ${EXTERNAL_ID}\n`);
 
     // "eject" is the only origin an added skill can have.
     const config = await loadConfigOrFail(env.projectDir);
@@ -177,6 +191,23 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
     await expectFourSurfaces(env.projectDir, { globalHome: env.fakeHome });
     // Everything is pinned to the project, so the other scope must own nothing.
     await expectFourSurfaces(env.fakeHome, { expectEmpty: true });
+  });
+
+  it("shows a carried skill whose display name is written across lines as one name in the panel", async () => {
+    env = await createTestEnvironment({ permissions: false });
+    store.publish("ExternalLines", carryingExternal("House\nNothing removed.\nTool"));
+
+    const { exitCode, stdout, output } = await runInitFrom(
+      store,
+      "ExternalLines",
+      { dir: env.projectDir, globalHome: env.fakeHome },
+      sourceDir,
+    );
+
+    expect(exitCode, `install failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
+    // The cell wraps the name, so only its first words are pinned: unfolded, `House` ends its row.
+    expect(stdout).toContain(panelRow(ADDED_MARKER, "House Nothing"));
+    expect(stdout).not.toContain("\nNothing removed.\n");
   });
 
   /**
@@ -280,6 +311,124 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
       "an install must not write a metadata.yaml its own doctor warns about",
     ).not.toContain(STEP_TEXT.DOCTOR_CLI_DESCRIPTION_OVER_LENGTH);
   });
+
+  // Each id is what the editor's `externalSkillId` mints for the name under EXTERNAL_CATEGORY.
+  it.each([
+    {
+      subject: "a name over 30 characters",
+      name: "observability-and-instrumentation",
+      id: "external-web-tooling-observability-and-instrumentation",
+    },
+    {
+      subject: "a 30-character name whose id is over 50",
+      name: "verification-before-completion",
+      id: "external-web-tooling-verification-before-completion",
+    },
+  ])(
+    "installs a carried skill with $subject under that name, leaving nothing doctor rejects",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async ({ name, id }) => {
+      env = await createTestEnvironment({ permissions: false });
+      const skills = {
+        [E2E_SKILL.react.id]: buildSeedSkill({
+          install: "eject",
+          scope: "project",
+          assignments: { [WEB_DEV]: "lazy" },
+        }),
+        [id]: buildSeedSkill({
+          install: "eject",
+          scope: "project",
+          assignments: { [WEB_DEV]: "lazy" },
+        }),
+      };
+      store.publish(
+        "LongName",
+        buildSeedPayload({
+          skills,
+          external: {
+            [id]: buildSeedExternalSkill({
+              displayName: name,
+              categoryId: EXTERNAL_CATEGORY,
+              repo: EXTERNAL_REPO,
+              path: `skills/${name}`,
+              files: EXTERNAL_FILES,
+            }),
+          },
+          agents: { [WEB_DEV]: PINNED_TO_PROJECT },
+        }),
+      );
+      const project = { dir: env.projectDir, globalHome: env.fakeHome };
+
+      const installed = await runInitFrom(store, "LongName", project, sourceDir);
+      expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
+      expect(
+        parseYaml(
+          await readTestFile(path.join(skillsPath(env.projectDir), id, FILES.METADATA_YAML)),
+        ),
+      ).toMatchObject({ displayName: name, slug: id });
+
+      const doctor = await CLI.run(["doctor"], project);
+      expect(doctor.exitCode, `doctor failed: ${doctor.stdout}`).toBe(EXIT_CODES.SUCCESS);
+      expect(doctor.stdout, "the content layer validated the carried directory").toContain(
+        `${Object.keys(skills).length} ${STEP_TEXT.DOCTOR_SKILLS_VALIDATED}`,
+      );
+
+      const opened = await runEditUi(store, project);
+      expect(opened.exitCode, `edit --ui failed: ${opened.output}`).toBe(EXIT_CODES.SUCCESS);
+      const posted: { external?: Record<string, { displayName: string }> } = JSON.parse(
+        firstElement(store.requests.filter((request) => request.method === "POST")).body,
+      );
+      expect(posted.external?.[id]?.displayName, "a re-mint sends the name whole").toBe(name);
+    },
+  );
+
+  // Codex copies skills into its own folder, which doctor must read as compile does.
+  it.each([
+    {
+      scope: "project",
+      at: (target: TestEnvironment) => ({ dir: target.projectDir, globalHome: target.fakeHome }),
+    },
+    {
+      scope: "global",
+      at: (target: TestEnvironment) => ({ dir: target.fakeHome, globalHome: target.fakeHome }),
+    },
+  ] as const)(
+    "installs a carried skill at $scope scope on Codex, leaving nothing doctor rejects",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async ({ scope, at }) => {
+      env = await createTestEnvironment({ permissions: false });
+      store.publish(
+        "CdxCarry",
+        buildSeedPayload({
+          skills: {
+            [EXTERNAL_ID]: buildSeedSkill({
+              install: "eject",
+              scope,
+              assignments: { [WEB_DEV]: "lazy" },
+            }),
+          },
+          external: {
+            [EXTERNAL_ID]: buildSeedExternalSkill({
+              categoryId: EXTERNAL_CATEGORY,
+              repo: EXTERNAL_REPO,
+              files: EXTERNAL_FILES,
+            }),
+          },
+          agents: { [WEB_DEV]: { scope } },
+        }),
+      );
+      const installation = at(env);
+
+      const installed = await runInitFromOnCodex(store, "CdxCarry", installation, sourceDir);
+      expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
+
+      const doctor = await CLI.run(["doctor"], installation);
+      expect(doctor.exitCode, `doctor failed: ${doctor.stdout}`).toBe(EXIT_CODES.SUCCESS);
+      expect(doctor.stdout, "doctor found the carried skill where Codex reads it").toContain(
+        "1/1 skill found",
+      );
+    },
+  );
 
   it("routes a carried skill to the scope its own entry names", async () => {
     env = await createTestEnvironment({ permissions: false });
