@@ -26,7 +26,6 @@ import {
 
 const FENCE = "---"
 
-/** Holding `Write` earns the completion gate's `hooks:` line. */
 const WRITER_TOOLS = ["Read", "Write", "Edit", "Grep", "Glob", "Bash"]
 
 const READER_TOOLS = ["Read", "Grep", "Glob", "Bash"]
@@ -96,10 +95,6 @@ describe("the body render against the whole Claude render", () => {
       })
       const frontmatter = whole.slice(0, whole.length - body.length)
 
-      expect(
-        frontmatter.includes("\nhooks:"),
-        `${name} is not the shape it was chosen for — a writer carries the completion gate and a reader does not`
-      ).toBe(tools.includes("Write"))
       expect(frontmatter.startsWith(`${FENCE}\n`)).toBe(true)
       expect(frontmatter.trimEnd().endsWith(FENCE)).toBe(true)
     })

@@ -12,6 +12,7 @@ import {
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
+import { declareAStopHook } from "../helpers/declared-stop-hook.js";
 import {
   acceptClaudeTrustPrompt,
   cleanupFixture,
@@ -27,16 +28,16 @@ import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-
 import type { ProjectHandle } from "../fixtures/project-handle.js";
 
 /**
- * An `edit --from` that lands a writing sub-agent in an untrusted Claude project must say the
- * folder needs trusting, as `init` and `compile` do: Claude Code drops a project sub-agent's hooks
- * until trusted. Controls: a trusted folder, and an untrusted one whose last gated sub-agent the
- * edit removed.
+ * An `edit --from` that lands a sub-agent with a Stop hook in an untrusted Claude project must say
+ * the folder needs trusting, as `init` and `compile` do: Claude Code drops a project sub-agent's
+ * hooks until trusted. Controls: a trusted folder, and an untrusted one whose last gated sub-agent
+ * the edit removed.
  */
 
-/** Holds a writing tool, so compile gives it the gate. */
+/** Each project declares a Stop hook for it. */
 const WRITER = E2E_AGENT["web-developer"].name;
 
-/** Holds neither tool, so no gate and nothing owed. */
+/** Declares no hook, so nothing owed. */
 const READER = E2E_BUILTIN_AGENT.reviewer.name;
 
 const SKILL = E2E_SKILL.react;
@@ -93,12 +94,13 @@ describe("edit into a Claude project Claude Code has not been told to trust", ()
   });
 
   it(
-    "names the folder when an applied configuration adds the project's first writing sub-agent",
+    "names the folder when an applied configuration adds the project's first gated sub-agent",
     { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
       const env = await createTestEnvironment();
       tempDirs.push(env.tempDir);
       const project: ProjectHandle = { dir: env.projectDir, globalHome: env.fakeHome };
+      await declareAStopHook(project.dir, WRITER);
 
       store.publish(INSTALLED_ID, READER_ONLY);
       const installed = await runInitFrom(store, INSTALLED_ID, project, source.sourceDir);
@@ -139,6 +141,7 @@ describe("edit into a Claude project Claude Code has not been told to trust", ()
       const env = await createTestEnvironment();
       tempDirs.push(env.tempDir);
       const project: ProjectHandle = { dir: env.projectDir, globalHome: env.fakeHome };
+      await declareAStopHook(project.dir, WRITER);
 
       store.publish(INSTALLED_ID, READER_ONLY);
       const installed = await runInitFrom(store, INSTALLED_ID, project, source.sourceDir);
@@ -164,12 +167,13 @@ describe("edit into a Claude project Claude Code has not been told to trust", ()
   );
 
   it(
-    "says nothing once an edit removes the project's last writing sub-agent",
+    "says nothing once an edit removes the project's last gated sub-agent",
     { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
       const env = await createTestEnvironment();
       tempDirs.push(env.tempDir);
       const project: ProjectHandle = { dir: env.projectDir, globalHome: env.fakeHome };
+      await declareAStopHook(project.dir, WRITER);
 
       store.publish(INSTALLED_ID, READER_AND_WRITER);
       const installed = await runInitFrom(store, INSTALLED_ID, project, source.sourceDir);
@@ -187,7 +191,7 @@ describe("edit into a Claude project Claude Code has not been told to trust", ()
       const output = prompt.getRawOutput();
       expect(exitCode, `apply failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
 
-      // The writing sub-agent left the config and its file was deleted, so no gate remains.
+      // The gated sub-agent left the config and its file was deleted, so no gate remains.
       expect(await readAgentEntries(project.dir)).toStrictEqual(
         buildAgentConfigs([READER], { scope: "project" }),
       );

@@ -16,20 +16,18 @@ whatever project invoked the CLI, so an agent's own prompt spells the same paths
 
 ## Performance Metrics at a Glance
 
-| Practice                       | Impact                                                 | Evidence Source                       |
-| ------------------------------ | ------------------------------------------------------ | ------------------------------------- |
-| Deterministic completion gates | A check that runs, rather than one asked for           | Claude Code hooks contract            |
-| Investigation-first            | 80%+ ↓ hallucination                                   | Aider, SWE-agent, Community           |
-| Critical rules stated once     | Adherence up; emphasis kept for the rule that needs it | Opus 4.5+ system-prompt guidance      |
-| XML tags                       | 30%+ ↑ accuracy, 60% ↓ format errors                   | Anthropic training data               |
-| Documents first, query last    | 30% ↑ performance                                      | Anthropic research (75K tokens)       |
-| Expansion modifiers            | Full capability on genuinely broad tasks               | Conditional — counters a literal read |
-| Self-correction triggers       | 74.4% SWE-bench with mid-run guidance                  | Refact.ai production                  |
-| Post-action reflection         | Improved long-horizon reasoning                        | Anthropic context engineering         |
-| Progress tracking              | 30+ hour session focus                                 | Anthropic experiments                 |
-| Just-in-time loading           | Preserves context window                               | SWE-agent, Aider                      |
-| Cache-stable prompt prefix\*   | The prefix survives releases and edits                 | Prompt caching                        |
-| Write verification             | Prevents false-success reports                         | All agents (production use)           |
+| Practice                     | Impact                                                 | Evidence Source                       |
+| ---------------------------- | ------------------------------------------------------ | ------------------------------------- |
+| Investigation-first          | 80%+ ↓ hallucination                                   | Aider, SWE-agent, Community           |
+| Critical rules stated once   | Adherence up; emphasis kept for the rule that needs it | Opus 4.5+ system-prompt guidance      |
+| XML tags                     | 30%+ ↑ accuracy, 60% ↓ format errors                   | Anthropic training data               |
+| Documents first, query last  | 30% ↑ performance                                      | Anthropic research (75K tokens)       |
+| Expansion modifiers          | Full capability on genuinely broad tasks               | Conditional — counters a literal read |
+| Self-correction triggers     | 74.4% SWE-bench with mid-run guidance                  | Refact.ai production                  |
+| Post-action reflection       | Improved long-horizon reasoning                        | Anthropic context engineering         |
+| Progress tracking            | 30+ hour session focus                                 | Anthropic experiments                 |
+| Just-in-time loading         | Preserves context window                               | SWE-agent, Aider                      |
+| Cache-stable prompt prefix\* | The prefix survives releases and edits                 | Prompt caching                        |
 
 \* Every row but this one is a technique in §1. The cache-stable prefix is taught in §2's section
 ordering and §5's Cache checklist instead, because it is a property of the whole prompt rather than
@@ -51,57 +49,6 @@ a block an author writes.
 ---
 
 ## 1. The Essential Techniques
-
-### Technique #1: Deterministic Completion Gates
-
-**The Pattern:**
-
-A `Stop` hook on the agent's own frontmatter, running the checks that decide whether the work is
-done:
-
-```yaml
-hooks: { "Stop": [{ "hooks": [{ "type": "command", "command": "<the project's gates>" }] }] }
-```
-
-The command exits 2 when a check fails. Exit 2 blocks the stop, and the command's output is
-returned to the agent, so a failing typecheck comes back as the errors themselves and the agent
-iterates on them.
-
-**Why It Works:**
-
-- A process that runs is a different kind of claim from a sentence asking the model to check its
-  work. The first happens whether or not the model decided to; the second is advice.
-- The feedback is the compiler's or the linter's own output, which is specific in a way a
-  self-review is not.
-- It costs no prompt bytes on any invocation, where a reminder costs its length on all of them.
-
-**The forms it replaces** — `**(You MUST ...)**` parentheticals, `→ STOP` checkpoints and
-`## CRITICAL` headings — are retired: emphasis spent on every rule is emphasis on none, and an
-instruction the model is asked to restate costs its bytes on every invocation while no downstream
-step consumes the restatement.
-
-**Application:**
-
-**The compile composes the gate in; the author's job is to leave it alone or replace it
-deliberately.** Any agent whose `tools` include `Write` or `Edit` gets a stop hook automatically,
-with the command in `COMPLETION_GATE_COMMAND` (`../compile/src/agent-source.ts`) — already inert
-where there is no npm, no `package.json`, or no such script. **Declaring `hooks:` in `metadata.yaml`
-merges with that gate rather than displacing it: declaring a stop hook of your own replaces the
-gate, and every other event is added beside it.** So an agent that writes and states a `PostToolUse`
-formatter keeps its gate, and an agent that means to own its completion checks says so by declaring
-`Stop` and nothing weaker. Where the project declares a `typecheck` script, the hook runs it; where
-it declares none, the hook exits 0 and stays out of the way. Keep the gate's command inert when it
-cannot be correct — an agent installed into a project with no such checks must still be able to
-finish.
-
-The emitted key is `Stop`, which Claude Code rewrites to `SubagentStop` when it registers a
-sub-agent's frontmatter hooks; `Stop` also fires natively for an agent run as the main session
-through `--agent`, where `SubagentStop` never would. Both spellings therefore count as declaring
-your own gate. That contract is documented on `GATE_EVENT` in `../compile/src/agent-source.ts`. A
-project-scope compiled agent's hooks are skipped altogether in a project whose trust dialog was never
-accepted; `src/cli/lib/hosts/claude-project-trust.ts` documents that.
-
----
 
 ### Technique #2: Investigation-First
 
@@ -547,21 +494,6 @@ anything in it.
 
 ---
 
-### Technique #11: Write Verification
-
-**Superseded by Technique #1.** An instruction to re-read a file after editing it is the explicit
-verification the completion gate now performs mechanically — the gate runs the project's typecheck when the agent stops, and a failing check comes back as the tool's own output. A
-prompt-text copy of that check is charged on every invocation of every agent and asks a frontier
-model to do by hand what a hook does for free, so the baseline no longer carries one. What the
-baseline keeps is the half no hook can settle: name the specific thing that would catch a
-violation, or say plainly that nothing would.
-
-The gap the gate leaves is a role whose output is files no build reads — documentation, for one.
-That role's own `critical-requirements.md` is where a read-back belongs, stated once for that role
-rather than for all eighteen.
-
----
-
 ## 2. Optimal Prompt Structure & Ordering
 
 Based on convergent evidence from Anthropic, production systems, and academic research.
@@ -580,7 +512,6 @@ description: What it does, and when to invoke it
 tools: Read, Grep, Glob, Bash, Skill
 model: opus
 permissionMode: default
-hooks: { "Stop": [...] } # the completion gate, emitted for agents that write
 skills:
   - preloaded-skill-id
 ---
@@ -815,7 +746,6 @@ Skill files — `src/skills/**/SKILL.md` in the `agents-inc/skills` marketplace 
 
 - `<integration>` — naming a sibling skill couples the two, which is the atomicity bible's Category 3. An adjacent concern belongs under **Handled elsewhere**, named as a capability rather than as the tool that provides it
 - `<operating_principles>` — skills are context, not agents; the calling agent carries its own discipline
-- Completion gates (Technique #1) — a gate belongs to the agent that stops, not to the knowledge it loaded
 - `<role>`, `<task>`, `<constraints>`, `<output_format>` — skills describe a tool, not a job to execute
 - `<investigation_requirement>`, `<self_correction_triggers>`, `<post_action_reflection>`, `<progress_tracking>` — agent-execution concerns
 
@@ -916,7 +846,6 @@ Check an agent against this before shipping it.
 - [ ] `experimental.cacheTtl` is unset unless the person paying asked for the longer window
 - [ ] `isolation` left unset unless the project has asked for a worktree — this repository does not use them
 - [ ] `model` and `effort` match the work; a mechanical role does not need the largest model
-- [ ] The completion gate is present for any agent that writes, and inert where the project declares no checks
 
 ### Content Quality
 
@@ -952,19 +881,18 @@ under `.claude/agents/`.
 
 ## 7. Troubleshooting Common Issues
 
-| Symptom                                       | Usually                                                        | Try                                                                                                                               |
-| --------------------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Claims about code the agent never opened      | The prompt asks for analysis without asking for the read first | Technique #2 — name the files to read, and say that claims come from what was read                                                |
-| Scope grows past what was asked               | The prompt states the goal and not the boundary                | Give the role a `<domain_scope>` with an explicit hand-off list, and say that the task's own scope is the deliverable             |
-| New abstractions where existing ones would do | Nothing tells the agent the codebase already has the utility   | Name the directories to search before writing anything new                                                                        |
-| Reports success on an edit that did not land  | No read-back                                                   | Technique #1 — the gate returns the failing check; where no gate reaches the file, the role's own requirements name the read-back |
-| Output shape varies between runs              | The output format is described in prose                        | Put a filled-in skeleton in `output.md` — this is the one place an inline example earns its bytes                                 |
-| A rule in the prompt is ignored               | It is one emphatic line among fifty                            | Technique #3 — if everything is critical, nothing is. Cut the others, or move the rule into a gate that runs                      |
-| An agent's answers are thinner than expected  | The task is genuinely broad and the prompt does not say so     | Technique #6, phrased proportionally to the task rather than as blanket encouragement                                             |
+| Symptom                                       | Usually                                                        | Try                                                                                                                   |
+| --------------------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Claims about code the agent never opened      | The prompt asks for analysis without asking for the read first | Technique #2 — name the files to read, and say that claims come from what was read                                    |
+| Scope grows past what was asked               | The prompt states the goal and not the boundary                | Give the role a `<domain_scope>` with an explicit hand-off list, and say that the task's own scope is the deliverable |
+| New abstractions where existing ones would do | Nothing tells the agent the codebase already has the utility   | Name the directories to search before writing anything new                                                            |
+| Reports success on an edit that did not land  | No read-back                                                   | The role's own requirements name the read-back                                                                        |
+| Output shape varies between runs              | The output format is described in prose                        | Put a filled-in skeleton in `output.md` — this is the one place an inline example earns its bytes                     |
+| A rule in the prompt is ignored               | It is one emphatic line among fifty                            | Technique #3 — if everything is critical, nothing is. Cut the others                                                  |
+| An agent's answers are thinner than expected  | The task is genuinely broad and the prompt does not say so     | Technique #6, phrased proportionally to the task rather than as blanket encouragement                                 |
 
 Where a symptom keeps returning after a prompt change, prefer a mechanism over another sentence:
-a completion gate, a narrower tool grant, or a skill that carries the knowledge the agent kept
-missing.
+a narrower tool grant, or a skill that carries the knowledge the agent kept missing.
 
 ---
 

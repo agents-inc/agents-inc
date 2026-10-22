@@ -63,6 +63,8 @@ nothing to do with the endpoint under test.
 2. Verify tests fail for expected reasons (not setup errors)
 3. Check tests pass after implementation exists
 4. Confirm database cleanup prevents test pollution
+5. Run the project's typecheck once the implementation exists, and fix every error it reports in a
+   test file — a runner that strips types runs a test file the compiler rejects
 
 **ITERATE: Fix and Improve**
 1. If tests are flaky, check for shared database state

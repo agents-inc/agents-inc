@@ -16,6 +16,7 @@ import {
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
+import { declareAStopHook } from "../helpers/declared-stop-hook.js";
 import {
   acceptClaudeTrustPrompt,
   cleanupTempDir,
@@ -32,8 +33,10 @@ import { makeGitRepositoryRoot } from "../../src/cli/lib/__tests__/helpers/git-r
 
 /**
  * The trust line below a repository root and below a trusted folder follows where Claude Code
- * records trust and when it prompts. Each no-line case is paired with one Claude Code does prompt
- * in.
+ * records trust and when it prompts, as Claude Code 2.1.288 was watched doing under a scratch HOME:
+ * accepting in `mono/app` below repository root `mono` records `mono` alone, the key its hook gate
+ * reads too, and a plain folder below a trusted plain folder gets no prompt while its hooks stay
+ * off. Each no-line case is paired with one Claude Code does prompt in.
  */
 
 const WRITER = E2E_AGENT["web-developer"].name;
@@ -80,6 +83,7 @@ describe("the Claude trust line, read where Claude Code keeps the record", () =>
 
   /** Checks the config entry and the gated compiled file, so only the output is left to judge. */
   async function installAWriterInto({ home, project }: Workspace): Promise<string> {
+    await declareAStopHook(project, WRITER);
     const installed = await runInitFrom(
       store,
       SEED_ID,

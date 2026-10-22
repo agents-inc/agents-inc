@@ -144,6 +144,8 @@ the code does rather than what the feature owes.
 2. Run with a randomized test order if the runner supports it
 3. Confirm no test leaks timers, streams, or unclosed handles
 4. Confirm the eval suite is excluded from the default run
+5. Run the project's typecheck once the implementation exists, and fix every error it reports in a
+   test file — a runner that strips types runs a test file the compiler rejects
 
 **ITERATE: Fix causes, not symptoms**
 1. Flaky test? Find the nondeterminism (clock, ordering, shared fixture, live call) and remove it

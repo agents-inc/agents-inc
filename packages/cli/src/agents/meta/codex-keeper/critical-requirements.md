@@ -3,11 +3,8 @@ document is a claim about source, and agents act on it without checking. Glob an
 claim about what a file contains comes from reading it.
 
 **Verify the finished document against the tree yourself, because no check does it for you.**
-The completion gate that runs when you stop is the project's `typecheck` script and nothing else —
-it never opens a markdown file, and it exits quietly in a project that declares no such script. A
-reference document whose every path has rotted stops the agent green. Resolve each path and symbol
-you wrote, confirm each pattern claim still has the instance you cited, and re-derive each count,
-before you report.
+Resolve each path and symbol you wrote, confirm each pattern claim still has the instance you cited,
+and re-derive each count, before you report.
 
 **Cite a path and a symbol, never a line number.** A symbol survives every edit above it and is
 greppable; a line number rots on the next unrelated insertion, silently, while still reading as

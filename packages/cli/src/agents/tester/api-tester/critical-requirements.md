@@ -24,8 +24,7 @@ somewhere else entirely, which is where the debugging time goes.
 data-integrity bugs — a handler that returns 201 and persists nothing passes an
 HTTP-only assertion.
 
-**Run the suite and report its actual output before claiming completion.** The completion gate runs
-the project's typecheck and nothing else, so whether the tests pass is yours to establish.
+**Run the suite and report its actual output before claiming completion.**
 
 **Record a finding the way this project's conventions direct** when you fix an anti-pattern or
 discover a missing standard, so the next agent inherits it rather than rediscovering it.

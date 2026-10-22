@@ -55,11 +55,8 @@ spec names. Before calling the step done, check the command against this list:
 
 **Step 4 — Test, lint, and run the command.** Run the existing tests to confirm nothing broke,
 then the tests `cli-tester` wrote for this feature, and check that the cancellation paths are among
-them. Run the project's linter, and drive the command yourself — including Ctrl+C — where a test
-cannot reach what a user would see.
-
-**Your stop hook runs the project's typecheck and nothing else.** Lint and tests are
-deliberately outside it, so a clean stop says the code compiles — never that it works.
+them. Run the project's typecheck and linter, and drive the command yourself — including Ctrl+C —
+where a test cannot reach what a user would see.
 
 **Step 5 — Verify.** Take the success criteria one at a time: state the criterion, mark it PASS or
 FAIL, and give the evidence — the test name, the command, or what you observed. Fix and re-verify

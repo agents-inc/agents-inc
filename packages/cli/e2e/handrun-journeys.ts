@@ -23,6 +23,7 @@ import {
   type SeedConfigStore,
 } from "./fixtures/seed-config-store.js";
 import { createE2ESource, buildSharedE2ESourceInto } from "./helpers/create-e2e-source.js";
+import { DECLARED_STOP_HOOK_LINE, declareAStopHook } from "./helpers/declared-stop-hook.js";
 import { CLI, type CLIResult } from "./fixtures/cli.js";
 import {
   readAgentEntries,
@@ -1210,7 +1211,7 @@ async function journeyCodexProjectInstallTrustsItself(
   }
 }
 
-// A writing sub-agent at project scope, whose completion gate needs a trusted folder.
+// A sub-agent at project scope, whose declared Stop hook needs a trusted folder.
 const CLAUDE_PROJECT_PAYLOAD = buildSeedPayload({
   skills: {
     [E2E_SKILL.react.id]: buildSeedSkill({
@@ -1231,6 +1232,7 @@ async function journeyClaudeFolderTrust(store: SeedConfigStore, sourceDir: strin
   const { root, home, project } = codexScratch("claude-folder-trust");
   try {
     store.publish("HandClaTrust", CLAUDE_PROJECT_PAYLOAD);
+    await declareAStopHook(project, WEB_DEVELOPER);
     const at: ProjectHandle = { dir: project, globalHome: home };
     const installed = await runInitFrom(store, "HandClaTrust", at, sourceDir);
     note(
@@ -1263,6 +1265,7 @@ async function journeyClaudeHomeNeedsNoTrust(
   const { root, home } = codexScratch("claude-home-trust");
   try {
     store.publish("HandClaHome", GLOBAL_EJECT_PAYLOAD);
+    await declareAStopHook(home, WEB_DEVELOPER);
     const installed = await runInitFrom(
       store,
       "HandClaHome",
@@ -1276,10 +1279,10 @@ async function journeyClaudeHomeNeedsNoTrust(
 
     const compiled = (await readCompiledAgents(home))[`${WEB_DEVELOPER}.md`];
     verdict(
-      `journey 79 — the global install from the home directory compiled ${WEB_DEVELOPER} with its completion gate`,
+      `journey 79 — the global install from the home directory compiled ${WEB_DEVELOPER} with its declared Stop hook`,
       installed.exitCode === EXIT_CODES.SUCCESS &&
         compiled !== undefined &&
-        compiled.includes('\nhooks: {"Stop":[{'),
+        compiled.includes(`\n${DECLARED_STOP_HOOK_LINE}\n`),
     );
     verdict(
       "journey 79 — and said nothing about trusting a folder, since its project agents ARE the global ones",

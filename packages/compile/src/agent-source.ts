@@ -127,62 +127,56 @@ function sanitizeSkills(skills: Skill[]): Skill[] {
 export function sanitizeCompiledAgentData(
   data: CompiledAgentData
 ): CompiledAgentData {
-  const sanitizedAgent: AgentConfig = {
-    ...data.agent,
-    name: sanitizeLiquidSyntax(data.agent.name, "agent.name"),
-    title: sanitizeLiquidSyntax(data.agent.title, "agent.title"),
-    description: sanitizeLiquidSyntax(
-      data.agent.description,
-      "agent.description"
-    ),
-    tools: sanitizeStringArray(data.agent.tools, "agent.tools"),
-    ...(data.agent.disallowedTools !== undefined && {
-      disallowedTools: sanitizeStringArray(
-        data.agent.disallowedTools,
-        "agent.disallowedTools"
-      ),
-    }),
-    ...(data.agent.model !== undefined && {
-      model: sanitizeLiquidSyntax(data.agent.model, "agent.model"),
-    }),
-    ...(data.agent.effort !== undefined && {
-      effort: sanitizeLiquidSyntax(data.agent.effort, "agent.effort"),
-    }),
-    ...(data.agent.permissionMode !== undefined && {
-      permissionMode: sanitizeLiquidSyntax(
-        data.agent.permissionMode,
-        "agent.permissionMode"
-      ),
-    }),
-    ...(data.agent.isolation !== undefined && {
-      isolation: sanitizeLiquidSyntax(data.agent.isolation, "agent.isolation"),
-    }),
-    ...(data.agent.experimental !== undefined && {
-      experimental: sanitizeExperimental(data.agent.experimental),
-    }),
-    ...(data.agent.hooks !== undefined && {
-      hooks: sanitizeHooks(data.agent.hooks),
-    }),
-  }
-
-  const sanitizedSkills = sanitizeSkills(data.skills)
-  const sanitizedPreloaded = sanitizeSkills(data.preloadedSkills)
-  const sanitizedDynamic = sanitizeSkills(data.dynamicSkills)
-  const sanitizedPreloadedIds = data.preloadedSkillIds.map((id) =>
-    sanitizeLiquidSyntax(id, "preloadedSkillId")
-  )
-
   return {
-    agent: sanitizedAgent,
+    agent: sanitizeAgent(data.agent),
     identity: data.identity,
     playbook: data.playbook,
     output: data.output,
     criticalRequirementsTop: data.criticalRequirementsTop,
     criticalReminders: data.criticalReminders,
-    skills: sanitizedSkills,
-    preloadedSkills: sanitizedPreloaded,
-    dynamicSkills: sanitizedDynamic,
-    preloadedSkillIds: sanitizedPreloadedIds,
+    skills: sanitizeSkills(data.skills),
+    preloadedSkills: sanitizeSkills(data.preloadedSkills),
+    dynamicSkills: sanitizeSkills(data.dynamicSkills),
+    preloadedSkillIds: data.preloadedSkillIds.map((id) =>
+      sanitizeLiquidSyntax(id, "preloadedSkillId")
+    ),
+  }
+}
+
+function sanitizeAgent(agent: AgentConfig): AgentConfig {
+  return {
+    ...agent,
+    name: sanitizeLiquidSyntax(agent.name, "agent.name"),
+    title: sanitizeLiquidSyntax(agent.title, "agent.title"),
+    description: sanitizeLiquidSyntax(agent.description, "agent.description"),
+    tools: sanitizeStringArray(agent.tools, "agent.tools"),
+    ...(agent.disallowedTools !== undefined && {
+      disallowedTools: sanitizeStringArray(
+        agent.disallowedTools,
+        "agent.disallowedTools"
+      ),
+    }),
+    ...(agent.model !== undefined && {
+      model: sanitizeLiquidSyntax(agent.model, "agent.model"),
+    }),
+    ...(agent.effort !== undefined && {
+      effort: sanitizeLiquidSyntax(agent.effort, "agent.effort"),
+    }),
+    ...(agent.permissionMode !== undefined && {
+      permissionMode: sanitizeLiquidSyntax(
+        agent.permissionMode,
+        "agent.permissionMode"
+      ),
+    }),
+    ...(agent.isolation !== undefined && {
+      isolation: sanitizeLiquidSyntax(agent.isolation, "agent.isolation"),
+    }),
+    ...(agent.experimental !== undefined && {
+      experimental: sanitizeExperimental(agent.experimental),
+    }),
+    ...(agent.hooks !== undefined && {
+      hooks: sanitizeHooks(agent.hooks),
+    }),
   }
 }
 
@@ -372,60 +366,6 @@ async function withSourceFolder(
 }
 
 /**
- * A `SubagentStop`-time typecheck: exit 2 blocks the stop and returns the compiler output to the
- * agent. Exits 0 without npm, a `package.json` or a `typecheck` script, so it is inert where it
- * cannot be right. A project's own completion hook replaces it.
- */
-const COMPLETION_GATE_COMMAND =
-  "command -v npm >/dev/null 2>&1 && [ -f package.json ] || exit 0; " +
-  "out=$(npm run --if-present --silent typecheck 2>&1) " +
-  "|| { printf '%s\\n' \"$out\" >&2; exit 2; }"
-
-const WRITING_TOOLS = ["Write", "Edit"]
-
-/**
- * Claude Code rewrites a sub-agent's `Stop` hook to `SubagentStop`, but an `--agent` main session
- * keeps it raw, so only `Stop` fires in both modes.
- */
-const GATE_EVENT = "Stop"
-
-const CONVERTED_GATE_EVENT = "SubagentStop"
-
-// A factory so the nested arrays are never shared between agents.
-function completionGateHooks(): NonNullable<AgentConfig["hooks"]> {
-  return {
-    [GATE_EVENT]: [
-      { hooks: [{ type: "command", command: COMPLETION_GATE_COMMAND }] },
-    ],
-  }
-}
-
-// Either spelling counts: one event for a sub-agent, and older compiles carry `SubagentStop`.
-function declaresOwnGate(hooks: AgentConfig["hooks"]): boolean {
-  if (hooks === undefined) return false
-  const stated = [GATE_EVENT, CONVERTED_GATE_EVENT]
-  return stated.some((event) => (hooks[event]?.length ?? 0) > 0)
-}
-
-/**
- * Merged per event: a declared completion gate replaces this one, other events sit beside it. The
- * gate is spread last so a degenerate `Stop: []` cannot clobber it.
- */
-function withCompletionGate(agent: AgentConfig): AgentConfig {
-  const writes = WRITING_TOOLS.some((tool) => agent.tools.includes(tool))
-  if (!writes || declaresOwnGate(agent.hooks)) return agent
-  return { ...agent, hooks: { ...agent.hooks, ...completionGateHooks() } }
-}
-
-// The only place the gate-then-sanitise order is stated.
-function prepareForRender(data: CompiledAgentData): CompiledAgentData {
-  return sanitizeCompiledAgentData({
-    ...data,
-    agent: withCompletionGate(data.agent),
-  })
-}
-
-/**
  * Every compile path renders through here, so `uninstall` can always recognise its own agents.
  * `version` is an argument because a browser has no manifest to read.
  */
@@ -459,7 +399,10 @@ async function renderFromTemplate(
   data: CompiledAgentData,
   version: string
 ): Promise<string> {
-  const prepared = await withSourceFolder(engine, prepareForRender(data))
+  const prepared = await withSourceFolder(
+    engine,
+    sanitizeCompiledAgentData(data)
+  )
 
   // Boundary cast: liquidjs types renderFile as `Promise<any>`; this template renders markdown.
   return (await engine.renderFile(template, {

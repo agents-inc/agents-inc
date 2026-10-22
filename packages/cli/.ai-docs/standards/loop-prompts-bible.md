@@ -168,9 +168,7 @@ After a sub-agent completes, capture: what changed (files + lines), key decision
 ### Verification Before Completion
 
 **Run the gate, then report what it returned.** A check that runs happens whether or not the lane
-decided to; a checklist asking the lane to confirm its own work is advice. `prompt-bible.md`
-Technique #1 carries the `Stop` hook — registered as `SubagentStop` for a sub-agent — that runs one
-on every completion attempt.
+decided to; a checklist asking the lane to confirm its own work is advice.
 
 ```
 |- [ ] All acceptance criteria checked off

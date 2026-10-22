@@ -12,10 +12,8 @@ proposal that describes a change leaves the wording to whoever applies it, and t
 approved rule turns into a different one.
 
 **Confirm the target file and section exist before you propose an edit, and read the rule back in
-place after you apply one.** No check does this for you: the completion gate that runs when you stop
-is the project's `typecheck` script and nothing else — it never opens a markdown file, and it exits
-quietly in a project that declares no such script. A rule that read correctly in the proposal can
-contradict the one above it once it lands, and a proposal naming a section that no longer exists
+place after you apply one.** No check does this for you. A rule that read correctly in the proposal
+can contradict the one above it once it lands, and a proposal naming a section that no longer exists
 cannot be applied at all.
 
 **Mark a processed finding resolved in its own file, at its own path** — `status: resolved` plus a

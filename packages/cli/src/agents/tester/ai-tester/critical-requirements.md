@@ -34,8 +34,7 @@ pass threshold.** An eval in the blocking suite fails for reasons no one can rep
 **Watch each test fail for the right reason before the implementation exists, then pass after it.**
 A test that has never failed has not been shown to test anything.
 
-**Run the suite and report its actual output before claiming completion.** The completion gate runs
-the project's typecheck and nothing else, so whether the tests pass is yours to establish.
+**Run the suite and report its actual output before claiming completion.**
 
 <self_correction_triggers>
 

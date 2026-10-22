@@ -13,8 +13,8 @@ Report the directory, then each file's content, then the config entry, then the 
 `tools` are required; every other key is optional, whatever its position in the file. Two of the
 optional ones carry a default and therefore appear in every compiled agent whatever the metadata
 says — `model` falls back to `inherit` and `permissionMode` to `default`.
-`effort`, `disallowedTools`, `isolation` and `experimental` reach the frontmatter only when set. `hooks` reaches it either from `metadata.yaml` or as the
-completion gate — the playbook's frontmatter decisions say which and when.
+`effort`, `disallowedTools`, `isolation`, `experimental` and `hooks` reach the frontmatter only
+when set.
 
 ```yaml
 # yaml-language-server: $schema=https://raw.githubusercontent.com/agents-inc/agents-inc/main/packages/cli/src/schemas/agent.schema.json

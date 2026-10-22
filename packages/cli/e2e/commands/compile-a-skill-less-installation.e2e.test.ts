@@ -36,12 +36,6 @@ import type { ProjectHandle } from "../fixtures/project-handle.js";
 const EDITED_AGENT = "web-developer" as const satisfies AgentName;
 const CONTROL_AGENT = "api-developer" as const satisfies AgentName;
 
-/**
- * Copied byte for byte from `GATE_HOOKS_LINE` in `packages/compile/src/agent-source.test.ts`, not
- * composed.
- */
-const COMPLETION_GATE_LINE = String.raw`hooks: {"Stop":[{"hooks":[{"type":"command","command":"command -v npm >/dev/null 2>&1 && [ -f package.json ] || exit 0; out=$(npm run --if-present --silent typecheck 2>&1) || { printf '%s\\n' \"$out\" >&2; exit 2; }"}]}]}`;
-
 /** Values the installed sub-agents do not already carry, so the edit is a change. */
 const HAND_EDIT = {
   model: "haiku",
@@ -125,12 +119,6 @@ describe("compile over an installation whose sub-agents carry no skills", () => 
       expect(Object.keys(installedAgents).sort()).toStrictEqual(
         [`${EDITED_AGENT}.md`, `${CONTROL_AGENT}.md`].sort(),
       );
-      for (const agent of [EDITED_AGENT, CONTROL_AGENT]) {
-        expect(
-          installedAgents[`${agent}.md`],
-          `${agent} was installed without its completion gate`,
-        ).toContain(`\n${COMPLETION_GATE_LINE}\n`);
-      }
 
       await rm(path.join(agentsPath(project.dir), `${CONTROL_AGENT}.md`));
 

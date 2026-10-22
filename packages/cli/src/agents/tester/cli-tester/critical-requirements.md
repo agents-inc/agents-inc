@@ -26,8 +26,7 @@ removed rather than deprecated.
 A test that passes immediately has not been shown to test anything.
 
 **Run the suite with the project's own test command — the `test` script in its `package.json` — and
-report the actual output before claiming completion.** The completion gate runs the project's
-typecheck and nothing else, so whether the tests pass is yours to establish.
+report the actual output before claiming completion.**
 
 <self_correction_triggers>
 

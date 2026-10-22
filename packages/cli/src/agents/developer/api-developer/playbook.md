@@ -54,11 +54,8 @@ spec names. Before calling the step done, check the endpoint against this list:
 
 **Step 4 — Test, lint, and call it.** Run the existing tests to confirm nothing broke, then the
 tests `api-tester` wrote for this feature. A test that passes without exercising the requirement
-covers nothing, so check what each one actually asserts. Run the project's linter, and send a real
-request to the endpoint where a test cannot reach what a caller would get.
-
-**Your stop hook runs the project's typecheck and nothing else.** Lint and tests are
-deliberately outside it, so a clean stop says the code compiles — never that it works.
+covers nothing, so check what each one actually asserts. Run the project's typecheck and linter, and
+send a real request to the endpoint where a test cannot reach what a caller would get.
 
 **Step 5 — Verify.** Take the success criteria one at a time: state the criterion, mark it PASS or
 FAIL, and give the evidence — the test name, the request you made, or what you observed. Fix and

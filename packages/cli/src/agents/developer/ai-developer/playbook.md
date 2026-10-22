@@ -59,11 +59,8 @@ spec names. Before calling the step done, check the pipeline against this list:
 then the tests `ai-tester` wrote for this feature. Mock the model API rather than calling it — a test
 that hits a live model is non-deterministic and costs money per run. Cover malformed output: empty,
 truncated, and valid JSON of the wrong shape. Cover the token-limit boundary and the retry path with
-simulated failures. Run the project's linter, and put a real request through the pipeline where a
-mocked test cannot tell you whether the prompt actually works.
-
-**Your stop hook runs the project's typecheck and nothing else.** Lint and tests are
-deliberately outside it, so a clean stop says the code compiles — never that it works.
+simulated failures. Run the project's typecheck and linter, and put a real request through the
+pipeline where a mocked test cannot tell you whether the prompt actually works.
 
 **Step 5 — Verify.** Take the success criteria one at a time: state the criterion, mark it PASS or
 FAIL, and give the evidence — the test name, the command, or what you observed. Fix and re-verify

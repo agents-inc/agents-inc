@@ -354,13 +354,17 @@ describe("the Liquid syntax a rendered sub-agent must not carry", () => {
 })
 
 /**
- * The raw `hooks:` line Claude Code reads; the command stays a literal. A refusal alone cannot tell
- * a scoped guard from one that swallowed its domain, so both cases stay together.
+ * The raw `hooks:` line Claude Code reads. Each expected line ends at its newline, so a key composed
+ * beside a declaration fails the match.
  */
 
-/** `Write` is what makes an agent one the gate is for. */
 const WRITING_AGENT = buildAgentConfig("cli-developer", {
   tools: ["Read", "Write"],
+  skills: [DYNAMIC_SKILL],
+})
+
+const EDITING_AGENT = buildAgentConfig("cli-developer", {
+  tools: ["Read", "Edit"],
   skills: [DYNAMIC_SKILL],
 })
 
@@ -369,30 +373,29 @@ const READ_ONLY_AGENT = buildAgentConfig("cli-researcher", {
   skills: [DYNAMIC_SKILL],
 })
 
-const DECLARED_GATE_COMMAND = "make check"
+const DECLARED_STOP_COMMAND = "make check"
 
-/** A non-completion hook, which must not cost an agent its gate. */
 const FORMATTER_MATCHER = "Write"
 const FORMATTER_COMMAND = "prettier --write"
 
-/** A literal: the frontmatter of every writing agent an install writes. */
-const GATE_HOOKS_LINE = String.raw`hooks: {"Stop":[{"hooks":[{"type":"command","command":"command -v npm >/dev/null 2>&1 && [ -f package.json ] || exit 0; out=$(npm run --if-present --silent typecheck 2>&1) || { printf '%s\\n' \"$out\" >&2; exit 2; }"}]}]}`
+describe("the hooks a compiled sub-agent carries", () => {
+  it.each([
+    ["writes files", "cli-developer", WRITING_AGENT],
+    ["edits files", "cli-developer", EDITING_AGENT],
+    ["cannot write", "cli-researcher", READ_ONLY_AGENT],
+  ] as const)(
+    "are none for an agent that %s and declares none",
+    async (_tools, name, agent) => {
+      const rendered = await renderAgentFromCorpus(name, agent)
 
-describe("the completion gate a writing sub-agent stops against", () => {
-  it("emits the gate for a writing agent that declares nothing", async () => {
-    const rendered = await renderAgentFromCorpus("cli-developer", WRITING_AGENT)
+      expect(
+        rendered,
+        "the compile step adds no hook of its own: a check an agent should run is asked for in its prompt"
+      ).not.toContain("\nhooks:")
+    }
+  )
 
-    expect(
-      rendered,
-      "Claude Code converts this key to SubagentStop when it registers a sub-agent's hooks, and consults it under its own name when the agent runs as a main session"
-    ).toContain('\nhooks: {"Stop":[')
-    expect(
-      rendered,
-      "a gate that hard-blocked in a project defining no such script would make every sub-agent unstoppable"
-    ).toContain("--if-present --silent typecheck")
-  })
-
-  it("keeps the gate beside a hook declared for another event", async () => {
+  it("are exactly the hooks an agent declares for another event", async () => {
     const agent: AgentConfig = {
       ...WRITING_AGENT,
       hooks: {
@@ -409,165 +412,34 @@ describe("the completion gate a writing sub-agent stops against", () => {
 
     expect(
       rendered,
-      "the merge is per event: declaring a formatter is not declaring a completion gate, and it used to cost the agent one"
+      "a Stop key composed beside a declared formatter runs a check nobody declared"
     ).toContain(
-      `\nhooks: {"PostToolUse":[{"matcher":"${FORMATTER_MATCHER}","hooks":[{"type":"command","command":"${FORMATTER_COMMAND}"}]}],"Stop":[`
+      `\nhooks: {"PostToolUse":[{"matcher":"${FORMATTER_MATCHER}","hooks":[{"type":"command","command":"${FORMATTER_COMMAND}"}]}]}\n`
     )
-    expect(
-      rendered,
-      "the surviving Stop key has to be the gate rather than anything else that could occupy it"
-    ).toContain("--if-present --silent typecheck")
   })
 
-  it("lets a declared Stop hook replace the gate", async () => {
-    const agent: AgentConfig = {
-      ...WRITING_AGENT,
-      hooks: {
-        Stop: [
-          { hooks: [{ type: "command", command: DECLARED_GATE_COMMAND }] },
-        ],
-      },
+  it.each(["Stop", "SubagentStop"])(
+    "are exactly a %s hook the agent declares",
+    async (event) => {
+      const agent: AgentConfig = {
+        ...WRITING_AGENT,
+        hooks: {
+          [event]: [
+            { hooks: [{ type: "command", command: DECLARED_STOP_COMMAND }] },
+          ],
+        },
+      }
+
+      const rendered = await renderAgentFromCorpus("cli-developer", agent)
+
+      expect(
+        rendered,
+        "a stop hook the agent declares reaches Claude Code as written"
+      ).toContain(
+        `\nhooks: {"${event}":[{"hooks":[{"type":"command","command":"${DECLARED_STOP_COMMAND}"}]}]}\n`
+      )
     }
-
-    const rendered = await renderAgentFromCorpus("cli-developer", agent)
-
-    expect(
-      rendered,
-      "a project stating its own completion gate is the rule this product has always documented"
-    ).toContain(
-      `\nhooks: {"Stop":[{"hooks":[{"type":"command","command":"${DECLARED_GATE_COMMAND}"}]}]}\n`
-    )
-    expect(
-      rendered,
-      "emitting both would run both, which is the opposite of letting a project state its own"
-    ).not.toContain("--if-present")
-  })
-
-  it("lets a declared SubagentStop hook replace the gate too", async () => {
-    const agent: AgentConfig = {
-      ...WRITING_AGENT,
-      hooks: {
-        SubagentStop: [
-          { hooks: [{ type: "command", command: DECLARED_GATE_COMMAND }] },
-        ],
-      },
-    }
-
-    const rendered = await renderAgentFromCorpus("cli-developer", agent)
-
-    expect(
-      rendered,
-      "SubagentStop is the spelling every agent compiled before 2026-09-03 carries, so it is what a project copying its gate out of one will have written"
-    ).toContain(
-      `\nhooks: {"SubagentStop":[{"hooks":[{"type":"command","command":"${DECLARED_GATE_COMMAND}"}]}]}\n`
-    )
-    expect(
-      rendered,
-      "narrowing the check to Stop alone would emit this gate beside the project's own and a sub-agent would run both"
-    ).not.toContain("--if-present")
-  })
-
-  it("does not let a degenerate empty Stop displace the gate", async () => {
-    const agent: AgentConfig = { ...WRITING_AGENT, hooks: { Stop: [] } }
-
-    const rendered = await renderAgentFromCorpus("cli-developer", agent)
-
-    expect(
-      rendered,
-      'an empty array states no gate, so spreading the declaration over the gate would emit hooks: {"Stop":[]} and lose it to a key that says nothing'
-    ).toContain('\nhooks: {"Stop":[{')
-    expect(rendered).toContain("--if-present")
-  })
-
-  it("emits no hooks key at all for an agent that cannot write", async () => {
-    const rendered = await renderAgentFromCorpus(
-      "cli-researcher",
-      READ_ONLY_AGENT
-    )
-
-    expect(
-      rendered,
-      "the gate is emitted only where it can mean something, and a read-only researcher has nothing to typecheck"
-    ).not.toContain("\nhooks:")
-  })
-
-  it("renders the gate byte for byte", async () => {
-    const rendered = await renderAgentFromCorpus("cli-developer", WRITING_AGENT)
-
-    expect(
-      rendered,
-      "this record is the hooks frontmatter of every writing agent an install writes, so an unintended change to its shape rewrites all of them at once"
-    ).toContain(`\n${GATE_HOOKS_LINE}\n`)
-  })
-})
-
-/** A declared `PostToolUse` survives beside the gate; a declared `Stop` replaces it. */
-
-/** Every field `sanitizeHooks` enumerates below the event key; none rides a spread uncovered. */
-const SANITISED_HOOK_FIELDS: readonly PoisonedField[] = [
-  "hooks.matcher",
-  "hooks.action.type",
-  "hooks.action.command",
-  "hooks.action.script",
-  "hooks.action.prompt",
-]
-
-/** Plus the event key, which only a non-completion hook can carry. */
-const SANITISED_HOOK_FIELDS_WITH_EVENT: readonly PoisonedField[] = [
-  "hooks.event",
-  ...SANITISED_HOOK_FIELDS,
-]
-
-describe("the Liquid syntax an author's own hooks must not carry", () => {
-  it("strips a declared hook the gate is composed beside", async () => {
-    const agent: AgentConfig = {
-      ...WRITING_AGENT,
-      hooks: { [marker("hooks.event")]: [POISONED_HOOK] },
-    }
-
-    const rendered = await renderAgentFromCorpus("cli-developer", agent)
-
-    expect(
-      rendered,
-      "the case is only the composition case while the gate is actually beside the declared hook"
-    ).toContain("--if-present --silent typecheck")
-    expect(
-      SANITISED_HOOK_FIELDS_WITH_EVENT.filter((field) =>
-        rendered.includes(residue(field))
-      ),
-      "a declared hook that never reached the frontmatter would satisfy the assertion below for free"
-    ).toStrictEqual(SANITISED_HOOK_FIELDS_WITH_EVENT)
-    expect(
-      SANITISED_HOOK_FIELDS_WITH_EVENT.filter((field) =>
-        rendered.includes(marker(field))
-      ),
-      "composing the gate into an agent's hooks must not carry the author's own entries past the sanitiser"
-    ).toStrictEqual([])
-  })
-
-  it("strips a declared Stop hook that replaces the gate", async () => {
-    const agent: AgentConfig = {
-      ...WRITING_AGENT,
-      hooks: { Stop: [POISONED_HOOK] },
-    }
-
-    const rendered = await renderAgentFromCorpus("cli-developer", agent)
-
-    expect(
-      rendered,
-      "the case is only the replacement case while the declared hook has actually displaced the gate"
-    ).not.toContain("--if-present")
-    expect(
-      SANITISED_HOOK_FIELDS.filter((field) =>
-        rendered.includes(residue(field))
-      ),
-      "a declared hook that never reached the frontmatter would satisfy the assertion below for free"
-    ).toStrictEqual(SANITISED_HOOK_FIELDS)
-    expect(
-      SANITISED_HOOK_FIELDS.filter((field) => rendered.includes(marker(field))),
-      "the branch that returns the definition untouched must still hand the author's hooks to the sanitiser"
-    ).toStrictEqual([])
-  })
+  )
 })
 
 /**
@@ -645,19 +517,6 @@ describe("the source folder a partial asks for beside an escaped mention", () =>
       "A partial names the install's source folder (@@SOURCE_FOLDER@@) and the engine rendering " +
         "it carries no 'sourceFolder' global, so the name would compile away to nothing."
     )
-  })
-})
-
-describe("the completion gate an editing sub-agent stops against", () => {
-  it("is emitted for an agent that edits files without writing new ones", async () => {
-    const agent = buildAgentConfig("cli-developer", {
-      tools: ["Read", "Edit"],
-      skills: [DYNAMIC_SKILL],
-    })
-
-    const rendered = await renderAgentFromCorpus("cli-developer", agent)
-
-    expect(rendered).toContain(`\n${GATE_HOOKS_LINE}\n`)
   })
 })
 

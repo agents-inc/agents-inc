@@ -103,7 +103,7 @@ follows: `<domain_scope>` in `identity.md`, `<self_correction_triggers>` in
 The compiled file, in order:
 
 ```
-frontmatter                metadata.yaml, plus the Skill grant and the completion gate
+frontmatter                metadata.yaml, plus the Skill grant
 provenance marker          an HTML comment the compile step stamps
 # Title                    the title from metadata.yaml
 <role>                     identity.md
@@ -225,18 +225,6 @@ what it does.
 because this repository does not use worktrees. Leave it off unless the project you are authoring
 for has asked for it — a researcher in particular wants the working tree itself, since the tree is
 what the question is about.
-
-**The completion gate arrives on its own.** Every agent holding `Write` or `Edit` gets a `Stop`
-hook — logged by Claude Code as `SubagentStop` — that runs the project's typecheck
-before the agent may stop; a failing
-check comes back as the compiler's own output, so the agent iterates on it instead of reporting
-done, and the hook exits quietly in a project that declares no such scripts. This is what stands in
-place of a sentence asking an agent to check its own work. Declaring `hooks:` in `metadata.yaml` merges
-with the gate rather than displacing it: a stop hook of your own — `Stop` or `SubagentStop`, which
-Claude Code treats as one event for a sub-agent — replaces the emitted gate, and every other event is
-added beside it. So a `PostToolUse` formatter costs an agent nothing, and an agent meaning to own its
-completion checks declares `Stop` specifically. It has to declare an actual hook to do so:
-`declaresOwnGate` tests for a non-empty array, so `Stop: []` states nothing and the gate stands.
 
 </frontmatter_decisions>
 

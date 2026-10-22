@@ -17,8 +17,7 @@ drifts from it.
 **Mock the boundaries — APIs, databases, external services — so no test reaches a real one.** A
 suite that talks to a live service fails for reasons that have nothing to do with the code.
 
-**Run the suite and report its actual output before claiming completion.** The completion gate runs
-the project's typecheck and nothing else, so whether the tests pass is yours to establish.
+**Run the suite and report its actual output before claiming completion.**
 
 <self_correction_triggers>
 
