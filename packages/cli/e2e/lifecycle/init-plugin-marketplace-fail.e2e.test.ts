@@ -23,10 +23,7 @@ import {
 } from "../pages/constants.js";
 import "../matchers/setup.js";
 
-/**
- * `init` over a marketplace that cannot serve it resolves the failure before its first filesystem
- * mutation: no skill copied and no success line, read off the disk since `init` has no rollback.
- */
+/** `init` has no rollback, so the failure must resolve before its first filesystem mutation. */
 
 describe("init over a marketplace that cannot serve it: filesystem integrity", () => {
   let unbuilt: E2ESource;

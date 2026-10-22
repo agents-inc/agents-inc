@@ -25,9 +25,7 @@ import { CORPUS_CLI_VERSION } from "@workspace/compile/corpus";
 import { provenanceMarker } from "@workspace/compile/agent-source";
 
 /**
- * Install, then re-render the same configuration through the shared package: the preview's bytes
- * must equal the disk's, at both the global (standalone) and project (inlining) writers. The
- * matrix is loaded from the source the install read, since the bytes depend on its categories.
+ * The matrix is loaded from the source the install read, since the bytes depend on its categories.
  *
  * KNOWN GAP: nothing here builds the `AgentConfig` a compiled agent's body renders from; the
  * install (`resolveAgents`) and the preview (`compileAgents`) construct it independently.
@@ -115,13 +113,11 @@ describe("the bytes the shared renderer draws", () => {
         "utf8",
       );
 
-      // Subject guard: an empty global root would route both sides through the standalone writer.
       expect(
         globalConfig.skills.map((skill) => skill.id),
         "the global root installed no skills, so nothing would be inlined and the writer under test never runs",
       ).not.toStrictEqual([]);
 
-      // Subject guard: the split removed the inlined global rows, and kept the project's.
       expect(
         projectSplit.skills.map((skill) => skill.id),
         "splitting the project config off disk left it holding every row, so it is still the writer's output rather than its input",

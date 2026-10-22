@@ -4,7 +4,6 @@ import { Chip } from "@workspace/ui/components/chip"
 import { moveToAdjacentRadio } from "@workspace/ui/lib/radio-row"
 import { cn } from "@workspace/ui/lib/utils"
 
-// A radiogroup with one tab stop: both call sites hold the row in a single store field.
 function Segmented({ className, onKeyDown, ...props }: ComponentProps<"div">) {
   return (
     <div

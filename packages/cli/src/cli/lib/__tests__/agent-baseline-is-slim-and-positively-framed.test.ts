@@ -1,6 +1,6 @@
 /**
- * The baseline: what the template adds identically to all eighteen compiled sub-agents. Rendered,
- * since only a render joins template text, render tags and partials; no other gate reads `.liquid`.
+ * The baseline: what the template adds identically to every compiled sub-agent. Rendered, since
+ * only a render joins template text, render tags and partials.
  */
 import { describe, expect, it } from "vitest";
 
@@ -153,7 +153,7 @@ describe.each(BASELINE_BRANCHES)("the baseline of an agent with $posture", ({ bu
 
 /**
  * The compiled body is the sub-agent's system prompt, so stable sections must precede the volatile
- * version stamp and skill list to keep the prefix cacheable. `toStrictEqual`: the subject is order.
+ * version stamp and skill list to keep the prefix cacheable.
  */
 describe("the compiled body puts everything stable before everything volatile", () => {
   it("closes with the volatile block and nothing after it", async () => {
@@ -168,7 +168,6 @@ describe("the compiled body puts everything stable before everything volatile", 
     ).toBe("<system-reminder>");
   });
 
-  /** Both halves: gone from the top, and still present below. */
   it("keeps the generator version out of the cacheable prefix and inside the volatile block", async () => {
     const engine = await createLiquidEngine();
     const rendered = await renderAgent(engine, createMockCompiledAgentData(), RENDER_VERSION);

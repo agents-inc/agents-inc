@@ -23,11 +23,6 @@ import {
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
-/**
- * `init --from` registers each project's realpath in the global config's `projects`: two projects
- * under one HOME, each exactly once. The HOME install itself is not registered.
- */
-
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const API_DEV = E2E_AGENT["api-developer"].name;
 

@@ -23,8 +23,6 @@ import {
 } from "../fixtures/e2e-stack-seed.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 
-/** init (global + project), then edit, then compile, verified at each stage. */
-
 const API_DEV = E2E_AGENT["api-developer"].name;
 
 describe("init-edit-compile roundtrip lifecycle", () => {

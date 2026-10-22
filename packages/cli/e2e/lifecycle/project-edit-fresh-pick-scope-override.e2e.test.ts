@@ -22,9 +22,8 @@ import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 
 /**
- * A skill the global install lacks, set up in a project at project scope: the project side
- * (copied dir, config entry, compiled agent) is real and the global scope is unchanged. The agent
- * moves to project scope too, since a global agent never carries a project-scoped skill.
+ * The agent moves to project scope too, since a global agent never carries a project-scoped
+ * skill.
  */
 
 describe("a fresh pick set up at project scope over a global install", () => {

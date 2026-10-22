@@ -16,7 +16,10 @@ import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
 /**
  * `compile` over a stack skill installed nowhere prints only the "configured but was not found"
- * line, which also guards the absence of the "not found in matrix" one.
+ * line, which also guards the absence of the "not found in matrix" one: the owner ruled that line
+ * deleted wherever it is printed (2026-10-02). Observed red against the unfixed build, where both
+ * lines printed; the compiled sub-agent and the untouched `config.ts` were green there and must
+ * stay green.
  */
 
 /** A real catalogue skill the E2E fixture does not ship. */

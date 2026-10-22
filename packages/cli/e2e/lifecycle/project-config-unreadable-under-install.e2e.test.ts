@@ -30,12 +30,6 @@ import {
 } from "../helpers/test-utils.js";
 import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
-/**
- * A project's own `config.ts` that exists but cannot be loaded stops every config-reading command
- * in that project with a refusal naming that config and the way out, while `doctor` reports it and
- * `uninstall` still works. The second describe is the readable-configs control.
- */
-
 describe("a real project whose own config.ts cannot be loaded, under a readable global one", () => {
   let env: DualScopeEnv;
   let store: SeedConfigStore;

@@ -8,8 +8,6 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { installDualScopeStack } from "../fixtures/e2e-stack-seed.js";
 
-/** `compile` over an installation split across both scopes is stable across runs. */
-
 describe("compile over a dual-scope installation", () => {
   let store: SeedConfigStore;
   let testTempDir: string;

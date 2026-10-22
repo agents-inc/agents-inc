@@ -21,8 +21,9 @@ import "../matchers/setup.js";
 
 /**
  * An unevaluable source config stops commands that would otherwise fall through to the public
- * catalogue. This is the source-config reader, not the full-config reader the `*-corrupt-config`
- * specs cover. Each refusal is paired with the same command succeeding.
+ * catalogue (owner ruling 2026-08-20). This is the source-config reader, not the full-config
+ * reader the `*-corrupt-config` specs cover. Each refusal is paired with the same command
+ * succeeding.
  */
 
 const SYNTAX_ERROR = `export default {{{ not valid typescript`;
@@ -122,7 +123,8 @@ describe("a settings config that exists and cannot be evaluated", () => {
   describe("eject", () => {
     /**
      * `eject` reaches this reader through `ensureMinimalConfig`; with no project config the
-     * unreadable file is always the global one, and the refusal lands before anything is ejected.
+     * unreadable file is always the global one, and the refusal lands before anything is ejected
+     * (owner ruling 2026-10-02: every write refuses over a broken config, `eject` included).
      */
     it("invents no configuration over a global one it cannot read", async () => {
       const { projectDir, home } = await makeProjectAndHome();

@@ -43,10 +43,7 @@ import {
 } from "../helpers/type-check-probe.js";
 import "../matchers/setup.js";
 
-/**
- * A custom `--marketplace` install, then every later command reading that source without being
- * told again. `search` must not find a public-only skill, which a merged catalogue would.
- */
+/** `search` must not find a public-only skill, which a merged catalogue would. */
 
 /** Shipped by the public marketplace, not the E2E source. */
 const PUBLIC_ONLY_SEARCH_TERM = "playwright";
@@ -185,14 +182,12 @@ describe("a custom marketplace is stored by init and resolved by every later com
       const result = await runInitFrom(store, STACK_ID, project, sourceDir);
       expect(result.exitCode, `init failed:\n${result.output}`).toBe(EXIT_CODES.SUCCESS);
 
-      // Never names the public marketplace's built-in catalogue.
       expect(result.output).toContain(STEP_TEXT.INIT_SUCCESS);
       expect(
         result.output,
         "the built-in stacks stand in for the default marketplace only",
       ).not.toContain(BUILT_IN_STACK_DISPLAY);
 
-      // Surface 3: the source is stored, so nothing later has to be told again.
       const globalConfig = await loadConfigOrFail(globalHome);
       expect(globalConfig.marketplace, "init must record the source it installed from").toBe(
         sourceDir,
@@ -206,7 +201,6 @@ describe("a custom marketplace is stored by init and resolved by every later com
         "the installed skills must be the custom stack's, not a default's",
       ).toStrictEqual(E2E_STACK_SKILL_IDS);
 
-      // Surfaces 1 and 4.
       await expectInstallSurfaces(globalHome, E2E_STACK_AGENTS);
 
       await expectCommandsResolveCustomSource(project, sourceDir);
@@ -230,7 +224,6 @@ describe("a custom marketplace is stored by init and resolved by every later com
         "a marketplace shipping no stacks must not have the built-ins substituted into it",
       ).not.toContain(BUILT_IN_STACK_DISPLAY);
 
-      // Stores its source exactly as a stacked install does.
       expect(
         (await loadConfigOrFail(globalHome)).marketplace,
         "a stackless init must record the source it installed from",

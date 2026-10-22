@@ -35,12 +35,6 @@ import { readGeneratedUnion } from "../../src/cli/lib/__tests__/helpers/generate
 import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
-/**
- * Removing a global agent via `edit --from` drops it from a registered project's agents[] and
- * SelectedAgentName, leaves a project-scoped agent sharing its skill untouched, and recompiles the
- * project (which never prunes, so the removed agent's stale `.md` stays).
- */
-
 const globalStack = {
   [E2E_AGENT["web-developer"].name]: {
     "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],

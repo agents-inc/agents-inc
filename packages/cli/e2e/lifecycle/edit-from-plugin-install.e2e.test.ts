@@ -18,7 +18,7 @@ import {
 
 /**
  * An edit adding a plugin skill must run `claude plugin install`, so `.claude/settings.json`
- * `enabledPlugins` matches config.ts. Requires the Claude CLI.
+ * `enabledPlugins` matches config.ts.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();

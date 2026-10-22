@@ -50,7 +50,6 @@ import type { JsonBodyType, PathParams } from "msw"
 
 // `/monitoring` is absent: only Sentry's SDK calls it.
 
-// Exported so the editor's suites share one copy of each route.
 export const CONFIGS_URL = `${WORKER_ORIGIN}/configs`
 export const SKILL_INDEX_URL = `${WORKER_ORIGIN}/skills`
 
@@ -64,17 +63,14 @@ const INTEGRITY_FAILURE = 500
 // broken check.
 const HONO_TEXT_PLAIN = "text/plain; charset=UTF-8"
 
-// The worker's own `c.text` refusals; GitHub raw CDN answers do not come through here.
 const workerText = (body: string, status: number) =>
   HttpResponse.text(body, {
     status,
     headers: { "content-type": HONO_TEXT_PLAIN },
   })
 
-// What `POST /configs` answers a body its write schema refuses.
 const REFUSED = 400
 
-// 409 is a stale bundle (a reload fixes it); 503 is the store.
 export const OUT_OF_DATE = 409
 export const STORE_UNAVAILABLE = 503
 
@@ -82,10 +78,7 @@ export const STORE_UNAVAILABLE = 503
 export const mintedConfig = () =>
   HttpResponse.json({ id: STORED_ID }, { status: CREATED })
 
-/**
- * Validates with the worker's own write schema; a refusal sends the `safeParse` result as
- * `@hono/zod-validator`'s default hook does.
- */
+// A refusal sends the `safeParse` result as `@hono/zod-validator`'s default hook does.
 const createConfig = http.post(CONFIGS_URL, async ({ request }) => {
   const validated = installableSeedPayloadSchema.safeParse(await request.json())
   if (validated.success) return mintedConfig()
@@ -96,7 +89,6 @@ const createConfig = http.post(CONFIGS_URL, async ({ request }) => {
   )
 })
 
-// Answered by id as the store does; every unknown id is a 404.
 const readConfig = http.get<{ id: string }>(READ_CONFIG_URL, ({ params }) => {
   if (params.id === STORED_ID) return HttpResponse.json(STORED_PAYLOAD)
 
@@ -138,7 +130,6 @@ const configRefusalOf = (status: number) => {
   return new HttpResponse(null, { status })
 }
 
-/** The worker's own answer for 503 and 429; a null body for every other status. */
 export const configRefusedHandlerFor = (status: number) =>
   http.post(CONFIGS_URL, () => configRefusalOf(status))
 
@@ -147,12 +138,10 @@ export const configRateLimitedHandler = configRefusedHandlerFor(TOO_MANY)
 /** KV refusing the write: the one refusal no body can provoke. */
 export const storeRefusedHandler = configRefusedHandlerFor(STORE_UNAVAILABLE)
 
-/** Network failure, not a refusal: there is no status to read. */
 export const configUnreachableHandler = http.post(CONFIGS_URL, () =>
   HttpResponse.error()
 )
 
-// The freshness header is the half of the contract a body cannot carry.
 const readSkillIndex = http.get(SKILL_INDEX_URL, () =>
   HttpResponse.json(SKILL_INDEX, {
     headers: { [SKILL_INDEX_FRESHNESS_HEADER]: "fresh" },
@@ -168,12 +157,11 @@ export const staleSkillIndexHandler = http.get(SKILL_INDEX_URL, () =>
   })
 )
 
-/** No index published yet: only reachable before the first scheduled build succeeds. */
+/** No index published yet: only before the first scheduled build succeeds. */
 export const skillIndexUnavailableHandler = http.get(SKILL_INDEX_URL, () =>
   workerText(SKILL_INDEX_UNAVAILABLE_BODY, STORE_UNAVAILABLE)
 )
 
-// Wildcarded: the caller builds the path.
 export const CATALOG_URL = `${GITHUB_API_ORIGIN}/repos/:owner/:repo/contents/*`
 
 const UNAUTHORIZED = 401
@@ -209,12 +197,10 @@ const readCatalog = http.get<{ owner: string; repo: string }>(
 
 export const catalogHandlers = [readCatalog]
 
-/** JSON that is not a catalogue: the one failure never worth retrying. */
 export const malformedCatalogHandler = http.get(CATALOG_URL, () =>
   HttpResponse.json(MALFORMED_CATALOG)
 )
 
-/** A token that was real and is not any more — revoked, expired, mistyped. */
 export const catalogUnauthorizedHandler = http.get(CATALOG_URL, () =>
   HttpResponse.json({ message: "Bad credentials" }, { status: UNAUTHORIZED })
 )
@@ -231,13 +217,13 @@ export const catalogUnreachableHandler = http.get(CATALOG_URL, () =>
   HttpResponse.error()
 )
 
-// The trees API lists the whole repo in one call (anonymous limit is 60/h); files come off the
-// raw CDN, which is unlimited and CORS-open.
-
 const TREE_URL = `${GITHUB_API_ORIGIN}/repos/:owner/:repo/git/trees/:ref`
 const RAW_URL = `${GITHUB_RAW_ORIGIN}/:owner/:repo/:ref/*`
 
 const SKILL_TREES = [EXTERNAL_SKILL, OTHER_EXTERNAL_SKILL]
+
+const servedSkillIn = (repo: string) =>
+  SKILL_TREES.find((candidate) => candidate.repo === repo)
 
 const blobsOf = (skill: { path: string; files: Record<string, string> }) =>
   Object.entries(skill.files).map(([relative, text]) => ({
@@ -258,7 +244,7 @@ const DECOY_BLOB = {
 }
 
 const treeFor = (repo: string) => {
-  const skill = SKILL_TREES.find((candidate) => candidate.repo === repo)
+  const skill = servedSkillIn(repo)
   if (!skill) return undefined
 
   return {
@@ -278,19 +264,24 @@ const readSkillTree = http.get<{ owner: string; repo: string }>(
 )
 
 const textOf = (repo: string, fullPath: string) => {
-  const skill = SKILL_TREES.find((candidate) => candidate.repo === repo)
+  const skill = servedSkillIn(repo)
   if (!skill) return undefined
 
   const relative = fullPath.slice(skill.path.length + 1)
   return (skill.files as Record<string, string>)[relative]
 }
 
+// The part past `/:owner/:repo/:ref/`. msw's `*` lands in `params[0]`; the URL is the honest
+// source for it.
+const filePathOf = (request: Request) =>
+  decodeURIComponent(
+    new URL(request.url).pathname.split("/").slice(4).join("/")
+  )
+
 const readSkillFile = http.get<{ owner: string; repo: string }>(
   RAW_URL,
   ({ params, request }) => {
-    // msw's `*` lands in `params[0]`; the URL is the honest source for it.
-    const fullPath = new URL(request.url).pathname.split("/").slice(4).join("/")
-    const text = textOf(repoOf(params), decodeURIComponent(fullPath))
+    const text = textOf(repoOf(params), filePathOf(request))
 
     return text === undefined
       ? HttpResponse.text("404: Not Found", { status: NOT_FOUND })
@@ -300,7 +291,6 @@ const readSkillFile = http.get<{ owner: string; repo: string }>(
 
 export const skillContentsHandlers = [readSkillTree, readSkillFile]
 
-/** One file past the per-skill cap. */
 export const oversizedSkillHandler = http.get(TREE_URL, () =>
   HttpResponse.json({
     sha: "HEAD",
@@ -329,13 +319,9 @@ export const emptySkillTreeHandler = http.get(TREE_URL, () =>
   HttpResponse.json({ sha: "HEAD", truncated: false, tree: [DECOY_BLOB] })
 )
 
-/** GitHub unreachable while listing — the one failure retrying can fix. */
 export const skillTreeUnreachableHandler = http.get(TREE_URL, () =>
   HttpResponse.error()
 )
-
-// Signed-in routes sit behind `authenticated`, so the default set answers a cookieless browser:
-// a `null` session and 401 elsewhere.
 
 const AUTH_URL = `${WORKER_ORIGIN}/api/auth`
 
@@ -418,7 +404,6 @@ const readSignedInSession = http.get(SESSION_URL, () =>
 
 const listStacks = http.get(STACKS_URL, () => HttpResponse.json(SAVED_STACKS))
 
-// Echoes the request with server-minted id and timestamps; nothing is stored.
 const createStack = http.post<PathParams, { name: string; configId: string }>(
   STACKS_URL,
   async ({ request }) => {
@@ -427,7 +412,6 @@ const createStack = http.post<PathParams, { name: string; configId: string }>(
   }
 )
 
-// Renames in place; only `name` and `updatedAt` change.
 const renameStack = http.patch<{ id: string }, { name: string }>(
   STACK_URL,
   async ({ params, request }) => {
@@ -452,10 +436,7 @@ const compose = http.post(COMPOSE_URL, () =>
   HttpResponse.json(COMPOSED_PROPOSAL)
 )
 
-/**
- * One cookie decides every signed-in route, so they ship as one set. `use()` matches in argument
- * order: pass one-offs ahead of this array or they are shadowed.
- */
+/** `use()` matches in argument order: pass one-offs ahead of this array or they are shadowed. */
 export const signedInHandlers = [
   readSignedInSession,
   listStacks,
@@ -470,8 +451,6 @@ export const stackNotFoundHandler = http.patch(STACK_URL, () =>
   HttpResponse.json(NO_STACK_BODY, { status: NOT_FOUND })
 )
 
-// The clients branch on status alone, so the refusals below carry no body.
-
 export const stackRefusedHandlerFor = (status: number) =>
   http.post(STACKS_URL, () =>
     status === UNAUTHORIZED
@@ -479,17 +458,12 @@ export const stackRefusedHandlerFor = (status: number) =>
       : new HttpResponse(null, { status })
   )
 
-/** The save failing for a reason the route does not declare: an outage, a bug. */
 export const stackRefusedHandler = stackRefusedHandlerFor(SERVER_ERROR)
 
 export const stackUnreachableHandler = http.post(STACKS_URL, () =>
   HttpResponse.error()
 )
 
-/**
- * Declared bodies for 429 and 502, none otherwise. `/compose` tells its two 400s apart by body, so
- * this bodiless 400 is the unreadable case and `composeTooLongHandler` the readable one.
- */
 const composeRefusalOf = (status: number) => {
   if (status === TOO_MANY) {
     return HttpResponse.json(COMPOSE_TOO_MANY_BODY, { status })
@@ -504,33 +478,29 @@ const composeRefusalOf = (status: number) => {
 export const composeRefusedHandlerFor = (status: number) =>
   http.post(COMPOSE_URL, () => composeRefusalOf(status))
 
-/** Its own handler: an empty sentence gets the same 400, so only the body tells them apart. */
+/** An empty sentence gets the same 400, so only the body tells them apart. */
 export const composeTooLongHandler = http.post(COMPOSE_URL, () =>
   HttpResponse.json(COMPOSE_TOO_LONG_BODY, { status: BAD_REQUEST })
 )
 
 export const composeTooManyHandler = composeRefusedHandlerFor(TOO_MANY)
 
-/** One status for a silent or unusable model; upstream detail is withheld from the browser. */
 export const composeRefusedHandler = composeRefusedHandlerFor(MODEL_SILENT)
 
 export const composeUnreachableHandler = http.post(COMPOSE_URL, () =>
   HttpResponse.error()
 )
 
-/** The auth limiter: the one auth refusal that names its own fix. */
 export const signInRateLimitedHandler = http.post(
   SIGN_IN_URL,
   () => new HttpResponse(null, { status: TOO_MANY })
 )
 
-/** The worker answering, and declining to start the flow. */
 export const signInRefusedHandler = http.post(
   SIGN_IN_URL,
   () => new HttpResponse(null, { status: SERVER_ERROR })
 )
 
-/** A 200 with no `url`: the client must notice it is not redirecting. */
 export const signInWithoutRedirectHandler = http.post(SIGN_IN_URL, () =>
   HttpResponse.json({})
 )
@@ -548,7 +518,6 @@ export const signOutUnreachableHandler = http.post(SIGN_OUT_URL, () =>
   HttpResponse.error()
 )
 
-/** Read as signed out, so an outage degrades to a first visit. */
 export const sessionUnreachableHandler = http.get(SESSION_URL, () =>
   HttpResponse.error()
 )

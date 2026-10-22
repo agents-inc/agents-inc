@@ -23,9 +23,8 @@ import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
- * A skill at both scopes with different sources (plugin vs eject) compiles in the format of the
- * ACTIVE (project) entry: bare `id` for eject, `id:id` for plugin. `sourceById` is keyed by
- * `SkillId` alone, so both halves reaching it could stamp the wrong source.
+ * `sourceById` is keyed by `SkillId` alone, so both halves of a dual-scope skill reaching it could
+ * stamp the wrong source.
  */
 
 const HONO = E2E_SKILL.hono.id;
@@ -174,7 +173,6 @@ describe("dual-scope mixed-source compiled agent ref format", () => {
         E2E_SOURCE.sourceDir,
       );
 
-      // Tombstone first, active entry second: the production config-writer order.
       await seedScope(
         projectDir,
         {
@@ -189,7 +187,6 @@ describe("dual-scope mixed-source compiled agent ref format", () => {
         E2E_SOURCE.sourceDir,
       );
 
-      // A compile inside a project writes only that project, so the global agent needs its own run.
       const globalResult = await runCLI(["compile"], fakeHome, {
         env: { HOME: fakeHome },
       });

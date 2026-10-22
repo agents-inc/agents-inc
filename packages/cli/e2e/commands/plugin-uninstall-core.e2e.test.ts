@@ -32,8 +32,6 @@ import {
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
-/** Plugin-mode `uninstall --yes` with the Claude CLI: full-chain cleanup. */
-
 const claudeAvailable = await isClaudeCLIAvailable();
 
 describe.skipIf(!claudeAvailable)("uninstall with plugins calls Claude CLI", () => {

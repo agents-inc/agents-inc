@@ -1,8 +1,6 @@
 /**
  * A host directory composed from the constant that spells it (`path.join(root, CLAUDE_DIR)`), which
- * no literal regex sees; held by a `no-restricted-imports` group. Its own file because that rule's
- * zones differ from the literal ban's. Assertions use `includes` on literal message text: the rule
- * prefixes its own sentence, and five groups share the rule id. Zones come from `lintZonesIn`.
+ * no literal regex sees.
  */
 
 import path from "path";
@@ -17,7 +15,7 @@ const RESTRICTED_IMPORTS = "no-restricted-imports";
 const ESLINT_CONFIG_PATH = path.join(CLI_ROOT, "eslint.config.js");
 const ESLINT_CONFIG = await flatConfigAt(ESLINT_CONFIG_PATH);
 
-/** Enough to tell this ban from the four other groups under the same rule. */
+/** Tells this ban from the other groups under the same rule. */
 const HOST_PATH_SYMBOL_REPORT = "A host path is resolved, not composed";
 
 /** Pinned apart: the group can keep reporting after the message loses its remedy. */
@@ -26,12 +24,9 @@ const FUNNEL_FOR_A_PATH_NO_ROLE_ANSWERS = "add the role there rather than compos
 /** So a fixture that trips the sibling ban is not read as a pass. */
 const SOURCE_FOLDER_SYMBOL_REPORT = "The source folder's name is resolved, not written";
 
-/**
- * Hand-written: the derivation cannot tell a deliberate exemption from a forgotten restatement. The
- * first entry is a backlog that may only shrink, spelled as its block spells it.
- */
+/** Hand-written: the derivation cannot tell a deliberate exemption from a forgotten restatement. */
 const EXEMPT_PATTERNS = [
-  // Backlog: each composes a Claude directory, and several need a scope in hand to ask the layout.
+  // Backlog that may only shrink: several need a scope in hand to ask the layout.
   "src/cli/commands/eject.ts, src/cli/commands/uninstall.tsx, src/cli/lib/compiler.ts, src/cli/lib/installation/installation.ts, src/cli/lib/installation/layout-findings.ts, src/cli/lib/plugins/plugin-finder.ts, src/cli/lib/plugins/plugin-settings.ts, src/cli/lib/seed/external-skills.ts, src/cli/lib/skills/local-skill-loader.ts, src/cli/lib/skills/local-skill-mover.ts, src/cli/utils/messages.ts",
   // The write choke point, whose tripwire must know every directory; its block turns the rule off.
   "src/cli/utils/fs.ts",
@@ -112,7 +107,6 @@ const LINT_PASS_BUDGET_MS = 2_500;
 const COMPOSED_TIMEOUT_MS = ZONES.length * COMPOSED_HOST_PATHS.length * LINT_PASS_BUDGET_MS;
 const NEIGHBOUR_TIMEOUT_MS = ZONES.length * LINT_PASS_BUDGET_MS;
 
-/** The repository's own config, loaded rather than restated. An unparseable fixture throws. */
 async function messagesReportedAgainst(
   eslint: ESLint,
   source: string,
@@ -152,7 +146,6 @@ describe("a host path composed from the constant that spells it", () => {
     ).toStrictEqual(EXEMPT_PATTERNS);
   });
 
-  /** Subject guard: with no reported zone the loop below would pass having run nothing. */
   it("leaves at least one zone the ban is meant to reach", () => {
     expect(
       REPORTED_ZONES.length,
@@ -199,7 +192,6 @@ describe("a host path composed from the constant that spells it", () => {
     NEIGHBOUR_TIMEOUT_MS,
   );
 
-  /** "Call one of these roles" is no help when no role answers the path yet. */
   it("tells an author what to do when no role answers the path it condemned", async () => {
     const eslint = new ESLint({ cwd: CLI_ROOT });
     const zone = REPORTED_ZONES.filter(isMeasurable)[0];

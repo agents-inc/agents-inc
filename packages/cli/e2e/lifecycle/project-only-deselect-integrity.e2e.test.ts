@@ -21,11 +21,6 @@ import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-con
 import "../matchers/setup.js";
 import { TIMEOUTS } from "../pages/constants.js";
 
-/**
- * Deselecting a project-only agent or skill via a project `edit --from` removes it from config.ts,
- * config-types.ts and (for agents) disk; inherited global entries are never touched.
- */
-
 const API_DEV = E2E_AGENT["api-developer"].name;
 
 /**

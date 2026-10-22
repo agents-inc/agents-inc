@@ -157,8 +157,8 @@ test.describe("the save dialog", () => {
   }
 })
 
-// The control: the install dialog focuses no field on open and has always
-// handed focus back. Opening it mints the command's id, hence the stub.
+// The control: the install dialog focuses no field on open. Opening it mints
+// the command's id, hence the stub.
 test("the install dialog hands focus back to Install", async ({
   configure,
   page,

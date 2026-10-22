@@ -11,11 +11,7 @@ import { SKILL_INDEX_KEY, freshnessOf } from "../src/skill-index"
 import type { SkillIndex } from "@workspace/matrix/skill-index"
 import type { StdioOptions } from "node:child_process"
 
-// `bun run dev`: applies local D1 migrations and, when the local skill index
-// is missing or stale, runs the index workflow's crawl and publish locally,
-// then starts `wrangler dev`. Neither step stops the worker from starting.
-// Arguments go to `wrangler dev`; `--persist-to` reaches the steps too and
-// `--remote` skips them.
+// Neither the migrations nor the index step stops the worker from starting.
 
 const SERVER_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 

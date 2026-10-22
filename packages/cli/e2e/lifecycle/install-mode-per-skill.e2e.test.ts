@@ -19,11 +19,6 @@ import {
   isClaudeCLIAvailable,
 } from "../helpers/test-utils.js";
 
-/**
- * Switching ONE skill's install mode mid-lifecycle (eject init, one skill to plugin) leaves a mixed
- * state. Requires the Claude CLI.
- */
-
 const claudeAvailable = await isClaudeCLIAvailable();
 
 describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- per-skill switching", () => {

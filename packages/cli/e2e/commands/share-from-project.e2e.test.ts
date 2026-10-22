@@ -32,7 +32,8 @@ import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js"
 /**
  * `share` and `edit --ui` inside a project whose sub-agents are global must send the global rows
  * too, which live only in HOME's config.ts. The posted body is compared against the installed
- * payload. `share` needs plugins and the Claude CLI; `edit --ui` runs on ejected skills anywhere.
+ * payload, which is the assertion that carries the red in both specs. `share` needs plugins and the
+ * Claude CLI; `edit --ui` runs on ejected skills anywhere.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;

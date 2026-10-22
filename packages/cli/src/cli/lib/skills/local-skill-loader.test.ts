@@ -128,7 +128,6 @@ describe("local-skill-loader", () => {
     it("skips skill with invalid SKILL.md frontmatter", async () => {
       await writeLocalSkill("bad-frontmatter", {
         metadata: `displayName: Bad Frontmatter Skill`,
-        // SKILL.md without proper frontmatter (missing name)
         skillMd: `---\ndescription: Only description, no name\n---\nContent`,
       });
 
@@ -229,7 +228,6 @@ describe("local-skill-loader", () => {
 
     it("skips skill when metadata.yaml has wrong field types", async () => {
       await writeLocalSkill("wrong-types", {
-        // displayName must be a string, but providing a number via YAML
         metadata: "displayName: 123\ndomain: web",
         skillMd: renderSkillMd("wrong-types (@local)", "Wrong types in metadata", "Content"),
       });
@@ -265,7 +263,6 @@ describe("local-skill-loader", () => {
 
       const result = await discoverLocalSkills(tempDir);
 
-      // Empty YAML parses to null, schema validation fails — skill should be skipped
       expect(result?.skills).toStrictEqual([]);
     });
 
@@ -277,13 +274,11 @@ describe("local-skill-loader", () => {
 
       const result = await discoverLocalSkills(tempDir);
 
-      // YAML with only comments parses to null — schema validation fails
       expect(result?.skills).toStrictEqual([]);
     });
 
     it("skips skill with metadata.yaml that parses to a non-object type", async () => {
       await writeLocalSkill("bad-yaml", {
-        // YAML that parses to a string instead of an object
         metadata: "just a plain string",
         skillMd: renderSkillMd("bad-yaml (@local)", "Bad YAML", "Content"),
       });

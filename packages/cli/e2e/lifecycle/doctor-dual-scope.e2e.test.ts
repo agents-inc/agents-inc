@@ -8,8 +8,6 @@ import type { TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { installDualScopeStack } from "../fixtures/e2e-stack-seed.js";
 
-/** `doctor` on a dual-scope installation: healthy, missing agent file, orphaned skill directory. */
-
 describe("doctor dual-scope diagnostics", () => {
   let store: SeedConfigStore;
   let env: TestEnvironment | undefined;

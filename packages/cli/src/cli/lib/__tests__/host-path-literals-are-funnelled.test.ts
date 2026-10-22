@@ -1,8 +1,6 @@
 /**
  * A host directory may be written only in `install-layout.ts`: a literal path is right on one host
- * and silently wrong on the other. Read `source-folder-literals-are-funnelled.test.ts` first.
- * Near-miss names must stay silent; assertions read the message (both bans share a rule id) as
- * literals. Zones are derived via `lintZonesIn`; only exemptions are hand-written.
+ * and silently wrong on the other.
  */
 
 import path from "path";
@@ -50,10 +48,6 @@ const ZONES = lintZonesIn(ESLINT_CONFIG, RESTRICTED_SYNTAX, CLI_ROOT);
 const REPORTED_ZONES = ZONES.filter((zone) => !EXEMPT_PATTERNS.includes(zone.patterns));
 const EXEMPT_ZONES = ZONES.filter((zone) => EXEMPT_PATTERNS.includes(zone.patterns));
 
-/**
- * Refused outside the layout module. Both node types for directories (literal and template text);
- * extensions as literals only, since template extensions are the deferred `.md` twin's territory.
- */
 const BANNED_SPELLINGS = [
   {
     name: "Claude Code's state directory as a bare literal",
@@ -132,7 +126,6 @@ const LINT_PASS_BUDGET_MS = 2_500;
 const BANNED_TIMEOUT_MS = ZONES.length * BANNED_SPELLINGS.length * LINT_PASS_BUDGET_MS;
 const ALLOWED_TIMEOUT_MS = ZONES.length * ALLOWED_SPELLINGS.length * LINT_PASS_BUDGET_MS;
 
-/** The repository's own config, loaded rather than restated. An unparseable fixture throws. */
 async function messagesReportedAgainst(
   eslint: ESLint,
   source: string,
@@ -171,7 +164,6 @@ describe("a host path written outside the layout module", () => {
     ).toStrictEqual(EXEMPT_PATTERNS);
   });
 
-  /** Subject guard: with no reported zone the loop below would pass having run nothing. */
   it("leaves at least one zone the ban is meant to reach", () => {
     expect(
       REPORTED_ZONES.length,
@@ -198,7 +190,6 @@ describe("a host path written outside the layout module", () => {
     BANNED_TIMEOUT_MS,
   );
 
-  /** A ban whose message names no role for the condemned path is a dead end. */
   it("tells an author what to do when no role answers the path it condemned", async () => {
     const eslint = new ESLint({ cwd: CLI_ROOT });
     const zone = REPORTED_ZONES.filter(isMeasurable)[0];

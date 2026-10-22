@@ -33,11 +33,6 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import type { SeedSkill } from "@workspace/matrix/seed";
 
-/**
- * Dual-scope edit with mixed sources: a project's ejected skill switched to plugin. Requires the
- * Claude CLI.
- */
-
 const claudeAvailable = await isClaudeCLIAvailable();
 
 const API_DEV = E2E_AGENT["api-developer"].name;

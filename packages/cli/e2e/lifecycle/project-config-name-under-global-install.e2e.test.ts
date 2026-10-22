@@ -8,10 +8,6 @@ import { configTsPath, loadConfigOrFail, readTestFile } from "../helpers/test-ut
 import { TIMEOUTS } from "../pages/constants.js";
 import "../matchers/setup.js";
 
-/**
- * A project set up under an existing global install names its config.ts for its own directory,
- * not for the global config the save reconciles against.
- */
 describe("project config identity under an existing global install", () => {
   let store: SeedConfigStore;
   let env: DualScopeEnv | undefined;
@@ -31,7 +27,6 @@ describe("project config identity under an existing global install", () => {
     const projectName = path.basename(projectDir);
     const globalName = (await loadConfigOrFail(fakeHome)).name;
 
-    // Subject guard: the two identities must differ, or the bug is unreachable.
     expect(
       globalName,
       "the global install must be named something other than this project directory",
@@ -45,7 +40,6 @@ describe("project config identity under an existing global install", () => {
   it("leaves the global config carrying its own name and roster", async () => {
     const { fakeHome, projectDir } = env!;
 
-    // A project save must not rename the global config, and its roster must still be on disk.
     const globalConfig = await loadConfigOrFail(fakeHome);
     expect(globalConfig.name).not.toBe(path.basename(projectDir));
     await expect({ dir: fakeHome }).toHaveLocalSkills([...E2E_STACK_SKILL_IDS]);

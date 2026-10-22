@@ -19,9 +19,8 @@ import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
 /**
- * The share round trip compared on the compiled sub-agents at both ends: stack key order decides
- * a body's skill-table order, which no config comparison can see. The id is minted by `edit --ui`,
- * since the origin ejects and `share` refuses ejected skills.
+ * Stack key order decides a body's skill-table order, which no config comparison can see. The id
+ * is minted by `edit --ui`, since the origin ejects and `share` refuses ejected skills.
  */
 describe("a share round trip compared on its compiled bodies", () => {
   let store: SeedConfigStore;
@@ -66,7 +65,7 @@ describe("a share round trip compared on its compiled bodies", () => {
         EXIT_CODES.SUCCESS,
       );
 
-      // The config side held while the defect shipped; it says which assertion carries the red.
+      // Deliberately first: it says which assertion carries the red.
       const before = await loadConfigOrFail(origin);
       const after = await loadConfigOrFail(rebuilt);
       expect(after.skills).toStrictEqual(before.skills);

@@ -182,8 +182,9 @@ describe("build plugins version bumping", () => {
     });
 
     /**
-     * Artifact-to-artifact only: both sides move together under a broken bump, so the literal-value
-     * assertions carry that red.
+     * Artifact-to-artifact only: both sides move together under a broken bump, so it stayed green
+     * under that mutation. "carries name, version and source" and the regeneration case below carry
+     * that red; do not fold them into this one.
      */
     it("lists every compiled skill at the version its own manifest declares", async () => {
       const marketplace = await readMarketplaceJson(marketplacePath);
@@ -205,10 +206,6 @@ describe("build plugins version bumping", () => {
       ).toStrictEqual(EXPECTED_MARKETPLACE_ENTRIES);
     });
 
-    /**
-     * Known gap: nothing carries a skill's category into its plugin manifest, so every entry is
-     * "uncategorized". Expected-fail as the record of the gap.
-     */
     it("carries a category on every plugin entry", async () => {
       const marketplace = await readMarketplaceJson(marketplacePath);
 

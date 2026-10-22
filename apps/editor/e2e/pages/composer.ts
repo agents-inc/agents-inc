@@ -1,7 +1,5 @@
 import type { Locator, Page } from "@playwright/test"
 
-// The composer: one field, one button; no modes and no starters.
-
 // Copy is mirrored, never imported, so a rewording fails the spec.
 
 /** Byte-verified against the design's `DOCK_PH`. */
@@ -68,7 +66,6 @@ export class Composer {
     this.proposalHeader = this.proposal.getByRole("status")
     this.proposalReason = this.proposal.locator(PROPOSAL_REASON)
     this.proposalRows = this.proposal.locator(PROPOSAL_ROW)
-    // Accessible names say what is applied and discarded.
     this.applyButton = page.getByRole("button", { name: "Apply proposal" })
     this.discardButton = page.getByRole("button", { name: "Discard proposal" })
   }
@@ -97,7 +94,6 @@ export class Composer {
     }))
   }
 
-  /** Whether the band's own contents fit it, which is what G6 asks. */
   async bandOverflow() {
     return this.band.evaluate((node) => ({
       scroll: node.scrollWidth,

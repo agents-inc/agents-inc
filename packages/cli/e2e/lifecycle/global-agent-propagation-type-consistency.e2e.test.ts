@@ -21,12 +21,6 @@ import {
 import { applyEditFrom, e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
 import { readGeneratedUnionMembers } from "../../src/cli/lib/__tests__/helpers/generated-types.js";
 
-/**
- * After a global change fans out, a registered project's active agent rows and its
- * `SelectedAgentName` union must name the same set: api-developer promoted to global from project
- * A must reach both halves of project B's config pair.
- */
-
 const WEB_DEVELOPER_AGENT = "web-developer";
 const API_DEVELOPER_AGENT = "api-developer";
 const SELECTED_AGENT_ALIAS = "SelectedAgentName";
@@ -98,7 +92,6 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       expect(await fileExists(globalConfigPath)).toBe(true);
       expect(await fileExists(globalTypesPath)).toBe(true);
 
-      // Sanity: api-developer absent, and the two sides agree on the narrow set.
       const globalTypesPhase1 = await readTestFile(globalTypesPath);
       const globalSelectedPhase1 = await readActiveAgentNames(fakeHome);
       const globalTypeUnionPhase1 = readGeneratedUnionMembers(
@@ -162,7 +155,6 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       });
       expect(phase4.exitCode, `Global edit failed: ${phase4.output}`).toBe(EXIT_CODES.SUCCESS);
 
-      // Propagation rewrote B and the global config grew, or the assertions below are vacuous.
       const projectBContentAfter = await readTestFile(projectBConfigPath);
       expect(
         projectBContentAfter,

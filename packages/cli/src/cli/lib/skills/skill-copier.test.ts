@@ -641,7 +641,6 @@ describe("skill-copier", () => {
       expect(firstElement(result).local).toBeUndefined();
       expect(firstElement(result).destPath).toBe(path.join(localSkillsDir, "web-framework-react"));
 
-      // Verify the remote content was copied (not the local version with (@local) in name)
       const copiedContent = await readFile(
         path.join(localSkillsDir, "web-framework-react", STANDARD_FILES.SKILL_MD),
         "utf-8",

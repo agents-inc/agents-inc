@@ -26,10 +26,7 @@ import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-con
 import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
-/**
- * Removing the only skill an agent's stack references must not leave it in `stack`: the rebuilt
- * config omits `stack`, and the merge must not resurrect the old one.
- */
+/** The rebuilt config omits `stack`, so the merge must not resurrect the old one. */
 
 const singleSkillStack = {
   [E2E_AGENT["web-developer"].name]: {

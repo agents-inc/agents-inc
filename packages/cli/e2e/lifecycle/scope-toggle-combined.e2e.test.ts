@@ -19,8 +19,6 @@ import { createTestEnvironment, readSkillEntries } from "../fixtures/dual-scope-
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { expectDualScopeInstallation } from "../assertions/scope-assertions.js";
 
-/** One edit changing both a skill's and an agent's scope, in the same and opposite directions. */
-
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const API_DEV = E2E_AGENT["api-developer"].name;
 
@@ -70,7 +68,6 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
         "web-framework-react directory must exist at project scope after G->P",
       ).toBe(true);
 
-      // G->P is additive.
       const globalSkillDir = path.join(skillsPath(fakeHome), E2E_SKILL.react.id);
       expect(
         await directoryExists(globalSkillDir),

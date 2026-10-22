@@ -31,8 +31,6 @@ const MARKETPLACE_FLAG_SPELLINGS = [
   ["short form", ["-m", MISSING_INIT_SOURCE_PATH]],
 ] as const satisfies readonly (readonly [string, readonly string[]])[];
 
-/** Error guards: bad source flags, missing skills directory, empty config, missing source path. */
-
 describe("init/edit error guards", () => {
   let tempDir: string;
   let store: SeedConfigStore;

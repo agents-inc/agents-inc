@@ -30,11 +30,6 @@ import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-con
 import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
-/**
- * Removing one skill from one of an agent's several stack categories deletes only that entry;
- * every other (agent, category, skill) triple, preloaded flag included, is unchanged.
- */
-
 const multiCategoryStack = {
   [E2E_AGENT["web-developer"].name]: {
     "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],

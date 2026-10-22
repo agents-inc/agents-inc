@@ -43,7 +43,7 @@ const TEST_ONLY_EXPORTS = [
   {
     file: "src/cli/components/common/summary-panel.tsx",
     name: "SummaryPanel",
-    // Its production readers went with the wizard; kept for the unbuilt `edit --from` info table.
+    // No production reader; kept for the unbuilt `edit --from` info table.
     posture: "unjudged",
   },
   {
@@ -138,8 +138,7 @@ function byFileThenName(left: ExportSite, right: ExportSite): number {
 
 /**
  * A `src/` export only the suite invokes is dead code whose specs read as live coverage. Matched on
- * invocations, not references (barrels and doc links keep nothing alive); the reader's shapes are
- * planted in `helpers/test-only-invocations.test.ts`.
+ * invocations, not references: barrels and doc links keep nothing alive.
  */
 describe("every exported symbol the suite invokes is one the package invokes too", () => {
   it("reaches production from each, or names it here with its posture", async () => {

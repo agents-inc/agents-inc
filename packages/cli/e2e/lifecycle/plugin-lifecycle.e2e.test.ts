@@ -18,11 +18,6 @@ import {
 } from "../helpers/test-utils.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 
-/**
- * Plugin-mode lifecycle: `init --from` installs skills as Claude CLI plugins, then
- * `uninstall --yes` cleans up. Skipped without the Claude CLI.
- */
-
 const claudeAvailable = await isClaudeCLIAvailable();
 
 describe.skipIf(!claudeAvailable)("plugin mode lifecycle: init -> uninstall", () => {

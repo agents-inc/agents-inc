@@ -30,8 +30,8 @@ import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
- * A global-scope edit at ~/ must keep the global config's `projects` array: an install selection
- * never carries it, so without a carry-forward propagation would silently never fire.
+ * An install selection never carries `projects`, so without a carry-forward propagation would
+ * silently never fire.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;

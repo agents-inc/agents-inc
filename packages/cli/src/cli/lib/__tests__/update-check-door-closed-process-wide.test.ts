@@ -35,7 +35,6 @@ describe("oclif's update-check door", () => {
   it("is closed for a spec that sets up no isolated home", async () => {
     const config = await Config.load(CLI_ROOT);
 
-    // Subject guard: with the plugin gone there is no door and the pin guards nothing.
     expect(
       [...config.plugins.keys()],
       "the plugin whose init hook spawns the version check is gone — the pin in vitest.setup.ts guards nothing and should go with it",

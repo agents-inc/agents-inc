@@ -17,7 +17,6 @@ export function isGlobalTombstone(entry: ScopedEntry): boolean {
   return entry.scope === "global" && !!entry.excluded
 }
 
-/** A project-scoped entry or the project's own global tombstone. */
 export function isProjectOwned(entry: ScopedEntry): boolean {
   return entry.scope === "project" || isGlobalTombstone(entry)
 }

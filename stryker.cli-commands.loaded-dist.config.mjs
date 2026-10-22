@@ -1,8 +1,6 @@
-// The load-time pass for code that only `dist/` runs. oclif imports the dist command modules inside
-// a test, so perTest coverage credits their load to one test per file and never marks it static
-// (the vitest runner reports perTest coverage under "all" and "off" alike). The vitest config here
-// loads every dist command in a setup file first, so their mutants are static and run every
-// collected test: the files that load dist (vitest.loadtime.config.ts).
+// The load-time pass for code only `dist/` runs. oclif imports dist commands inside a test, so
+// perTest coverage (the vitest runner's under "all" and "off" alike) never marks their load static.
+// This vitest config loads every dist command in a setup file first, so their mutants are static.
 import staticConfig from "./stryker.cli-commands.static.config.mjs"
 
 export default {

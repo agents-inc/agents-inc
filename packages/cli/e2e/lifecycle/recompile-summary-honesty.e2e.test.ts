@@ -11,10 +11,7 @@ import {
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 
-/**
- * The recompile summary reports agents REWRITTEN, not visited, from both `edit` and `compile`.
- * Checked against mtimes, since a same-bytes rewrite is invisible to a content comparison.
- */
+/** Checked against mtimes, since a same-bytes rewrite is invisible to a content comparison. */
 
 describe("recompile summary distinguishes rewritten agents from unchanged ones", () => {
   let store: SeedConfigStore;

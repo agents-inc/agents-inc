@@ -192,9 +192,6 @@ test.describe("adding an external skill", () => {
     )
   })
 
-  // The other direction, so the fix cannot be "nothing in the cell selects
-  // anything": an unselected eject-only skill is not selected by its badge
-  // either, which is what every other badge on the grid already promises.
   test("its install badge does not select it while it is unselected", async ({
     configure,
   }) => {

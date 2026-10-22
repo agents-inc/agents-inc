@@ -15,11 +15,7 @@ import {
 } from "../helpers/test-utils.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
-/**
- * `init --marketplace <Y>` without `--from` over an existing installation opens the editor and
- * says how to add Y there, leaving the installation byte for byte as it was. X is the fixture
- * without its spare skill, Y the full one.
- */
+/** X is the fixture without its spare skill, Y the full one. */
 
 const NAMED = E2E_SOURCE;
 

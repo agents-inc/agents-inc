@@ -228,9 +228,7 @@ const TITLES_NAMING_A_BEHAVIOUR = [
 /** One pass over every spec plus a `lintText` per fixture; generous headroom for a busy machine. */
 const TITLE_GATE_TIMEOUT_MS = 60_000;
 
-/** The lint config's title ban misses every callee shape but a bare identifier; this covers all. */
 describe("no test title names the task that produced it", () => {
-  /** The gate reads one rule, so it must run one rule; the base supplies only the parser. */
   it("runs the one rule it reads, rather than every rule the shared base carries", async () => {
     const config = await titleGateConfig();
 

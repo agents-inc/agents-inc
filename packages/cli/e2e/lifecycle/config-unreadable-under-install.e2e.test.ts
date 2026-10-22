@@ -29,12 +29,6 @@ import {
 import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
-/**
- * A global `config.ts` that exists but cannot be loaded stops every config-reading command run
- * from a project under it, with a refusal naming that config and its folder; `doctor` reports it
- * and `uninstall` still works. The second describe is the readable-configs control.
- */
-
 describe("a real installation whose GLOBAL config.ts cannot be loaded, seen from its project", () => {
   let env: TestEnvironment;
   let store: SeedConfigStore;

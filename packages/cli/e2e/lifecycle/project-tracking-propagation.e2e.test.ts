@@ -35,11 +35,6 @@ import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-con
 import { readGeneratedUnionMembers } from "../../src/cli/lib/__tests__/helpers/generated-types.js";
 import type { AgentName, Category, SkillId } from "../../src/cli/types/index.js";
 
-/**
- * Project registration in the global config's `projects`, config-types propagation to registered
- * projects, deregistration on uninstall, and stale-path filtering.
- */
-
 let source: E2EPluginSource;
 let store: SeedConfigStore;
 
@@ -56,7 +51,7 @@ afterAll(async () => {
   await store.close();
 });
 
-/** The E2E stack as plugins, every skill and sub-agent at global scope, installed at `dir`. */
+/** Every skill and sub-agent at global scope. */
 function installPlugins(dir: string, home: string) {
   return installFromSeed(
     store,
@@ -128,7 +123,6 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
 
       await installPlugins(fakeHome, fakeHome);
 
-      // The global types are standalone: the source the project's file imports from.
       const globalConfigTypesPath = configTypesTsPath(fakeHome);
       const globalTypesContent = await readTestFile(globalConfigTypesPath);
       expect(globalTypesContent, "Global config-types must inline skill IDs").toContain(
@@ -140,7 +134,6 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
 
       await installPlugins(projectDir, fakeHome);
 
-      // The project's types import and extend the global ones rather than inlining them.
       const projectConfigTypesPath = configTypesTsPath(projectDir);
       expect(await fileExists(projectConfigTypesPath), "Project config-types.ts must exist").toBe(
         true,
@@ -168,13 +161,11 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
         "Project config-types must import Category as GlobalCategory",
       ).toContain("Category as GlobalCategory");
 
-      // A standalone write would name no GlobalSkillId at all.
       expect(
         configTypesContent,
         "Project SkillId must extend GlobalSkillId, not replace it",
       ).toMatch(/export type SkillId =\s*\|?\s*GlobalSkillId/);
 
-      // The project's config.ts inlines every global row, so its own union must name them too.
       expect(
         configTypesContent,
         "Project config-types must name the global skill IDs its config.ts inlines",
@@ -195,22 +186,19 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
       tempDir = env.tempDir;
       const { fakeHome, projectDir } = env;
 
-      // `web-framework-vue-composition-api` is not in the default stack, so the later edit is a
-      // genuine global addition, not a scope toggle.
+      // Vue is not in the default stack, so the later edit is a genuine global addition.
       await installPlugins(fakeHome, fakeHome);
 
       await installPlugins(projectDir, fakeHome);
 
       const projectConfigTypesPath = configTypesTsPath(projectDir);
       const projectTypesBefore = await readTestFile(projectConfigTypesPath);
-      // Precondition, or the post-edit assertion would pass vacuously.
       expect(
         projectTypesBefore,
         "Pre-condition: Phase B must emit import-and-extend project types",
       ).toContain("SkillId as GlobalSkillId");
       expect(projectTypesBefore).toMatch(/export type SkillId =\s*\|?\s*GlobalSkillId/);
 
-      // A new global skill: the write must rewrite every registered project's config-types.ts.
       await applyFromSeed(
         store,
         "WithVue1",
@@ -222,7 +210,6 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
         { dir: fakeHome, home: fakeHome },
       );
 
-      // The global install must have grown, or the propagation assertions test the wrong state.
       const globalConfigTypesPath = configTypesTsPath(fakeHome);
       const globalTypesAfter = await readTestFile(globalConfigTypesPath);
       expect(
@@ -257,14 +244,11 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
         "Project SkillId must still extend GlobalSkillId after the global edit",
       ).toMatch(/export type SkillId =\s*\|?\s*GlobalSkillId/);
 
-      // The global rows the sibling config.ts inlines are expected here, not evidence of a
-      // standalone write.
       expect(
         projectTypesAfter,
         "the extend form must declare the newly-added global skill its config.ts now inlines",
       ).toContain(`'${E2E_SKILL["vue-composition-api"].id}'`);
 
-      // Proof the fan-out reached this project rather than leaving it untouched.
       expect(
         projectTypesAfter,
         "the global edit must have rewritten the registered project's config-types",
@@ -380,12 +364,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- stale path filtering", ()
   );
 });
 
-/**
- * A fan-out rewriting a registered project's config-types.ts must resolve categories from the
- * project's own catalogue too: `web-tooling` reaches the project only via its own custom skill.
- * The file stays byte-identical across global/project/global runs; a real global addition still
- * widens it.
- */
+/** `web-tooling` reaches the project only through its own custom skill. */
 
 /** A public-catalogue id, so every seat resolves it. */
 const GLOBAL_SKILL_ID = "web-framework-react" satisfies SkillId;

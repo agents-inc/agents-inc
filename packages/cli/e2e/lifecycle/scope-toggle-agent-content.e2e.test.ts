@@ -18,11 +18,6 @@ import {
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 
-/**
- * Compiled agent content after a skill or agent scope change: only the thing toggled moves, global
- * skills reach any agent, and project skills never reach a global one.
- */
-
 const API_DEV = E2E_AGENT["api-developer"].name;
 
 describe("dual-scope edit lifecycle -- compiled agent content after scope toggle", () => {

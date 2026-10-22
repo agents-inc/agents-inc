@@ -40,8 +40,7 @@ test.describe("add skill dialog", () => {
     await expect(configure.addSkillDialog.root).toBeVisible()
   })
 
-  // The whole index arrives in one response and is filtered in the browser, so
-  // opening the dialog is already a list — there is nothing to type first.
+  // The whole index arrives in one response and is filtered in the browser.
   test("opening lists the index without a search", async ({ configure }) => {
     await configure.addSkillButton.click()
 
@@ -190,8 +189,7 @@ test.describe("add skill dialog", () => {
 
     const row = configure.addSkillDialog.result(OVERSIZED_NAME)
     await expect(row).toContainText(/past the .* a shared link may carry/i)
-    // The weight itself, so the number is not a mystery — the same words the
-    // late refusal uses, arriving before anything has been staged.
+    // The weight itself, in the words the late refusal uses.
     await expect(row).toContainText(/KB/)
   })
 
@@ -219,8 +217,7 @@ test.describe("add skill dialog", () => {
     await expect(dialog.confirmButton).toBeDisabled()
   })
 
-  // The mark is a refusal for one row and not a mood for the pane: everything
-  // inside the cap still stages exactly as it did.
+  // The refusal is the row's, not the pane's.
   test("a skill within the cap carries no refusal and still stages", async ({
     configure,
   }) => {
@@ -248,8 +245,6 @@ test.describe("add skill dialog", () => {
 // No shared stub here: each of these decides what the worker answers, and the
 // count of answers is half of what they assert.
 test.describe("add skill dialog freshness and failure", () => {
-  // A fresh index is the current whole picture, so reopening reuses what is
-  // already in memory rather than asking the worker the same question twice.
   test("a fresh index is not asked for again on the next open", async ({
     configure,
     page,
@@ -266,8 +261,6 @@ test.describe("add skill dialog freshness and failure", () => {
     expect(requests).toHaveLength(1)
   })
 
-  // Stale means "this list is not everything, ask again later" — so the results
-  // are shown and the caveat is said, rather than the list being withheld.
   test("a stale index still lists results and says it is still filling", async ({
     configure,
     page,

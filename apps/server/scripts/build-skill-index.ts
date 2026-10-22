@@ -8,10 +8,7 @@ import { SKILL_INDEX_KEY } from "../src/skill-index"
 
 import type { SkillIndex } from "@workspace/matrix/skill-index"
 
-// Builds the skill index to a file; the workflow publishes it. Needs no
-// Cloudflare credential:
-//
-//   bun run build:skill-index /tmp/skill-index.json
+// Needs no Cloudflare credential: the workflow publishes the file it writes.
 
 // Finding nothing means the discovery rule stopped matching, not an empty catalog.
 const NOTHING_FOUND = 0

@@ -25,12 +25,6 @@ import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import { buildSeedSkill } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { readGeneratedUnion } from "../../src/cli/lib/__tests__/helpers/generated-types.js";
 
-/**
- * Journey 9 from an empty tree: a stack installed by `init --from`, then curated by `edit --from`
- * dropping the stack's `web-testing` pick and adding the spare in the same category, so the
- * category's stack entry must name only the added skill.
- */
-
 const DESELECTED_STACK_SKILL = E2E_SKILL.vitest;
 
 const SELECTED_NON_STACK_SKILL = E2E_SKILL["visual-regression"];

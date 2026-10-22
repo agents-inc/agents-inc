@@ -39,13 +39,7 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
-/**
- * The pinned Codex binary reads the role files we wrote: the role is in `spawn_agent`'s
- * `agent_type` roster on the wire (absent when nothing is registered), and `codex doctor` reports
- * no malformed role. The role id is the `name` key, not the filename. A project's roles need a
- * trust entry in the global config, which the install writes; an answer the user gave is kept.
- * No `skipIf`: Codex is a pinned devDependency, and a skip would read green.
- */
+/** No `skipIf`: Codex is a pinned devDependency, and a skip would read green. */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
@@ -222,7 +216,6 @@ describe("Codex reads the agent roles a Codex compile wrote", () => {
         fixture.sourceDir,
       );
 
-      // Subject guard: an empty agents directory draws no complaint either.
       expect(
         Object.keys(await readCodexAgentRoles(codexGlobalAgentsDir(env.fakeHome))),
         "the compile wrote no role file, so Codex had nothing to complain about",
@@ -243,7 +236,6 @@ describe("Codex reads the agent roles a Codex compile wrote", () => {
     },
   );
 
-  /** The install trusts the project itself and says what it wrote; nothing is trusted by hand. */
   it(
     "trusts a project at install, says what it wrote, and Codex then offers the project's roles",
     { timeout: TIMEOUTS.PLUGIN_TEST },
@@ -276,7 +268,6 @@ describe("Codex reads the agent roles a Codex compile wrote", () => {
     },
   );
 
-  /** `"untrusted"` is the user's decision: the install leaves it, and Codex offers no roles. */
   it(
     "leaves a project the user marked untrusted as it is, says so, and Codex offers nothing",
     { timeout: TIMEOUTS.PLUGIN_TEST },

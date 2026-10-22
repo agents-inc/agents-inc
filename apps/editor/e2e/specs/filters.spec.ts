@@ -98,7 +98,7 @@ test.describe("filtering", () => {
   })
 })
 
-// `search-filter.spec.ts` holds where the pair went.
+// `search-filter.spec.ts` holds where the pair lives.
 test.describe("where the selected toggle lives", () => {
   test("the skills title holds no control", async ({ configure }) => {
     await configure.chooseStack(STACKS.nextjs)

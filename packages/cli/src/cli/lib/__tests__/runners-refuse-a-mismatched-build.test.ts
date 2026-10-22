@@ -65,18 +65,13 @@ async function filesNotInvoking(name: string, files: readonly string[]): Promise
   return scanned.filter(({ invoked }) => !invoked.includes(name)).map(({ file }) => file);
 }
 
-/**
- * Proves the wiring: each runner asks for the refusal of an absent or stale `dist/`, which
- * otherwise surfaces as `expected 127 to be 1` or a green run over the old build. Whether the check
- * reads a tree correctly is `testing/dist-staleness.test.ts`'s subject.
- */
+/** The wiring only; whether the check reads a tree right is `dist-staleness.test.ts`'s subject. */
 describe("a suite that executes dist/ refuses a build that does not match the tree", () => {
   it("reaches the dist guard from every suite's globalSetup", async () => {
     const suites = await Promise.all(
       SUITE_CONFIGS.map((config) => hookFilesOf(config, "globalSetup")),
     );
 
-    // Subject guard: a config naming no globalSetup leaves the roster nothing to judge.
     expect(
       suites.filter(({ files }) => files.length === 0).map(({ config }) => config),
       "a suite config names no globalSetup — there is nothing for a start-of-run refusal to live in",
@@ -97,7 +92,6 @@ describe("a suite that executes dist/ refuses a build that does not match the tr
     const harness = await readFile(path.join(CLI_ROOT, E2E_HARNESS), "utf8");
     const invoked = invokedNamesIn(harness, E2E_HARNESS);
 
-    // Subject guard: deleting the hook would empty the invocation assertion's subject.
     expect(
       harness,
       `${E2E_HARNESS} no longer registers the door in a beforeAll — there is nothing left to judge`,
@@ -108,7 +102,6 @@ describe("a suite that executes dist/ refuses a build that does not match the tr
       "the E2E build guard checks something other than the build, so it returns cleanly in exactly the failure it exists to name",
     ).toContain(FILE_SCOPED_GUARD);
 
-    // A per-file freshness scan passes when working alone and refuses under concurrent edits.
     expect(
       invoked,
       "the per-file door asks the run-scoped question, so any source edit made while the suite runs refuses every spec file that has not started yet",
@@ -116,17 +109,13 @@ describe("a suite that executes dist/ refuses a build that does not match the tr
   });
 });
 
-/**
- * A concurrent build (`clean: true`) empties `dist/` under a running suite, failing unrelated
- * specs. This proves each runner registers the per-test guard; the check is tested elsewhere.
- */
+/** A concurrent build (`clean: true`) empties `dist/` under a running suite. */
 describe("a suite that executes dist/ refuses a build that lands while it is running", () => {
   it("takes the per-test build guard from every suite's setup files", async () => {
     const suites = await Promise.all(
       SUITE_CONFIGS.map((config) => hookFilesOf(config, "setupFiles")),
     );
 
-    // Subject guard: a config naming no setup file leaves the roster nothing to judge.
     expect(
       suites.filter(({ files }) => files.length === 0).map(({ config }) => config),
       "a suite config names no setupFiles — there is nowhere for a per-test refusal to be registered",

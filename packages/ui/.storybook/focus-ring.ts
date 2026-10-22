@@ -2,8 +2,8 @@ import { expect } from "storybook/test"
 
 /**
  * Proves the ring reaches the screen by photographing with and without `--tw-ring-color`, since
- * a declared ring can be clipped. Any changed pixel passes. Only under Vitest browser mode
- * (`__vitest_browser__`); elsewhere just the declared ring is checked.
+ * a declared ring can be clipped. Any changed pixel passes. Outside Vitest browser mode
+ * (`__vitest_browser__`) only the declared ring is checked.
  */
 export const expectVisibleFocusRing = async (control: HTMLElement) => {
   await expect(getComputedStyle(control).boxShadow).not.toBe("none")

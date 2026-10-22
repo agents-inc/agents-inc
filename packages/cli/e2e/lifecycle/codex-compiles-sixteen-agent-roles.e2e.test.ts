@@ -31,12 +31,6 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
 
-/**
- * A Codex compile writes sixteen of the eighteen sub-agents as `.toml` role files, leaves the two
- * summoners out, and says so on ONE line. Every claim pairs with a Claude control; rosters are
- * asserted by member and extension.
- */
-
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
 /** The two left out of v1, and the one that stays. */
@@ -220,10 +214,8 @@ describe("a Codex compile writes sixteen of the eighteen sub-agents", () => {
       );
       expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
 
-      // Claude's own format in Codex's agents directory, reported as success, is the defect.
       const everyRoleFile = await listFiles(codexProjectAgentsDir(env.projectDir));
 
-      // "No .md file" is satisfied for free by a compile that wrote nothing.
       expect(
         everyRoleFile.sort(),
         "the compile wrote no role file at all, so the absence below proves nothing",
@@ -273,9 +265,8 @@ describe("a Codex compile writes sixteen of the eighteen sub-agents", () => {
   );
 
   /**
-   * A configured per-agent effort reaches the role file, a chain nothing else covers. Lines are
-   * compared as members: `model_reasoning_effort = "high"` contains `effort = "high"`, the spelling
-   * Codex refuses.
+   * Lines are compared as members: `model_reasoning_effort = "high"` contains `effort = "high"`,
+   * the spelling Codex refuses.
    */
   it(
     "carries a configured effort into the role file, under the key Codex accepts",
@@ -350,15 +341,11 @@ describe("a Codex compile writes sixteen of the eighteen sub-agents", () => {
         "no Claude agent was compiled, so nothing below is a measurement",
       ).toBeDefined();
 
-      // The same value under Claude's key, which is all the Codex renderer translates.
       expect((agent ?? "").split("\n")).toContain(`effort: ${TUNED_EFFORT}`);
     },
   );
 
-  /**
-   * A role naming a Claude model registers on Codex but cannot be spawned. The Claude case below is
-   * the control that the model arrived.
-   */
+  /** A role naming a Claude model registers on Codex but cannot be spawned. */
   it(
     "writes no Claude model into the role file, even one the configuration set",
     { timeout: TIMEOUTS.PLUGIN_TEST },

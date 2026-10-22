@@ -23,11 +23,6 @@ import {
   isClaudeCLIAvailable,
 } from "../helpers/test-utils.js";
 
-/**
- * `edit` narrates a plugin install the way `init` does: the same skill installed as a plugin by
- * both, every narration line asserted against BOTH outputs. Real install; requires the Claude CLI.
- */
-
 /** A pattern, not a literal: the count differs by run, and the noun follows it. */
 const INSTALLED_PLUGIN_TOTAL = /Installed \d+ skill plugins?\b/;
 

@@ -22,9 +22,8 @@ import {
 import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 
 /**
- * A Codex compile names each setting Codex cannot express exactly once per run (Codex drops a
- * whole role file on one unknown key, so these are omitted, and the report is the only record).
- * A Claude run, which expresses all six, names none.
+ * Codex drops a whole role file on one unknown key, so these settings are omitted and the report is
+ * their only record.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -57,7 +56,6 @@ describe("a Codex compile reports what Codex cannot express", () => {
     env = undefined;
   });
 
-  // The smallest payload that compiles an agent.
   function publishOneAgent(id: string): void {
     store.publish(
       id,

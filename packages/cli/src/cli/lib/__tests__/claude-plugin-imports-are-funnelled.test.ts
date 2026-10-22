@@ -1,8 +1,4 @@
-/**
- * One host's plugin functions may be imported only in `lib/hosts/`, held by `no-restricted-imports`
- * (its options don't merge across blocks, so the seam keeps every other restriction). Zones are
- * derived from the config via `lintZonesIn`; only the lifted exemptions are hand-written.
- */
+/** One host's plugin functions may be imported only in `lib/hosts/`. */
 
 import path from "path";
 import { ESLint } from "eslint";
@@ -66,7 +62,6 @@ const BANNED_IMPORTS = [
   },
 ] as const;
 
-/** What the ban must leave alone, so the ban is measured rather than guessed. */
 const ALLOWED_IMPORTS = [
   {
     name: "the spawn wrapper the exec utilities keep",
@@ -87,7 +82,6 @@ const LINT_PASS_BUDGET_MS = 2_500;
 const BANNED_TIMEOUT_MS = ZONES.length * BANNED_IMPORTS.length * LINT_PASS_BUDGET_MS;
 const ALLOWED_TIMEOUT_MS = ZONES.length * ALLOWED_IMPORTS.length * LINT_PASS_BUDGET_MS;
 
-/** The repository's own config, loaded rather than restated. */
 async function messagesReportedAgainst(
   eslint: ESLint,
   source: string,
@@ -129,7 +123,6 @@ describe("a host's plugin function imported outside the seam", () => {
     ).toBeGreaterThan(0);
   });
 
-  /** Subject guard: with no reported zone the loop below would pass having run nothing. */
   it("leaves at least one zone the ban is meant to reach", () => {
     expect(
       REPORTED_ZONES.length,

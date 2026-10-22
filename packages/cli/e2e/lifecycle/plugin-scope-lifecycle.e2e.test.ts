@@ -17,11 +17,6 @@ import {
   isClaudeCLIAvailable,
 } from "../helpers/test-utils.js";
 
-/**
- * Plugin mode with mixed scopes: init, verify agent content, compile, verify it is preserved.
- * Requires the Claude CLI.
- */
-
 const claudeAvailable = await isClaudeCLIAvailable();
 
 describe.skipIf(!claudeAvailable)(

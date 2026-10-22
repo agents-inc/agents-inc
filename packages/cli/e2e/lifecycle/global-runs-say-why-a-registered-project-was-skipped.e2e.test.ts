@@ -35,12 +35,7 @@ import {
 } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import type { AgentName } from "../../src/cli/types/index.js";
 
-/**
- * A home-directory fan-out names each registered project it skips and why (path gone, other
- * provider, failed rewrite); `uninstall`'s own sentence appears only where the config was left
- * unpruned. A healthy project is reached and not named. The failed rewrite is a read-only file,
- * a no-op under root.
- */
+/** The failed rewrite is a read-only file, a no-op under root. */
 
 const API_DEV = E2E_AGENT["api-developer"].name;
 const WEB_DEV = E2E_AGENT["web-developer"].name;

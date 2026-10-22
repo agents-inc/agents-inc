@@ -26,11 +26,6 @@ import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-con
 import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
-/**
- * Removing a global skill via `edit --from` must also drop it from a registered project's
- * project-scoped agent `stack`, not only from its inlined skills[].
- */
-
 const REACT = E2E_SKILL.react.id;
 
 /** Its sub-agent stays on, holding nothing. */

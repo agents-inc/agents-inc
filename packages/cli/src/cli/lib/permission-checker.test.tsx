@@ -139,7 +139,6 @@ describe("checkPermissions settings-file field handling", () => {
     const result = await checkPermissions(projectDir);
 
     expect(warn).not.toHaveBeenCalled();
-    // Null means the permissions were read and are fine.
     expect(result, "allow rules with no restrictive deny must render no notice").toBeNull();
   });
 

@@ -14,11 +14,6 @@ import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 
 /**
- * `init --from`, then `edit --from` adding a skill, merges rather than overwrites: in config.ts and
- * in the compiled agent.
- */
-
-/**
  * The source's spare, in a non-exclusive category; every other uninstalled skill is an exclusive
  * alternate, so adding one would be a swap.
  */
@@ -75,7 +70,6 @@ describe("init -> edit merge: config preserved across lifecycle", () => {
           skills: [E2E_SKILL.react.id],
         });
 
-        // An install that already took the spare would make the edit a no-op.
         expect(initSkillIds, "the skill the edit adds must not be installed yet").not.toContain(
           ADDED_SKILL.id,
         );

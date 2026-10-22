@@ -26,7 +26,7 @@ const engineFor = (provider: Provider) =>
 const contextFor = (name: AgentName, agent: AgentConfig) =>
   buildAgentTemplateContext(name, agent, AGENT_CORPUS[name])
 
-/** Byte-identical to `compileAgentForPlugin`'s output, rendered from the vendored corpus. */
+/** Byte-identical to `compileAgentForHost`'s Claude output, rendered from the vendored corpus. */
 export async function renderAgentFromCorpus(
   name: AgentName,
   agent: AgentConfig,

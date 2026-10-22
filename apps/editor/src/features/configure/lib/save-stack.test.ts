@@ -20,7 +20,6 @@ beforeEach(() => {
   useSavedStackStore.setState({ saves: [], owed: [] })
 })
 
-// One door, two homes: this browser signed out, the account signed in.
 describe("saveStack", () => {
   it("keeps the stack in this browser for a visitor who is signed out", async () => {
     expect(await saveStack(NAME, STORED_PAYLOAD)).toMatchObject({ ok: true })

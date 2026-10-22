@@ -19,7 +19,7 @@ const EVERY_SPEC = [
 /**
  * A spec comparing several producers must derive its roster from the tree: a hand-gathered roster
  * cannot see the producer nobody gathered. Only rosters of callables are gated; wider recognisers
- * condemn legitimate test data. `producer-rosters.test.ts` plants the shapes this reader accepts.
+ * condemn legitimate test data.
  */
 describe("a spec comparing several producers derives its roster from the tree", () => {
   /** Keep empty: an entry is a spec that stays green while a forgotten producer goes unjudged. */
@@ -44,7 +44,6 @@ describe("a spec comparing several producers derives its roster from the tree", 
   it("holds every roster of producers against a walk", async () => {
     const rosters = await rostersInTheTree();
 
-    // Subject guard: a scan that read nothing satisfies the comparison for free.
     expect(
       rosters.length,
       "no roster of producers was found anywhere — the scan has stopped reading",

@@ -83,7 +83,10 @@ describe("init --ui", () => {
     });
   });
 
-  /** `--ui` opens whatever `--from` names: `editorConfigUrl(id)` only, no store or marketplace. */
+  /**
+   * `--ui` opens whatever `--from` names, one rule across both commands (owner ruling 2026-08-24):
+   * `editorConfigUrl(id)` only, no store or marketplace.
+   */
   it("opens the id --from names, rather than this directory", async () => {
     tempDir = await createTempDir();
 

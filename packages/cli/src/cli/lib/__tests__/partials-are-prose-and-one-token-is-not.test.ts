@@ -1,8 +1,6 @@
 /**
  * A partial is prose, byte for byte, except the opt-in source-folder token, which an author can
- * escape to name it. Both claims live here because each alone is satisfied by a wrong fix (a Liquid
- * render rewrites `${{ secrets.X }}`; verbatim inlining leaves the folder unresolved). Compiled
- * through `compileAgentForHost`; the token is a literal so a rename the `.md` files miss fails.
+ * escape to name it. The token is a literal so a rename the `.md` files miss fails.
  */
 
 import path from "path";
@@ -45,7 +43,6 @@ const SUMMONER = "agent-summoner" satisfies AgentName;
 
 const SUMMONER_PATH = "meta/agent-summoner";
 
-/** Subject guard: a render missing the summoner's playbook would name no folder at all. */
 const SUMMONER_PLAYBOOK_MARKER = "## The Agent Structure";
 
 function proseIn(partial: string): string {
@@ -176,7 +173,6 @@ describe("what a compile does to the text an author wrote in a partial", () => {
 
     const compiled = await projectAgentCompiledIn(projectDir, teachingBody);
 
-    // Subject guard: all five partials reached the render.
     expect(
       AGENT_PARTIALS.filter((partial) => compiled.includes(`${partial} —`)),
       "the render picked up only some of the fixture's partials, so the rosters below are about text that was never there",

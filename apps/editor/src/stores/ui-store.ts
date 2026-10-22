@@ -26,7 +26,7 @@ export type StackRequest =
   | { kind: "remote"; configId: string }
 
 type UiState = {
-  // Which skill's ••• options panel is showing. Only one at a time.
+  // Which skill's ••• options panel is showing.
   openPanelSkillId: string | null
   // Switch awaiting confirmation because applying it would discard edits.
   pendingStack: StackRequest | null
@@ -48,7 +48,6 @@ type UiState = {
   // Group key → that roster accordion is shut. Domain mode keys it by the bare
   // domain id and scope mode by `scope:<scope>`, so one record serves both.
   rosterCollapsed: Record<string, boolean>
-  // How the roster bands its agents.
   rosterGroupBy: RosterGroupBy
   // One fold per step title. The skills fold is not persisted, so a reload or
   // a `?domain=` link always lands on the grid.
@@ -56,7 +55,7 @@ type UiState = {
   stackCollapsed: boolean
   agentsCollapsed: boolean
   skillsCollapsed: boolean
-  // Which palette to paint in. `system` follows the machine.
+  // `system` follows the machine.
   theme: ThemePreference
   // What the last catalogue seat had to say, and what is parked behind the
   // marketplace dialog.

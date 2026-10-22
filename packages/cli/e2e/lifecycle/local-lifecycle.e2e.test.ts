@@ -10,8 +10,6 @@ import { installE2EStackGlobally } from "../fixtures/e2e-stack-seed.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { createTempDir, cleanupTempDir } from "../helpers/test-utils.js";
 
-/** Eject-mode lifecycle: `init --from`, then `compile`, then `uninstall --yes`. */
-
 describe("eject mode lifecycle: init -> compile -> uninstall", () => {
   let store: SeedConfigStore;
   let tempDir: string;

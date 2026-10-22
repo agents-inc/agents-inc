@@ -20,10 +20,7 @@ import {
   isClaudeCLIAvailable,
 } from "../helpers/test-utils.js";
 
-/**
- * Switching EVERY skill's install mode mid-lifecycle, eject to plugin and back. Requires the Claude
- * CLI. Both run as the global install (HOME === cwd === projectDir).
- */
+/** Both phases run as the global install (HOME === cwd === projectDir). */
 
 const claudeAvailable = await isClaudeCLIAvailable();
 

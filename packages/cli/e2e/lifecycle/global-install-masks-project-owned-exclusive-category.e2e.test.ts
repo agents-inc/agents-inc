@@ -32,12 +32,6 @@ import {
 import type { AgentName, SkillConfig } from "../../src/cli/types/index.js";
 import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
-/**
- * A project owning Vue at project scope in the exclusive `web-framework` category, when React is
- * added globally, keeps Vue active and masks React with a global tombstone rather than holding two
- * active framework skills.
- */
-
 const globalStack = {
   [E2E_AGENT["web-developer"].name]: {
     "web-testing": [createMockSkillAssignment(E2E_SKILL.vitest.id)],

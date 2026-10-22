@@ -15,7 +15,7 @@ export const LOCAL_SKILLS_PATH = ".claude/skills"
 export const DEFAULT_PLUGIN_NAME = "agents-inc"
 
 /** The public marketplace's fallback name; same value as the plugin name, a distinct concept. */
-export const DEFAULT_PUBLIC_SOURCE_NAME = DEFAULT_PLUGIN_NAME
+export const DEFAULT_PUBLIC_SOURCE_NAME = "agents-inc"
 
 export const GITHUB_PREFIX = "github:"
 
@@ -28,7 +28,6 @@ export const DEFAULT_SOURCE = `${GITHUB_PREFIX}agents-inc/skills`
  */
 export const CLI_INVOKE_COMMAND = "npx agents-inc"
 
-/** Source name for ejected skills. */
 export const EJECT_SOURCE = "eject"
 
 /** Not a `Category` union member; category traversals skip it. */

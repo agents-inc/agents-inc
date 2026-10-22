@@ -18,7 +18,8 @@ const CODEX = PROVIDER_CODEX[1];
 
 /**
  * Pinned on the flag's own line: `init`'s description mentions `.claude/`, so a screen-wide name
- * check cannot fail.
+ * check cannot fail. Breaking the roster in a scratch copy of the built CLI reddened this line
+ * assertion and not the name checks beside it.
  */
 const FLAG_WITH_ROSTER = `${FLAG}=<${CLAUDE}|${CODEX}>`;
 

@@ -33,7 +33,6 @@ type MatrixRow = {
   cells: (MatrixCell | null)[]
 }
 
-// Clicking cycles empty → lazy → preloaded; the cell's word is the state.
 function MatrixGrid({
   className,
   columns,

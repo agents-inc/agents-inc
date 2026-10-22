@@ -4,7 +4,6 @@ import type { ComponentProps } from "react"
 import { moveToAdjacentRadio } from "@workspace/ui/lib/radio-row"
 import { cn } from "@workspace/ui/lib/utils"
 
-// Active goes amber; inactive cells stay legible because they say what a click will do.
 const buttonGroupVariants = cva("inline-flex w-fit items-stretch")
 
 function ButtonGroup({

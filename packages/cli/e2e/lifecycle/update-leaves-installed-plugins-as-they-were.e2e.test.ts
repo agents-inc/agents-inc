@@ -28,11 +28,7 @@ import {
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
-/**
- * Journey 10's refresh branch through the real Claude CLI: `update` refreshes the marketplace but
- * installs nothing, so the plugin's registry record is unchanged and the summary says so. The
- * source is private because building a new version mutates it.
- */
+/** The source is private because building a new version mutates it. */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const SKILL_ID = E2E_SKILL.react.id;

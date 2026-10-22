@@ -29,11 +29,6 @@ import {
 } from "../fixtures/seed-config-store.js";
 import { e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
 
-/**
- * Config/scope integrity: domains in config-types, and `source`/`marketplace` after the scope
- * split.
- */
-
 const claudeAvailable = await isClaudeCLIAvailable();
 
 const API_DOMAIN = "api";

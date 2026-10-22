@@ -6,7 +6,6 @@ import { CLI } from "../fixtures/cli.js";
 import { ProjectBuilder, type DualScopeHandle } from "../fixtures/project-builder.js";
 import "../matchers/setup.js";
 
-/** A project with both global and project configs compiles. */
 describe("unified config view -- split writes", () => {
   let handle: DualScopeHandle | undefined;
 

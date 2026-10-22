@@ -16,7 +16,6 @@ export function getProjectConfigPath(dir: string, provider: Provider): string {
   return path.join(sourceFolderInUse(dir, provider).dir, STANDARD_FILES.CONFIG_TS);
 }
 
-/** The provider is read off `dir`, not assumed. */
 export function getInstalledConfigPath(dir: string): string {
   return getProjectConfigPath(dir, providerInUse(dir));
 }

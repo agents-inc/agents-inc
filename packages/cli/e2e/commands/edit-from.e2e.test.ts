@@ -141,8 +141,8 @@ describe("edit --from <id> without a terminal", () => {
   });
 
   /**
-   * `--ui` opens whatever `--from` names; `commands/edit-ui-from` covers the pairing, and this adds
-   * that the store is not touched.
+   * `--ui` opens whatever `--from` names (owner ruling 2026-08-24); `commands/edit-ui-from` covers
+   * the pairing, and this adds that the store is not touched.
    */
   it("opens the shared id without spending anything at the store", async () => {
     const projectDir = await takeInstalledProject();

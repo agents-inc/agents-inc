@@ -39,11 +39,6 @@ import { sa } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
 import { buildSkillConfig } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import type { AgentName } from "../../src/cli/types/index.js";
 
-/**
- * A home-directory fan-out skipping a registered project whose `config.ts` cannot be loaded names
- * that project and why, once; a healthy project beside it is reached and not named.
- */
-
 const API_DEV = E2E_AGENT["api-developer"].name;
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const ADDS_A_GLOBAL_SKILL_ID = "SkipLine01";

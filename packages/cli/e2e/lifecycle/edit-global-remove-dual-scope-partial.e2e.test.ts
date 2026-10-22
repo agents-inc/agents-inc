@@ -29,11 +29,6 @@ import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-con
 import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
-/**
- * Removing a skill's GLOBAL copy via `edit --from` strips it from the global config while the
- * registered project's own project-scope copy (skills[], stack and directory) is untouched.
- */
-
 const globalStack = {
   [E2E_AGENT["web-developer"].name]: {
     "web-testing": [{ id: E2E_SKILL.vitest.id, preloaded: false }],

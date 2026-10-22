@@ -4,7 +4,8 @@ import { CLI } from "../fixtures/cli.js";
 import { EXIT_CODES } from "../pages/constants.js";
 
 /**
- * `--marketplace` is `init`'s flag only; later commands read the marketplace the install stored.
+ * Naming a marketplace is an INSTALL-time decision, so `--marketplace` is `init`'s flag and
+ * nobody else's (owner ruling 2026-08-09); later commands read the marketplace the install stored.
  * Withdrawn rather than ignored, and the old `--source` spelling is refused everywhere, `init`
  * included.
  */

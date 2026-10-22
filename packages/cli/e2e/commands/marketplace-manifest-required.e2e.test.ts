@@ -37,7 +37,8 @@ import { createMockMarketplace } from "../../src/cli/lib/__tests__/factories/plu
 import "../matchers/setup.js";
 
 /**
- * A custom marketplace must carry a valid `.claude-plugin/marketplace.json`: `init --from`,
+ * A custom marketplace must carry a valid `.claude-plugin/marketplace.json` (owner ruling
+ * 2026-10-02: "Why not just make it a requirement?", an invalid one refused too): `init --from`,
  * `search`, `edit --from` and `eject skills` refuse naming the builds that write it; `doctor`
  * reports it; `uninstall`, `compile` and `list` keep working. Absent, unparseable and
  * schema-refused are each driven, and every refusal has its permitted twin.
@@ -340,7 +341,9 @@ describe("uninstall over an installation whose marketplace has no marketplace.js
   });
 
   // A registered project is the only shape in which `uninstall` loads the marketplace, so the
-  // project is held to the same prune as with a valid manifest.
+  // project is held to the same prune as with a valid manifest. A HOME-only assertion stayed green
+  // while the prune was skipped with a warning, leaving the project naming a sub-agent and skills
+  // that were deleted.
   it(
     "removes a global installation regardless, and still prunes the project registered under it",
     { timeout: TIMEOUTS.LIFECYCLE },

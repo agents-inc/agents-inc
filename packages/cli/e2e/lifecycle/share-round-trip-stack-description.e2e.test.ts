@@ -47,7 +47,6 @@ describe("a share round trip that starts from an applied stack", () => {
     async () => {
       await installE2EStackGlobally(store, origin);
 
-      // Control: an origin with no description would satisfy the comparison below for free.
       const before = await loadConfigOrFail(origin);
       expect(
         before.description,

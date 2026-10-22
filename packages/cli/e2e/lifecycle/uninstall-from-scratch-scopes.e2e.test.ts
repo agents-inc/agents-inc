@@ -23,11 +23,6 @@ import {
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
 
-/**
- * `uninstall` from an installation `init` actually made: everything goes at the scope it ran in,
- * and the other scope is unchanged except for the project's deregistration from `projects[]`.
- */
-
 /** The loader throws while evaluating this file. */
 const SYNTAX_ERROR = `export default {{{ not valid typescript`;
 
@@ -76,14 +71,12 @@ describe("uninstall removes a from-scratch install, scope by scope", () => {
         { env: { HOME: fakeHome } },
       );
 
-      // The plan is printed before anything is removed, and names the config manifest.
       expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
       expect(output).toContain(STEP_TEXT.UNINSTALL_PREVIEW_HEADING);
       expect(output).toContain(STEP_TEXT.UNINSTALL_CONFIG_SECTION);
       expect(output).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
       await expectCleanUninstall(fakeHome, { removeConfig: true });
-      // A config-types.ts outliving its config.ts names an installation that no longer exists.
       expect(
         await fileExists(configTypesTsPath(fakeHome)),
         "config-types.ts must not outlive the config it was generated from",
@@ -135,8 +128,6 @@ describe("uninstall removes a from-scratch install, scope by scope", () => {
         (await listFiles(skillsPath(fakeHome))).sort(),
         "a project uninstall must not remove globally installed skills",
       ).toStrictEqual(globalSkillsBefore);
-      // The one intended change: the project deregisters itself. Comparing the whole config with
-      // only that field moved proves both "nothing else changed" and that deregistration fired.
       expect(
         await loadConfigOrFail(fakeHome),
         "a project uninstall must deregister the project and change nothing else in the global config",
@@ -191,7 +182,6 @@ describe("uninstall removes a from-scratch install, scope by scope", () => {
       await expect({ dir: fakeHome }).toHaveNoLocalSkills();
 
       // Compiled agents carry the provenance marker, so the plan claims them without the config.
-      // Asserted against the plan shown and against disk: it names the removals and the one kept.
       expect(output).toContain(STEP_TEXT.UNINSTALL_CLI_COMPILED);
       expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT_ONE);
       expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT_REASON);

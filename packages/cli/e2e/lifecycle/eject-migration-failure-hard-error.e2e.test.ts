@@ -25,9 +25,8 @@ import {
 import "../matchers/setup.js";
 
 /**
- * A migration to eject that cannot copy (or cannot write config) must hard-error before recording
- * `origin: "eject"` rows: the eject half of plugin-install-failure-hard-error. The lever is a
- * read-only directory, a no-op under root.
+ * The eject half of plugin-install-failure-hard-error. The lever is a read-only directory, a no-op
+ * under root.
  */
 
 /** Denies the write bit while leaving the directory readable and traversable. */

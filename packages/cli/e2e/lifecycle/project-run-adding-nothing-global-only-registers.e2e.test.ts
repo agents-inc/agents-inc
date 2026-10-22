@@ -29,11 +29,7 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import type { SkillId } from "../../src/cli/types/index.js";
 
-/**
- * A project run adding nothing global only registers the project in the global config; it must
- * not fill in the project marketplace's name. A run that does add global entries does fill it.
- * The global install is from the default marketplace, which records no name.
- */
+/** The global install is from the default marketplace, which records no name. */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const API_DEV = E2E_AGENT["api-developer"].name;

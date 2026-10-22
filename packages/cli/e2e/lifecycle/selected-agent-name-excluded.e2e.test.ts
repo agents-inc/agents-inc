@@ -20,9 +20,8 @@ import { readGeneratedUnion } from "../../src/cli/lib/__tests__/helpers/generate
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
- * `SelectedAgentName` is derived from the config's non-excluded `agents[]` rows, not left at its
- * `AgentName` fallback. Asserted on the emitted alias, since every name also appears in
- * `AgentName`. See the KNOWN GAP at the end.
+ * Asserted on the emitted alias, since every name also appears in `AgentName`. See the KNOWN GAP at
+ * the end.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
@@ -94,7 +93,6 @@ describe.skipIf(!claudeAvailable)("SelectedAgentName is derived from the config'
         "config-types.ts must declare a SelectedAgentName alias",
       ).toBeDefined();
 
-      // Derived, not defaulted: the `AgentName` fallback is the regression.
       expect(
         selectedAgentName?.trim(),
         "SelectedAgentName must be narrowed to the config's agents, not left as AgentName",

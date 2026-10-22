@@ -20,8 +20,6 @@ import {
 
 const SPLIT_INSTALL_ALIASES = ["SkillId", "AgentName", "Category"] as const;
 
-/** Scope-blind regressions across the global-scope lifecycle. */
-
 let store: SeedConfigStore;
 
 beforeAll(async () => {

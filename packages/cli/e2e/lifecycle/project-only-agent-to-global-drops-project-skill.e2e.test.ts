@@ -35,9 +35,8 @@ const PROJECT_API_DEVELOPER_STACK = {
 };
 
 /**
- * A project-only sub-agent moved to global scope loses its project-scoped skill (project skills
- * never reach global agents): designed behaviour, with a warning. The skill stays installed,
- * loaded by nobody. Not a dual-scope fixture, so the move is a genuine P->G departure.
+ * Project skills never reach global agents, so the move drops the skill by design, with a warning.
+ * Not a dual-scope fixture, so the move is a genuine P->G departure.
  */
 describe("a project-only sub-agent moved to global scope", () => {
   let store: SeedConfigStore;

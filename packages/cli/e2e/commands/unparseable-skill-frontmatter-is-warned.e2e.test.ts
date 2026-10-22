@@ -30,8 +30,10 @@ import { buildSeedPayload } from "../../src/cli/lib/__tests__/factories/seed-fac
 
 /**
  * A shipped skill whose SKILL.md frontmatter does not parse is warned about by every command that
- * loads the marketplace, as a broken metadata.yaml is; the metadata.yaml line is the control and
- * subject guard. The assertion is the broken file's path.
+ * loads the marketplace, as a broken metadata.yaml is (owner ruling 2026-10-02: "yes, this should
+ * be warned"); the metadata.yaml line is the control and subject guard. The assertion is the broken
+ * file's path. Observed red against the unfixed build: every command printed the metadata.yaml line
+ * and nothing about the SKILL.md.
  */
 
 const BROKEN_FRONTMATTER_ID = e2eSkillId("web-broken-frontmatter");

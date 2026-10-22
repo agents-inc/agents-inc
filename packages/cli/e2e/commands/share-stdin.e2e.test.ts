@@ -101,7 +101,6 @@ describe("share --stdin", () => {
     );
   });
 
-  /** This passed the local gate once and was refused by the store. */
   it("refuses a project skill on a global sub-agent without spending a write", async () => {
     tempDir = await createTempDir();
 

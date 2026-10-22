@@ -18,11 +18,6 @@ import { EXIT_CODES } from "../pages/constants.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { metadataFieldsFor } from "../fixtures/project-builder.js";
 
-/**
- * A global config declaring skills but `agents: []` must not make a home-directory `compile`
- * write every built-in agent to `~/.claude/agents/`.
- */
-
 describe("global blank-agent config on compile", () => {
   let tempDir: string;
 

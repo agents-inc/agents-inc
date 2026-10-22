@@ -170,7 +170,7 @@ describe("writeProjectPartial", () => {
         }),
       );
 
-      // Pre-condition: the file carries the compact bare form the bug needs.
+      // Pre-condition: the file carries the compact bare form.
       expect(
         await readFile(getProjectConfigPath(tempDir, "claude"), "utf-8"),
         "the writer must emit the exclusive category in its bare form",

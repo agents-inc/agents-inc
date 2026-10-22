@@ -1,7 +1,7 @@
 /**
  * `agent.liquid` emits `isolation:`, `experimental:` and `hooks:`, and the `.strict()` frontmatter
  * schema must accept them. The strictness is equally the subject: a loosened schema would strip a
- * user's typo silently, so refusals outnumber acceptances.
+ * user's typo silently.
  */
 
 import { describe, expect, it } from "vitest";
@@ -50,7 +50,6 @@ const UNDOCUMENTED_EXPERIMENTAL_KEY = "cacheTtlSeconds";
 const KEY_NO_AGENT_CARRIES = "telemetry";
 
 describe("agent frontmatter validation and the keys the agent template emits", () => {
-  /** Subject guard: otherwise a red acceptance case could just be an invalid fixture. */
   it("accepts a compiled agent's frontmatter that declares neither key", () => {
     const result = agentFrontmatterValidationSchema.safeParse(COMPILED_FRONTMATTER);
 

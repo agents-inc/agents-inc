@@ -28,7 +28,6 @@ const textOf = (lines: readonly { content: string }[][]): string =>
   lines.map((line) => line.map((token) => token.content).join("")).join("\n")
 
 describe("renderTokens", () => {
-  // Highlighting colours the file, never edits it.
   it.each(["typescript", "markdown", "text"] as const)(
     "returns the input's own bytes for %s and nothing else",
     async (lang) => {

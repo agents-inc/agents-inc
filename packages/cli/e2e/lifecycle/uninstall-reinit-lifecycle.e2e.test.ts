@@ -19,11 +19,6 @@ import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { installE2EStackDualScope, installE2EStackGlobally } from "../fixtures/e2e-stack-seed.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 
-/**
- * init -> uninstall -> re-init produces an equivalent installation, and a project-scope uninstall
- * preserves the global one.
- */
-
 let store: SeedConfigStore;
 
 beforeAll(async () => {
@@ -144,7 +139,6 @@ describe("uninstall scope isolation", () => {
 
       const projectSkillsExist = await directoryExists(projectSkillsDir);
       if (projectSkillsExist) {
-        // If the directory still exists, it should be empty
         const entries = await listFiles(projectSkillsDir);
         expect(entries, "Project skills dir should be empty after uninstall").toStrictEqual([]);
       }

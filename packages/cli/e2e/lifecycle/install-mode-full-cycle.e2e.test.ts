@@ -22,11 +22,6 @@ import {
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 
-/**
- * Install-mode round trip eject -> plugin -> eject keeps the selection and manages files at each
- * phase. Requires the Claude CLI.
- */
-
 const claudeAvailable = await isClaudeCLIAvailable();
 
 describe.skipIf(!claudeAvailable)("install mode full cycle -- eject to plugin and back", () => {
@@ -95,7 +90,6 @@ describe.skipIf(!claudeAvailable)("install mode full cycle -- eject to plugin an
 
       await applyFromSeed(store, "HonoEject1", e2eStackPayload(DUAL_SCOPE), site);
 
-      // Back exactly as the setup left it: same ids, scopes and sources.
       expect(
         await readAllSkillEntries(projectDir),
         "the round trip must restore every entry, not merely some of them",

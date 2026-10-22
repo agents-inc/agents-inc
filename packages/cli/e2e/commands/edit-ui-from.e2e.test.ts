@@ -31,7 +31,7 @@ const INSTALLED_AGENT = E2E_AGENT["web-developer"].name;
 
 /**
  * `edit --ui --from <id>`: `--ui` opens whatever `--from` names, or the command's own subject
- * without it.
+ * without it (owner ruling 2026-08-24).
  */
 describe("edit --ui --from", () => {
   let tempDir: string;
@@ -51,7 +51,7 @@ describe("edit --ui --from", () => {
     expect(output).toContain("?fromId=se_XYZ789");
   });
 
-  /** Opening an id reads no local state, so no installation is required. */
+  /** Deliberate, by the same ruling: opening an id reads nothing local, so no install is needed. */
   it("needs no installation, because opening an id reads nothing local", async () => {
     tempDir = await createTempDir();
 

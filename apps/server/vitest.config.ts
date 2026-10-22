@@ -6,11 +6,9 @@ import { cloudflareTest } from "@cloudflare/vitest-pool-workers"
 import { nodeConfig } from "@workspace/vitest-config/node"
 import { mergeConfig } from "vitest/config"
 
-// Tests run inside the Workers runtime. Since pool 0.20, KV state leaks between
-// tests in a file (no `isolatedStorage`) and outbound calls are mocked with
-// `msw/node` (no `fetchMock`). `environment: "node"` is the only value the
-// pool accepts.
-//
+// Tests run inside the Workers runtime: KV state persists across a file's
+// tests, outbound calls are mocked with `msw/node`, and `environment: "node"`
+// is the only value the pool accepts.
 // Migrations are read here because the setup file runs without a filesystem;
 // D1 executes one statement per call, hence the split. Resolved against this
 // file so runs from the repository root (knip) find it.

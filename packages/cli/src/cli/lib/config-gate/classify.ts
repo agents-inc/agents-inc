@@ -71,16 +71,14 @@ function normalize(config: ProjectConfig): Record<string, unknown> {
   );
 }
 
-function field(config: Record<string, unknown>, key: string): unknown {
-  return config[key];
-}
-
 function skillsById(config: Record<string, unknown>): Map<SkillId, SkillConfig> {
+  // Boundary cast: `normalize`'s round-trip of a `ProjectConfig`, or `{}` where none came before.
   const skills = (config.skills ?? []) as SkillConfig[];
   return new Map(skills.map((skill) => [skill.id, skill]));
 }
 
 function agentsByName(config: Record<string, unknown>): Map<AgentName, AgentScopeConfig> {
+  // Boundary cast: as in `skillsById`.
   const agents = (config.agents ?? []) as AgentScopeConfig[];
   return new Map(agents.map((agent) => [agent.name, agent]));
 }
@@ -142,7 +140,7 @@ export function classifyGlobalChange(
 ): GlobalChangeSet {
   const before = prev ? normalize(prev) : {};
   const after = normalize(next);
-  const moved = (key: string): boolean => !isDeepEqual(field(before, key), field(after, key));
+  const moved = (key: string): boolean => !isDeepEqual(before[key], after[key]);
 
   return {
     skills: diffSkills(before, after),

@@ -1,8 +1,4 @@
-/**
- * `agent-summoner`'s compiled prompt must name the source folder a fresh install writes; no golden
- * tree compiles it. Rendered through `compileAgentForHost`, since only a render joins template and
- * partials. Spellings are literals; `sourceFolderInUse` is imported because it is the other side.
- */
+/** `agent-summoner`'s compiled prompt must name the source folder a fresh install writes. */
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -20,10 +16,8 @@ const SUMMONER_PATH = "meta/agent-summoner";
 /** A roster, so a prompt naming another provider's folder or an unknown spelling fails visibly. */
 const SOURCE_FOLDER_SPELLINGS = [".agents-inc/claude", ".agents-inc/codex"] as const;
 
-/** Subject guard: a render missing this agent's playbook would name no folder at all. */
 const SUMMONER_PLAYBOOK_MARKER = "## The Agent Structure";
 
-/** `agent-summoner` compiled for an install rooted at `installRoot`, through the write path. */
 async function summonerCompiledFor(installRoot: string): Promise<string> {
   const engine = await createLiquidEngine(installRoot);
 
@@ -54,7 +48,6 @@ describe("the folder agent-summoner tells an agent to author into", () => {
 
     const compiled = await summonerCompiledFor(installRoot);
 
-    // Subject guard: a fresh install really is on the current layout.
     expect(
       sourceFolderInUse(installRoot, "claude").relName,
       "a fresh install root no longer resolves to the new folder, so this spec is not about the new layout",

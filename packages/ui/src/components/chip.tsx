@@ -4,7 +4,7 @@ import type { ComponentProps } from "react"
 import { cn } from "@workspace/ui/lib/utils"
 
 // Hover only firms the border: amber is reserved for what the user chose. `chipVariants` is
-// exported for a passive `<span>` inside a clickable row. `onDark` is for the stuck filter bar.
+// exported for a passive `<span>` inside a clickable row.
 const chipVariants = cva(
   "cursor-pointer border font-mono font-medium whitespace-nowrap uppercase",
   {

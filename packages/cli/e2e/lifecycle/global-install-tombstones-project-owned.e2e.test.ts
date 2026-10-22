@@ -32,12 +32,6 @@ import {
 import type { AgentScopeConfig, AgentName, SkillConfig } from "../../src/cli/types/index.js";
 import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
-/**
- * A project owning a skill/agent at project scope that becomes active globally must, on
- * propagation, keep its active project entry plus a global tombstone (`[P][G]`), not a second
- * active global entry.
- */
-
 const globalStack = {
   [E2E_AGENT["web-developer"].name]: {
     "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
@@ -172,7 +166,6 @@ describe("global-scope install tombstones project-owned skills and agents", () =
     ]);
   });
 
-  // Control: the purely-inherited path.
   it("leaves a purely-inherited global skill as a single active global entry", () => {
     expect(projectReact).toStrictEqual([
       { id: E2E_SKILL.react.id, scope: "global", origin: "eject" },

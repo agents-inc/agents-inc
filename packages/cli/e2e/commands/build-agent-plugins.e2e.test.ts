@@ -173,7 +173,6 @@ describe("build agent plugins", () => {
         renderAgentMd("good-agent", "A valid agent"),
       );
 
-      // No frontmatter
       await writeFile(
         path.join(edgeAgentsDir, "bad-agent.md"),
         "# No frontmatter here\n\nJust plain markdown.",

@@ -24,11 +24,6 @@ import {
 } from "../helpers/test-utils.js";
 import { E2E_SKILL, E2E_STACK_AGENTS, E2E_STACK_SKILL_IDS } from "../fixtures/expected-values.js";
 
-/**
- * `edit --from` switching a plugin skill to `source: "eject"` copies it into `.claude/skills/`.
- * Requires the Claude CLI.
- */
-
 const claudeAvailable = await isClaudeCLIAvailable();
 
 const COMPILED_AGENT_FILES = E2E_STACK_AGENTS.map((agent) => `${agent}.md`);

@@ -34,12 +34,6 @@ import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-con
 import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
-/**
- * Dual-scope pair, both halves plugin: removing the GLOBAL copy via `edit --from` leaves the
- * project's own copy intact in config, compiled agent (`id:id`) and filesystem. Requires the
- * Claude CLI.
- */
-
 const VITEST_ID = E2E_SKILL.vitest.id;
 const VITEST_PLUGIN_REF = `${VITEST_ID}:${VITEST_ID}`;
 
@@ -80,7 +74,6 @@ describe.skipIf(!claudeAvailable)("dual-scope same-source (both plugin)", () => 
     "removing the GLOBAL copy (edit --from at global scope) leaves the project's own plugin copy untouched",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      // A fresh env, not chained off the previous test.
       const marketplace = pluginSource.marketplaceName;
       currentTempDir = await createTempDir();
       const globalHome = path.join(currentTempDir, "home");

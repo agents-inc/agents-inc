@@ -25,11 +25,6 @@ import {
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
-/**
- * `update` on a real ejected install whose source moved on changes nothing (SKILL.md, metadata,
- * config.ts and compiled agents byte-identical) and says the copies are the user's.
- */
-
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const SEED_CONFIG_ID = "Drift001";
 const SOURCE_EDIT_MARKER = "## Section added to the source after installation";

@@ -21,8 +21,6 @@ import {
 } from "../helpers/test-utils.js";
 import { createTestEnvironment, readSkillEntries } from "../fixtures/dual-scope-helpers.js";
 
-/** Exact config state at both scopes before and after a skill or agent scope change. */
-
 const API_DEV = E2E_AGENT["api-developer"].name;
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
@@ -91,7 +89,6 @@ describe("scope toggle config snapshot", () => {
         { id: E2E_SKILL.react.id, scope: "global", origin: "eject" },
       ]);
 
-      // G->P must not modify the global config.
       expect(
         await readTestFile(configTsPath(fakeHome)),
         "a G->P change is a project-scope edit and may not rewrite the global config",
@@ -107,7 +104,6 @@ describe("scope toggle config snapshot", () => {
         "SKILL.md must exist in project skills/web-framework-react/",
       ).toBe(true);
 
-      // G->P is additive.
       const globalSkillMdPath = path.join(skillsPath(fakeHome), E2E_SKILL.react.id, FILES.SKILL_MD);
       expect(
         await fileExists(globalSkillMdPath),
@@ -120,8 +116,7 @@ describe("scope toggle config snapshot", () => {
     "collapsing a persisted dual-scope skill to its global half changes only the project config",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      // Naming the [P][G] skill at global scope only collapses it to its global half; only the
-      // project config may change.
+      // Naming the [P][G] skill at global scope only collapses it to its global half.
 
       const globalConfigBefore = await readTestFile(configTsPath(fakeHome));
       const projectConfigBefore = await readTestFile(configTsPath(projectDir));
@@ -174,7 +169,6 @@ describe("scope toggle config snapshot", () => {
         "web-developer.md must exist in project agents dir after G->P",
       ).toBe(true);
 
-      // G->P is additive.
       const globalAgentPath = path.join(agentsPath(fakeHome), "web-developer.md");
       expect(
         await fileExists(globalAgentPath),
@@ -189,7 +183,6 @@ describe("scope toggle config snapshot", () => {
 
       expect(projectConfigAfter).toContain("web-developer");
 
-      // A project-scope edit is no licence to rewrite the global config.
       const globalConfigAfter = await readTestFile(configTsPath(fakeHome));
       expect(globalConfigAfter, "global config.ts must be unchanged by a project-scope edit").toBe(
         globalConfigBefore,

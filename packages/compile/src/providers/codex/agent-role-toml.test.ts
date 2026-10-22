@@ -33,7 +33,6 @@ const BODY = [
   "Tabs\tand a trailing backslash \\",
 ].join("\n")
 
-/** The shape sixteen of the eighteen shipped sub-agents have. */
 const WRITER = buildAgentConfig("web-developer", {
   tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash"],
   model: "opus",

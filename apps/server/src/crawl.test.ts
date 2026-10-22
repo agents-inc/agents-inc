@@ -13,9 +13,8 @@ import { INDEXED_REPOS, crawlSkillIndex } from "./crawl"
 
 import type { SkillIndex } from "@workspace/matrix/skill-index"
 
-// The crawl against a stand-in GitHub served by msw. Each case builds its own
-// estate. `githubNotFound` cannot come from api-mocks' root entry: its handlers
-// clash with the Workers `Request` type here (TS2379).
+// `githubNotFound` cannot come from api-mocks' root entry: its handlers clash
+// with the Workers `Request` type here (TS2379).
 
 const REPO_API = `${GITHUB_API_ORIGIN}/repos/`
 const RAW = `${GITHUB_RAW_ORIGIN}/`

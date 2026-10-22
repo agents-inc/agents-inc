@@ -27,10 +27,7 @@ import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-con
 import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
-/**
- * Project-scope twin of edit-remove-last-skill-stack-cleanup: removing a project-scoped skill that
- * is an agent's only stack entry must leave no stale reference in `stack`.
- */
+/** Project-scope twin of edit-remove-last-skill-stack-cleanup. */
 
 const singleSkillStack = {
   [E2E_AGENT["web-developer"].name]: {

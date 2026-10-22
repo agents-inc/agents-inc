@@ -5,7 +5,6 @@ import type { Preview } from "@storybook/react-vite"
 
 import "../src/styles/globals.css"
 
-// Light by default (headless `vitest run` included); `chromatic.modes` asks for dark.
 type Theme = "light" | "dark"
 
 const DEFAULT_THEME: Theme = "light"
@@ -48,8 +47,7 @@ const preview: Preview = {
   parameters: {
     layout: "centered",
 
-    // Chromatic captures every story once per mode, each with its own baseline. Opt out per story
-    // with `modes: { dark: { disable: true } }`.
+    // Opt out per story with `modes: { dark: { disable: true } }`.
     chromatic: {
       modes: {
         light: { theme: "light" },

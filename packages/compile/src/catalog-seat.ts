@@ -4,8 +4,8 @@ import type { CompileCatalog } from "./catalog.js"
 
 /**
  * The catalogue `generateProjectConfigFromSkills` reads, seated by the CLI's `initializeMatrix`.
- * Debt: ~100 call sites pass no catalogue. The renderers take theirs as an argument and must not
- * read this.
+ * Debt: that function takes no catalogue parameter, so its callers depend on this mutable seat.
+ * The renderers take theirs as an argument and must not read this.
  */
 let seated: CompileCatalog = MATRIX
 

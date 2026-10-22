@@ -33,7 +33,6 @@ export const Dialog: Story = {
   args: { variant: "dialog", placeholder: "owner/repo" },
 }
 
-// Stuck, the surface turns to ink and the type inverts.
 export const SearchOnDark: Story = {
   args: { onDark: true },
   decorators: [

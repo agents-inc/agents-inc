@@ -34,7 +34,7 @@ const WEB_DEV = E2E_AGENT["web-developer"].name;
 
 /**
  * `init` must hard-error before writing config.ts when `installPluginSkills` returns `failed`
- * entries, rather than recording plugins that never installed. Requires the Claude CLI.
+ * entries, rather than recording plugins that never installed.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
@@ -93,10 +93,6 @@ describe.skipIf(!claudeAvailable)(
   },
 );
 
-/**
- * The same guarantee from `edit`: the shared reporter both commands reach hard-errors before
- * `writeConfigAndCompile`, so config.ts is byte-identical after the failed edit.
- */
 describe.skipIf(!claudeAvailable)(
   "edit with plugin install failure: hard-error before orphan config write",
   () => {

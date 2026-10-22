@@ -16,7 +16,7 @@ function namesADirectoryOnThisMachine(source: string): boolean {
   return path.isAbsolute(source) || OPENS_A_RELATIVE_PATH.test(source);
 }
 
-// eslint-disable-next-line no-control-regex
+// eslint-disable-next-line no-control-regex -- matching control characters is this pattern's job
 const CONTROL_CHAR_PATTERN = /[\x00-\x08\x0E-\x1F\x7F]/u;
 
 export function validatePluginPath(pluginPath: string): void {

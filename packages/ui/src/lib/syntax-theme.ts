@@ -40,7 +40,6 @@ const LITERAL_SCOPES = [
 ] as const
 const COMMENT_SCOPES = ["comment", "punctuation.definition.comment"] as const
 
-// Copies scopes and settings so no rule shares data with the module.
 const rule = (
   scopes: readonly string[],
   settings: SyntaxThemeRule["settings"]

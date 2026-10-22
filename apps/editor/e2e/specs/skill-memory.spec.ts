@@ -79,9 +79,7 @@ test.describe("configuration survives deselection", () => {
     )
   })
 
-  // The case that matters most: a stack hands a skill a set of sub-agent
-  // assignments the user never clicked, and losing those to a stray toggle
-  // would be exactly as costly as losing ones they built by hand.
+  // A stack's assignments were never clicked, and must survive a toggle too.
   test("a stack-provided skill keeps its assignments through a toggle", async ({
     configure,
   }) => {

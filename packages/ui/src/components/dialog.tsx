@@ -158,8 +158,6 @@ function DialogPanes({ className, ...props }: ComponentProps<"div">) {
   )
 }
 
-// `left`/`right`: flexible body, fixed sidebar after. `tree`/`content`: fixed column first, with
-// the quieter `tree-border` divider.
 const PANE_SIDES = {
   left: "flex-1 border-r border-hairline",
   right: "w-[12.25rem] flex-none",
@@ -187,8 +185,8 @@ const dragFrom = (startX: number, startWidth: number) => {
 }
 
 /**
- * Occupies no layout (5px with -2px margins). Pointer capture keeps the drag alive over the
- * scrolling code pane and ends it on cancel, so no listener can leak.
+ * Pointer capture keeps the drag alive over the scrolling code pane and ends it on cancel, so no
+ * listener can leak.
  */
 function DialogPaneSplitter({
   width,

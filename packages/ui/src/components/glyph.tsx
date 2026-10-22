@@ -7,7 +7,6 @@ import { cn } from "@workspace/ui/lib/utils"
  * caps clash with a radius-free design). The GitHub mark is brand artwork and lives where it is used.
  */
 
-// Verbatim from the design prototype's `GLYPH` factory, which wins over the README.
 const PATHS = {
   plus: ["M12 5v14", "M5 12h14"],
   minus: ["M5 12h14"],
@@ -65,7 +64,7 @@ function Glyph({
       strokeLinecap="butt"
       strokeLinejoin="miter"
       aria-hidden
-      // `block` removes the inline baseline gap; `shrink-0` for flex rows.
+      // `block` removes the inline baseline gap.
       className={cn("block shrink-0", className)}
       {...props}
     >

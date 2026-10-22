@@ -66,9 +66,6 @@ test.describe("a shared link keeps its own address", () => {
     )
   })
 
-  // The line is not decoration: the address holds a configuration that is not
-  // this browser's, edits to it are not saved anywhere, and the way back to
-  // one's own is a nav item rather than something to guess at.
   test("says whose configuration is on screen, and where one's own is", async ({
     configure,
     page,
@@ -104,9 +101,8 @@ test.describe("a shared link naming a marketplace this browser has not stored", 
     )
   })
 
-  // Seated, never stored. A marketplace an arriving link named is not one this
-  // browser chose, and the slot holds exactly one — so storing it would replace
-  // whatever the visitor had, PAT and all, for a link they only looked at.
+  // The slot holds one marketplace, so storing a link's would replace the
+  // visitor's own, PAT and all.
   test("does not store the marketplace it named", async ({
     configure,
     page,
@@ -168,8 +164,8 @@ test.describe("a shared link naming no marketplace while one is stored", () => {
     expect(await configure.chosenMarketplace()).toBe(MARKETPLACE_CANONICAL_REF)
   })
 
-  // The way back the notice actually names, which is a nav item rather than a
-  // fresh page load — so the escape has to work without one.
+  // The notice names a nav item, so the escape has to work without a page
+  // load.
   test("returns to the visitor's own from the Editor nav item", async ({
     configure,
     page,
@@ -201,15 +197,12 @@ test.describe("a visitor who has saved nothing", () => {
       "true"
     )
 
-    // The way the notice itself names, rather than a fresh page load — which
-    // is what makes this a return to their own address instead of a boot.
+    // The notice's nav item, not a page load: a return, not a boot.
     await configure.page.getByRole("link", { name: "Editor" }).click()
     await expect(configure.page).toHaveURL("/editor/")
   }
 
-  // Their own editor is empty, because they have never configured anything.
-  // Following the notice's own instruction must not hand them a stranger's
-  // selection to adopt.
+  // Their own editor is empty: they have never configured anything.
   test("does not leave the shared selection on their own grid", async ({
     configure,
   }) => {
@@ -221,9 +214,8 @@ test.describe("a visitor who has saved nothing", () => {
     )
   })
 
-  // The slot is written by their FIRST click, whatever it was for — so what
-  // reaches it is asked after one, which is the earliest moment the answer can
-  // be wrong rather than merely pending.
+  // The slot is written by their first click, so it is read after one: the
+  // earliest it can be wrong rather than pending.
   test("writes no borrowed selection into their slot", async ({
     configure,
   }) => {
@@ -236,9 +228,9 @@ test.describe("a visitor who has saved nothing", () => {
     expect(await configure.storedConfig()).not.toContain(SHARED_SKILL_ID)
   })
 
-  // The compounding half. Their first click saves what is on screen, and a
-  // reload drops the skill they actually added through `partialize` — leaving a
-  // configuration they never chose, quietly smaller than the one they saw.
+  // A first click saving the borrowed selection, then a reload dropping their
+  // own pick through `partialize`, would leave a configuration they never
+  // chose.
   test("saves only what they chose, and the same again after a reload", async ({
     configure,
     page,
@@ -279,8 +271,7 @@ test.describe("editing someone else's configuration", () => {
       .toggle()
   })
 
-  // Not on arrival, and not one click later either. A guarantee that lasts
-  // until the visitor touches anything is not a guarantee.
+  // Not on arrival, and not one click later either.
   test("writes nothing to this browser's saved configuration", async ({
     configure,
     page,

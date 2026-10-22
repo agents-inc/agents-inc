@@ -1,7 +1,6 @@
 /**
- * Scans the sub-agents' own markdown partials, read off disk; the baseline spec renders them
- * empty. Nothing else reads a `.md`. The baseline's fuzzy `PROHIBITIONS` scan is not run here: it
- * flags prose these partials keep on purpose.
+ * Scans the sub-agents' own markdown partials, read off disk. The baseline's fuzzy `PROHIBITIONS`
+ * scan is not run here: it flags prose these partials keep on purpose.
  */
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -104,7 +103,6 @@ async function offendingPartialLines(patterns: readonly RegExp[]): Promise<strin
 }
 
 describe("the prose an agent ships states its rules rather than shouting them", () => {
-  /** Sentinel: an empty glob would leave every assertion below green having read nothing. */
   it("reads a partial from every agent the generated roster names", async () => {
     const partials = await everyPartial();
     const agents = [...new Set(partials.map(({ file }) => path.basename(path.dirname(file))))];

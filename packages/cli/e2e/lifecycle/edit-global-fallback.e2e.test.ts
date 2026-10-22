@@ -22,11 +22,6 @@ import { e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
-/**
- * A bare `edit` from a project with no config of its own falls back to the global installation,
- * hands that to the editor, and writes nothing.
- */
-
 const STACK_AT_HOME_ID = "StackHm3";
 
 describe("edit with global-only installation (no project config)", () => {

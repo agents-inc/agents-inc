@@ -20,9 +20,8 @@ import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-con
 import { E2E_SKILL, E2E_STACK_SKILL_IDS } from "../fixtures/expected-values.js";
 
 /**
- * A mixed-mode agent references each skill in its own source's format, both in one compiled file:
- * plugin skills as `id:id`, eject skills as bare `id`. Install intent is per skill, never a
- * project-level check. Requires the Claude CLI.
+ * Plugin skills are referenced as `id:id`, eject skills as bare `id`: install intent is per skill,
+ * never a project-level check.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();

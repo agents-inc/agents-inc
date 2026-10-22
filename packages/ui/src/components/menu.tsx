@@ -3,9 +3,6 @@ import { cva } from "class-variance-authority"
 
 import { cn } from "@workspace/ui/lib/utils"
 
-// A base-ui wrapper for the keyboard path and ARIA the design's prototype lacks. The trigger's
-// name and glyph are the caller's.
-
 // Floating positioning takes device pixels, so this cannot be a rem token.
 const MENU_SIDE_OFFSET_PX = 4
 
@@ -30,8 +27,8 @@ function MenuTrigger({
   )
 }
 
-// Portal, Positioner and Popup in one part. Props go to the positioner; `className` to the popup,
-// narrowed to `string` because `cn` silently drops the callback form.
+// Props go to the positioner; `className` to the popup, narrowed to `string` because `cn` silently
+// drops the callback form.
 function MenuPopup({
   className,
   children,

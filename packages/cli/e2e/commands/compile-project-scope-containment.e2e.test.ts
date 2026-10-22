@@ -17,8 +17,9 @@ import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-con
 const SECOND_PROJECT_DIR_NAME = "project-b";
 
 /**
- * A compile inside a project writes nothing outside it. Snapshots carry mtimes, since the
- * out-of-scope writes rewrite unchanged bytes.
+ * A compile run inside a project writes nothing outside that project — the ruled containment.
+ * Propagation belongs to global operations; a project-scope compile is not one. Snapshots carry
+ * mtimes, since the out-of-scope writes rewrite unchanged bytes.
  */
 
 const ALL_GLOBAL_ID = "AllGlobal1";

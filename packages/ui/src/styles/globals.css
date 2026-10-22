@@ -90,7 +90,7 @@
   ); /* the design's `dark`: names, active nav, emphasis */
   --color-ink-2: var(--ink-2);
   --color-ink-3: var(--ink-3);
-  --color-subtle: var(--subtle); /* README's --muted-2 */
+  --color-subtle: var(--subtle);
   --color-faint: var(--faint);
   --color-field-faint: var(
     --field-faint
@@ -318,7 +318,7 @@
    */
   font-size: 110%;
 
-  --radius: 0px; /* rule 1 — no exceptions */
+  --radius: 0px;
 }
 
 @layer base {

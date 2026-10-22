@@ -389,8 +389,8 @@ export function resolveStack(
     id: stack.id,
     name: stack.name,
     description: stack.description,
-    // Cast: ids were validated against skillIdSet above.
     skills: skills,
+    // Cast: ids were validated against skillIdSet above.
     allSkillIds: allSkillIds as SkillId[],
     philosophy: stack.philosophy || "",
   };

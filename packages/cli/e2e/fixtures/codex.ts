@@ -38,7 +38,7 @@ export type CodexRun = {
 /**
  * `false` only where the platform binary (an optional dependency) is missing. Assert it rather
  * than skip on it: a skip reads as green. Runs under a temp HOME because Codex writes helper links
- * into any non-temp `CODEX_HOME` before reading its arguments (0.155.1, 2026-09-20).
+ * into any non-temp `CODEX_HOME` before reading its arguments (0.155.1).
  */
 export async function isCodexCLIAvailable(): Promise<boolean> {
   const home = await createTempDir();

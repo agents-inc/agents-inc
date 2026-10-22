@@ -20,7 +20,6 @@ export type MockedAnswer =
     }
   | { served: false; reason: "unreachable" | "unhandled" }
 
-/** Only for this worker's origin, and only when the handler named no exposure itself. */
 const throughCors = (request: Request, headers: Record<string, string>) => {
   const isWorker = new URL(request.url).origin === WORKER_ORIGIN
   if (!isWorker || EXPOSE_HEADERS_HEADER in headers) return headers
@@ -28,7 +27,6 @@ const throughCors = (request: Request, headers: Record<string, string>) => {
   return { ...headers, [EXPOSE_HEADERS_HEADER]: WORKER_EXPOSED_HEADERS }
 }
 
-/** `Response.error()` is told apart by `type === "error"`. */
 export const answerFor = async (
   handlers: RequestHandler[],
   request: Request

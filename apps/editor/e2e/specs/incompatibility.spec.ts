@@ -69,9 +69,8 @@ test.describe("incompatible skills", () => {
   }) => {
     await configure.skillIn(web, triggerCategory, REACT).toggle()
 
-    // `aria-disabled` is what takes it out of the tab order and out of
-    // Playwright's own actionability, which is the same check assistive tech
-    // makes — so this is the real contract, not the styling.
+    // `aria-disabled` takes it out of the tab order and out of Playwright's
+    // actionability, the same check assistive tech makes.
     await expect(
       configure.skillIn(web, blockedCategory, SVELTEKIT).root
     ).toBeDisabled()
@@ -81,9 +80,8 @@ test.describe("incompatible skills", () => {
     await configure.skillIn(web, triggerCategory, REACT).toggle()
     const sveltekit = configure.skillIn(web, blockedCategory, SVELTEKIT)
 
-    // `aria-disabled` on the cell takes its whole subtree out of the browser's
-    // actionability, so every one of these needs forcing to reach a handler at
-    // all — and each handler then has to refuse on its own.
+    // `aria-disabled` on the cell takes its whole subtree out of
+    // actionability, so each press is forced and each handler must refuse.
     await sveltekit.root.click({ force: true })
     expect(await sveltekit.isSelected()).toBe(false)
 
