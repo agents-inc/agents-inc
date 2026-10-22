@@ -81,7 +81,7 @@ describe("the Claude trust line, read where Claude Code keeps the record", () =>
     return { home: env.fakeHome, project };
   }
 
-  /** Checks the config entry and the gated compiled file, so only the output is left to judge. */
+  /** Checks the config entry and the compiled hook, so only the output is left to judge. */
   async function installAWriterInto({ home, project }: Workspace): Promise<string> {
     await declareAStopHook(project, WRITER);
     const installed = await runInitFrom(
@@ -96,7 +96,7 @@ describe("the Claude trust line, read where Claude Code keeps the record", () =>
       buildAgentConfigs([WRITER], { scope: "project" }),
     );
     expect(Object.keys(await readCompiledAgents(project))).toStrictEqual([`${WRITER}.md`]);
-    await expect({ dir: project }).toHaveAgentFrontmatter(WRITER, { completionGate: true });
+    await expect({ dir: project }).toHaveAgentFrontmatter(WRITER, { stopHook: true });
 
     return flattenCliOutput(installed.output);
   }

@@ -30,8 +30,8 @@ import type { ProjectHandle } from "../fixtures/project-handle.js";
 /**
  * An `edit --from` that lands a sub-agent with a Stop hook in an untrusted Claude project must say
  * the folder needs trusting, as `init` and `compile` do: Claude Code drops a project sub-agent's
- * hooks until trusted. Controls: a trusted folder, and an untrusted one whose last gated sub-agent
- * the edit removed.
+ * hooks until trusted. Controls: a trusted folder, and an untrusted one whose last sub-agent with a
+ * hook the edit removed.
  */
 
 /** Each project declares a Stop hook for it. */
@@ -94,7 +94,7 @@ describe("edit into a Claude project Claude Code has not been told to trust", ()
   });
 
   it(
-    "names the folder when an applied configuration adds the project's first gated sub-agent",
+    "names the folder when an applied configuration adds the project's first sub-agent with a hook",
     { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
       const env = await createTestEnvironment();
@@ -106,7 +106,7 @@ describe("edit into a Claude project Claude Code has not been told to trust", ()
       const installed = await runInitFrom(store, INSTALLED_ID, project, source.sourceDir);
       expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
       // Nothing owed yet, so the edit is the first run with something to say.
-      await expect(project).toHaveAgentFrontmatter(READER, { completionGate: false });
+      await expect(project).toHaveAgentFrontmatter(READER, { stopHook: false });
       expect(installed.output).not.toContain(STEP_TEXT.CLAUDE_FOLDER_UNTRUSTED);
 
       store.publish(APPLIED_ID, READER_AND_WRITER);
@@ -127,7 +127,7 @@ describe("edit into a Claude project Claude Code has not been told to trust", ()
         `${READER}.md`,
         `${WRITER}.md`,
       ]);
-      await expect(project).toHaveAgentFrontmatter(WRITER, { completionGate: true });
+      await expect(project).toHaveAgentFrontmatter(WRITER, { stopHook: true });
 
       expect(output).toContain(STEP_TEXT.CLAUDE_FOLDER_UNTRUSTED);
       expect(output).toContain(realpathSync(project.dir));
@@ -158,16 +158,16 @@ describe("edit into a Claude project Claude Code has not been told to trust", ()
       const output = prompt.getRawOutput();
       expect(exitCode, `apply failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
 
-      // The gate is compiled and the run finished, so only the trust record can have silenced the
+      // The hook is compiled and the run finished, so only the trust record can have silenced the
       // line.
-      await expect(project).toHaveAgentFrontmatter(WRITER, { completionGate: true });
+      await expect(project).toHaveAgentFrontmatter(WRITER, { stopHook: true });
       expect(output).toContain(STEP_TEXT.EDIT_SUCCESS);
       expect(output).not.toContain(STEP_TEXT.CLAUDE_FOLDER_UNTRUSTED);
     },
   );
 
   it(
-    "says nothing once an edit removes the project's last gated sub-agent",
+    "says nothing once an edit removes the project's last sub-agent with a hook",
     { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
       const env = await createTestEnvironment();
@@ -191,12 +191,12 @@ describe("edit into a Claude project Claude Code has not been told to trust", ()
       const output = prompt.getRawOutput();
       expect(exitCode, `apply failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
 
-      // The gated sub-agent left the config and its file was deleted, so no gate remains.
+      // The sub-agent with a hook left the config and its file was deleted, so no hook remains.
       expect(await readAgentEntries(project.dir)).toStrictEqual(
         buildAgentConfigs([READER], { scope: "project" }),
       );
       expect(Object.keys(await readCompiledAgents(project.dir))).toStrictEqual([`${READER}.md`]);
-      await expect(project).toHaveAgentFrontmatter(READER, { completionGate: false });
+      await expect(project).toHaveAgentFrontmatter(READER, { stopHook: false });
       expect(output).toContain(STEP_TEXT.EDIT_SUCCESS);
       expect(output).not.toContain(STEP_TEXT.CLAUDE_FOLDER_UNTRUSTED);
     },

@@ -23,24 +23,37 @@ import {
   codexHome,
   createLocalSkill,
   flattenCliOutput,
+  loadConfigOrFail,
+  readTestFile,
   readTreeSnapshot,
   renderMetadataYaml,
+  skillsPath,
 } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import {
+  ADDED_MARKER,
+  DIRS,
+  EXIT_CODES,
+  FILES,
+  STEP_TEXT,
+  TIMEOUTS,
+  panelRow,
+} from "../pages/constants.js";
 import {
   UPSTREAM_SKILL_NAME,
   buildSeedExternalSkill,
   buildSeedPayload,
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { renderSkillMd } from "../../src/cli/lib/__tests__/content-generators.js";
 import type { TreeSnapshotEntry } from "../helpers/test-utils.js";
 
 /**
  * Every `--from` refusal is decided before the run lists or asks, and a refused run writes nothing.
  * Covered here: writing over a hand-written skill at a carried id, a carried id naming a path rather
- * than one directory, a configuration with nothing placeable, and a placement the host does not
- * offer. Each is paired with the run it must still allow.
+ * than one directory, a carried file whose path climbs out of its skill's folder, a configuration
+ * with nothing placeable, and a placement the host does not offer. Each is paired with the run it
+ * must still allow.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -66,6 +79,13 @@ const ESCAPES_SCRATCH_ID = "EscapesTemp1";
 const VICTIM_DIR_NAME = "victim";
 const SCRATCH_ESCAPING_CARRIED_ID = `../${VICTIM_DIR_NAME}`;
 const VICTIM_FILE = "notes.txt";
+const CARRIED_BYTES = "written by a shared configuration\n";
+
+/** A carried file keyed out of `.claude/skills/<id>`, and one keyed into a folder inside it. */
+const FILE_ESCAPES_TO_HOME_ID = "FileEscapesHome1";
+const HOME_ESCAPING_FILE_KEY = `../../../../${ESCAPED_DIR_NAME}/${VICTIM_FILE}`;
+const FILE_IN_A_FOLDER_ID = "FileInAFolder1";
+const NESTED_FILE_KEY = `reference/${VICTIM_FILE}`;
 
 const NOTHING_PLACEABLE_ID = "NothingPlaceable1";
 const ONE_PLACEABLE_ID = "OnePlaceable1";
@@ -79,7 +99,7 @@ type InstallSurfaces = {
 };
 
 /** Carries a file named as the one a victim directory holds, so a write there overwrites it. */
-function carryingUnder(carriedId: string) {
+function carryingUnder(carriedId: string, victimFileKey = VICTIM_FILE) {
   return buildSeedPayload({
     skills: {
       [E2E_SKILL.react.id]: buildSeedSkill({
@@ -98,7 +118,7 @@ function carryingUnder(carriedId: string) {
         repo: CARRIED_REPO,
         files: {
           [FILES.SKILL_MD]: renderSkillMd(UPSTREAM_SKILL_NAME, "Structured brainstorming"),
-          [VICTIM_FILE]: "written by a shared configuration\n",
+          [victimFileKey]: CARRIED_BYTES,
         },
       }),
     },
@@ -153,13 +173,16 @@ describe("--from refusals come before the lists and the question", () => {
     );
     store.publish(ESCAPES_TO_HOME_ID, carryingUnder(HOME_ESCAPING_CARRIED_ID));
     store.publish(ESCAPES_SCRATCH_ID, carryingUnder(SCRATCH_ESCAPING_CARRIED_ID));
+    store.publish(FILE_ESCAPES_TO_HOME_ID, carryingUnder(CARRIED_ID, HOME_ESCAPING_FILE_KEY));
+    store.publish(FILE_IN_A_FOLDER_ID, carryingUnder(CARRIED_ID, NESTED_FILE_KEY));
+    // Assigned to no sub-agent: one it is assigned to installs, empty, beside the warning.
     store.publish(
       NOTHING_PLACEABLE_ID,
       buildSeedPayload({
         skills: {
           [UNKNOWN_SKILL]: buildSeedSkill({
             scope: "project",
-            assignments: { [WEB_DEV]: "lazy" },
+            assignments: {},
           }),
         },
       }),
@@ -298,9 +321,10 @@ describe("--from refusals come before the lists and the question", () => {
           shown,
           "a refused install must be refused before the user is asked to confirm it",
         ).not.toContain(STEP_TEXT.SHARED_CONFIG_INSTALL_CONFIRM);
-        expect(shown, "a refused install must not first list what it would install").not.toContain(
-          STEP_TEXT.SHARED_CONFIG_LIST_PROJECT,
-        );
+        expect(
+          shown,
+          "a refused install must not first show the panel of what it would install",
+        ).not.toContain(STEP_TEXT.PANEL_HEADER);
 
         // Subject guard: the run reached its decision and refused for this reason.
         expect(await prompt.waitForExit(TIMEOUTS.EXIT_WAIT)).toBe(EXIT_CODES.ERROR);
@@ -330,11 +354,12 @@ describe("--from refusals come before the lists and the question", () => {
 
         expect(exitCode).toBe(EXIT_CODES.ERROR);
         expect(flattenCliOutput(output)).toContain(STEP_TEXT.SHARED_CONFIG_UNCARRIED_DESTINATION);
-        // Without a terminal the lists print and the run carries on, so a late refusal prints a
+        // Without a terminal the panel prints and the run carries on, so a late refusal prints a
         // plan for nothing.
-        expect(output, "a refused install must not first list what it would install").not.toContain(
-          STEP_TEXT.SHARED_CONFIG_LIST_PROJECT,
-        );
+        expect(
+          output,
+          "a refused install must not first show the panel of what it would install",
+        ).not.toContain(STEP_TEXT.PANEL_HEADER);
         expect(await snapshotInstallSurfaces(env)).toStrictEqual(before);
       },
     );
@@ -350,8 +375,8 @@ describe("--from refusals come before the lists and the question", () => {
         await prompt.waitForTextOrExit(STEP_TEXT.SHARED_CONFIG_INSTALL_CONFIRM);
         const shown = prompt.getOutput();
 
-        expect(shown).toContain(STEP_TEXT.SHARED_CONFIG_LIST_PROJECT);
-        expect(shown).toContain(CARRIED_ID);
+        expect(shown).toContain(STEP_TEXT.PANEL_HEADER);
+        expect(shown).toContain(panelRow(ADDED_MARKER, buildSeedExternalSkill().displayName));
         expect(shown).toContain(STEP_TEXT.SHARED_CONFIG_INSTALL_CONFIRM);
 
         await prompt.deny();
@@ -381,9 +406,8 @@ describe("--from refusals come before the lists and the question", () => {
         ).not.toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
         expect(
           shown,
-          "a refused apply must not first show a plan for what it would install",
-        ).not.toContain(STEP_TEXT.SHARED_CONFIG_LIST_PROJECT);
-        expect(shown).not.toContain(STEP_TEXT.SHARED_CONFIG_APPLY_NOTHING_REMOVED);
+          "a refused apply must not first show the panel of what it would install",
+        ).not.toContain(STEP_TEXT.PANEL_HEADER);
 
         expect(await prompt.waitForExit(TIMEOUTS.EXIT_WAIT)).toBe(EXIT_CODES.ERROR);
         expect(flattenCliOutput(prompt.getOutput())).toContain(
@@ -440,10 +464,67 @@ describe("--from refusals come before the lists and the question", () => {
         expect(exitCode).toBe(EXIT_CODES.ERROR);
         expect(flattenCliOutput(output)).toContain(STEP_TEXT.SHARED_CONFIG_ID_NAMES_NO_DIRECTORY);
         expect(flattenCliOutput(output)).toContain(HOME_ESCAPING_CARRIED_ID);
-        expect(output, "a refused install must not first list what it would install").not.toContain(
-          STEP_TEXT.SHARED_CONFIG_LIST_PROJECT,
-        );
+        expect(
+          output,
+          "a refused install must not first show the panel of what it would install",
+        ).not.toContain(STEP_TEXT.PANEL_HEADER);
         expect(await snapshotInstallSurfaces(env)).toStrictEqual(before);
+      },
+    );
+  });
+
+  describe("init --from a carried skill whose file climbs out of its folder", () => {
+    it(
+      "with no terminal, refuses before it lists, and writes nothing where the file points",
+      { timeout: TIMEOUTS.INTERACTIVE },
+      async () => {
+        env = await createTestEnvironment();
+        // Where `.claude/skills/<id>/../../../../escaped-dir` lands: the project sits in HOME.
+        const escapeTarget = path.join(env.fakeHome, ESCAPED_DIR_NAME);
+        const before = await snapshotInstallSurfaces(env);
+
+        const { exitCode, output } = await runInitFrom(
+          store,
+          FILE_ESCAPES_TO_HOME_ID,
+          { dir: env.projectDir, globalHome: env.fakeHome },
+          E2E_SOURCE.sourceDir,
+        );
+
+        expect(await readTreeSnapshot(escapeTarget)).toStrictEqual({});
+        expect(exitCode).toBe(EXIT_CODES.ERROR);
+        expect(flattenCliOutput(output)).toContain(STEP_TEXT.SHARED_CONFIG_WRONG_VERSION);
+        expect(
+          output,
+          "a refused install must not first show the panel of what it would install",
+        ).not.toContain(STEP_TEXT.PANEL_HEADER);
+        expect(await snapshotInstallSurfaces(env)).toStrictEqual(before);
+      },
+    );
+
+    it(
+      "control: with the file in a folder of its own, lists and installs it there",
+      { timeout: TIMEOUTS.INTERACTIVE },
+      async () => {
+        env = await createTestEnvironment();
+
+        const { exitCode, output } = await runInitFrom(
+          store,
+          FILE_IN_A_FOLDER_ID,
+          { dir: env.projectDir, globalHome: env.fakeHome },
+          E2E_SOURCE.sourceDir,
+        );
+
+        expect(exitCode, `install failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
+        expect(output).toContain(STEP_TEXT.PANEL_HEADER);
+        const carriedFile = path.join(skillsPath(env.projectDir), CARRIED_ID, NESTED_FILE_KEY);
+        expect(await readTestFile(carriedFile)).toBe(CARRIED_BYTES);
+        const config = await loadConfigOrFail(env.projectDir);
+        expect(config.skills).toStrictEqual(
+          buildSkillConfigs([E2E_SKILL.react.id, CARRIED_ID], {
+            scope: "project",
+            origin: "eject",
+          }),
+        );
       },
     );
   });
@@ -513,8 +594,8 @@ describe("--from refusals come before the lists and the question", () => {
         await prompt.waitForTextOrExit(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
         const shown = prompt.getOutput();
 
-        expect(shown).toContain(STEP_TEXT.SHARED_CONFIG_LIST_PROJECT);
-        expect(shown).toContain(CARRIED_ID);
+        expect(shown).toContain(STEP_TEXT.PANEL_HEADER);
+        expect(shown).toContain(panelRow(ADDED_MARKER, buildSeedExternalSkill().displayName));
         expect(shown).toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
         expect(flattenCliOutput(shown)).not.toContain(
           STEP_TEXT.SHARED_CONFIG_ID_NAMES_NO_DIRECTORY,
@@ -567,7 +648,7 @@ describe("--from refusals come before the lists and the question", () => {
         const shown = prompt.getOutput();
 
         expect(flattenCliOutput(shown)).toContain(STEP_TEXT.CATALOG_DOES_NOT_KNOW);
-        expect(shown).toContain(STEP_TEXT.SHARED_CONFIG_LIST_PROJECT);
+        expect(shown).toContain(STEP_TEXT.PANEL_HEADER);
         expect(shown).toContain(STEP_TEXT.SHARED_CONFIG_INSTALL_CONFIRM);
         expect(flattenCliOutput(shown)).not.toContain(STEP_TEXT.SHARED_CONFIG_NOTHING_INSTALLABLE);
 
@@ -594,9 +675,10 @@ describe("--from refusals come before the lists and the question", () => {
           shown,
           "a refused install must be refused before the user is asked to confirm it",
         ).not.toContain(STEP_TEXT.SHARED_CONFIG_INSTALL_CONFIRM);
-        expect(shown, "a refused install must not first list what it would install").not.toContain(
-          STEP_TEXT.SHARED_CONFIG_LIST_PROJECT,
-        );
+        expect(
+          shown,
+          "a refused install must not first show the panel of what it would install",
+        ).not.toContain(STEP_TEXT.PANEL_HEADER);
 
         expect(await prompt.waitForExit(TIMEOUTS.EXIT_WAIT)).toBe(EXIT_CODES.ERROR);
         const said = flattenCliOutput(prompt.getOutput());
@@ -617,7 +699,7 @@ describe("--from refusals come before the lists and the question", () => {
         await prompt.waitForTextOrExit(STEP_TEXT.SHARED_CONFIG_INSTALL_CONFIRM);
         const shown = prompt.getOutput();
 
-        expect(shown).toContain(STEP_TEXT.SHARED_CONFIG_LIST_PROJECT);
+        expect(shown).toContain(STEP_TEXT.PANEL_HEADER);
         expect(shown).toContain(STEP_TEXT.SHARED_CONFIG_INSTALL_CONFIRM);
         expect(flattenCliOutput(shown)).not.toContain(CODEX_REFUSED_CELL);
 
@@ -653,8 +735,8 @@ describe("--from refusals come before the lists and the question", () => {
         ).not.toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
         expect(
           shown,
-          "a refused apply must not first show a plan for what it would install",
-        ).not.toContain(STEP_TEXT.SHARED_CONFIG_LIST_PROJECT);
+          "a refused apply must not first show the panel of what it would install",
+        ).not.toContain(STEP_TEXT.PANEL_HEADER);
 
         expect(await prompt.waitForExit(TIMEOUTS.EXIT_WAIT)).toBe(EXIT_CODES.ERROR);
         const said = flattenCliOutput(prompt.getOutput());
@@ -676,7 +758,7 @@ describe("--from refusals come before the lists and the question", () => {
         await prompt.waitForTextOrExit(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
         const shown = prompt.getOutput();
 
-        expect(shown).toContain(STEP_TEXT.SHARED_CONFIG_LIST_PROJECT);
+        expect(shown).toContain(STEP_TEXT.PANEL_HEADER);
         expect(shown).toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
         expect(flattenCliOutput(shown)).not.toContain(CODEX_REFUSED_CELL);
 

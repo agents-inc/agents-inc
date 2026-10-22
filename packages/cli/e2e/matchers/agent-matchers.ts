@@ -25,12 +25,12 @@ function grantedTools(value: unknown): string[] {
   return typeof value === "string" ? value.split(",").map((tool) => tool.trim()) : [];
 }
 
-const COMPLETION_GATE_EVENTS = ["Stop", "SubagentStop"] as const;
+const STOP_HOOK_EVENTS = ["Stop", "SubagentStop"] as const;
 
-function carriesCompletionGate(hooks: unknown): boolean {
+function carriesAStopHook(hooks: unknown): boolean {
   if (typeof hooks !== "object" || hooks === null) return false;
 
-  return COMPLETION_GATE_EVENTS.some((event) => {
+  return STOP_HOOK_EVENTS.some((event) => {
     const definitions: unknown = Reflect.get(hooks, event);
     return Array.isArray(definitions) && definitions.length > 0;
   });
@@ -52,7 +52,7 @@ export type AgentFrontmatterExpectations = {
   hasSkills?: boolean;
   noSkills?: boolean;
   /** A hook under `Stop` or `SubagentStop`, read off the parsed YAML. */
-  completionGate?: boolean;
+  stopHook?: boolean;
 };
 
 export type AgentDynamicSkillsExpectations = {
@@ -123,12 +123,12 @@ export const agentMatchers = {
       };
     }
 
-    const { completionGate } = expectations;
-    if (completionGate !== undefined && carriesCompletionGate(fm.hooks) !== completionGate) {
+    const { stopHook } = expectations;
+    if (stopHook !== undefined && carriesAStopHook(fm.hooks) !== stopHook) {
       return {
         pass: false,
         message: () =>
-          `Expected agent "${agentName}" frontmatter to carry ${completionGate ? "a" : "no"} completion gate but its hooks are ${JSON.stringify(fm.hooks)}`,
+          `Expected agent "${agentName}" frontmatter to carry ${stopHook ? "a" : "no"} Stop hook but its hooks are ${JSON.stringify(fm.hooks)}`,
       };
     }
 

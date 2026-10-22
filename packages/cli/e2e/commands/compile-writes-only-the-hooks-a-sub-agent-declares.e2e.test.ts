@@ -1,4 +1,5 @@
 import path from "path";
+import { mkdir, writeFile } from "fs/promises";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -12,15 +13,17 @@ import {
   createTempDir,
   loadConfigOrFail,
   readCompiledAgents,
+  renderAgentYaml,
+  sourceFolderIn,
 } from "../helpers/test-utils.js";
-import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import type { AgentName } from "../../src/cli/types/index.js";
 import { typedEntries } from "../../src/cli/utils/typed-object.js";
 
 /**
- * `compile` writes a Claude sub-agent the hooks its definition declares and none of its own. Both
- * runs are in a folder Claude Code has not trusted, so the trust line is the declared hook's alone.
+ * `compile` writes a Claude sub-agent the hooks its definition declares and none of its own. Every
+ * run is in a folder Claude Code has not trusted, so the trust line is the declared hook's alone.
  */
 
 /** Holds `Write` and `Edit`. */
@@ -29,6 +32,14 @@ const WRITER = "web-developer" as const satisfies AgentName;
 const CONFIGURED_AGENTS = buildAgentConfigs([...MINIMAL_PROJECT_AGENT_NAMES], { scope: "project" });
 
 const COMPILED_FILES = MINIMAL_PROJECT_AGENT_NAMES.map((name) => `${name}.md`).sort();
+
+/** A hook on neither `Stop` nor `SubagentStop`, which Claude Code drops untrusted all the same. */
+const DECLARED_POST_TOOL_USE_HOOK = {
+  PostToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "echo ran" }] }],
+};
+
+/** How `agent.liquid` writes {@link DECLARED_POST_TOOL_USE_HOOK} into frontmatter. */
+const DECLARED_POST_TOOL_USE_HOOK_LINE = `hooks: ${JSON.stringify(DECLARED_POST_TOOL_USE_HOOK)}`;
 
 describe("the hooks compile writes into a Claude sub-agent", () => {
   const tempDirs: string[] = [];
@@ -60,7 +71,7 @@ describe("the hooks compile writes into a Claude sub-agent", () => {
       expect(compiled[`${WRITER}.md`], "the subject must be a sub-agent that writes").toContain(
         "\ntools: Read, Write, Edit,",
       );
-      await expect(project).toHaveAgentFrontmatter(WRITER, { completionGate: false });
+      await expect(project).toHaveAgentFrontmatter(WRITER, { stopHook: false });
       expect(
         filesCarryingHooks(compiled),
         "compile added a hook no definition declared",
@@ -93,10 +104,53 @@ describe("the hooks compile writes into a Claude sub-agent", () => {
       expect(output).toContain(STEP_TEXT.CLAUDE_FOLDER_UNTRUSTED);
     },
   );
+
+  it(
+    "writes a PostToolUse hook a project's own sub-agent declares exactly as declared, and names the folder to trust",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async () => {
+      const project = await minimalProjectAwayFromHome();
+      await declareAPostToolUseHook(project.dir, WRITER);
+
+      const { exitCode, output } = await CLI.run(["compile"], project);
+
+      expect(exitCode, `compile failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
+      expect((await loadConfigOrFail(project.dir)).agents).toStrictEqual(CONFIGURED_AGENTS);
+      const compiled = await readCompiledAgents(project.dir);
+      expect(Object.keys(compiled).sort()).toStrictEqual(COMPILED_FILES);
+      expect(
+        compiled[`${WRITER}.md`],
+        "a declared PostToolUse hook did not reach the frontmatter as written",
+      ).toContain(`\n${DECLARED_POST_TOOL_USE_HOOK_LINE}\n`);
+      // No Stop hook anywhere, so the trust line below can only be the PostToolUse hook's.
+      await expect(project).toHaveAgentFrontmatter(WRITER, { stopHook: false });
+      expect(
+        filesCarryingHooks(compiled),
+        "a hook one sub-agent declared reached another",
+      ).toStrictEqual([`${WRITER}.md`]);
+      expect(
+        output,
+        "Claude Code drops a project sub-agent's hooks on every event until the folder is trusted",
+      ).toContain(STEP_TEXT.CLAUDE_FOLDER_UNTRUSTED);
+    },
+  );
 });
 
 function filesCarryingHooks(compiled: Record<string, string>): string[] {
   return typedEntries(compiled)
     .filter(([, content]) => content.includes("\nhooks:"))
     .map(([file]) => file);
+}
+
+/** The three files {@link declareAStopHook} writes, with the PostToolUse hook in its place. */
+async function declareAPostToolUseHook(dir: string, agentName: string): Promise<void> {
+  const agentDir = path.join(sourceFolderIn(dir), DIRS.AGENTS, agentName);
+  await mkdir(agentDir, { recursive: true });
+
+  await writeFile(
+    path.join(agentDir, FILES.METADATA_YAML),
+    `${renderAgentYaml(agentName, undefined, { hooks: DECLARED_POST_TOOL_USE_HOOK })}\n`,
+  );
+  await writeFile(path.join(agentDir, FILES.IDENTITY_MD), `# ${agentName}\n`);
+  await writeFile(path.join(agentDir, FILES.PLAYBOOK_MD), "## Workflow\n");
 }
