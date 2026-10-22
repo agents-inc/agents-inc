@@ -7,6 +7,27 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.171.0] - 2026-10-22
+
+**`doctor` reads each installation, `edit --from` names what it deletes and overwrites, a link's carried skill cannot write outside its folder, and compiled sub-agents carry only the hooks they declare**
+
+- REPO-44:
+  - `uninstall`, `edit --from`, `init --from`, `eject` and `doctor` do and say what the owner's mutation-testing answers ruled. A marketplace URL carrying a username or password is refused, and the `agentsSource` and `agentsDir` config keys are gone.
+  - Compiled sub-agents carry only the hooks they declare, and the tester prompts ask for the typecheck. The folder-trust notice covers any hook.
+  - `build plugins` removes files a skill's source dropped, and a skill plugin's version follows the files it ships.
+  - Comments are purged, unused code is swept, new lint rules and a CI format check land, the code reads as named steps, and implementation-pinning specs are pruned.
+- CLI-925:
+  - `edit --from` names every deletion and the registered projects it rewrites, and a configuration that changes nothing asks nothing.
+  - `doctor` checks each installation and says when it read a cached marketplace.
+  - A link's carried skill id must name one folder, display names print without terminal controls, and remedies name `--provider` beside a second installation.
+  - `share` names the rate limit, `AGENTS_INC_EDITOR_URL` sets the printed editor address, and the editor keeps a minted id and previews skills in install order.
+- CLI-908: `edit --from` lists the skills it overwrites, and a carried skill's `metadata.yaml` is rewritten only where it changed.
+- CLI-915: a project keeps the description of the configuration being installed, not the global installation's.
+- EDITOR-97: a link the CLI mints opens in the editor on the built-in stack it equals.
+- npm's 0.170.2 was packed from a working tree that already held these changes. 0.171.0 is the first release whose source is committed.
+
+See [changelogs/0.171.0.md](./changelogs/0.171.0.md) for full details.
+
 ## [0.170.2] - 2026-10-18
 
 **Mutation testing finds what the tests missed: a marketplace naming a private address is refused wherever it is set, and `uninstall`'s plan, `edit --from`'s report, `eject --output` and `compile`'s skill count are fixed**
