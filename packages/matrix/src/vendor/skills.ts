@@ -4,16 +4,12 @@ import type { Category, ModelName } from "./matrix";
 import type { SkillId } from "./generated/source-types";
 
 export type { SkillId, SkillSlug } from "./generated/source-types";
-export { SKILL_MAP, SKILL_IDS, SKILL_SLUGS } from "./generated/source-types";
 
 /** "plugin-name:skill-name" */
 export type PluginSkillRef = `${SkillId}:${SkillId}`;
 
 /** "local" marks user-defined local skills. */
 export type CategoryPath = Category | "local";
-
-/** One canonical skill per category, after alias resolution. */
-export type ResolvedCategorySkills = Partial<Record<Category, SkillId>>;
 
 export type SkillDefinition = {
   id: SkillId;

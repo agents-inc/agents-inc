@@ -221,9 +221,6 @@
     },
     "marketplaceName": {
       "type": "string"
-    },
-    "agentsSource": {
-      "type": "string"
     }
   },
   "required": ["name", "agents", "skills", "stack", "marketplace"],

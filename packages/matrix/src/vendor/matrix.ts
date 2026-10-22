@@ -4,7 +4,7 @@ import type { CategoryPath, SkillSlug, SkillId } from "./skills";
 import type { AgentName } from "./agents";
 
 export type { Category, Domain } from "./generated/source-types";
-export { CATEGORIES, DOMAINS } from "./generated/source-types";
+export { CATEGORIES } from "./generated/source-types";
 
 import type { Category, Domain } from "./generated/source-types";
 
@@ -62,7 +62,7 @@ export type RelationshipDefinitions = {
   alternatives: AlternativeGroup[];
 };
 
-export type SkillGroupRule = {
+type SkillGroupRule = {
   skills: SkillSlug[];
   reason: string;
 };
@@ -105,7 +105,7 @@ export type MergedSkillsMatrix = {
   generatedAt: string;
 };
 
-export type SkillCore = {
+type SkillCore = {
   id: SkillId;
   slug: SkillSlug;
   displayName: string;
@@ -162,10 +162,7 @@ export type ResolvedStack = {
   group?: string;
 };
 
-export type SkillAlias = string;
-
-export const SKILL_SOURCE_TYPES = ["public", "private", "local"] as const;
-export type SkillSourceType = (typeof SKILL_SOURCE_TYPES)[number];
+export type SkillSourceType = "public" | "private" | "local";
 
 /** Derived from SkillConfig.origin. */
 export type InstallMode = "eject" | "plugin" | "mixed";

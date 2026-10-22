@@ -28,9 +28,9 @@ export type AgentHookDefinition = {
   hooks: AgentHookAction[];
 };
 
-export type { AgentIsolation, CacheTtl } from "./matrix";
+export type { AgentIsolation } from "./matrix";
 
-export type BaseAgentFields = {
+type BaseAgentFields = {
   title: string;
   description: string;
   model?: ModelName;
