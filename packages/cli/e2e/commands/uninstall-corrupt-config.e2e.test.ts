@@ -19,7 +19,7 @@ import {
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
+import { EXIT_CODES, REMOVED_MARKER, STEP_TEXT, panelRow } from "../pages/constants.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -129,10 +129,11 @@ describe("uninstall with an unreadable config", () => {
     expect(output).toContain(STEP_TEXT.UNINSTALL_PROJECT_CONFIG_UNREADABLE);
     expect(output).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
-    expect(output).not.toContain(STEP_TEXT.UNINSTALL_CLI_COMPILED);
+    // The panel is the subject guard: the skills still go by their own `forked-from` metadata.
+    expect(output).toContain(STEP_TEXT.PANEL_HEADER);
+    expect(output).not.toContain(panelRow(REMOVED_MARKER, E2E_AGENT["web-developer"].name));
     expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT_ONE);
     expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT_REASON);
-    expect(output).toContain(STEP_TEXT.UNINSTALL_CLI_MANAGED_SECTION);
 
     expect(await fileExists(agentFile)).toBe(true);
     expect(await readTestFile(agentFile)).toBe(agentBefore);
@@ -141,10 +142,10 @@ describe("uninstall with an unreadable config", () => {
   });
 
   /**
-   * With the agents item gone the `CLI-managed files:` header must go too; `Config:` beneath it is
-   * the control.
+   * With the kept agents all it held, the panel shows no removed sub-agent; the config files it
+   * deletes, named under it, are the control.
    */
-  it("prints no CLI-managed files section when the kept agents were its only item", async () => {
+  it("shows no removed sub-agent when the kept agents were all it held, and names the config files it deletes", async () => {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
     const projectHome = path.join(tempDir, "home");
@@ -165,11 +166,10 @@ describe("uninstall with an unreadable config", () => {
     expect(exitCode, `uninstall output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
     expect(output).toContain(STEP_TEXT.UNINSTALL_PROJECT_CONFIG_UNREADABLE);
 
-    expect(output).not.toContain(STEP_TEXT.UNINSTALL_CLI_MANAGED_SECTION);
-    expect(output).not.toContain(STEP_TEXT.UNINSTALL_CLI_COMPILED);
+    expect(output).not.toContain(panelRow(REMOVED_MARKER, E2E_AGENT["web-developer"].name));
     expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT_ONE);
     expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT_REASON);
-    expect(output).toContain(STEP_TEXT.UNINSTALL_CONFIG_SECTION);
+    expect(output).toContain(`${REMOVED_MARKER} ${configTsPath(projectDir)}`);
 
     expect(await fileExists(agentFile)).toBe(true);
     expect(await readTestFile(agentFile)).toBe(agentBefore);

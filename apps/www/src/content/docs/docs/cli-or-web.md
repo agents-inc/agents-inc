@@ -36,8 +36,8 @@ Some details that matter if you are relying on this:
   re-opening the dialog is idempotent and a stored configuration can never
   change underneath its id.
 - **`init --from` runs headless.** It does not need a terminal, so it works
-  over a pipe and in CI. `edit --from` does need one, because it confirms
-  before removing anything.
+  over a pipe and in CI. `edit --from` needs one whenever it changes
+  something, because it confirms before removing anything.
 - **`init --from` refuses an existing installation.** Installing a shared
   configuration is a fresh setup rather than a merge, so `init --from` in an
   already-installed directory stops and names the config it found rather than

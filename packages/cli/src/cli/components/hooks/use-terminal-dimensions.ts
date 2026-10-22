@@ -9,7 +9,8 @@ export type TerminalDimensions = {
   rows: number;
 };
 
-function dimensionsOf(stdout: NodeJS.WriteStream): TerminalDimensions {
+/** A stream that is not a terminal reports no size, so it gets the defaults. */
+export function dimensionsOf(stdout: NodeJS.WriteStream): TerminalDimensions {
   return {
     columns: stdout.columns || DEFAULT_COLUMNS,
     rows: stdout.rows || DEFAULT_ROWS,

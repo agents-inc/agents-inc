@@ -1,5 +1,5 @@
 import path from "path";
-import { mkdir } from "fs/promises";
+import { mkdir, rm } from "fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -15,7 +15,7 @@ import {
 } from "../helpers/test-utils.js";
 import { metadataFieldsFor } from "../fixtures/project-builder.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
-import { DIRS, EXIT_CODES, FILES } from "../pages/constants.js";
+import { CLI_INVOKE_COMMAND, DIRS, EXIT_CODES, FILES } from "../pages/constants.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -188,5 +188,60 @@ describe("a scope holding two installations", () => {
     expect(exitCode, combined).toBe(EXIT_CODES.SUCCESS);
     expect(combined).toContain(CODEX_INSTALL);
     expect(combined).not.toContain(CLAUDE_INSTALL);
+  });
+
+  /** The command a remedy hands out must run where it was handed out. */
+  describe("opening a shared id in the editor", () => {
+    const SHARED_ID = "se_XYZ789";
+    const CHOICE = "--provider <claude|codex>";
+
+    it("hands out edit --from naming the choice of installation", async () => {
+      await aProjectWithBothInstallations();
+
+      const { exitCode, combined } = await run(["edit", "--ui", "--from", SHARED_ID]);
+
+      expect(exitCode, combined).toBe(EXIT_CODES.SUCCESS);
+      expect(flattenCliOutput(combined)).toContain(
+        `To apply it here instead, run '${CLI_INVOKE_COMMAND} edit --from ${SHARED_ID} ${CHOICE}'.`,
+      );
+    });
+
+    it("init --ui --from hands out the same", async () => {
+      await aProjectWithBothInstallations();
+
+      const { exitCode, combined } = await run(["init", "--ui", "--from", SHARED_ID]);
+
+      expect(exitCode, combined).toBe(EXIT_CODES.SUCCESS);
+      expect(flattenCliOutput(combined)).toContain(
+        `To apply it here instead, run '${CLI_INVOKE_COMMAND} edit --from ${SHARED_ID} ${CHOICE}'.`,
+      );
+    });
+
+    it("the handed-out command, with one choice made, is not refused as ambiguous", async () => {
+      await aProjectWithBothInstallations();
+
+      const { exitCode, combined } = await run([
+        "edit",
+        "--from",
+        SHARED_ID,
+        "--provider",
+        "claude",
+      ]);
+
+      // No store serves the id, so the run fails on it: past the ambiguity refusal, not at it.
+      expect(exitCode, combined).toBe(EXIT_CODES.ERROR);
+      expect(combined).not.toContain("2 installations");
+    });
+
+    it("control: beside no other installation the handed-out edit --from is bare", async () => {
+      await aProjectWithBothInstallations();
+      await rm(path.join(projectDir, DIRS.SOURCE_CODEX), { recursive: true });
+
+      const { combined } = await run(["edit", "--ui", "--from", SHARED_ID]);
+
+      expect(flattenCliOutput(combined)).toContain(
+        `To apply it here instead, run '${CLI_INVOKE_COMMAND} edit --from ${SHARED_ID}'.`,
+      );
+    });
   });
 });

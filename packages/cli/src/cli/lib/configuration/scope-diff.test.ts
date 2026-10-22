@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { computeScopeDiff } from "./scope-diff";
-import type { AgentDiffRow, ScopeDiffInput, SkillDiffRow } from "./scope-diff";
+import { agentChange, computeScopeDiff } from "./scope-diff";
+import type { AgentChange, AgentDiffRow, ScopeDiffInput, SkillDiffRow } from "./scope-diff";
 import { buildSkillConfig, buildSkillConfigs } from "../__tests__/helpers";
 import { buildAgentConfigs } from "../__tests__/factories/config-factories";
+import { sa } from "../__tests__/factories/skill-factories";
+import { firstElement } from "../__tests__/helpers/element-at";
 
 const SKILL_ID = "web-framework-react";
 const AGENT_NAME = "web-developer";
@@ -343,5 +345,170 @@ describe("computeScopeDiff, a sub-agent moved from project to global", () => {
 
     expect(diff.projectAgentRows).toStrictEqual([{ name: "web-developer", status: "removed" }]);
     expect(diff.globalAgentRows).toStrictEqual([{ name: "web-developer", status: "added" }]);
+  });
+});
+
+describe("computeScopeDiff, entries that stay where they are and still change", () => {
+  const PLUGIN_ORIGIN = "acme";
+
+  it("marks a skill whose files the run writes over as overwritten", () => {
+    const diff = computeScopeDiff({
+      currentSkills: PROJECT_ACTIVE_SKILL,
+      currentAgents: [],
+      installedSkillConfigs: PROJECT_ACTIVE_SKILL,
+      installedAgentConfigs: null,
+      isInitMode: false,
+      overwrittenSkillIds: new Set([SKILL_ID]),
+    });
+
+    expect(diff.projectSkillRows).toStrictEqual([
+      { id: SKILL_ID, source: FACTORY_ORIGIN, status: "overwritten" },
+    ]);
+  });
+
+  it("marks a copy its plugin replaces as overwritten rather than as a mode change", () => {
+    const diff = computeScopeDiff({
+      currentSkills: buildSkillConfigs([SKILL_ID], { scope: "project", origin: PLUGIN_ORIGIN }),
+      currentAgents: [],
+      installedSkillConfigs: PROJECT_ACTIVE_SKILL,
+      installedAgentConfigs: null,
+      isInitMode: false,
+      overwrittenSkillIds: new Set([SKILL_ID]),
+    });
+
+    expect(diff.projectSkillRows).toStrictEqual([
+      { id: SKILL_ID, source: PLUGIN_ORIGIN, status: "overwritten" },
+    ]);
+  });
+
+  it("still marks a skill arriving in its slot as added, whatever the run overwrites", () => {
+    const diff = computeScopeDiff({
+      currentSkills: PROJECT_ACTIVE_SKILL,
+      currentAgents: [],
+      installedSkillConfigs: [],
+      installedAgentConfigs: null,
+      isInitMode: false,
+      overwrittenSkillIds: new Set([SKILL_ID]),
+    });
+
+    expect(diff.projectSkillRows).toStrictEqual(ADDED_PROJECT_SKILL_ROW);
+  });
+
+  it("leaves a skill unchanged when nothing says the run overwrites it", () => {
+    const diff = computeScopeDiff({
+      currentSkills: PROJECT_ACTIVE_SKILL,
+      currentAgents: [],
+      installedSkillConfigs: PROJECT_ACTIVE_SKILL,
+      installedAgentConfigs: null,
+      isInitMode: false,
+    });
+
+    expect(diff.projectSkillRows).toStrictEqual([
+      { id: SKILL_ID, source: FACTORY_ORIGIN, status: "unchanged" },
+    ]);
+  });
+
+  it("marks a sub-agent that keeps its slot and changes as changed", () => {
+    const diff = computeScopeDiff({
+      currentSkills: [],
+      currentAgents: GLOBAL_ACTIVE_AGENT,
+      installedSkillConfigs: null,
+      installedAgentConfigs: GLOBAL_ACTIVE_AGENT,
+      isInitMode: false,
+      changedAgentNames: new Set([AGENT_NAME]),
+    });
+
+    expect(diff.globalAgentRows).toStrictEqual([{ name: AGENT_NAME, status: "changed" }]);
+  });
+
+  it("marks only the project's own half of a pair as changed, never the global it masks", () => {
+    const diff = computeScopeDiff({
+      currentSkills: [],
+      currentAgents: [...PROJECT_ACTIVE_AGENT, ...GLOBAL_TOMBSTONE_AGENT],
+      installedSkillConfigs: null,
+      installedAgentConfigs: [...PROJECT_ACTIVE_AGENT, ...GLOBAL_TOMBSTONE_AGENT],
+      isInitMode: false,
+      changedAgentNames: new Set([AGENT_NAME]),
+    });
+
+    expect(diff.projectAgentRows).toStrictEqual([{ name: AGENT_NAME, status: "changed" }]);
+    expect(diff.globalAgentRows).toStrictEqual(UNCHANGED_GLOBAL_AGENT_ROW);
+  });
+
+  it("still marks a sub-agent arriving in its slot as added, whatever else changes", () => {
+    const diff = computeScopeDiff({
+      currentSkills: [],
+      currentAgents: PROJECT_ACTIVE_AGENT,
+      installedSkillConfigs: null,
+      installedAgentConfigs: [],
+      isInitMode: false,
+      changedAgentNames: new Set([AGENT_NAME]),
+    });
+
+    expect(diff.projectAgentRows).toStrictEqual(ADDED_PROJECT_AGENT_ROW);
+  });
+});
+
+describe("agentChange", () => {
+  const REACT = "web-framework-react";
+  const ZUSTAND = "web-state-zustand";
+  const VITEST = "web-testing-vitest";
+  const WEB_DEVELOPER = firstElement(buildAgentConfigs([AGENT_NAME], { scope: "project" }));
+  const RETUNED = firstElement(
+    buildAgentConfigs([AGENT_NAME], { scope: "project", model: "opus" }),
+  );
+
+  it("names the skills a sub-agent's rows gain and lose", () => {
+    const expected: AgentChange = {
+      name: AGENT_NAME,
+      scope: "project",
+      gains: [VITEST],
+      loses: [ZUSTAND],
+      settings: [],
+    };
+
+    expect(
+      agentChange(
+        {
+          agent: WEB_DEVELOPER,
+          rows: { "web-framework": [sa(REACT)], "web-client-state": [sa(ZUSTAND)] },
+        },
+        {
+          agent: WEB_DEVELOPER,
+          rows: { "web-framework": [sa(REACT)], "web-testing": [sa(VITEST)] },
+        },
+      ),
+    ).toStrictEqual(expected);
+  });
+
+  it("names each setting that moves, unset on either side as undefined", () => {
+    const expected: AgentChange = {
+      name: AGENT_NAME,
+      scope: "project",
+      gains: [],
+      loses: [],
+      settings: [{ setting: "model", from: undefined, to: "opus" }],
+    };
+
+    expect(
+      agentChange({ agent: WEB_DEVELOPER, rows: undefined }, { agent: RETUNED, rows: undefined }),
+    ).toStrictEqual(expected);
+  });
+
+  it("names nothing for a sub-agent whose rows move without gaining or losing a skill", () => {
+    const expected: AgentChange = {
+      name: AGENT_NAME,
+      scope: "project",
+      gains: [],
+      loses: [],
+      settings: [],
+    };
+
+    expect(
+      agentChange(
+        { agent: WEB_DEVELOPER, rows: { "web-framework": [sa(REACT)] } },
+        { agent: WEB_DEVELOPER, rows: { "web-framework": [sa(REACT, true)] } },
+      ),
+    ).toStrictEqual(expected);
   });
 });

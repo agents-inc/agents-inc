@@ -586,7 +586,7 @@ describe("what compile says", () => {
           "Recompiling agents...",
           "1 global agent rewritten, 0 unchanged",
           "Refreshed config-types.ts",
-          "Registered projects: 1 rewritten, 0 unchanged",
+          "Registered projects: 1 recompiled",
           "",
           "✓ Global compile complete!",
           "",

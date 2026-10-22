@@ -29,3 +29,17 @@ export function standAtTerminal(): { input: TerminalInput } {
 
   return terminal;
 }
+
+/**
+ * Gives stdout a width for each test: a spec's piped stdout reports none, so output drawn to the
+ * terminal's width (the summary panel) draws at its default without it.
+ */
+export function printAtWidth(columns: number): void {
+  beforeEach(() => {
+    Object.defineProperty(process.stdout, "columns", { value: columns, configurable: true });
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(process.stdout, "columns");
+  });
+}

@@ -186,18 +186,17 @@ describe("a global edit propagates to every registered project, from nothing", (
     expect(editExitCode, `the global edit must succeed: ${editOutput}`).toBe(EXIT_CODES.SUCCESS);
   });
 
-  // Each project's config pair drops the sub-agent, so both are rewritten though their compiled
-  // agents come back the same; a fan-out that stopped after the first would say "1 rewritten".
-  it("reports the fan-out rewriting both registered projects", () => {
+  // Each registered project is recompiled; a fan-out that stopped after the first would say 1.
+  it("reports the fan-out recompiling both registered projects", () => {
     expect(editOutput, "the edit must account for both registered projects").toContain(
-      `${STEP_TEXT.PROPAGATED_RECOMPILE} 2 rewritten, 0 ${STEP_TEXT.UNCHANGED}`,
+      `${STEP_TEXT.PROPAGATED_RECOMPILE} 2 ${STEP_TEXT.PROPAGATED_RECOMPILED}\n`,
     );
   });
 
-  it("names both registered projects the run rewrites", () => {
+  it("names both registered projects the run recompiles", () => {
     const said = flattenCliOutput(editOutput);
     const named = (dir: string): RegExp =>
-      new RegExp(`${STEP_TEXT.SHARED_CONFIG_REGISTERED_REWRITTEN}[\\s\\S]*${realpathSync(dir)}`);
+      new RegExp(`${STEP_TEXT.SHARED_CONFIG_REGISTERED_RECOMPILED}[\\s\\S]*${realpathSync(dir)}`);
 
     expect(said, "the confirm must name the first registered project").toMatch(
       named(firstProjectDir),

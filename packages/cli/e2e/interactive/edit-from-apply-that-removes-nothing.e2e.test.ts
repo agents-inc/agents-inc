@@ -19,16 +19,24 @@ import {
   readTreeSnapshot,
   skillsPath,
 } from "../helpers/test-utils.js";
-import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import {
+  ADDED_MARKER,
+  EXIT_CODES,
+  REMOVED_MARKER,
+  STEP_TEXT,
+  TIMEOUTS,
+  UNCHANGED_MARKER,
+  panelRow,
+} from "../pages/constants.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * `edit --from` with a configuration that removes nothing: only the plan heading changes, the
- * confirm is still asked and a decline still changes nothing. Installed by `init --from` so
- * provenance is the installer's own.
+ * `edit --from` with a configuration that removes nothing: the panel marks no removal, the confirm
+ * is still asked and a decline still changes nothing. With no terminal a change is refused, and an
+ * id that changes nothing says so. Installed by `init --from` so provenance is the installer's own.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -96,22 +104,28 @@ describe("edit --from a configuration that removes nothing", () => {
     });
   }
 
-  it("says nothing is removed, and asks anyway", { timeout: TIMEOUTS.INTERACTIVE }, async () => {
-    const project = await installFromNothing();
-    publish(ADDS_ONLY_ID, [INSTALLED_SKILL.id, ADDED_SKILL.id]);
+  it(
+    "marks no removal in the panel, and asks anyway",
+    { timeout: TIMEOUTS.INTERACTIVE },
+    async () => {
+      const project = await installFromNothing();
+      publish(ADDS_ONLY_ID, [INSTALLED_SKILL.id, ADDED_SKILL.id]);
 
-    prompt = launch(ADDS_ONLY_ID, project);
-    await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_NOTHING_REMOVED, TIMEOUTS.WIZARD_LOAD);
+      prompt = launch(ADDS_ONLY_ID, project);
+      await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM, TIMEOUTS.WIZARD_LOAD);
 
-    const planned = prompt.getOutput();
-    // A removal heading over an empty list would be a lie; the line above is the subject guard.
-    expect(
-      planned,
-      "a configuration that takes nothing away must not open by promising removals",
-    ).not.toContain(STEP_TEXT.SHARED_CONFIG_APPLY_PREVIEW);
-    // Still asks: applying the whole configuration is a change either way.
-    expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
-  });
+      const planned = prompt.getOutput();
+      // The arrival and the skill that stays are the subject guard for the negative below.
+      expect(planned).toContain(panelRow(ADDED_MARKER, ADDED_SKILL.display));
+      expect(planned).toContain(panelRow(UNCHANGED_MARKER, INSTALLED_SKILL.display));
+      expect(
+        planned,
+        "a configuration that takes nothing away must not mark anything removed",
+      ).not.toContain(panelRow(REMOVED_MARKER, INSTALLED_SKILL.display));
+      // Still asks: applying the whole configuration is a change either way.
+      expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
+    },
+  );
 
   it(
     "applies the whole configuration once approved, on both surfaces",
@@ -156,18 +170,30 @@ describe("edit --from a configuration that removes nothing", () => {
     },
   );
 
-  it("refuses without a terminal, and spends nothing on the store", async () => {
+  it("refuses a change without a terminal, writing nothing", async () => {
     const project = await installFromNothing();
     publish(ADDS_ONLY_ID, [INSTALLED_SKILL.id, ADDED_SKILL.id]);
     const before = await readTreeSnapshot(project.dir);
-    const spentInstalling = store.requests.length;
 
     const { exitCode, output } = await runEditFrom(store, ADDS_ONLY_ID, project);
 
     expect(exitCode).toBe(EXIT_CODES.ERROR);
     expect(flattenCliOutput(output)).toContain(STEP_TEXT.SHARED_CONFIG_NEEDS_TERMINAL);
-    // The refusal does not depend on the configuration, so it is not fetched.
-    expect(store.requests.slice(spentInstalling)).toStrictEqual([]);
+    expect(output, "a refused run shows no panel of what it would have done").not.toContain(
+      STEP_TEXT.PANEL_HEADER,
+    );
+    expect(await readTreeSnapshot(project.dir)).toStrictEqual(before);
+  });
+
+  it("says nothing changed and exits 0 without a terminal, for the configuration already installed", async () => {
+    const project = await installFromNothing();
+    const before = await readTreeSnapshot(project.dir);
+
+    const { exitCode, output } = await runEditFrom(store, INSTALLED_ID, project);
+
+    expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+    expect(output).toContain(STEP_TEXT.EDIT_UNCHANGED);
+    expect(flattenCliOutput(output)).not.toContain(STEP_TEXT.SHARED_CONFIG_NEEDS_TERMINAL);
     expect(await readTreeSnapshot(project.dir)).toStrictEqual(before);
   });
 });

@@ -15,14 +15,25 @@ import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js"
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import {
+  runEditFrom,
   runInitFrom,
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
+import { runInitFromOnCodex } from "../fixtures/codex-install.js";
 import { ejectedGlobalSkill } from "../fixtures/seed-wire-contract.js";
 import { flattenCliOutput } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
+import {
+  ADDED_MARKER,
+  CHANGED_MARKER,
+  CLI_INVOKE_COMMAND,
+  EXIT_CODES,
+  LOCAL_COPY_MARK,
+  STEP_TEXT,
+  UNCHANGED_MARKER,
+  panelRow,
+} from "../pages/constants.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
@@ -107,8 +118,15 @@ describe("init --from <id> into a clean project", () => {
 
     expect(second.exitCode, `install failed: ${second.output}`).toBe(EXIT_CODES.SUCCESS);
     const said = flattenCliOutput(second.output);
-    expect(said).toMatch(
-      new RegExp(`${STEP_TEXT.SHARED_CONFIG_LIST_GLOBAL}[\\s\\S]*${E2E_SKILL.hono.id}`),
+    expect(said).toContain(
+      flattenCliOutput(panelRow(ADDED_MARKER, `${E2E_SKILL.hono.display} ${LOCAL_COPY_MARK}`)),
+    );
+    expect(said, "the global install's own skill shows as the project inherits it").toContain(
+      flattenCliOutput(panelRow(UNCHANGED_MARKER, `${E2E_SKILL.react.display} ${LOCAL_COPY_MARK}`)),
+    );
+    expect(said).toContain(flattenCliOutput(panelRow(CHANGED_MARKER, WEB_DEV)));
+    expect(said).toContain(
+      `${CHANGED_MARKER} ${WEB_DEV} ${STEP_TEXT.SUB_AGENT_CHANGED_GLOBALLY} ${STEP_TEXT.SUB_AGENT_GAINS} ${E2E_SKILL.hono.display}`,
     );
     expect(said).toMatch(
       new RegExp(
@@ -157,6 +175,43 @@ describe("init --from <id> into a clean project", () => {
     // Proof the second project was really set up, so the comparisons are not passing on a no-op.
     await loadConfigOrFail(secondProjectDir);
     expect(globalConfigAfter.projects).toStrictEqual([env.projectDir, secondProjectDir]);
+  });
+
+  it("names Claude in the run from home that changes what it keeps where home holds Codex beside it, and that run refuses for want of a terminal rather than of a provider", async () => {
+    env = await createTestEnvironment({ permissions: false });
+    const home = { dir: env.fakeHome, globalHome: env.fakeHome };
+    store.publish(
+      "HomeAll01",
+      buildSeedPayload({ skills: { [E2E_SKILL.react.id]: ejectedGlobalSkill() } }),
+    );
+    store.publish(
+      "Restated02",
+      buildSeedPayload({
+        skills: { [E2E_SKILL.react.id]: ejectedGlobalSkill() },
+        agents: { [WEB_DEV]: { on: true, scope: "global", model: "haiku" } },
+      }),
+    );
+    const onClaude = await runInitFrom(store, "HomeAll01", home, sourceDir);
+    expect(onClaude.exitCode, `install failed: ${onClaude.output}`).toBe(EXIT_CODES.SUCCESS);
+    const onCodex = await runInitFromOnCodex(store, "HomeAll01", home, sourceDir);
+    expect(onCodex.exitCode, `install failed: ${onCodex.output}`).toBe(EXIT_CODES.SUCCESS);
+
+    const inProject = await runInitFrom(
+      store,
+      "Restated02",
+      { dir: env.projectDir, globalHome: env.fakeHome },
+      sourceDir,
+    );
+
+    expect(inProject.exitCode, `install failed: ${inProject.output}`).toBe(EXIT_CODES.SUCCESS);
+    expect(flattenCliOutput(inProject.output)).toContain(
+      `${CLI_INVOKE_COMMAND} edit --from Restated02 --provider claude' ${STEP_TEXT.SHARED_CONFIG_KEPT_CHANGE_FROM_HOME}`,
+    );
+
+    const followed = await runEditFrom(store, "Restated02", home, ["--provider", "claude"]);
+
+    expect(followed.exitCode, followed.output).toBe(EXIT_CODES.ERROR);
+    expect(flattenCliOutput(followed.output)).toContain(STEP_TEXT.SHARED_CONFIG_NEEDS_TERMINAL);
   });
 
   it("installs a payload with nothing global into a clean project despite a global installation", async () => {

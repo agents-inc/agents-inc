@@ -18,7 +18,15 @@ import {
   loadConfigOrFail,
   readTreeSnapshot,
 } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import {
+  ADDED_MARKER,
+  DIRS,
+  EXIT_CODES,
+  STEP_TEXT,
+  TIMEOUTS,
+  UNCHANGED_MARKER,
+  panelRow,
+} from "../pages/constants.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
@@ -26,10 +34,11 @@ import {
 import type { TreeSnapshotEntry } from "../helpers/test-utils.js";
 
 /**
- * `init --from` at a terminal lists what goes into the project and the global install, asks, and
- * writes nothing until yes; yes installs what a non-terminal run installs. Waits are on the
- * question or the exit. At home only the global list; global skills already held are listed as
- * skipped. The no-terminal half is `commands/init-from-lists-without-a-terminal`.
+ * `init --from` at a terminal shows the panel of what goes into the project and the global install,
+ * asks, and writes nothing until yes; yes installs what a non-terminal run installs. Waits are on
+ * the question or the exit. At home only Global; what the global install already holds shows
+ * unchanged, as the project inherits it. The no-terminal half is
+ * `commands/init-from-lists-without-a-terminal`.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -45,27 +54,14 @@ type InstallSurfaces = {
   home: Record<string, TreeSnapshotEntry>[];
 };
 
-const ANYTHING = "[\\s\\S]*";
-const PROJECT_LIST = STEP_TEXT.SHARED_CONFIG_LIST_PROJECT;
-const GLOBAL_LIST = STEP_TEXT.SHARED_CONFIG_LIST_GLOBAL;
-
-/** Under the project heading, before the global one. */
-const PROJECT_SKILL_LISTED_HERE = new RegExp(
-  `${PROJECT_LIST}${ANYTHING}${PROJECT_SKILL}${ANYTHING}${GLOBAL_LIST}`,
-);
-const PROJECT_AGENT_LISTED_HERE = new RegExp(
-  `${PROJECT_LIST}${ANYTHING}${WEB_DEV}${ANYTHING}${GLOBAL_LIST}`,
-);
-const GLOBAL_SKILL_LISTED_GLOBALLY = new RegExp(`${GLOBAL_LIST}${ANYTHING}${GLOBAL_SKILL}`);
-const GLOBAL_AGENT_LISTED_GLOBALLY = new RegExp(`${GLOBAL_LIST}${ANYTHING}${API_DEV}`);
-/** Printed after the global heading: the wrong destination. */
-const PROJECT_SKILL_LISTED_GLOBALLY = new RegExp(`${GLOBAL_LIST}${ANYTHING}${PROJECT_SKILL}`);
-const SKIPPED_LIST = STEP_TEXT.SHARED_CONFIG_LIST_SKIPPED;
-const GLOBAL_SKILL_LISTED_AS_SKIPPED = new RegExp(
-  `${PROJECT_LIST}${ANYTHING}${PROJECT_SKILL}${ANYTHING}${SKIPPED_LIST}${ANYTHING}${GLOBAL_SKILL}`,
-);
-/** Restated exactly, so the skipped list is the only place it is named before the question. */
-const GLOBAL_AGENT_LISTED_AS_SKIPPED = new RegExp(`${SKIPPED_LIST}${ANYTHING}${API_DEV}`);
+const PROJECT = STEP_TEXT.PANEL_PROJECT_SCOPE;
+const GLOBAL = STEP_TEXT.PANEL_GLOBAL_SCOPE;
+const PROJECT_SKILL_ROW = panelRow(ADDED_MARKER, E2E_SKILL.react.display);
+const PROJECT_AGENT_ROW = panelRow(ADDED_MARKER, WEB_DEV);
+const GLOBAL_SKILL_ROW = panelRow(ADDED_MARKER, E2E_SKILL.vitest.display);
+const GLOBAL_AGENT_ROW = panelRow(ADDED_MARKER, API_DEV);
+const HELD_GLOBAL_SKILL_ROW = panelRow(UNCHANGED_MARKER, E2E_SKILL.vitest.display);
+const HELD_GLOBAL_AGENT_ROW = panelRow(UNCHANGED_MARKER, API_DEV);
 
 describe("init --from <id> at a terminal", () => {
   let sourceDir: string;
@@ -140,7 +136,7 @@ describe("init --from <id> at a terminal", () => {
 
   describe("in a project", () => {
     it(
-      "lists what goes into the project and what into the global install, then asks, with nothing written yet",
+      "shows what goes into the project and what into the global install, then asks, with nothing written yet",
       { timeout: TIMEOUTS.INTERACTIVE },
       async () => {
         env = await createTestEnvironment();
@@ -157,14 +153,26 @@ describe("init --from <id> at a terminal", () => {
           "init --from at a terminal must ask before it installs a shared configuration",
         ).toContain(STEP_TEXT.SHARED_CONFIG_INSTALL_CONFIRM);
 
-        expect(shown).toMatch(PROJECT_SKILL_LISTED_HERE);
-        expect(shown).toMatch(PROJECT_AGENT_LISTED_HERE);
-        expect(shown).toMatch(GLOBAL_SKILL_LISTED_GLOBALLY);
-        expect(shown).toMatch(GLOBAL_AGENT_LISTED_GLOBALLY);
+        // Present first: an ordering against a missing row reads -1, which passes for nothing.
+        for (const row of [
+          PROJECT,
+          GLOBAL,
+          PROJECT_SKILL_ROW,
+          PROJECT_AGENT_ROW,
+          GLOBAL_SKILL_ROW,
+          GLOBAL_AGENT_ROW,
+        ]) {
+          expect(shown).toContain(row);
+        }
+        // One row per scope in each column, so a row's line falls between its scope's labels.
+        expect(shown.indexOf(PROJECT)).toBeLessThan(shown.indexOf(PROJECT_SKILL_ROW));
         expect(
-          shown,
-          "a project-scoped skill must not be listed as going into the global install",
-        ).not.toMatch(PROJECT_SKILL_LISTED_GLOBALLY);
+          shown.indexOf(PROJECT_SKILL_ROW),
+          "a project-scoped skill must not be shown as going into the global install",
+        ).toBeLessThan(shown.indexOf(GLOBAL));
+        expect(shown.indexOf(PROJECT_AGENT_ROW)).toBeLessThan(shown.indexOf(GLOBAL));
+        expect(shown.indexOf(GLOBAL)).toBeLessThan(shown.indexOf(GLOBAL_SKILL_ROW));
+        expect(shown.indexOf(GLOBAL)).toBeLessThan(shown.indexOf(GLOBAL_AGENT_ROW));
 
         expect(
           await snapshotInstallSurfaces(env),
@@ -225,7 +233,7 @@ describe("init --from <id> at a terminal", () => {
 
   describe("in a project under a global install", () => {
     it(
-      "names the global skills and sub-agents it skips because the global install already holds them",
+      "shows the global skill and sub-agent the global install already holds as unchanged, which the project inherits",
       { timeout: TIMEOUTS.INTERACTIVE },
       async () => {
         env = await createTestEnvironment();
@@ -251,16 +259,17 @@ describe("init --from <id> at a terminal", () => {
         ).toContain(STEP_TEXT.SHARED_CONFIG_INSTALL_CONFIRM);
         expect(
           shown,
-          "a global skill the global install already holds must be listed as skipped",
-        ).toMatch(GLOBAL_SKILL_LISTED_AS_SKIPPED);
+          "a global skill the global install already holds must show unchanged, not added",
+        ).toContain(HELD_GLOBAL_SKILL_ROW);
         expect(
           shown,
-          "a global sub-agent the global install already holds must be listed as skipped",
-        ).toMatch(GLOBAL_AGENT_LISTED_AS_SKIPPED);
-        // The skipped list is the subject guard: nothing goes into the global install.
-        expect(shown, "a skipped skill is not going into the global install").not.toContain(
-          GLOBAL_LIST,
+          "a global sub-agent the global install already holds must show unchanged, not added",
+        ).toContain(HELD_GLOBAL_AGENT_ROW);
+        // The unchanged rows are the subject guard: nothing goes into the global install.
+        expect(shown, "a held skill is not going into the global install").not.toContain(
+          GLOBAL_SKILL_ROW,
         );
+        expect(shown).toContain(PROJECT_SKILL_ROW);
 
         await prompt.deny();
         expect(await prompt.waitForExit(TIMEOUTS.EXIT_WAIT)).toBe(EXIT_CODES.CANCELLED);
@@ -270,7 +279,7 @@ describe("init --from <id> at a terminal", () => {
   });
 
   describe("at the home directory", () => {
-    it("lists only the global install, then asks", { timeout: TIMEOUTS.INTERACTIVE }, async () => {
+    it("shows only the global install, then asks", { timeout: TIMEOUTS.INTERACTIVE }, async () => {
       env = await createTestEnvironment();
 
       prompt = launch(ALL_GLOBAL_ID, env.fakeHome, env.fakeHome);
@@ -281,11 +290,12 @@ describe("init --from <id> at a terminal", () => {
         shown,
         "init --from at a terminal must ask before it installs a shared configuration",
       ).toContain(STEP_TEXT.SHARED_CONFIG_INSTALL_CONFIRM);
-      expect(shown).toMatch(GLOBAL_SKILL_LISTED_GLOBALLY);
-      expect(shown).toMatch(GLOBAL_AGENT_LISTED_GLOBALLY);
-      // The global list is the subject guard: home has no project to list.
-      expect(shown, "the home directory is the global install, so no project list").not.toContain(
-        PROJECT_LIST,
+      expect(shown).toContain(GLOBAL);
+      expect(shown).toContain(GLOBAL_SKILL_ROW);
+      expect(shown).toContain(GLOBAL_AGENT_ROW);
+      // The Global rows are the subject guard: home has no project to show.
+      expect(shown, "the home directory is the global install, so no Project").not.toContain(
+        PROJECT,
       );
 
       await prompt.deny();

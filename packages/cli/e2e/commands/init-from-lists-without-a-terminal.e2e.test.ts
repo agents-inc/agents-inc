@@ -10,15 +10,15 @@ import {
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { agentsPath, cleanupTempDir, listFiles, loadConfigOrFail } from "../helpers/test-utils.js";
-import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
+import { ADDED_MARKER, EXIT_CODES, STEP_TEXT, panelRow } from "../pages/constants.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * `init --from` with no terminal prints the same two lists a terminal run shows, then installs
- * without asking. The terminal half is `interactive/init-from-lists-then-asks`.
+ * `init --from` with no terminal prints the panel a terminal run shows at its question, then
+ * installs without asking. The terminal half is `interactive/init-from-lists-then-asks`.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -29,19 +29,12 @@ const GLOBAL_SKILL = E2E_SKILL.vitest.id;
 const SPLIT_ID = "ListCi01";
 const ALL_GLOBAL_ID = "ListCi02";
 
-const ANYTHING = "[\\s\\S]*";
-const PROJECT_LIST = STEP_TEXT.SHARED_CONFIG_LIST_PROJECT;
-const GLOBAL_LIST = STEP_TEXT.SHARED_CONFIG_LIST_GLOBAL;
-
-/** Project skill and sub-agent under the project heading, before the global one. */
-const PROJECT_SKILL_LISTED_HERE = new RegExp(
-  `${PROJECT_LIST}${ANYTHING}${PROJECT_SKILL}${ANYTHING}${GLOBAL_LIST}`,
-);
-const PROJECT_AGENT_LISTED_HERE = new RegExp(
-  `${PROJECT_LIST}${ANYTHING}${WEB_DEV}${ANYTHING}${GLOBAL_LIST}`,
-);
-const GLOBAL_SKILL_LISTED_GLOBALLY = new RegExp(`${GLOBAL_LIST}${ANYTHING}${GLOBAL_SKILL}`);
-const GLOBAL_AGENT_LISTED_GLOBALLY = new RegExp(`${GLOBAL_LIST}${ANYTHING}${API_DEV}`);
+const PROJECT = STEP_TEXT.PANEL_PROJECT_SCOPE;
+const GLOBAL = STEP_TEXT.PANEL_GLOBAL_SCOPE;
+const PROJECT_SKILL_ROW = panelRow(ADDED_MARKER, E2E_SKILL.react.display);
+const PROJECT_AGENT_ROW = panelRow(ADDED_MARKER, WEB_DEV);
+const GLOBAL_SKILL_ROW = panelRow(ADDED_MARKER, E2E_SKILL.vitest.display);
+const GLOBAL_AGENT_ROW = panelRow(ADDED_MARKER, API_DEV);
 
 describe("init --from <id> with no terminal", () => {
   let sourceDir: string;
@@ -93,7 +86,7 @@ describe("init --from <id> with no terminal", () => {
     env = undefined;
   });
 
-  it("prints what goes into the project and what into the global install, and installs without asking", async () => {
+  it("prints the panel of what goes into the project and what into the global install, and installs without asking", async () => {
     env = await createTestEnvironment();
 
     const { exitCode, output } = await runInitFrom(
@@ -104,11 +97,24 @@ describe("init --from <id> with no terminal", () => {
     );
 
     expect(exitCode, `install failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
-    expect(output).toMatch(PROJECT_SKILL_LISTED_HERE);
-    expect(output).toMatch(PROJECT_AGENT_LISTED_HERE);
-    expect(output).toMatch(GLOBAL_SKILL_LISTED_GLOBALLY);
-    expect(output).toMatch(GLOBAL_AGENT_LISTED_GLOBALLY);
-    // The lists above are the subject guard for this negative.
+    // Present first: an ordering against a missing row reads -1, which passes for nothing.
+    for (const shown of [
+      PROJECT,
+      GLOBAL,
+      PROJECT_SKILL_ROW,
+      PROJECT_AGENT_ROW,
+      GLOBAL_SKILL_ROW,
+      GLOBAL_AGENT_ROW,
+    ]) {
+      expect(output).toContain(shown);
+    }
+    // One row per scope in each column, so a row's line falls between its scope's labels.
+    expect(output.indexOf(PROJECT)).toBeLessThan(output.indexOf(PROJECT_SKILL_ROW));
+    expect(output.indexOf(PROJECT_SKILL_ROW)).toBeLessThan(output.indexOf(GLOBAL));
+    expect(output.indexOf(PROJECT_AGENT_ROW)).toBeLessThan(output.indexOf(GLOBAL));
+    expect(output.indexOf(GLOBAL)).toBeLessThan(output.indexOf(GLOBAL_SKILL_ROW));
+    expect(output.indexOf(GLOBAL)).toBeLessThan(output.indexOf(GLOBAL_AGENT_ROW));
+    // The panel above is the subject guard for this negative.
     expect(output, "with no terminal there is nobody to ask").not.toContain(
       STEP_TEXT.SHARED_CONFIG_INSTALL_CONFIRM,
     );
@@ -123,7 +129,7 @@ describe("init --from <id> with no terminal", () => {
     expect(await listFiles(agentsPath(env.fakeHome))).toStrictEqual([`${API_DEV}.md`]);
   });
 
-  it("prints only the global list at the home directory", async () => {
+  it("prints only the global install in the panel at the home directory", async () => {
     env = await createTestEnvironment();
 
     const { exitCode, output } = await runInitFrom(
@@ -134,11 +140,12 @@ describe("init --from <id> with no terminal", () => {
     );
 
     expect(exitCode, `install failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
-    expect(output).toMatch(GLOBAL_SKILL_LISTED_GLOBALLY);
-    expect(output).toMatch(GLOBAL_AGENT_LISTED_GLOBALLY);
-    // The global list above is the subject guard.
-    expect(output, "the home directory is the global install, so no project list").not.toContain(
-      PROJECT_LIST,
+    expect(output).toContain(GLOBAL);
+    expect(output).toContain(GLOBAL_SKILL_ROW);
+    expect(output).toContain(GLOBAL_AGENT_ROW);
+    // The Global rows above are the subject guard.
+    expect(output, "the home directory is the global install, so no Project").not.toContain(
+      PROJECT,
     );
 
     const globalConfig = await loadConfigOrFail(env.fakeHome);

@@ -28,11 +28,11 @@ const hook: Hook<"init"> = async function (options) {
   }
 };
 
-/** Notice only, once per run; stderr so piped output is unchanged. */
+/** Notice only, once per root that holds the folder, home first; stderr so piped output is unchanged. */
 function sayTheRetiredSourceFolderIsUnsupported(cwd: string): void {
-  const replacement = retiredSourceFolderIn([cwd, os.homedir()]);
-  if (replacement === null) return;
-  process.stderr.write(`${retiredSourceFolderUnsupported(replacement)}\n`);
+  for (const root of retiredSourceFolderIn([os.homedir(), cwd])) {
+    process.stderr.write(`${retiredSourceFolderUnsupported(root)}\n`);
+  }
 }
 
 /** Not `this.exit(0)`: oclif swallows an exit 0 from a hook and goes on to print the root help. */

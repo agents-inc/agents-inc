@@ -11,6 +11,7 @@ import { getProjectConfigPath } from "./install-base-dir.js";
 import {
   hostCompilesAgent,
   providerInUse,
+  isTheProviderOfANewInstallation,
   retiredSourceFolderIn,
   skillsPathPrefix,
   sourceDir,
@@ -182,15 +183,44 @@ describe("retiredSourceFolderIn", () => {
     await cleanupTempDir(root);
   });
 
-  it("answers nothing when no root holds the retired folder, and Claude's folder when one does", async () => {
-    const roots = [path.join(root, "project"), path.join(root, "home")];
-    await Promise.all(roots.map((dir) => mkdir(dir, { recursive: true })));
+  const homeRoot = () => path.join(root, "home");
+  const projectRoot = () => path.join(root, "project");
 
-    expect(retiredSourceFolderIn(roots)).toBeNull();
+  beforeEach(async () => {
+    await Promise.all([homeRoot(), projectRoot()].map((dir) => mkdir(dir, { recursive: true })));
+  });
 
-    await mkdir(path.join(root, "home", ".claude-src"));
+  it("answers no root when none holds the retired folder", () => {
+    expect(retiredSourceFolderIn([homeRoot(), projectRoot()])).toStrictEqual([]);
+  });
 
-    expect(retiredSourceFolderIn(roots)).toBe(CLAUDE_SOURCE_REL);
+  it("answers each root alone when only that one holds it", async () => {
+    await mkdir(path.join(projectRoot(), ".claude-src"));
+
+    expect(retiredSourceFolderIn([homeRoot(), projectRoot()])).toStrictEqual([projectRoot()]);
+  });
+
+  it("answers both roots in the order it was given them when both hold it", async () => {
+    await mkdir(path.join(homeRoot(), ".claude-src"));
+    await mkdir(path.join(projectRoot(), ".claude-src"));
+
+    expect(retiredSourceFolderIn([homeRoot(), projectRoot()])).toStrictEqual([
+      homeRoot(),
+      projectRoot(),
+    ]);
+  });
+
+  it("answers a root given twice once", async () => {
+    await mkdir(path.join(homeRoot(), ".claude-src"));
+
+    expect(retiredSourceFolderIn([homeRoot(), homeRoot()])).toStrictEqual([homeRoot()]);
+  });
+});
+
+describe("isTheProviderOfANewInstallation", () => {
+  it("is Claude, which a bare init creates in an empty root, and not Codex", () => {
+    expect(isTheProviderOfANewInstallation("claude")).toBe(true);
+    expect(isTheProviderOfANewInstallation("codex")).toBe(false);
   });
 });
 
@@ -296,6 +326,6 @@ describe.skipIf(process.getuid?.() === 0)("probes of a folder that cannot be rea
   it("finds no retired folder under a root it cannot look into", async () => {
     const vault = await lockedDir("vault");
 
-    expect(retiredSourceFolderIn([vault])).toBeNull();
+    expect(retiredSourceFolderIn([vault])).toStrictEqual([]);
   });
 });

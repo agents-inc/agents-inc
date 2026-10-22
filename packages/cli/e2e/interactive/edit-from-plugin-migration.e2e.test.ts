@@ -13,7 +13,14 @@ import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { E2E_AGENT, E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
+import {
+  EXIT_CODES,
+  OVERWRITTEN_MARKER,
+  STEP_TEXT,
+  TERMINAL_SIZE,
+  TIMEOUTS,
+  panelRow,
+} from "../pages/constants.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
@@ -117,10 +124,8 @@ describe.skipIf(!claudeAvailable)("edit --from — plugin mode migration", () =>
         expect(result.rawOutput).not.toContain(STEP_TEXT.EJECT_LOCAL_COPY);
         expect(
           result.rawOutput,
-          "the switch deletes the ejected copy, so the plan must name it as overwritten",
-        ).toMatch(
-          new RegExp(`${STEP_TEXT.SHARED_CONFIG_OVERWRITTEN}[\\s\\S]*${E2E_SKILL.react.id}`),
-        );
+          "the switch deletes the ejected copy, so the panel must mark it overwritten",
+        ).toContain(panelRow(OVERWRITTEN_MARKER, E2E_SKILL.react.display));
 
         await expect(project).toHaveConfig({
           skillIds: [E2E_SKILL.react.id],

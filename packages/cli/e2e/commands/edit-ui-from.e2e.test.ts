@@ -143,6 +143,37 @@ describe("edit --ui --from", () => {
         `${CLI_INVOKE_COMMAND} init --from`,
       );
     });
+
+    it("offers init --from for a provider it does not hold, as init --ui --from does", async () => {
+      env = await createTestEnvironment({ permissions: false });
+      const project = { dir: env.projectDir, globalHome: env.fakeHome };
+      store.publish(
+        "Installed1",
+        buildSeedPayload({
+          v: PINNED_WIRE_VERSION,
+          skills: {
+            [E2E_SKILL.react.id]: buildSeedSkill({
+              install: "eject",
+              scope: "project",
+              assignments: { [INSTALLED_AGENT]: "lazy" },
+            }),
+          },
+          agents: { [INSTALLED_AGENT]: { scope: "project" } },
+        }),
+      );
+      const installed = await runInitFrom(store, "Installed1", project, sourceDir);
+      expect(installed.exitCode, installed.output).toBe(EXIT_CODES.SUCCESS);
+
+      const { exitCode, output } = await CLI.run(
+        ["edit", "--ui", "--from", "se_XYZ789", "--provider", "codex"],
+        project,
+      );
+
+      expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+      expect(output).toContain(
+        `To install it here instead, run '${CLI_INVOKE_COMMAND} init --from se_XYZ789 --provider codex'.`,
+      );
+    });
   });
 
   /**

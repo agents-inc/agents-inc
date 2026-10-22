@@ -41,12 +41,6 @@ type TestOnlyExport = ExportSite & { posture: Posture };
  */
 const TEST_ONLY_EXPORTS = [
   {
-    file: "src/cli/components/common/summary-panel.tsx",
-    name: "SummaryPanel",
-    // No production reader; kept for the unbuilt `edit --from` info table.
-    posture: "unjudged",
-  },
-  {
     file: "src/cli/lib/configuration/config-writer.ts",
     name: "getGlobalConfigImportPath",
     // A production function with no caller: nothing selects the import-the-global-config form.

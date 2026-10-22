@@ -1,15 +1,13 @@
 import React from "react";
-import { unique } from "remeda";
+import { unique, uniqueBy } from "remeda";
 import path from "path";
 
 import { Flags } from "@oclif/core";
 
 import { BaseCommand } from "../base-command";
-import {
-  RemovalPlanConfirm,
-  type RemovalPlanSection,
-} from "../components/common/removal-plan-confirm.js";
+import { Confirm } from "../components/common/confirm.js";
 import { promptConfirm } from "../components/common/prompt-confirm.js";
+import { summaryPanelBlock, type SummaryPanelProps } from "../components/common/summary-panel.js";
 import { getErrorMessage } from "../utils/errors";
 import {
   directoryExists,
@@ -28,7 +26,7 @@ import {
   buildMarketplacePluginRef,
   parseMarketplacePluginRef,
 } from "../lib/plugins/index";
-import { type ForkedFromMetadata, readForkedFromMetadata } from "../lib/skills/index";
+import { type LocalSkillMetadata, readLocalSkillMetadata } from "../lib/skills/skill-metadata";
 import { isHomeDirectory, resolveInstallPaths } from "../lib/installation/index";
 import {
   lazyGateDeps,
@@ -54,13 +52,13 @@ import {
   providerNamedBy,
   refuseAnAmbiguousInstallation,
 } from "../lib/installation/provider-flag.js";
+import { isActiveAt } from "../lib/configuration/scope-predicates.js";
+import { isAgentName } from "../utils/type-guards.js";
 import { EXIT_CODES } from "../lib/exit-codes";
 import {
   SUCCESS_MESSAGES,
   INFO_MESSAGES,
-  UNINSTALL_PLAN,
-  compiledAgentsRemoval,
-  localSkillsRemoval,
+  configFileRemoved,
   notInstalledHere,
   pluginLeftRegistered,
   unmarkedAgentsKept,
@@ -71,8 +69,14 @@ import {
   uninstallNeedsTerminal,
   uninstallSkillMetadataUnreadable,
 } from "../utils/messages";
-import type { AgentDefinition, AgentName, MergedSkillsMatrix, ProjectConfig } from "../types/index";
-import type { SkillConfig, SkillScope } from "../types/config";
+import type {
+  AgentDefinition,
+  AgentName,
+  MergedSkillsMatrix,
+  ProjectConfig,
+  SkillId,
+} from "../types/index";
+import type { AgentScopeConfig, SkillConfig, SkillScope } from "../types/config";
 
 /** Paths and names, never display strings, so the preview and the removal read one value. */
 type RemovalEntry =
@@ -105,8 +109,90 @@ function buildRemovalPlan(target: UninstallTarget): RemovalPlan {
   };
 }
 
+/**
+ * Its rows are the plan's, never the config's, so the panel names no removal the run will not
+ * make. In a project the global entries its config copies stay, so they show as kept.
+ */
+function removalPanel(plan: RemovalPlan, target: UninstallTarget): SummaryPanelProps {
+  const kept = target.scope === "project" ? globalEntriesOf(target.config) : NOTHING_KEPT;
+  return {
+    skillConfigs: kept.skills,
+    agentConfigs: kept.agents,
+    installedSkillConfigs: [...removedSkills(plan, target), ...kept.skills],
+    installedAgentConfigs: [...namedAgentRemovals(plan, target.scope).named, ...kept.agents],
+    isInitMode: false,
+    skillNames: namesTheCopiesRecord(target.cliSkills),
+    stackName: undefined,
+  };
+}
+
+/** Uninstall loads no marketplace, so a skill the built-in catalogue lacks is named by its copy. */
+function namesTheCopiesRecord(cliSkills: CliSkill[]): ReadonlyMap<SkillId, string> {
+  return new Map(
+    cliSkills.flatMap(({ skillId, displayName }): [SkillId, string][] =>
+      displayName === undefined ? [] : [[skillId, displayName]],
+    ),
+  );
+}
+
+type PanelEntries = { skills: SkillConfig[]; agents: AgentScopeConfig[] };
+
+const NOTHING_KEPT: PanelEntries = { skills: [], agents: [] };
+
+function globalEntriesOf(config: ProjectConfig | null): PanelEntries {
+  if (config === null) return NOTHING_KEPT;
+  return {
+    skills: config.skills.filter((skill) => isActiveAt(skill, "global")),
+    agents: config.agents.filter((agent) => isActiveAt(agent, "global")),
+  };
+}
+
+/**
+ * A copy by the skill its provenance records; a plugin by the config skill it was matched against.
+ * One row a skill: a skill registered under two marketplaces' names is still one skill.
+ */
+function removedSkills(plan: RemovalPlan, target: UninstallTarget): SkillConfig[] {
+  const copied = new Set(planEntries(plan, "skills").flatMap((entry) => entry.skillNames));
+  const plugins = new Set(planEntries(plan, "plugins").flatMap((entry) => entry.names));
+  const marketplaceName = target.config?.marketplaceName;
+  const copies = target.cliSkills
+    .filter(({ dirName }) => copied.has(dirName))
+    .map(({ skillId }) => ({ id: skillId, scope: target.scope, origin: EJECT_SOURCE }));
+  const pluginSkills = (target.config?.skills ?? [])
+    .filter((skill) => !skill.excluded)
+    .filter((skill) => pluginRefsOf(skill, marketplaceName).some((ref) => plugins.has(ref)))
+    .map((skill) => ({ ...skill, scope: target.scope }));
+
+  return uniqueBy([...copies, ...pluginSkills], (skill) => skill.id);
+}
+
+/** A compiled file whose name no sub-agent carries is named by its path instead. */
+function namedAgentRemovals(
+  plan: RemovalPlan,
+  scope: SkillScope,
+): { named: AgentScopeConfig[]; files: string[] } {
+  const entries = planEntries(plan, "agents");
+  const names = entries.flatMap((entry) => entry.agentNames);
+  return {
+    named: names.filter(isAgentName).map((name) => ({ name, scope })),
+    files: entries.flatMap((entry) =>
+      entry.agentNames
+        .filter((name) => !isAgentName(name))
+        .map((name) => path.join(entry.agentsDir, `${name}${entry.codec.extension}`)),
+    ),
+  };
+}
+
 function hasAnythingToRemove(plan: RemovalPlan): boolean {
   return plan.entries.length > 0;
+}
+
+/** The files the plan deletes that the panel has no row for, marked as it marks a removal. */
+function removedFileLines(plan: RemovalPlan, scope: SkillScope): string[] {
+  const configFiles = planEntries(plan, "config").flatMap((entry) =>
+    entry.fileNames.map((fileName) => `${entry.sourceDir}/${fileName}`),
+  );
+  return [...namedAgentRemovals(plan, scope).files, ...configFiles].map(configFileRemoved);
 }
 
 function pluginsEntry(target: UninstallTarget): PluginRemoval[] {
@@ -116,7 +202,13 @@ function pluginsEntry(target: UninstallTarget): PluginRemoval[] {
 
 function localSkillsEntry(target: UninstallTarget): SkillsRemoval[] {
   if (target.cliSkills.length === 0) return [];
-  return [{ kind: "skills", skillsDir: target.skillsDir, skillNames: [...target.cliSkills] }];
+  return [
+    {
+      kind: "skills",
+      skillsDir: target.skillsDir,
+      skillNames: target.cliSkills.map(({ dirName }) => dirName),
+    },
+  ];
 }
 
 function compiledAgentsEntry(target: UninstallTarget): AgentsRemoval[] {
@@ -166,56 +258,6 @@ function planEntry<K extends RemovalEntry["kind"]>(
   return plan.entries.find(
     (entry): entry is Extract<RemovalEntry, { kind: K }> => entry.kind === kind,
   );
-}
-
-function describeEntry(entry: RemovalEntry): RemovalPlanSection {
-  switch (entry.kind) {
-    case "plugins":
-      return { label: UNINSTALL_PLAN.PLUGINS_HEADING, items: entry.names };
-    case "skills":
-      return {
-        label: UNINSTALL_PLAN.CLI_MANAGED_FILES_HEADING,
-        items: [localSkillsRemoval(entry.skillsDir)],
-      };
-    case "agents":
-      return {
-        label: UNINSTALL_PLAN.CLI_MANAGED_FILES_HEADING,
-        items: [compiledAgentsRemoval(entry.agentsDir)],
-      };
-    case "config":
-      return {
-        label: UNINSTALL_PLAN.CONFIG_HEADING,
-        items: entry.fileNames.map((fileName) => `${entry.sourceDir}/${fileName}`),
-      };
-    default: {
-      const _exhaustive: never = entry;
-      return _exhaustive;
-    }
-  }
-}
-
-const PLAN_SECTION_ORDER = [
-  UNINSTALL_PLAN.PLUGINS_HEADING,
-  UNINSTALL_PLAN.CLI_MANAGED_FILES_HEADING,
-  UNINSTALL_PLAN.CONFIG_HEADING,
-] as const;
-
-/** Skills and compiled agents share a heading; a heading with no items is not printed. */
-function planSections(entries: readonly RemovalEntry[]): RemovalPlanSection[] {
-  const described = entries.map(describeEntry);
-
-  return PLAN_SECTION_ORDER.flatMap((label) =>
-    sectionWithItems(label, itemsUnder(described, label)),
-  );
-}
-
-function itemsUnder(described: readonly RemovalPlanSection[], label: string): string[] {
-  return described.filter((section) => section.label === label).flatMap((section) => section.items);
-}
-
-function sectionWithItems(label: string, items: string[]): RemovalPlanSection[] {
-  if (items.length === 0) return [];
-  return [{ label, items }];
 }
 
 const UNINSTALL_CONFIRM_MESSAGE = "Are you sure you want to uninstall?";
@@ -272,7 +314,7 @@ export default class Uninstall extends BaseCommand {
       return;
     }
 
-    const approved = await this.removalApproved(plan, flags.yes, namedProvider);
+    const approved = await this.removalApproved(plan, target, flags.yes, namedProvider);
     if (!approved) this.cancelUninstall();
 
     await this.executeUninstall(plan, target, projectDir);
@@ -293,14 +335,16 @@ export default class Uninstall extends BaseCommand {
     this.log(INFO_MESSAGES.NO_CHANGES_MADE);
   }
 
+  /** With `--yes` nothing is asked, so the plan prints where the question would be. */
   private async removalApproved(
     plan: RemovalPlan,
+    target: UninstallTarget,
     skipConfirmation: boolean,
     namedProvider: Provider | undefined,
   ): Promise<boolean> {
-    if (!skipConfirmation) return this.confirmRemoval(plan, namedProvider);
+    if (!skipConfirmation) return this.confirmRemoval(plan, target, namedProvider);
 
-    this.printRemovalPlan(plan);
+    this.showRemovalPlan(plan, target);
     return true;
   }
 
@@ -310,27 +354,20 @@ export default class Uninstall extends BaseCommand {
     this.exit(EXIT_CODES.CANCELLED);
   }
 
-  private printRemovalPlan(plan: RemovalPlan): void {
-    this.log(UNINSTALL_PLAN.PREVIEW_HEADING);
-    this.log("");
-
-    for (const section of planSections(plan.entries)) {
-      this.log(`  ${section.label}`);
-      for (const item of section.items) {
-        this.log(`    ${item}`);
-      }
+  private showRemovalPlan(plan: RemovalPlan, target: UninstallTarget): void {
+    const lines = summaryPanelBlock(
+      removalPanel(plan, target),
+      removedFileLines(plan, target.scope),
+      plan.kept,
+    );
+    for (const line of lines) {
+      this.log(line);
     }
-
-    for (const statement of plan.kept) {
-      this.log("");
-      this.log(statement);
-    }
-
-    this.log("");
   }
 
   private async confirmRemoval(
     plan: RemovalPlan,
+    target: UninstallTarget,
     namedProvider: Provider | undefined,
   ): Promise<boolean> {
     // A confirm nobody can answer must never become a yes.
@@ -338,15 +375,9 @@ export default class Uninstall extends BaseCommand {
       this.error(uninstallNeedsTerminal(namedProvider), { exit: EXIT_CODES.ERROR });
     }
 
+    this.showRemovalPlan(plan, target);
     const outcome = await promptConfirm(({ onConfirm, onCancel }) => (
-      <RemovalPlanConfirm
-        heading={UNINSTALL_PLAN.PREVIEW_HEADING}
-        sections={planSections(plan.entries)}
-        statements={plan.kept}
-        message={UNINSTALL_CONFIRM_MESSAGE}
-        onConfirm={onConfirm}
-        onCancel={onCancel}
-      />
+      <Confirm message={UNINSTALL_CONFIRM_MESSAGE} onConfirm={onConfirm} onCancel={onCancel} />
     ));
     return outcome === "confirmed";
   }
@@ -545,12 +576,17 @@ export default class Uninstall extends BaseCommand {
   }
 }
 
+/** A skill folder this CLI installed: removed by its folder, shown by the skill and name it records. */
+type CliSkill = { dirName: string; skillId: SkillId; displayName: string | undefined };
+
 type UninstallTarget = {
+  /** Home is the global scope, so a run there removes global entries. */
+  scope: SkillScope;
   hasPlugins: boolean;
   /** Only those this CLI installed, matched against config skills. */
   cliPluginNames: string[];
   /** Carrying `forkedFrom`: this CLI installed them. The rest are the user's, never removed. */
-  cliSkills: string[];
+  cliSkills: CliSkill[];
   hasClaudeDir: boolean;
   pluginsDir: string;
   skillsDir: string;
@@ -717,6 +753,7 @@ async function detectUninstallTarget(
   const cliPluginNames = await pluginsThisRunRemoves(projectDir, activeConfig);
 
   return {
+    scope: isHomeDirectory(projectDir) ? "global" : "project",
     hasPlugins: cliPluginNames.length > 0,
     cliPluginNames,
     cliSkills,
@@ -760,15 +797,24 @@ function thisRunOwnsAnyPlugin(projectDir: string): boolean {
 async function skillsThisCliInstalled(
   skillsDir: string,
   onMetadataUnreadable: (metadataPath: string) => never,
-): Promise<string[]> {
+): Promise<CliSkill[]> {
   const dirNames = await listDirectories(skillsDir);
   const skills = await Promise.all(
-    dirNames.map(async (name) => ({
-      name,
-      forkedFrom: await readSkillProvenance(skillsDir, name, onMetadataUnreadable),
+    dirNames.map(async (dirName) => ({
+      dirName,
+      metadata: await readCopyMetadata(skillsDir, dirName, onMetadataUnreadable),
     })),
   );
-  return skills.filter((skill) => skill.forkedFrom !== null).map((skill) => skill.name);
+  return skills.flatMap(({ dirName, metadata }) =>
+    metadata?.forkedFrom === undefined
+      ? []
+      : [{ dirName, skillId: metadata.forkedFrom.skillId, displayName: recordedName(metadata) }],
+  );
+}
+
+/** Only for the panel: a copy naming itself no way is drawn by the catalogue's name, or its id. */
+function recordedName(metadata: LocalSkillMetadata): string | undefined {
+  return typeof metadata.displayName === "string" ? metadata.displayName : undefined;
 }
 
 /**
@@ -776,14 +822,14 @@ async function skillsThisCliInstalled(
  * aborts. A skill folder that cannot be opened hides its metadata.yaml (`fileExists` answers
  * false on EACCES), so that skill reads as the user's and is kept, even when this CLI made it.
  */
-async function readSkillProvenance(
+async function readCopyMetadata(
   skillsDir: string,
   dirName: string,
   onUnreadable: (metadataPath: string) => never,
-): Promise<ForkedFromMetadata | null> {
+): Promise<LocalSkillMetadata | null> {
   const skillDir = path.join(skillsDir, dirName);
   try {
-    return await readForkedFromMetadata(skillDir);
+    return await readLocalSkillMetadata(skillDir);
   } catch {
     // Cause dropped on purpose: the stop names the file and the fix only, and uninstall has no
     // --verbose to carry it.

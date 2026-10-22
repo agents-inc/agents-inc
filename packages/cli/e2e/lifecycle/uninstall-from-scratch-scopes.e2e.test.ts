@@ -20,7 +20,8 @@ import {
   writeAgentFile,
   writeCorruptConfig,
 } from "../helpers/test-utils.js";
-import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, REMOVED_MARKER, STEP_TEXT, TIMEOUTS, panelRow } from "../pages/constants.js";
+import { E2E_STACK_AGENTS } from "../fixtures/expected-values.js";
 import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
 
 /** The loader throws while evaluating this file. */
@@ -72,8 +73,8 @@ describe("uninstall removes a from-scratch install, scope by scope", () => {
       );
 
       expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
-      expect(output).toContain(STEP_TEXT.UNINSTALL_PREVIEW_HEADING);
-      expect(output).toContain(STEP_TEXT.UNINSTALL_CONFIG_SECTION);
+      expect(output).toContain(STEP_TEXT.PANEL_HEADER);
+      expect(output).toContain(`${REMOVED_MARKER} ${configTsPath(fakeHome)}`);
       expect(output).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
       await expectCleanUninstall(fakeHome, { removeConfig: true });
@@ -182,7 +183,10 @@ describe("uninstall removes a from-scratch install, scope by scope", () => {
       await expect({ dir: fakeHome }).toHaveNoLocalSkills();
 
       // Compiled agents carry the provenance marker, so the plan claims them without the config.
-      expect(output).toContain(STEP_TEXT.UNINSTALL_CLI_COMPILED);
+      for (const agent of E2E_STACK_AGENTS) {
+        expect(output).toContain(panelRow(REMOVED_MARKER, agent));
+      }
+      expect(output).not.toContain(panelRow(REMOVED_MARKER, HAND_WRITTEN_AGENT));
       expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT_ONE);
       expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT_REASON);
       expect(

@@ -1,8 +1,21 @@
 import path from "path";
 import { describe, it, expect, afterEach } from "vitest";
-import { TIMEOUTS, EXIT_CODES, DIRS, STEP_TEXT } from "../pages/constants.js";
+import {
+  TIMEOUTS,
+  EXIT_CODES,
+  DIRS,
+  E2E_MARKETPLACE_PREFIX,
+  REMOVED_MARKER,
+  STEP_TEXT,
+  panelRow,
+} from "../pages/constants.js";
 import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
-import { cleanupTempDir, directoryExists, sourceFolderIn } from "../helpers/test-utils.js";
+import {
+  cleanupTempDir,
+  configTsPath,
+  directoryExists,
+  sourceFolderIn,
+} from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
@@ -36,11 +49,13 @@ describe("uninstall interactive", () => {
 
       prompt = new InteractivePrompt(["uninstall"], projectDir);
 
-      await prompt.waitForText(STEP_TEXT.UNINSTALL_PREVIEW, TIMEOUTS.WIZARD_LOAD);
+      await prompt.waitForText(STEP_TEXT.CONFIRM_UNINSTALL, TIMEOUTS.WIZARD_LOAD);
 
       const output = prompt.getOutput();
-      expect(output).toContain("CLI-managed files");
-      expect(output).toContain(STEP_TEXT.CONFIRM_UNINSTALL);
+      expect(output).toContain(STEP_TEXT.PANEL_HEADER);
+      // Named as its copy's metadata.yaml names it (`FORKED_FROM_METADATA`), not by the id it records.
+      expect(output).toContain(panelRow(REMOVED_MARKER, "web-framework-react"));
+      expect(output).not.toContain(`${REMOVED_MARKER} ${E2E_MARKETPLACE_PREFIX}`);
     });
 
     it("should show the y/N prompt defaulting to cancel", async () => {
@@ -212,11 +227,10 @@ describe("uninstall interactive", () => {
 
       prompt = new InteractivePrompt(["uninstall"], projectDir);
 
-      await prompt.waitForText(STEP_TEXT.UNINSTALL_PREVIEW, TIMEOUTS.WIZARD_LOAD);
+      await prompt.waitForText(STEP_TEXT.CONFIRM_UNINSTALL, TIMEOUTS.WIZARD_LOAD);
 
       const output = prompt.getOutput();
-      expect(output).toContain(STEP_TEXT.UNINSTALL_CONFIG_SECTION);
-      expect(output).toContain(".agents-inc/claude/config.ts");
+      expect(output).toContain(`${REMOVED_MARKER} ${configTsPath(projectDir)}`);
     });
   });
 

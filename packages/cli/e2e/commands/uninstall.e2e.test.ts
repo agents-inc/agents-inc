@@ -1,11 +1,12 @@
 import path from "path";
 import { mkdir } from "fs/promises";
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterAll, afterEach, beforeAll } from "vitest";
 import { expectCleanUninstall } from "../assertions/uninstall-assertions.js";
 import {
   addForkedFromMetadata,
   agentsPath,
   cleanupTempDir,
+  configTsPath,
   createLocalSkill,
   createTempDir,
   directoryExists,
@@ -19,14 +20,31 @@ import {
 } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { metadataFieldsFor, ProjectBuilder } from "../fixtures/project-builder.js";
-import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
+import {
+  E2E_MARKETPLACE_PREFIX,
+  EXIT_CODES,
+  REMOVED_MARKER,
+  STEP_TEXT,
+  panelRow,
+} from "../pages/constants.js";
 import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
 import { CLI } from "../fixtures/cli.js";
+import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
+import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import "../matchers/setup.js";
 
 describe("uninstall command", () => {
@@ -99,7 +117,7 @@ describe("uninstall command", () => {
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
-    expect(stdout).toContain(STEP_TEXT.UNINSTALL_CLI_COMPILED);
+    expect(stdout).toContain(panelRow(REMOVED_MARKER, E2E_AGENT["web-developer"].name));
 
     await expectCleanUninstall(projectDir, { removeConfig: true });
 
@@ -175,7 +193,7 @@ describe("uninstall command", () => {
     expect(await directoryExists(userSkillDir)).toBe(true);
   });
 
-  it("should print removal list before proceeding with --yes", async () => {
+  it("should print the panel of what it removes, and the config files under it, before proceeding with --yes", async () => {
     const project = await ProjectBuilder.editable();
     tempDir = path.dirname(project.dir);
     const projectDir = project.dir;
@@ -185,10 +203,15 @@ describe("uninstall command", () => {
     const { exitCode, stdout } = await CLI.run(["uninstall", "--yes"], { dir: projectDir });
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(stdout).toContain(STEP_TEXT.UNINSTALL_PREVIEW_HEADING);
-    expect(stdout).toContain("CLI-managed files:");
-    expect(stdout).toContain(STEP_TEXT.UNINSTALL_CONFIG_SECTION);
-    expect(stdout).toContain(".agents-inc/claude/config.ts");
+    expect(stdout).toContain(STEP_TEXT.PANEL_HEADER);
+    // Named as its copy's metadata.yaml names it (`FORKED_FROM_METADATA`), not by the id it records.
+    expect(stdout).toContain(panelRow(REMOVED_MARKER, "web-framework-react"));
+    expect(stdout).not.toContain(`${REMOVED_MARKER} ${E2E_MARKETPLACE_PREFIX}`);
+    expect(stdout).toContain(`${REMOVED_MARKER} ${configTsPath(projectDir)}`);
+    expect(
+      stdout.indexOf(STEP_TEXT.PANEL_HEADER),
+      "the plan prints before the removals",
+    ).toBeLessThan(stdout.indexOf(STEP_TEXT.UNINSTALL_SUCCESS));
   });
 
   it("should report nothing to uninstall for empty directory with HOME override", async () => {
@@ -238,8 +261,8 @@ describe("uninstall command", () => {
     expect(output).toContain(STEP_TEXT.UNINSTALL_NOTHING_TO_UNINSTALL);
     expect(output).toContain(STEP_TEXT.UNINSTALL_NOT_INSTALLED);
 
-    expect(output).not.toContain(STEP_TEXT.UNINSTALL_PREVIEW_HEADING);
-    expect(output).not.toContain(STEP_TEXT.UNINSTALL_CLI_COMPILED);
+    expect(output).not.toContain(STEP_TEXT.PANEL_HEADER);
+    expect(output).not.toContain(panelRow(REMOVED_MARKER, E2E_AGENT["web-developer"].name));
     expect(output).not.toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
     expect(await fileExists(agentFile)).toBe(true);
@@ -269,5 +292,53 @@ describe("uninstall command", () => {
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
     await expectCleanUninstall(projectDir, { removeConfig: true });
+  });
+});
+
+/** Copies as `init --from` writes them, each metadata.yaml naming its skill as the source does. */
+describe("uninstall of the copies init --from installed", () => {
+  const WEB_DEV = E2E_AGENT["web-developer"].name;
+  const INSTALLED_ID = "UninstallNames1";
+  let store: SeedConfigStore;
+  let env: TestEnvironment | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+    const copiedFor = buildSeedSkill({
+      install: "eject",
+      scope: "project",
+      assignments: { [WEB_DEV]: "lazy" },
+    });
+    store.publish(
+      INSTALLED_ID,
+      buildSeedPayload({
+        skills: { [E2E_SKILL.react.id]: copiedFor, [E2E_SKILL.zustand.id]: copiedFor },
+        agents: { [WEB_DEV]: { scope: "project" } },
+      }),
+    );
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
+
+  afterEach(async () => {
+    if (env) await cleanupTempDir(env.tempDir);
+    env = undefined;
+  });
+
+  it("names each skill it removes as its copy does, and says every skill was ejected", async () => {
+    env = await createTestEnvironment();
+    const project = { dir: env.projectDir, globalHome: env.fakeHome };
+    const installed = await runInitFrom(store, INSTALLED_ID, project, E2E_SOURCE.sourceDir);
+    expect(installed.exitCode, installed.output).toBe(EXIT_CODES.SUCCESS);
+
+    const { exitCode, stdout } = await CLI.run(["uninstall", "--yes"], project);
+
+    expect(exitCode, stdout).toBe(EXIT_CODES.SUCCESS);
+    expect(stdout).toContain(STEP_TEXT.PANEL_ALL_SKILLS_EJECTED);
+    expect(stdout).toContain(panelRow(REMOVED_MARKER, E2E_SKILL.react.display));
+    expect(stdout).toContain(panelRow(REMOVED_MARKER, E2E_SKILL.zustand.display));
+    expect(stdout).not.toContain(`${REMOVED_MARKER} ${E2E_MARKETPLACE_PREFIX}`);
   });
 });

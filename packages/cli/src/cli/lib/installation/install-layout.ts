@@ -47,13 +47,9 @@ export function sourceRootOf(root: string): SourceRoot {
 
 export const RETIRED_SOURCE_FOLDER = ".claude-src";
 
-/**
- * Where the retired folder's contents belong now when any root holds it, else `null`. The folder
- * was Claude's, so the answer is Claude's.
- */
-export function retiredSourceFolderIn(roots: readonly string[]): string | null {
-  if (!roots.some(holdsTheRetiredSourceFolder)) return null;
-  return sourceDirName("claude");
+/** The roots that hold the retired folder, each once, in the order given. */
+export function retiredSourceFolderIn(roots: readonly string[]): string[] {
+  return [...new Set(roots)].filter(holdsTheRetiredSourceFolder);
 }
 
 function holdsTheRetiredSourceFolder(root: string): boolean {
@@ -62,6 +58,11 @@ function holdsTheRetiredSourceFolder(root: string): boolean {
 
 /** Reachable only through {@link providerInUse}, so no call site defaults a provider silently. */
 const PROVIDER_OF_A_NEW_INSTALLATION: Provider = "claude";
+
+/** What a bare `init` creates in a root holding none: a remedy for any other must name it. */
+export function isTheProviderOfANewInstallation(provider: Provider): boolean {
+  return provider === PROVIDER_OF_A_NEW_INSTALLATION;
+}
 
 /**
  * The provider `--provider` named for this run. Process state rather than a parameter because

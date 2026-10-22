@@ -64,9 +64,8 @@ const WITHOUT_WEB_DEV_ID = "Warn39E1";
 
 const PROJECTS = ["project-one", "project-two"] as const;
 
-/** A project counts as rewritten when its config pair changed, so each run is counted its own way. */
-const BOTH_PROJECTS_VISITED_UNCHANGED = `${STEP_TEXT.PROPAGATED_RECOMPILE} 0 rewritten, 2 ${STEP_TEXT.UNCHANGED}`;
-const BOTH_PROJECTS_REWRITTEN = `${STEP_TEXT.PROPAGATED_RECOMPILE} 2 rewritten, 0 ${STEP_TEXT.UNCHANGED}`;
+/** Every project the fan-out reaches counts as recompiled, whether or not its files changed. */
+const BOTH_PROJECTS_RECOMPILED = `${STEP_TEXT.PROPAGATED_RECOMPILE} 2 ${STEP_TEXT.PROPAGATED_RECOMPILED}`;
 
 type ScopeState = {
   config: ProjectConfig;
@@ -205,7 +204,7 @@ describe("a global run says each warning once, however many projects are registe
 
     it("succeeds, having fanned out to both projects", () => {
       expect(run.exitCode, `compile at HOME failed: ${run.output}`).toBe(EXIT_CODES.SUCCESS);
-      expect(said, "the fan-out reached both projects").toContain(BOTH_PROJECTS_VISITED_UNCHANGED);
+      expect(said, "the fan-out reached both projects").toContain(BOTH_PROJECTS_RECOMPILED);
     });
 
     it("says the unparseable file once", () => {
@@ -259,7 +258,7 @@ describe("a global run says each warning once, however many projects are registe
 
     it("succeeds, having fanned out to both projects", () => {
       expect(run.exitCode, `edit --from at HOME failed: ${run.output}`).toBe(EXIT_CODES.SUCCESS);
-      expect(said, "the fan-out rewrote both projects' configs").toContain(BOTH_PROJECTS_REWRITTEN);
+      expect(said, "the fan-out reached both projects").toContain(BOTH_PROJECTS_RECOMPILED);
     });
 
     it("says the unparseable file once", () => {

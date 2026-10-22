@@ -765,11 +765,11 @@ describe("edit change summary display", () => {
 
     const output = stdoutChunks.join("");
 
-    // P→G is a modification, not an addition.
-    expect(output).toContain("~ React");
-    expect(output).toContain("[P]");
-    expect(output).toContain("[G]");
-    expect(output).not.toContain("+ React");
+    // P→G is a modification in the change list: the panel shows it leaving one scope for the other.
+    expect(output).toContain("Changes:\n  ~ React ([P] → [G])\n");
+    expect(output).not.toContain("\n  + React");
+    expect(output).toContain("│  - React ⏏ ");
+    expect(output).toContain("│  + React ⏏ ");
   });
 
   it("should show display names for removed skills", async () => {
@@ -971,7 +971,8 @@ describe("edit change summary display", () => {
         }),
       );
 
-      expect(output).toContain("Into the global install:\n  Sub-agents:\n    web-developer\n\n");
+      expect(output).toContain("│  - web-developer ");
+      expect(output).toContain("│  + web-developer ");
       expect(output).toContain("Changes:\n  ~ web-developer ([P] → [G])\n\n");
     });
 
@@ -1005,7 +1006,8 @@ describe("edit change summary display", () => {
         }),
       );
 
-      expect(output).toContain("Into this project:\n  Sub-agents:\n    web-developer\n\n");
+      expect(output).toContain("│  + web-developer ");
+      expect(output).toContain("│  • web-developer ");
       expect(output).toContain("Changes:\n  + web-developer [P] (agent)\n\n");
     });
 
@@ -1698,9 +1700,21 @@ describe("what edit --from does to plugins and saved copies", () => {
       expect(stdoutChunks.join("")).toBe(
         [
           "Fetching configuration EditApply1...",
-          "Into this project:",
-          "  Skills:",
-          "    React (web-framework-react)",
+          "┌──────────────────────────────────────────────────────────────────────────────┐",
+          "│  Marketplace All skills ejected                                              │",
+          "│  Stack none                                                                  │",
+          "│                                                                              │",
+          "│  ──────────────────────────────────────────────────────────────────────────  │",
+          "│                                                                              │",
+          "│  Skills                                         │  Agents                    │",
+          "│                                                 │                            │",
+          "│   Project                                       │   Project                  │",
+          "│  + React ⏏                                      │  • web-developer           │",
+          "│                                                 │                            │",
+          "│   Global                                        │                            │",
+          "│  • React ⏏                                      │                            │",
+          "└──────────────────────────────────────────────────────────────────────────────┘",
+          "",
           "",
           "Changes:",
           "  + React [P]",
@@ -1714,7 +1728,7 @@ describe("what edit --from does to plugins and saved copies", () => {
       );
     });
 
-    it("collapses a sub-agent's pair into its global install, listing no arrival", async () => {
+    it("collapses a sub-agent's pair into its global install, the global one kept and the project's own removed", async () => {
       const skills = saved(["web-framework-react"], "project");
       installed(skills, [
         ...buildAgentConfigs(["web-developer"], { scope: "project" }),
@@ -1731,6 +1745,21 @@ describe("what edit --from does to plugins and saved copies", () => {
       expect(stdoutChunks.join("")).toBe(
         [
           "Fetching configuration EditApply1...",
+          "┌──────────────────────────────────────────────────────────────────────────────┐",
+          "│  Marketplace All skills ejected                                              │",
+          "│  Stack none                                                                  │",
+          "│                                                                              │",
+          "│  ──────────────────────────────────────────────────────────────────────────  │",
+          "│                                                                              │",
+          "│  Skills                                         │  Agents                    │",
+          "│                                                 │                            │",
+          "│   Project                                       │   Project                  │",
+          "│  • React ⏏                                      │  - web-developer           │",
+          "│                                                 │                            │",
+          "│                                                 │   Global                   │",
+          "│                                                 │  • web-developer           │",
+          "└──────────────────────────────────────────────────────────────────────────────┘",
+          "",
           "",
           "Changes:",
           "  - web-developer [P] (agent)",

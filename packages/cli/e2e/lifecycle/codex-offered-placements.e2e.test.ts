@@ -281,7 +281,7 @@ describe("the placements a Codex installation offers", () => {
       await prompt.waitForTextOrExit(STEP_TEXT.SHARED_CONFIG_INSTALL_CONFIRM);
       const shown = prompt.getOutput();
 
-      expect(shown).toContain(STEP_TEXT.SHARED_CONFIG_LIST_PROJECT);
+      expect(shown).toContain(STEP_TEXT.PANEL_HEADER);
       expect(shown).toContain(STEP_TEXT.SHARED_CONFIG_INSTALL_CONFIRM);
       expect(flattenCliOutput(shown)).not.toContain(CODEX_REFUSED_CELL);
 

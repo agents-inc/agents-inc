@@ -1,7 +1,7 @@
 import { Box } from "ink";
 import { render } from "ink-testing-library";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { SummaryPanel, type SummaryPanelProps } from "./summary-panel";
+import { SummaryPanel, summaryPanelText, type SummaryPanelProps } from "./summary-panel";
 import {
   ALL_SKILLS_EJECTED_LABEL,
   DEFAULT_PUBLIC_SOURCE_NAME,
@@ -177,6 +177,28 @@ describe("SummaryPanel component", () => {
       expect(lastFrame()).toContain(`Marketplace ${CUSTOM_MARKETPLACE}`);
     });
 
+    it("should say every skill was ejected when it keeps none and removes only ejected ones", () => {
+      const { lastFrame, unmount } = renderPanel({
+        installedSkillConfigs: buildSkillConfigs([SKILLS.react.id], { origin: EJECT_SOURCE }),
+      });
+      cleanup = unmount;
+
+      const output = lastFrame();
+      expect(output).toContain(`Marketplace ${ALL_SKILLS_EJECTED_LABEL}`);
+      expect(output).not.toContain(DEFAULT_MARKETPLACE_LABEL);
+    });
+
+    it("should name the marketplace the skills it removes came from when it keeps none", () => {
+      const { lastFrame, unmount } = renderPanel({
+        installedSkillConfigs: buildSkillConfigs([SKILLS.react.id], { origin: CUSTOM_MARKETPLACE }),
+      });
+      cleanup = unmount;
+
+      const output = lastFrame();
+      expect(output).toContain(`Marketplace ${CUSTOM_MARKETPLACE}`);
+      expect(output).not.toContain(DEFAULT_MARKETPLACE_LABEL);
+    });
+
     it("should name the stack it is given", () => {
       const { lastFrame, unmount } = renderPanel({ stackName: STACK_NAME });
       cleanup = unmount;
@@ -291,6 +313,35 @@ describe("SummaryPanel component", () => {
       const output = lastFrame();
       expect(output).toContain(`${CLIPPED_LINES} more above`);
       expect(output).not.toContain("more below");
+    });
+  });
+
+  describe("as text printed once", () => {
+    const NARROW_COLUMNS = 60;
+
+    it("draws the whole panel as wide as the columns it is given, with nothing to scroll", () => {
+      const text = summaryPanelText(
+        {
+          ...NOTHING_SELECTED,
+          skillConfigs: buildSkillConfigs(["web-framework-react"]),
+          agentConfigs: buildAgentConfigs(["web-developer"]),
+        },
+        NARROW_COLUMNS,
+      );
+
+      expect(text).toMatchInlineSnapshot(`
+        "┌──────────────────────────────────────────────────────────┐
+        │  Marketplace All skills ejected                          │
+        │  Stack none                                              │
+        │                                                          │
+        │  ──────────────────────────────────────────────────────  │
+        │                                                          │
+        │  Skills                            │  Agents             │
+        │                                    │                     │
+        │   Project                          │   Project           │
+        │  + React ⏏                         │  + web-developer    │
+        └──────────────────────────────────────────────────────────┘"
+      `);
     });
   });
 });

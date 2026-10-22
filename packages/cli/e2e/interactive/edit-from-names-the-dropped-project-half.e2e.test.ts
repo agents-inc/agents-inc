@@ -18,7 +18,16 @@ import {
   readTreeSnapshot,
   skillsPath,
 } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import {
+  ADDED_MARKER,
+  DIRS,
+  EXIT_CODES,
+  REMOVED_MARKER,
+  STEP_TEXT,
+  TIMEOUTS,
+  UNCHANGED_MARKER,
+  panelRow,
+} from "../pages/constants.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
@@ -27,10 +36,11 @@ import type { TreeSnapshotEntry } from "../helpers/test-utils.js";
 import type { SeedPayload } from "@workspace/matrix/seed";
 
 /**
- * `edit --from` in a project names the project half of a dropped `[P][G]` pair as a removal, with
- * the global copy taking over, and lists nothing as arriving globally. Installs are made by `init
+ * `edit --from` in a project marks the project half of a dropped `[P][G]` pair removed in its panel,
+ * the global copy kept as it stands, and nothing arriving globally. Installs are made by `init
  * --from`; each leg adds a project skill to prove the apply ran and snapshots the global install.
- * A project-only entry moved to the global install is named as a removal too: its project copy goes.
+ * A project-only entry moved to the global install shows removed here and added there: its project
+ * copy goes.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -45,22 +55,6 @@ const AGENT_PAIR_ID = "DropHalf03";
 const APPLY_ID = "DropHalf04";
 const PROJECT_ONLY_ID = "DropHalf05";
 const MOVED_TO_GLOBAL_ID = "DropHalf06";
-
-const ANYTHING = "[\\s\\S]*";
-function namedAsDroppedHalf(subject: string): RegExp {
-  return new RegExp(
-    `${STEP_TEXT.SHARED_CONFIG_APPLY_PREVIEW}${ANYTHING}${subject}${ANYTHING}` +
-      `${STEP_TEXT.SHARED_CONFIG_PROJECT_COPY_REMOVED}${ANYTHING}${STEP_TEXT.SHARED_CONFIG_GLOBAL_TAKES_OVER}`,
-  );
-}
-
-/** On the subject's own line: a skill is labelled with its display name before its id. */
-function namedAsMovedToGlobal(subject: string): RegExp {
-  return new RegExp(
-    `${STEP_TEXT.SHARED_CONFIG_APPLY_PREVIEW}${ANYTHING}${subject}[^\\n]*` +
-      `${STEP_TEXT.SHARED_CONFIG_MOVES_TO_GLOBAL}${ANYTHING}${STEP_TEXT.SHARED_CONFIG_PROJECT_COPY_REMOVED}`,
-  );
-}
 
 const onGlobalWebDeveloper = buildSeedSkill({
   scope: "global",
@@ -187,7 +181,7 @@ describe("edit --from <id> in a project names the project half of a pair it drop
   }
 
   it(
-    "names a skill's project copy as removed, and lists nothing arriving in the global install",
+    "marks a skill's project copy removed, the global one kept, and nothing arriving in the global install",
     { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
       const environment = await installPair(SKILL_PAIR_ID);
@@ -198,20 +192,16 @@ describe("edit --from <id> in a project names the project half of a pair it drop
 
       const planned = await openApply(environment);
 
+      expect(planned, "the panel must mark the project's React copy removed").toContain(
+        panelRow(REMOVED_MARKER, E2E_SKILL.react.display),
+      );
+      expect(planned, "the global React takes over as it stands").toContain(
+        panelRow(UNCHANGED_MARKER, E2E_SKILL.react.display),
+      );
       expect(
         planned,
-        "the plan must name the project's React copy as removed, with the global one taking over",
-      ).toMatch(namedAsDroppedHalf(REACT));
-      expect(
-        planned,
-        "a plan that drops a project copy must not say nothing is removed",
-      ).not.toContain(STEP_TEXT.SHARED_CONFIG_APPLY_NOTHING_REMOVED);
-      // The project list guards the negative below.
-      expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_LIST_PROJECT);
-      expect(
-        planned,
-        "dropping a project copy writes nothing into the global install, so nothing is listed arriving there",
-      ).not.toContain(STEP_TEXT.SHARED_CONFIG_LIST_GLOBAL);
+        "dropping a project copy writes nothing into the global install, so nothing arrives there",
+      ).not.toContain(panelRow(ADDED_MARKER, E2E_SKILL.react.display));
 
       await approve();
 
@@ -228,7 +218,7 @@ describe("edit --from <id> in a project names the project half of a pair it drop
   );
 
   it(
-    "names a sub-agent's project copy as removed, and lists nothing arriving in the global install",
+    "marks a sub-agent's project copy removed, the global one kept, and nothing arriving in the global install",
     { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
       const environment = await installPair(AGENT_PAIR_ID);
@@ -239,20 +229,16 @@ describe("edit --from <id> in a project names the project half of a pair it drop
 
       const planned = await openApply(environment);
 
+      expect(planned, "the panel must mark the project's web-developer copy removed").toContain(
+        panelRow(REMOVED_MARKER, WEB_DEV),
+      );
+      expect(planned, "the global web-developer takes over as it stands").toContain(
+        panelRow(UNCHANGED_MARKER, WEB_DEV),
+      );
       expect(
         planned,
-        "the plan must name the project's web-developer copy as removed, with the global one taking over",
-      ).toMatch(namedAsDroppedHalf(WEB_DEV));
-      expect(
-        planned,
-        "a plan that drops a project copy must not say nothing is removed",
-      ).not.toContain(STEP_TEXT.SHARED_CONFIG_APPLY_NOTHING_REMOVED);
-      // The project list guards the negative below.
-      expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_LIST_PROJECT);
-      expect(
-        planned,
-        "dropping a project copy writes nothing into the global install, so nothing is listed arriving there",
-      ).not.toContain(STEP_TEXT.SHARED_CONFIG_LIST_GLOBAL);
+        "dropping a project copy writes nothing into the global install, so nothing arrives there",
+      ).not.toContain(panelRow(ADDED_MARKER, WEB_DEV));
 
       await approve();
 
@@ -268,7 +254,7 @@ describe("edit --from <id> in a project names the project half of a pair it drop
   );
 
   it(
-    "names a project-only skill and sub-agent it moves to the global install as removed here",
+    "marks a project-only skill and sub-agent it moves to the global install removed here and added there",
     { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
       const environment = await createTestEnvironment();
@@ -287,16 +273,18 @@ describe("edit --from <id> in a project names the project half of a pair it drop
 
       const planned = await openApply(environment, MOVED_TO_GLOBAL_ID);
 
-      expect(planned, "the plan must name React's project copy as going").toMatch(
-        namedAsMovedToGlobal(REACT),
+      expect(planned, "the panel must mark React's project copy as going").toContain(
+        panelRow(REMOVED_MARKER, E2E_SKILL.react.display),
       );
-      expect(planned, "the plan must name web-developer's project copy as going").toMatch(
-        namedAsMovedToGlobal(WEB_DEV),
+      expect(planned, "and React as arriving in the global install").toContain(
+        panelRow(ADDED_MARKER, E2E_SKILL.react.display),
       );
-      expect(
-        planned,
-        "a plan that takes the project's copies away must not say nothing is removed",
-      ).not.toContain(STEP_TEXT.SHARED_CONFIG_APPLY_NOTHING_REMOVED);
+      expect(planned, "the panel must mark web-developer's project copy as going").toContain(
+        panelRow(REMOVED_MARKER, WEB_DEV),
+      );
+      expect(planned, "and web-developer as arriving in the global install").toContain(
+        panelRow(ADDED_MARKER, WEB_DEV),
+      );
 
       await approve();
 

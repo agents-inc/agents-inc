@@ -1,4 +1,4 @@
-import { Box, Text } from "ink";
+import { Box, Text, renderToString } from "ink";
 import React from "react";
 import { unique } from "remeda";
 import {
@@ -10,6 +10,7 @@ import {
 } from "../../consts.js";
 import type { SkillConfig } from "../../types/config.js";
 import { usePanelScroll } from "../hooks/use-panel-scroll.js";
+import { dimensionsOf } from "../hooks/use-terminal-dimensions.js";
 import { ScrollAffordance } from "./scroll-affordance.js";
 import { SkillAgentSummary, type SkillAgentSummaryProps } from "./skill-agent-summary.js";
 
@@ -17,6 +18,17 @@ export type SummaryPanelProps = SkillAgentSummaryProps & {
   /** `undefined` when the configuration was built from no stack. */
   stackName: string | undefined;
 };
+
+/**
+ * The skills the panel leaves in place; leaving none, as an uninstall does, those it removes. The
+ * default marketplace is only for a panel with no skill either way.
+ */
+function skillsTheHeaderNames({
+  skillConfigs,
+  installedSkillConfigs,
+}: SkillAgentSummaryProps): SkillConfig[] {
+  return skillConfigs.length > 0 ? skillConfigs : (installedSkillConfigs ?? []);
+}
 
 /**
  * No skills shows the default marketplace; all-ejected names none. Tombstoned entries count: the
@@ -75,7 +87,7 @@ const PanelHeader: React.FC<PanelHeaderProps> = ({ sourceNames, stackName }) => 
 export const SummaryPanel: React.FC<SummaryPanelProps> = ({ stackName, ...summary }) => {
   const { viewportRef, contentRef, contentMarginTop, hiddenAbove, hiddenBelow } = usePanelScroll();
 
-  const sourceNames = formatSkillMarketplaces(summary.skillConfigs);
+  const sourceNames = formatSkillMarketplaces(skillsTheHeaderNames(summary));
 
   return (
     <Box
@@ -99,3 +111,32 @@ export const SummaryPanel: React.FC<SummaryPanelProps> = ({ stackName, ...summar
     </Box>
   );
 };
+
+/**
+ * The whole panel as text, drawn once: printed, it scrolls with the terminal like any other line,
+ * and a run with no terminal prints the same thing.
+ */
+export function summaryPanelText(
+  props: SummaryPanelProps,
+  columns: number = dimensionsOf(process.stdout).columns,
+): string {
+  return renderToString(<SummaryPanel {...props} />, { columns });
+}
+
+/**
+ * What a question shows, or where none is asked, what prints in its place: the panel, the lines
+ * under it marking what it cannot show, then each statement after a blank line, and a blank line
+ * before what follows.
+ */
+export function summaryPanelBlock(
+  panel: SummaryPanelProps,
+  linesUnder: readonly string[],
+  statements: readonly string[],
+): string[] {
+  return [
+    summaryPanelText(panel),
+    ...linesUnder,
+    ...statements.flatMap((statement) => ["", statement]),
+    "",
+  ];
+}

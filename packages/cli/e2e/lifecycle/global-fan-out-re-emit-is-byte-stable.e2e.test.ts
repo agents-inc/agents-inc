@@ -158,10 +158,11 @@ describe("a global fan-out re-emits an unaffected project's config byte-identica
         await readTestFile(projectAgentMd),
         "a fan-out that changes no value must not rewrite the project's compiled agent",
       ).toBe(agentAfterFirst);
+      // The line counts every project reached, changed or not: the bytes above carry "unchanged".
       expect(
         secondRun.output,
-        "the second fan-out must report the project, config and agents alike, as unchanged",
-      ).toContain(`${STEP_TEXT.PROPAGATED_RECOMPILE} 0 rewritten, 1 ${STEP_TEXT.UNCHANGED}`);
+        "the second fan-out must still reach and recompile the registered project",
+      ).toContain(`${STEP_TEXT.PROPAGATED_RECOMPILE} 1 ${STEP_TEXT.PROPAGATED_RECOMPILED}\n`);
     },
   );
 });

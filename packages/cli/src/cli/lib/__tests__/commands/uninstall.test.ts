@@ -54,14 +54,17 @@ vi.mock("../../hosts/host-for.js", async () => {
 const PROMPT_OPEN_TIMEOUT = { timeout: 10_000 };
 
 /** Written out, not imported, so an assertion on user-facing text cannot move with it. */
-const PLAN_AGENTS_ITEM = "(CLI-compiled)";
-const PLAN_CLI_MANAGED_SECTION = "CLI-managed files:";
 const PLAN_AGENTS_KEPT_ONE = "Kept 1 agent in";
 const PLAN_AGENTS_KEPT_TWO = "Kept 2 agents in";
 const PLAN_AGENTS_KEPT_REASON = "no agents-inc marker";
 
-/** Whether the run has a removal to make at all; written out for the same reason. */
-const PLAN_PREVIEW_HEADING = "The following will be removed:";
+/** Whether the run has a removal to make at all: the plan is the panel. */
+const PLAN_PANEL = "│  Marketplace ";
+
+/** A row the panel marks removed, under either column. */
+function removedRow(name: string): string {
+  return ` - ${name} `;
+}
 const NOTHING_TO_UNINSTALL = "Nothing to uninstall";
 const UNINSTALL_COMPLETE = "Uninstall complete";
 
@@ -160,14 +163,16 @@ async function createPluginDir(projectDir: string, fakeHome: string): Promise<st
   return pluginDir;
 }
 
+/** The copy's metadata.yaml names it as its source did, unless `recorded` says otherwise. */
 async function createCLISkill(
   skillsDir: string,
   skillId: SkillId,
   source = TEST_SOURCE,
+  recorded: { displayName?: string } = {},
 ): Promise<string> {
   return writeTestSkill(skillsDir, skillId, {
     extraMetadata: {
-      displayName: skillId,
+      ...recorded,
       forkedFrom: {
         skillId,
         contentHash: "abc1234",
@@ -467,8 +472,7 @@ describe("uninstall command", () => {
       expect(await directoryExists(agentsDir)).toBe(false);
       expect(stdout).toContain("Removed 1 compiled agent");
       // Control for the config-less case below: a config naming the agents makes them deletable.
-      expect(stdout).toContain(PLAN_CLI_MANAGED_SECTION);
-      expect(stdout).toContain(PLAN_AGENTS_ITEM);
+      expect(stdout).toContain(removedRow("web-developer"));
       expect(stdout).not.toContain(PLAN_AGENTS_KEPT_ONE);
     });
 
@@ -488,11 +492,10 @@ describe("uninstall command", () => {
       expect(await readFile(agentPath, "utf-8")).toBe(agentBefore);
 
       // Without a config nothing says which agent files this CLI compiled, so all are kept.
-      expect(output).not.toContain(PLAN_AGENTS_ITEM);
-      expect(output).not.toContain(PLAN_CLI_MANAGED_SECTION);
+      expect(output).not.toContain(removedRow("my-custom-agent"));
 
-      // With nothing to remove, neither the heading nor the success line may print.
-      expect(output).not.toContain(PLAN_PREVIEW_HEADING);
+      // With nothing to remove, neither the panel nor the success line may print.
+      expect(output).not.toContain(PLAN_PANEL);
       expect(output).toContain(NOTHING_TO_UNINSTALL);
       expect(output).not.toContain(UNINSTALL_COMPLETE);
     });
@@ -513,9 +516,10 @@ describe("uninstall command", () => {
       const output = stdout + stderr;
 
       // Positive subject guard: skills carry their own provenance, so a plan is printed.
-      expect(output).toContain(PLAN_PREVIEW_HEADING);
-      expect(output).toContain(PLAN_CLI_MANAGED_SECTION);
-      expect(output).not.toContain(PLAN_AGENTS_ITEM);
+      expect(output).toContain(PLAN_PANEL);
+      expect(output).toContain(removedRow("React ⏏"));
+      expect(output).not.toContain(removedRow(AGENT_DEFS.webDev.name));
+      expect(output).not.toContain(removedRow("my-custom-agent"));
       expect(output).toContain(PLAN_AGENTS_KEPT_TWO);
       expect(output).toContain(PLAN_AGENTS_KEPT_REASON);
 
@@ -538,9 +542,9 @@ describe("uninstall command", () => {
       const { stdout, stderr } = await runCliCommand(["uninstall", "--yes"]);
       const output = stdout + stderr;
 
-      expect(output).toContain(PLAN_PREVIEW_HEADING);
-      expect(output).toContain(PLAN_CLI_MANAGED_SECTION);
-      expect(output).toContain(PLAN_AGENTS_ITEM);
+      expect(output).toContain(PLAN_PANEL);
+      expect(output).toContain(removedRow(AGENT_DEFS.webDev.name));
+      expect(output).not.toContain(removedRow(AGENT_DEFS.apiDev.name));
       expect(output).toContain(PLAN_AGENTS_KEPT_ONE);
       expect(output).toContain(PLAN_AGENTS_KEPT_REASON);
       expect(output).toContain("Removed 1 compiled agent");
@@ -632,7 +636,7 @@ describe("uninstall command", () => {
       expect(stdout, NOTHING_REGISTERED_TO_COUNT).not.toContain(PLUGIN_COUNT_LINE);
     });
 
-    it("should show what will be removed", async () => {
+    it("should show the plugin it removes in the panel, as a skill with no local copy", async () => {
       await createProjectConfig(projectDir, {
         skills: buildSkillConfigs([TEST_PLUGIN_SKILL], { scope: "project", origin: "marketplace" }),
       });
@@ -640,8 +644,9 @@ describe("uninstall command", () => {
 
       const { stdout } = await runCliCommand(["uninstall", "--yes"]);
 
-      expect(stdout).toContain("The following will be removed");
-      expect(stdout).toContain("Plugins:");
+      expect(stdout).toContain(PLAN_PANEL);
+      expect(stdout).toContain(removedRow(TEST_PLUGIN_SKILL));
+      expect(stdout).not.toContain(`${TEST_PLUGIN_SKILL} ⏏`);
     });
 
     it("should show uninstall complete message", async () => {
@@ -905,6 +910,44 @@ describe("what uninstall says", () => {
   const HEADER = ["", "Agents Inc. Uninstall", ""];
   const ENDING = ["", "Agents Inc. has been uninstalled.", "", "✓ Uninstall complete!", "", ""];
 
+  /** The panel at the width a headless run measures, written out so it cannot move with the product. */
+  const PANEL_FRAME_TOP =
+    "┌──────────────────────────────────────────────────────────────────────────────┐";
+  const PANEL_HEADER_REST = [
+    "│  Stack none                                                                  │",
+    "│                                                                              │",
+    "│  ──────────────────────────────────────────────────────────────────────────  │",
+    "│                                                                              │",
+  ];
+  /** Removing no skill, it has none to name a marketplace for. */
+  const PANEL_TOP = [
+    PANEL_FRAME_TOP,
+    "│  Marketplace Agents Inc                                                      │",
+    ...PANEL_HEADER_REST,
+  ];
+  /** Every skill it removes is a copy, as `init` said of the same installation. */
+  const PANEL_TOP_ALL_EJECTED = [
+    PANEL_FRAME_TOP,
+    "│  Marketplace All skills ejected                                              │",
+    ...PANEL_HEADER_REST,
+  ];
+  const PANEL_COLUMNS_HEADING = [
+    "│  Skills                                         │  Agents                    │",
+    "│                                                 │                            │",
+  ];
+  const PANEL_BOTTOM =
+    "└──────────────────────────────────────────────────────────────────────────────┘";
+  const REMOVED_REACT_ALONE = [
+    ...PANEL_COLUMNS_HEADING,
+    "│   Project                                       │                            │",
+    "│  - React ⏏                                      │                            │",
+  ];
+  const REMOVED_WEB_DEVELOPER_ALONE = [
+    ...PANEL_COLUMNS_HEADING,
+    "│                                                 │   Project                  │",
+    "│                                                 │  - web-developer           │",
+  ];
+
   /** A CLI skill and agent, a user's skill and agent beside them, and the config naming them. */
   async function installEjectedProject(): Promise<{ skillsDir: string; agentsDir: string }> {
     await createProjectConfig(projectDir, { agents: buildAgentConfigs(["web-developer"]) });
@@ -916,8 +959,8 @@ describe("what uninstall says", () => {
     return { skillsDir, agentsDir: path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS) };
   }
 
-  it("lists the plan, each removal, what it kept and why, then that it is done", async () => {
-    const { skillsDir, agentsDir } = await installEjectedProject();
+  it("shows the panel of what it removes, the config file it deletes and what it kept and why, then each removal and that it is done", async () => {
+    const { agentsDir } = await installEjectedProject();
     const keptAgents = `Kept 1 agent in ${agentsDir}/ — no agents-inc marker, so this CLI did not compile it.`;
 
     const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
@@ -926,13 +969,12 @@ describe("what uninstall says", () => {
     expect(stdout).toBe(
       [
         ...HEADER,
-        "The following will be removed:",
-        "",
-        "  CLI-managed files:",
-        `    ${skillsDir}/ (matching the marketplace)`,
-        `    ${agentsDir}/ (CLI-compiled)`,
-        "  Config:",
-        `    ${path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS)}`,
+        ...PANEL_TOP_ALL_EJECTED,
+        ...PANEL_COLUMNS_HEADING,
+        "│   Project                                       │   Project                  │",
+        "│  - React ⏏                                      │  - web-developer           │",
+        PANEL_BOTTOM,
+        `- ${path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS)}`,
         "",
         keptAgents,
         "",
@@ -1068,15 +1110,36 @@ describe("what uninstall says", () => {
     expect(stdout).toBe(
       [
         ...HEADER,
-        "The following will be removed:",
-        "",
-        "  CLI-managed files:",
-        `    ${skillsDir}/ (matching the marketplace)`,
+        ...PANEL_TOP_ALL_EJECTED,
+        ...REMOVED_REACT_ALONE,
+        PANEL_BOTTOM,
         "",
         "  Uninstalled skill 'web-framework-react'",
         "✓ Removed 1 CLI-installed skill",
         "✓ Removed .claude/",
         ...ENDING,
+      ].join("\n"),
+    );
+  });
+
+  /** The catalogue this CLI ships knows React by another name, so only the copy's own can match. */
+  it("names each copy it removes as that copy's metadata.yaml records it", async () => {
+    const skillsDir = await createProjectSkillsDir(projectDir);
+    await createCLISkill(skillsDir, "web-framework-react", TEST_SOURCE, {
+      displayName: "Acme React",
+    });
+
+    const { stdout, error } = await runCliCommand(["uninstall", "--yes"]);
+
+    expect(error).toBeUndefined();
+    expect(stdout).toContain(
+      [
+        ...PANEL_TOP_ALL_EJECTED,
+        ...PANEL_COLUMNS_HEADING,
+        "│   Project                                       │                            │",
+        "│  - Acme React ⏏                                 │                            │",
+        PANEL_BOTTOM,
+        "",
       ].join("\n"),
     );
   });
@@ -1096,10 +1159,9 @@ describe("what uninstall says", () => {
     expect(stdout).toBe(
       [
         ...HEADER,
-        "The following will be removed:",
-        "",
-        "  Config:",
-        `    ${path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS)}`,
+        ...PANEL_TOP,
+        PANEL_BOTTOM,
+        `- ${path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS)}`,
         "",
         keptAgent,
         "",
@@ -1124,10 +1186,9 @@ describe("what uninstall says", () => {
     expect(stdout).toBe(
       [
         ...HEADER,
-        "The following will be removed:",
-        "",
-        "  Config:",
-        `    ${path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS)}`,
+        ...PANEL_TOP,
+        PANEL_BOTTOM,
+        `- ${path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS)}`,
         "",
         "✓ Removed .agents-inc/claude/",
         "✓ Removed .agents-inc/",
@@ -1149,10 +1210,9 @@ describe("what uninstall says", () => {
     expect(stdout).toBe(
       [
         ...HEADER,
-        "The following will be removed:",
-        "",
-        "  CLI-managed files:",
-        `    ${skillsDir}/ (matching the marketplace)`,
+        ...PANEL_TOP_ALL_EJECTED,
+        ...REMOVED_REACT_ALONE,
+        PANEL_BOTTOM,
         "",
         "  Uninstalled skill 'web-framework-react'",
         "✓ Removed 1 CLI-installed skill",
@@ -1173,10 +1233,9 @@ describe("what uninstall says", () => {
     expect(stdout).toBe(
       [
         ...HEADER,
-        "The following will be removed:",
-        "",
-        "  Config:",
-        `    ${path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS)}`,
+        ...PANEL_TOP,
+        PANEL_BOTTOM,
+        `- ${path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS)}`,
         "",
         "✓ Removed .agents-inc/claude/",
         "✓ Removed .agents-inc/",
@@ -1188,9 +1247,8 @@ describe("what uninstall says", () => {
   });
 
   it("tidies an empty skills folder away with the agents, rather than keeping .claude/ for it", async () => {
-    const agentsDir = path.dirname(
-      await createAgentFile(projectDir, "web-developer", { compiled: true }),
-    );
+    // The panel names the agent it removes; the folder it held is what the cleanup below judges.
+    await createAgentFile(projectDir, "web-developer", { compiled: true });
     await createProjectSkillsDir(projectDir);
 
     const { stdout, error } = await runCliCommand(["uninstall", "--yes"]);
@@ -1199,10 +1257,9 @@ describe("what uninstall says", () => {
     expect(stdout).toBe(
       [
         ...HEADER,
-        "The following will be removed:",
-        "",
-        "  CLI-managed files:",
-        `    ${agentsDir}/ (CLI-compiled)`,
+        ...PANEL_TOP,
+        ...REMOVED_WEB_DEVELOPER_ALONE,
+        PANEL_BOTTOM,
         "",
         "  Uninstalled agent 'web-developer'",
         "✓ Removed 1 compiled agent",
@@ -1294,7 +1351,7 @@ describe("what uninstall says", () => {
 
       expect(error).toBeUndefined();
       expect(stdout, "the plan has to name the agent for its absence to be the subject").toContain(
-        `\n   ${agentsDir}/ (CLI-compiled)\n`,
+        removedRow("web-developer"),
       );
       expect(stdout).toContain(
         ["✓ Removed 1 CLI-installed skill", keptAgents, "✓ Removed .agents-inc/claude/"].join("\n"),
@@ -1377,7 +1434,7 @@ describe("what uninstall says", () => {
           `Cannot read ${metadataPath}, so uninstall cannot tell whether it made that skill. Fix the file's permissions, or move the skill out, and run uninstall again.`,
         );
         expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
-        expect(stdout).not.toContain(PLAN_PREVIEW_HEADING);
+        expect(stdout).not.toContain(PLAN_PANEL);
         expect(await directoryExists(path.join(skillsDir, "web-framework-react"))).toBe(true);
         expect(await fileExists(path.join(agentsDir, "web-developer.md"))).toBe(true);
         expect(await fileExists(configPath)).toBe(true);
@@ -1413,7 +1470,7 @@ describe("what uninstall says", () => {
 
       expect(error).toBeUndefined();
       expect(stdout).toContain(
-        "✓ Updated 1 registered project\nRegistered projects: 1 rewritten, 0 unchanged\n",
+        "✓ Updated 1 registered project\nRegistered projects: 1 recompiled\n",
       );
       expect(compactCliOutput(stderr)).toContain(
         compactCliOutput(
@@ -1690,7 +1747,9 @@ describe("what uninstall says of plugins", () => {
 
     const { stdout } = await runUninstall();
 
-    expect(stdout).toContain("  Plugins:\n    web-framework-react@marketplace\n  Config:");
+    expect(stdout).toContain(removedRow("React"));
+    expect(stdout).not.toContain(removedRow("Hono"));
+    expect(stdout).not.toContain("someone-elses");
     expect(await directoryExists(path.join(pluginsDir, "api-framework-hono@marketplace"))).toBe(
       true,
     );
@@ -1717,7 +1776,8 @@ describe("what uninstall says of plugins", () => {
 
       const { stdout } = await runUninstall();
 
-      expect(stdout).not.toContain("Plugins:");
+      expect(stdout).toContain("│  • React ");
+      expect(stdout).not.toContain(removedRow("React"));
       expect(await directoryExists(path.join(pluginsDir, "web-framework-react@marketplace"))).toBe(
         true,
       );
@@ -1736,7 +1796,8 @@ describe("what uninstall says of plugins", () => {
 
       const { stdout } = await runUninstall();
 
-      expect(stdout).toContain("  Plugins:\n    web-framework-react@marketplace\n  Config:\n");
+      expect(stdout).toContain("│   Global ");
+      expect(stdout).toContain(removedRow("React"));
     });
   });
 
@@ -1830,13 +1891,16 @@ describe("what uninstall says of plugins", () => {
 
     const { stdout } = await runUninstall();
 
+    expect(stdout).toContain(removedRow("React"));
+    expect(stdout).toContain(removedRow("Hono"));
+    expect(stdout).not.toContain(removedRow("Zustand"));
     expect(stdout).toContain(
       [
-        "  Plugins:",
-        `    web-framework-react@${OTHER_MARKETPLACE_NAME}`,
-        `    web-framework-react@${MARKETPLACE_NAME}`,
-        `    api-framework-hono@${MARKETPLACE_NAME}`,
-        "  Config:",
+        "Uninstalling plugins...",
+        `  Uninstalled plugin 'web-framework-react@${OTHER_MARKETPLACE_NAME}'`,
+        `  Uninstalled plugin 'web-framework-react@${MARKETPLACE_NAME}'`,
+        `  Uninstalled plugin 'api-framework-hono@${MARKETPLACE_NAME}'`,
+        "✓ Uninstalled 3 plugins",
       ].join("\n"),
     );
     expect(

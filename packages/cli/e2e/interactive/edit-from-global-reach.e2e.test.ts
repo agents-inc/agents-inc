@@ -24,7 +24,16 @@ import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { DIRS, E2E_MARKETPLACE_NAME, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import {
+  DIRS,
+  E2E_MARKETPLACE_NAME,
+  EXIT_CODES,
+  REMOVED_MARKER,
+  STEP_TEXT,
+  TIMEOUTS,
+  UNCHANGED_MARKER,
+  panelRow,
+} from "../pages/constants.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -254,14 +263,13 @@ describe("edit --from <id> and a global install the configuration leaves out", (
     it("names no global removal and no other project in its plan, only the skill it keeps", () => {
       // The question is the subject guard for the negatives below.
       expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
+      expect(planned, "a project apply shows the global skill it keeps as it stands").toContain(
+        panelRow(UNCHANGED_MARKER, E2E_SKILL.vitest.display),
+      );
       expect(
         planned,
-        "a project apply must not plan anything for the global install",
-      ).not.toContain(STEP_TEXT.SHARED_CONFIG_LIST_GLOBAL);
-      expect(
-        planned,
-        "a project apply removes nothing global, so the plan must not open by promising removals",
-      ).not.toContain(STEP_TEXT.SHARED_CONFIG_APPLY_PREVIEW);
+        "a project apply removes nothing global, so the panel must not mark it removed",
+      ).not.toContain(panelRow(REMOVED_MARKER, E2E_SKILL.vitest.display));
       expect(
         planned,
         "a project apply must name the global skill it keeps though the configuration leaves it out",
@@ -381,17 +389,15 @@ describe("edit --from <id> and a global install the configuration leaves out", (
     it("asks the ordinary question about the removal, with no second acknowledgement", () => {
       // At home the location is the global scope, so the left-out skill is an ordinary removal
       // under the ordinary question.
-      expect(planned).toMatch(
-        new RegExp(`${STEP_TEXT.SHARED_CONFIG_APPLY_PREVIEW}[\\s\\S]*${E2E_SKILL.vitest.display}`),
-      );
+      expect(planned).toContain(panelRow(REMOVED_MARKER, E2E_SKILL.vitest.display));
       expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
     });
 
-    it("names each registered project the run rewrites before asking", () => {
+    it("names each registered project the run recompiles before asking", () => {
       for (const project of [fixture.projectA, fixture.projectB]) {
         expect(planned).toMatch(
           new RegExp(
-            `${STEP_TEXT.SHARED_CONFIG_REGISTERED_REWRITTEN}[\\s\\S]*${realpathSync(project)}`,
+            `${STEP_TEXT.SHARED_CONFIG_REGISTERED_RECOMPILED}[\\s\\S]*${realpathSync(project)}`,
           ),
         );
       }

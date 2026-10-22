@@ -13,7 +13,7 @@ import {
   writeAgentFile,
 } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
+import { EXIT_CODES, REMOVED_MARKER, STEP_TEXT, panelRow } from "../pages/constants.js";
 
 /**
  * `compile` stamps a provenance marker on the first body line after the frontmatter (not a
@@ -99,8 +99,8 @@ describe("compiled-agent provenance marker", () => {
     );
 
     expect(exitCode, `uninstall output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
-    expect(output).toContain(STEP_TEXT.UNINSTALL_CLI_MANAGED_SECTION);
-    expect(output).toContain(STEP_TEXT.UNINSTALL_CLI_COMPILED);
+    expect(output).toContain(panelRow(REMOVED_MARKER, E2E_AGENT["web-developer"].name));
+    expect(output).not.toContain(panelRow(REMOVED_MARKER, HAND_WRITTEN_AGENT));
     expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT_ONE);
     expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT_REASON);
     expect(output).toContain(STEP_TEXT.UNINSTALL_SUCCESS);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { standAtTerminal } from "./terminal-input.js";
+import { printAtWidth, standAtTerminal } from "./terminal-input.js";
 
 const RUNNER_STDIN = process.stdin;
 
@@ -26,5 +26,22 @@ describe("standAtTerminal", () => {
 describe("after standAtTerminal's tests", () => {
   it("puts the runner's own stdin back", () => {
     expect(process.stdin).toBe(RUNNER_STDIN);
+  });
+});
+
+const A_WIDTH = 140;
+
+describe("printAtWidth", () => {
+  printAtWidth(A_WIDTH);
+
+  it("has stdout report the width it was given", () => {
+    expect(process.stdout.columns).toBe(A_WIDTH);
+  });
+});
+
+// Outside the block above, so its hooks don't run here.
+describe("after printAtWidth's tests", () => {
+  it("leaves stdout reporting no width, as a pipe does", () => {
+    expect(process.stdout.columns).toBeUndefined();
   });
 });

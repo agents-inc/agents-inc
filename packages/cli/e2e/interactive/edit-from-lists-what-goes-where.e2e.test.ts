@@ -11,16 +11,23 @@ import {
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { cleanupTempDir } from "../helpers/test-utils.js";
-import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import {
+  ADDED_MARKER,
+  CHANGED_MARKER,
+  EXIT_CODES,
+  STEP_TEXT,
+  TIMEOUTS,
+  panelRow,
+} from "../pages/constants.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * `edit --from`'s confirm lists what goes into the project and what into the global install, as
- * `init --from` does; at home only the global list. The no-terminal refusal stays in
- * `interactive/edit-from-apply-that-removes-nothing`.
+ * `edit --from`'s confirm shows the panel: what goes into the project under Project and what into
+ * the global install under Global, as `init --from` does; at home only Global. The no-terminal
+ * refusal stays in `interactive/edit-from-apply-that-removes-nothing`.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -36,26 +43,14 @@ const PROJECT_APPLY_ID = "ListEdit02";
 const HOME_INSTALLED_ID = "ListEdit03";
 const HOME_APPLY_ID = "ListEdit04";
 
-const ANYTHING = "[\\s\\S]*";
-const PROJECT_LIST = STEP_TEXT.SHARED_CONFIG_LIST_PROJECT;
-const GLOBAL_LIST = STEP_TEXT.SHARED_CONFIG_LIST_GLOBAL;
-
-/** Under the project heading, before the global one. */
-const NEW_PROJECT_SKILL_LISTED_HERE = new RegExp(
-  `${PROJECT_LIST}${ANYTHING}${NEW_PROJECT_SKILL}${ANYTHING}${GLOBAL_LIST}`,
-);
-const PROJECT_AGENT_LISTED_HERE = new RegExp(
-  `${PROJECT_LIST}${ANYTHING}${WEB_DEV}${ANYTHING}${GLOBAL_LIST}`,
-);
-const NEW_GLOBAL_SKILL_LISTED_GLOBALLY = new RegExp(`${GLOBAL_LIST}${ANYTHING}${NEW_GLOBAL_SKILL}`);
-const GLOBAL_AGENT_LISTED_GLOBALLY = new RegExp(`${GLOBAL_LIST}${ANYTHING}${API_DEV}`);
-const ANOTHER_GLOBAL_SKILL_LISTED_GLOBALLY = new RegExp(
-  `${GLOBAL_LIST}${ANYTHING}${ANOTHER_GLOBAL_SKILL}`,
-);
-/** Printed after the global heading: the wrong destination. */
-const NEW_PROJECT_SKILL_LISTED_GLOBALLY = new RegExp(
-  `${GLOBAL_LIST}${ANYTHING}${NEW_PROJECT_SKILL}`,
-);
+const PROJECT = STEP_TEXT.PANEL_PROJECT_SCOPE;
+const GLOBAL = STEP_TEXT.PANEL_GLOBAL_SCOPE;
+const NEW_PROJECT_SKILL_ROW = panelRow(ADDED_MARKER, E2E_SKILL["visual-regression"].display);
+const NEW_GLOBAL_SKILL_ROW = panelRow(ADDED_MARKER, E2E_SKILL.vitest.display);
+const ANOTHER_GLOBAL_SKILL_ROW = panelRow(ADDED_MARKER, E2E_SKILL["research-methodology"].display);
+const GLOBAL_AGENT_ROW = panelRow(ADDED_MARKER, API_DEV);
+const CHANGED_PROJECT_AGENT_ROW = panelRow(CHANGED_MARKER, WEB_DEV);
+const CHANGED_GLOBAL_AGENT_ROW = panelRow(CHANGED_MARKER, API_DEV);
 
 const onWebDeveloper = buildSeedSkill({ scope: "project", assignments: { [WEB_DEV]: "lazy" } });
 const onApiDeveloper = buildSeedSkill({ scope: "global", assignments: { [API_DEV]: "lazy" } });
@@ -149,7 +144,7 @@ describe("edit --from <id> at a terminal lists what goes where in its confirm", 
   }
 
   it(
-    "lists what goes into the project and what into the global install, from a project",
+    "shows what goes into the project under Project and what into the global install under Global, from a project",
     { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
       const environment = await installFrom(PROJECT_INSTALLED_ID, "project");
@@ -160,23 +155,36 @@ describe("edit --from <id> at a terminal lists what goes where in its confirm", 
         environment.fakeHome,
       );
 
-      expect(planned).toMatch(NEW_PROJECT_SKILL_LISTED_HERE);
-      expect(planned).toMatch(PROJECT_AGENT_LISTED_HERE);
-      expect(planned).toMatch(NEW_GLOBAL_SKILL_LISTED_GLOBALLY);
-      expect(planned).toMatch(GLOBAL_AGENT_LISTED_GLOBALLY);
+      // Present first: an ordering against a missing row reads -1, which passes for nothing.
+      for (const shown of [
+        PROJECT,
+        GLOBAL,
+        NEW_PROJECT_SKILL_ROW,
+        CHANGED_PROJECT_AGENT_ROW,
+        NEW_GLOBAL_SKILL_ROW,
+        GLOBAL_AGENT_ROW,
+      ]) {
+        expect(planned).toContain(shown);
+      }
+      // Both columns hold one row per scope here, so a row's line falls between its scope's labels.
+      expect(planned.indexOf(PROJECT)).toBeLessThan(planned.indexOf(NEW_PROJECT_SKILL_ROW));
       expect(
-        planned,
-        "a project-scoped skill must not be listed as going into the global install",
-      ).not.toMatch(NEW_PROJECT_SKILL_LISTED_GLOBALLY);
+        planned.indexOf(NEW_PROJECT_SKILL_ROW),
+        "a project-scoped skill must not be shown as going into the global install",
+      ).toBeLessThan(planned.indexOf(GLOBAL));
+      expect(planned.indexOf(PROJECT)).toBeLessThan(planned.indexOf(CHANGED_PROJECT_AGENT_ROW));
+      expect(planned.indexOf(CHANGED_PROJECT_AGENT_ROW)).toBeLessThan(planned.indexOf(GLOBAL));
+      expect(planned.indexOf(GLOBAL)).toBeLessThan(planned.indexOf(NEW_GLOBAL_SKILL_ROW));
+      expect(planned.indexOf(GLOBAL)).toBeLessThan(planned.indexOf(GLOBAL_AGENT_ROW));
 
-      // The lists join the question rather than replace it.
+      // The panel joins the question rather than replace it.
       await session.deny();
       expect(await session.waitForExit(TIMEOUTS.EXIT_WAIT)).toBe(EXIT_CODES.CANCELLED);
     },
   );
 
   it(
-    "lists only the global install at the home directory",
+    "shows only the global install at the home directory",
     { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
       const environment = await installFrom(HOME_INSTALLED_ID, "home");
@@ -187,11 +195,13 @@ describe("edit --from <id> at a terminal lists what goes where in its confirm", 
         environment.fakeHome,
       );
 
-      expect(planned).toMatch(ANOTHER_GLOBAL_SKILL_LISTED_GLOBALLY);
-      expect(planned).toMatch(GLOBAL_AGENT_LISTED_GLOBALLY);
-      // The global list is the subject guard: home has no project to list.
-      expect(planned, "the home directory is the global install, so no project list").not.toContain(
-        PROJECT_LIST,
+      expect(planned).toContain(ANOTHER_GLOBAL_SKILL_ROW);
+      expect(planned).toContain(CHANGED_GLOBAL_AGENT_ROW);
+      expect(planned.indexOf(GLOBAL)).toBeLessThan(planned.indexOf(ANOTHER_GLOBAL_SKILL_ROW));
+      expect(planned.indexOf(GLOBAL)).toBeLessThan(planned.indexOf(CHANGED_GLOBAL_AGENT_ROW));
+      // The Global rows are the subject guard: home has no project to show.
+      expect(planned, "the home directory is the global install, so no Project").not.toContain(
+        PROJECT,
       );
 
       await session.deny();

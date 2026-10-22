@@ -14,10 +14,13 @@ import { DIRS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { buildProjectConfig } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 
 /**
- * The retired source folder holds no installation: it is ignored and named once at startup. Each
- * spec pinning the line is paired with one where the folder is absent.
+ * The retired source folder holds no installation: it is ignored and named at startup, once per
+ * root that holds it, each line naming its root. Each spec pinning a line is paired with one where
+ * the folder is absent.
  */
-const NOTICE = `${DIRS.RETIRED_SOURCE}/ ${STEP_TEXT.RETIRED_SOURCE_FOLDER_UNSUPPORTED}`;
+function notice(root: string): string {
+  return `${path.join(root, DIRS.RETIRED_SOURCE)}/${STEP_TEXT.RETIRED_SOURCE_FOLDER_UNSUPPORTED}${path.join(root, DIRS.SOURCE_CLAUDE)}/.`;
+}
 
 /** A user's file in the retired folder, which no run may touch. */
 const KEPT_IN_THE_RETIRED_FOLDER = path.join("agents", "my-agent", "identity.md");
@@ -68,7 +71,7 @@ describe("the retired source folder", () => {
     return runCLI(args, cwd, { env: { HOME: home } });
   }
 
-  it("is named once, not once per scope, when the project and HOME both hold it, and the run goes on", async () => {
+  it("names each root that holds it once, HOME first, when the project and HOME both hold it, and the run goes on", async () => {
     await scopes();
     await install(projectDir, "current-project");
     await retiredFolderIn(projectDir, "retired-project");
@@ -76,9 +79,16 @@ describe("the retired source folder", () => {
 
     const { exitCode, combined } = await run(["doctor"]);
 
-    expect(combined).toContain(NOTICE);
-    expect(combined.indexOf(NOTICE), "said once, not once per scope").toBe(
-      combined.lastIndexOf(NOTICE),
+    expect(combined).toContain(notice(home));
+    expect(combined).toContain(notice(projectDir));
+    expect(combined.indexOf(notice(home)), "HOME's line comes first").toBeLessThan(
+      combined.indexOf(notice(projectDir)),
+    );
+    expect(combined.indexOf(notice(home)), "HOME is named once").toBe(
+      combined.lastIndexOf(notice(home)),
+    );
+    expect(combined.indexOf(notice(projectDir)), "the project is named once").toBe(
+      combined.lastIndexOf(notice(projectDir)),
     );
     expect(exitCode, "the line is a notice, so the command it precedes still runs").toBe(
       EXIT_CODES.SUCCESS,
@@ -89,14 +99,26 @@ describe("the retired source folder", () => {
     ).toContain(STEP_TEXT.DOCTOR_LAYOUT_CURRENT);
   });
 
-  it("is named when only HOME holds it", async () => {
+  it("names HOME alone when only HOME holds it", async () => {
     await scopes();
     await install(projectDir, "current-project");
     await retiredFolderIn(home, "retired-global");
 
     const { combined } = await run(["list"]);
 
-    expect(combined).toContain(NOTICE);
+    expect(combined).toContain(notice(home));
+    expect(combined).not.toContain(`${path.join(projectDir, DIRS.RETIRED_SOURCE)}/`);
+  });
+
+  it("names the project alone when only the project holds it", async () => {
+    await scopes();
+    await install(projectDir, "current-project");
+    await retiredFolderIn(projectDir, "retired-project");
+
+    const { combined } = await run(["list"]);
+
+    expect(combined).toContain(notice(projectDir));
+    expect(combined).not.toContain(`${path.join(home, DIRS.RETIRED_SOURCE)}/`);
   });
 
   it("is not named when neither the project nor HOME holds it", async () => {
@@ -110,7 +132,7 @@ describe("the retired source folder", () => {
     expect(
       combined,
       "without this the specs above cannot tell a check of the disk from a line printed on every run",
-    ).not.toContain(NOTICE);
+    ).not.toContain(STEP_TEXT.RETIRED_SOURCE_FOLDER_UNSUPPORTED);
   });
 
   it("is ignored: a project holding only it has no config, and the folder is left untouched", async () => {

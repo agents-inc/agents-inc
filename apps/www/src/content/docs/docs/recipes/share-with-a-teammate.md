@@ -86,7 +86,7 @@ An installation already exists at <path>. Run 'npx agents-inc uninstall' first �
 
 Skills or sub-agents the current catalogue no longer knows are named and skipped, and the install proceeds without them.
 
-`edit --from <id>` applies a configuration to an installation you already have, and it removes whatever the configuration leaves out — from a project, only the project's own entries. It needs a terminal, because that has to be confirmed.
+`edit --from <id>` applies a configuration to an installation you already have, and it removes whatever the configuration leaves out — from a project, only the project's own entries. It needs a terminal whenever it changes something, because that has to be confirmed.
 
 Opening `https://agentsinc.sh/editor/?fromId=<id>` writes nothing anywhere. The id stays in the address, so a reload reopens the same configuration, and the nav rail's **Editor** link clears it and hands you back your own.
 

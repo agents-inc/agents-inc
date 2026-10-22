@@ -18,8 +18,9 @@ import { writeTestTsConfig } from "../helpers/config-io.js";
 import { standAtTerminal } from "../helpers/terminal-input.js";
 
 /**
- * `edit --from` deletes what the payload omits, so it must confirm; with no terminal it refuses
- * before the fetch and the catalogue load. The keystroke-driven confirm lives in the PTY suite.
+ * `edit --from` deletes what the payload omits, so it must confirm; with no terminal it still
+ * fetches and plans, so an id that changes nothing says so, and only a change is refused (pinned
+ * in `edit-from-says-what-it-did.test.ts`). The keystroke-driven confirm lives in the PTY suite.
  */
 
 const WEB_DEV = "web-developer";
@@ -88,44 +89,25 @@ describe("edit --from", () => {
     };
   }
 
-  describe("a removal nobody can confirm", () => {
-    it("refuses without a terminal, naming the id and both ways forward", async () => {
+  describe("with no terminal to confirm at", () => {
+    it("fetches the id, since only the plan can say whether there is anything to confirm", async () => {
       await installConfig(installed());
 
       const error = await runEdit(["--from", DEAD_LINK_ID]);
 
+      expect(worker.requests.map((request) => request.url)).toStrictEqual([
+        `${CONFIGS_URL}/${DEAD_LINK_ID}`,
+      ]);
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
       expect(error?.message).toContain(DEAD_LINK_ID);
-      // Naming the greenfield command is all a pipeline can act on.
+    });
+
+    it("refuses a directory with nothing installed before it fetches anything", async () => {
+      const error = await runEdit(["--from", DEAD_LINK_ID]);
+
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
       expect(error?.message).toContain(`init --from ${DEAD_LINK_ID}`);
-    });
-
-    it("refuses before it fetches anything", async () => {
-      await installConfig(installed());
-
-      await runEdit(["--from", DEAD_LINK_ID]);
-
-      // The run is already over, so fetching the payload would be a wasted round trip.
       expect(worker.requests).toStrictEqual([]);
-    });
-
-    it("refuses before it loads the catalogue", async () => {
-      await installConfig(installed());
-
-      await runEdit(["--from", DEAD_LINK_ID]);
-
-      expect(
-        stdoutChunks.join(""),
-        "a run that cannot finish must not pay for the inputs of one that could",
-      ).not.toContain(STATUS_MESSAGES.LOADING_SKILLS);
-    });
-
-    it("refuses a directory with nothing installed the same way", async () => {
-      const error = await runEdit(["--from", DEAD_LINK_ID]);
-
-      // The terminal question comes first, so the user is told what they can act on first.
-      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
-      expect(error?.message).toContain(DEAD_LINK_ID);
     });
   });
 

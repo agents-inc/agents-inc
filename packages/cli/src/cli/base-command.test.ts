@@ -74,8 +74,12 @@ class Probe extends BaseCommand {
     return this.ensureSavedSkillsReadable(saved, matrix, projectDir);
   }
 
-  projectScopedAtHome(selection: InstallSelection, projectDir: string): void {
-    this.refuseProjectScopedContentAtHome(selection, projectDir);
+  projectScopedAtHome(
+    selection: InstallSelection,
+    projectDir: string,
+    installedHere = false,
+  ): void {
+    this.refuseProjectScopedContentAtHome(selection, projectDir, installedHere);
   }
 
   placementsBeforeWriting(skills: readonly SkillConfig[], root: string): void {
@@ -313,7 +317,7 @@ describe("BaseCommand", () => {
   describe("reporting a write's reach into registered projects", () => {
     const at = (name: string): string => path.join(os.tmpdir(), name);
 
-    it("says which projects it could not read, then the recompile summary with its warnings", async () => {
+    it("says which projects it could not read, then how many it recompiled, with its warnings", async () => {
       const { stdout, stderr } = await runProbe((probe) => {
         probe.fanOut(
           buildGateReport({
@@ -331,7 +335,7 @@ describe("BaseCommand", () => {
       expect(flattenCliOutput(stderr)).toBe(
         `Warning: Skipped ${at("unreadable")}: its config.ts can't be read. Warning: one agent could not be written`,
       );
-      expect(stdout).toBe("Registered projects: 1 rewritten, 2 unchanged (1 failed)\n");
+      expect(stdout).toBe("Registered projects: 3 recompiled (1 failed)\n");
     });
 
     it("says nothing of a recompile when no registered project was updated", async () => {
@@ -581,6 +585,21 @@ describe("BaseCommand", () => {
         ].join("\n"),
       );
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+    });
+
+    it("sends a global install it applies to to change itself through its own link instead", async () => {
+      const selection = buildInstallSelection([projectSkill], {
+        agentConfigs: buildAgentConfigs(["api-developer"], { scope: "global" }),
+      });
+
+      const { error } = await runProbe((probe) =>
+        probe.projectScopedAtHome(selection, fakeHome, true),
+      );
+
+      expect(error?.message).toContain(
+        "Run this from inside a project directory, or change the global install from here: run 'npx agents-inc edit', make the change in the editor, then apply the id it gives you with 'npx agents-inc edit --from <id>'.",
+      );
+      expect(error?.message).not.toContain("re-share");
     });
 
     it("refuses a project-scoped sub-agent alone", async () => {

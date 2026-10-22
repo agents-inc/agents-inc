@@ -8,7 +8,7 @@ import type { SeedPayload } from "@workspace/matrix/seed";
 import { CLI_ROOT } from "../helpers/cli-runner.js";
 import { useMockWorker } from "../helpers/mock-worker.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
-import { standAtTerminal } from "../helpers/terminal-input.js";
+import { printAtWidth, standAtTerminal } from "../helpers/terminal-input.js";
 import { writeTestTsConfig } from "../helpers/config-io.js";
 import { buildSkillConfigs } from "../helpers/skill-config-builders.js";
 import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
@@ -45,6 +45,9 @@ const VITEST = testMarketplaceSkillId("web-testing-vitest");
 const SEED_ID = "Next";
 const PROMPT_READY_MS = 600;
 
+/** Wide enough that no test-marketplace id wraps inside the panel, whose rows these specs pin. */
+const PANEL_COLUMNS = 160;
+
 /** Each command a spec here answers, run from source so the host mock reaches it. */
 const RUN_FROM_SEED = {
   edit: () => Edit.run(["--from", SEED_ID], { root: CLI_ROOT }),
@@ -54,6 +57,7 @@ const RUN_FROM_SEED = {
 describe("what edit --from says of plugins", () => {
   useMockWorker();
   const terminal = standAtTerminal();
+  printAtWidth(PANEL_COLUMNS);
   let projectDir: string;
   let fakeHome: string;
   let cleanup: () => Promise<void>;
@@ -165,17 +169,9 @@ describe("what edit --from says of plugins", () => {
     const { stdout, error } = await applyAnswered(KEY_Y);
 
     expect(error).toBeUndefined();
-    expect(stdout).toContain(
-      [
-        "Into this project:",
-        "  Skills:",
-        `    ${REACT}`,
-        "Will be overwritten:",
-        `   ${REACT}`,
-        "",
-        "Apply this configuration?",
-      ].join("\n"),
-    );
+    expect(stdout).toContain(` ↻ ${REACT} `);
+    expect(stdout).not.toContain(`↻ ${REACT} ⏏`);
+    expect(stdout).toContain("┘\n\nApply this configuration?\n");
     expect(stdout).toContain(
       [
         "Changes:",
@@ -374,9 +370,7 @@ describe("what edit --from says of plugins", () => {
     expect(await directoryExists(globalReactCopy())).toBe(true);
     // Subject guard for the absence below: the confirm was painted.
     expect(stdout).toContain("Apply this configuration?");
-    expect(stdout, "the global copy stays, so nothing of it is overwritten").not.toContain(
-      "Will be overwritten:",
-    );
+    expect(stdout, "the global copy stays, so nothing of it is overwritten").not.toContain("↻");
   });
 
   it("says which skill it installs as a plugin beside its global copy and which it switches, counting each", async () => {

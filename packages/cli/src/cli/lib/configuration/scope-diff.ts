@@ -1,6 +1,7 @@
-import { partition } from "remeda";
+import { difference, partition, unique } from "remeda";
 import type { AgentScopeConfig, SkillConfig, SkillScope } from "../../types/config";
-import type { AgentName, SkillId } from "../../types/index";
+import type { AgentName, SkillId, StackAgentConfig } from "../../types/index";
+import { typedValues } from "../../utils/typed-object";
 import { isActiveAt, isGlobalTombstone, type ScopedEntry } from "./scope-predicates";
 
 export type ScopeDiffInput = {
@@ -9,19 +10,24 @@ export type ScopeDiffInput = {
   installedSkillConfigs: SkillConfig[] | null;
   installedAgentConfigs: AgentScopeConfig[] | null;
   isInitMode: boolean;
+  /** Skills whose files the run writes over where they stand. */
+  overwrittenSkillIds?: ReadonlySet<SkillId>;
+  /** Sub-agents that keep their slot and still change. */
+  changedAgentNames?: ReadonlySet<AgentName>;
 };
 
-export type DiffRowStatus = "added" | "mode-changed" | "removed" | "unchanged";
+export type DiffRowStatus =
+  "added" | "mode-changed" | "overwritten" | "changed" | "removed" | "unchanged";
 
 export type SkillDiffRow = {
   id: SkillId;
   source: string;
-  status: DiffRowStatus;
+  status: Exclude<DiffRowStatus, "changed">;
 };
 
 export type AgentDiffRow = {
   name: AgentName;
-  status: Exclude<DiffRowStatus, "mode-changed">;
+  status: Exclude<DiffRowStatus, "mode-changed" | "overwritten">;
 };
 
 export type ScopeDiff = {
@@ -31,6 +37,8 @@ export type ScopeDiff = {
   globalAgentRows: AgentDiffRow[];
   hasContent: boolean;
 };
+
+const NOTHING: ReadonlySet<never> = new Set();
 
 /** One scope's share of a roster's diff: the entries listed with a status, then the removals. */
 type ScopeEntries<Entry> = { listed: Entry[]; removed: Entry[] };
@@ -44,6 +52,8 @@ type RosterDiff<Entry> = Record<SkillScope, ScopeEntries<Entry>>;
 export function computeScopeDiff(input: ScopeDiffInput): ScopeDiff {
   const { currentSkills, currentAgents, installedSkillConfigs, installedAgentConfigs, isInitMode } =
     input;
+  const overwritten = input.overwrittenSkillIds ?? NOTHING;
+  const changed = input.changedAgentNames ?? NOTHING;
 
   const skills = diffRoster(currentSkills, installedSkillConfigs, (skill) => skill.id, isInitMode);
   const agents = diffRoster(
@@ -52,8 +62,8 @@ export function computeScopeDiff(input: ScopeDiffInput): ScopeDiff {
     (agent) => agent.name,
     isInitMode,
   );
-  const skillRow = skillRowClassifier(installedSkillConfigs);
-  const agentRow = agentRowClassifier(installedAgentConfigs);
+  const skillRow = skillRowClassifier(installedSkillConfigs, overwritten);
+  const agentRow = agentRowClassifier(installedAgentConfigs, changed);
 
   const projectSkillRows = rowsOf(skills.project, skillRow, toRemovedSkillRow);
   const globalSkillRows = rowsOf(skills.global, skillRow, toRemovedSkillRow);
@@ -128,7 +138,10 @@ export function formatScopeTag(scope: SkillScope): "[G]" | "[P]" {
   return scope === "global" ? "[G]" : "[P]";
 }
 
-function skillRowClassifier(installed: SkillConfig[] | null): (skill: SkillConfig) => SkillDiffRow {
+function skillRowClassifier(
+  installed: SkillConfig[] | null,
+  overwritten: ReadonlySet<SkillId>,
+): (skill: SkillConfig) => SkillDiffRow {
   const installedSlots = installed
     ? new Set(installed.map((skill) => slotKey(skill.id, skill.scope)))
     : null;
@@ -139,40 +152,51 @@ function skillRowClassifier(installed: SkillConfig[] | null): (skill: SkillConfi
           .map((skill) => [slotKey(skill.id, skill.scope), skill.origin]),
       )
     : null;
-  return (skill) => classifySkillDiffRow(skill, installedSlots, installedOriginBySlot);
+  return (skill) => ({
+    id: skill.id,
+    source: skill.origin,
+    status: skillStatus(skill, installedSlots, installedOriginBySlot, overwritten),
+  });
 }
 
 function agentRowClassifier(
   installed: AgentScopeConfig[] | null,
+  changed: ReadonlySet<AgentName>,
 ): (agent: AgentScopeConfig) => AgentDiffRow {
   const installedSlots = installed
     ? new Set(installed.map((agent) => slotKey(agent.name, agent.scope)))
     : null;
-  return (agent) => classifyAgentDiffRow(agent, installedSlots);
+  return (agent) => ({ name: agent.name, status: agentStatus(agent, installedSlots, changed) });
 }
 
-/** Compares `origin`, which is where a skill's install mode is recorded. */
-function classifySkillDiffRow(
+/**
+ * Compares `origin`, which is where a skill's install mode is recorded. An overwrite outranks a
+ * mode change: a copy its plugin replaces is deleted, not merely switched. A mask is never written.
+ */
+function skillStatus(
   skill: SkillConfig,
   installedSlots: Set<string> | null,
   installedOriginBySlot: Map<string, string> | null,
-): SkillDiffRow {
+  overwritten: ReadonlySet<SkillId>,
+): SkillDiffRow["status"] {
   const slot = slotKey(skill.id, skill.scope);
-  const isNew = installedSlots === null || !installedSlots.has(slot);
+  if (installedSlots === null || !installedSlots.has(slot)) return "added";
+  if (!skill.excluded && overwritten.has(skill.id)) return "overwritten";
+
   const installedOrigin = installedOriginBySlot?.get(slot);
-  const modeChanged = !isNew && installedOrigin != null && installedOrigin !== skill.origin;
-  if (modeChanged) {
-    return { id: skill.id, source: skill.origin, status: "mode-changed" };
-  }
-  return { id: skill.id, source: skill.origin, status: isNew ? "added" : "unchanged" };
+  const modeChanged = installedOrigin != null && installedOrigin !== skill.origin;
+  return modeChanged ? "mode-changed" : "unchanged";
 }
 
-function classifyAgentDiffRow(
+/** A mask is never the sub-agent that changes: its active half is. */
+function agentStatus(
   agent: AgentScopeConfig,
   installedSlots: Set<string> | null,
-): AgentDiffRow {
+  changed: ReadonlySet<AgentName>,
+): AgentDiffRow["status"] {
   const isNew = installedSlots === null || !installedSlots.has(slotKey(agent.name, agent.scope));
-  return { name: agent.name, status: isNew ? "added" : "unchanged" };
+  if (isNew) return "added";
+  return !agent.excluded && changed.has(agent.name) ? "changed" : "unchanged";
 }
 
 function toRemovedSkillRow(skill: SkillConfig): SkillDiffRow {
@@ -181,4 +205,80 @@ function toRemovedSkillRow(skill: SkillConfig): SkillDiffRow {
 
 function toRemovedAgentRow(agent: AgentScopeConfig): AgentDiffRow {
   return { name: agent.name, status: "removed" };
+}
+
+/** A sub-agent that keeps its slot and still changes: the skills its rows gain and lose, and its retunes. */
+export type AgentChange = {
+  name: AgentName;
+  scope: SkillScope;
+  gains: SkillId[];
+  loses: SkillId[];
+  settings: SettingChange[];
+};
+
+/** `undefined` where the setting is left to its default. */
+export type SettingChange = {
+  setting: AgentSetting;
+  from: string | undefined;
+  to: string | undefined;
+};
+
+type AgentSetting = "model" | "codex model" | "effort";
+
+const AGENT_SETTINGS: ReadonlyArray<
+  [AgentSetting, (agent: AgentScopeConfig) => string | undefined]
+> = [
+  ["model", (agent) => agent.model],
+  ["codex model", (agent) => agent.codexModel],
+  ["effort", (agent) => agent.effort],
+];
+
+/** One sub-agent as a config records it: its entry and its skill rows. */
+export type AgentState = { agent: AgentScopeConfig; rows: StackAgentConfig | undefined };
+
+type AgentsAndRows = {
+  agents: AgentScopeConfig[];
+  stack?: Partial<Record<string, StackAgentConfig>>;
+};
+
+/** How each named sub-agent moves between two configs; one either config lacks is not named. */
+export function agentChangesAmong(
+  names: readonly AgentName[],
+  before: AgentsAndRows,
+  after: AgentsAndRows,
+): AgentChange[] {
+  return names.flatMap((name) => {
+    const was = agentStateIn(before, name);
+    const is = agentStateIn(after, name);
+    return was === undefined || is === undefined ? [] : [agentChange(was, is)];
+  });
+}
+
+/** Its active entry, never the mask a project's own copy leaves; `undefined` where none is. */
+function agentStateIn(config: AgentsAndRows, name: AgentName): AgentState | undefined {
+  const agent = config.agents.find((entry) => entry.name === name && !entry.excluded);
+  return agent === undefined ? undefined : { agent, rows: config.stack?.[name] };
+}
+
+export function agentChange(before: AgentState, after: AgentState): AgentChange {
+  const beforeIds = assignedSkillIds(before.rows);
+  const afterIds = assignedSkillIds(after.rows);
+
+  return {
+    name: after.agent.name,
+    scope: after.agent.scope,
+    gains: difference(afterIds, beforeIds),
+    loses: difference(beforeIds, afterIds),
+    settings: settingChanges(before.agent, after.agent),
+  };
+}
+
+function settingChanges(before: AgentScopeConfig, after: AgentScopeConfig): SettingChange[] {
+  return AGENT_SETTINGS.filter(([, read]) => read(before) !== read(after)).map(
+    ([setting, read]) => ({ setting, from: read(before), to: read(after) }),
+  );
+}
+
+function assignedSkillIds(rows: StackAgentConfig | undefined): SkillId[] {
+  return unique(typedValues(rows ?? {}).flatMap((assignments) => assignments.map(({ id }) => id)));
 }

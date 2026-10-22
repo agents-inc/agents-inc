@@ -16,7 +16,7 @@ import {
   createPermissionsFile,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
-import { EXIT_CODES, DIRS, FILES, STEP_TEXT } from "../pages/constants.js";
+import { EXIT_CODES, DIRS, FILES, REMOVED_MARKER, STEP_TEXT } from "../pages/constants.js";
 import {
   expectNoSourceFolder,
   expectOnlySourceFolder,
@@ -52,9 +52,7 @@ describe("uninstall config manifest removal", () => {
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
-    expect(stdout).toContain(STEP_TEXT.UNINSTALL_CONFIG_SECTION);
-    expect(stdout).toContain(".agents-inc/claude");
-    expect(stdout).toContain(FILES.CONFIG_TS);
+    expect(stdout).toContain(`${REMOVED_MARKER} ${configTsPath(projectDir)}`);
 
     expect(await fileExists(configTsPath(projectDir))).toBe(false);
     expect(await fileExists(configTypesTsPath(projectDir))).toBe(false);

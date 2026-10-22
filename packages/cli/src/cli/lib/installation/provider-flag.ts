@@ -92,6 +92,25 @@ export async function refuseAnAmbiguousInstallation(
   onAmbiguous(ambiguousInstallation(subject, providers, scopeRoot));
 }
 
+/** The non-refusing read the remedies hand a command out from, so they and the refusal agree. */
+export async function providersInPlay(cwd: string): Promise<Provider[]> {
+  return (await installationsInPlay(cwd)).providers;
+}
+
+/**
+ * Which installation a handed-out acting command must name: the one the run named, else the choice
+ * where two are in play, since a bare one refuses there.
+ */
+export async function installationToName(
+  cwd: string,
+  named: Provider | undefined,
+): Promise<Provider | Provider[] | undefined> {
+  if (named !== undefined) return named;
+
+  const providers = await providersInPlay(cwd);
+  return providers.length > 1 ? providers : undefined;
+}
+
 /** The non-refusing form, for `doctor`. */
 export async function ambiguityFinding(cwd: string): Promise<string | null> {
   const { scopeRoot, providers } = await installationsInPlay(cwd);

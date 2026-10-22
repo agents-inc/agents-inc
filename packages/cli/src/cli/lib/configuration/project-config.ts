@@ -11,7 +11,7 @@ import { projectConfigLoaderSchema } from "../schemas";
 import { formatZodErrors } from "../schema-validator";
 import { getProjectConfigPath } from "../installation/install-base-dir";
 import { providerInUse } from "../installation/install-layout";
-import { providerToNameAt } from "../installation/provider-to-name";
+import { initProviderToNameAt, providerToNameAt } from "../installation/provider-to-name";
 import { isHomeDirectory } from "../installation/is-home-directory";
 import type { ScopeKind } from "../installation/source-scopes";
 import { loadConfig, NO_VALID_DEFAULT_EXPORT } from "./config-loader";
@@ -30,6 +30,8 @@ export class ConfigLoadError extends Error {
   readonly scope: ScopeKind;
   /** Named with `--provider` in a remedy handed out for this installation; beside another only. */
   readonly providerToName: Provider | undefined;
+  /** Named in the remedy's `init --from` half, which a bare run would answer with another one. */
+  readonly initProviderToName: Provider | undefined;
 
   constructor(
     readonly configPath: string,
@@ -42,6 +44,7 @@ export class ConfigLoadError extends Error {
     this.name = "ConfigLoadError";
     this.scope = isHomeDirectory(scopeRoot) ? "global" : "project";
     this.providerToName = providerToNameAt(scopeRoot, provider);
+    this.initProviderToName = initProviderToNameAt(scopeRoot, provider);
   }
 }
 
