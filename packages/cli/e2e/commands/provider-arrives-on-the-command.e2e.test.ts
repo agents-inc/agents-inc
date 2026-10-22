@@ -102,7 +102,6 @@ describe("the provider arrives on the command", () => {
 
     expect(refused.exitCode, said).toBe(EXIT_CODES.INVALID_ARGS);
     expect(said).toContain("--from");
-    // The `/editor` segment: the apex landing page knows nothing about `?fromId=`.
     expect(said).toContain(STEP_TEXT.EDITOR_URL);
 
     // Nothing written at either scope: a half-created installation is what later commands would

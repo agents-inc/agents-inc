@@ -1,6 +1,6 @@
 /**
  * Browser-measured type invariants: a heading is larger than the text it
- * heads, and `/` and `/docs` set each shared role at the same size. Not colour,
+ * heads, and the 404 and `/docs` set each shared role at the same size. Not colour,
  * contrast or spacing. Reads `dist/`, so needs `astro build`.
  */
 
@@ -16,18 +16,16 @@ const DIST = fileURLToPath(new URL("../dist/", import.meta.url))
 
 const PORT = 4319
 
-const PAGES = ["/", "/docs/why/", "/docs/quickstart/", "/404.html"]
+const PAGES = ["/docs/why/", "/docs/quickstart/", "/404.html"]
+
+// The one page not built by Starlight.
+const NOT_FOUND = "/404.html"
 
 const SHARED_ROLES = [
-  { role: "page title", landing: "h1#headline", docs: "h1" },
-  {
-    role: "section heading",
-    landing: "h2#the-approach",
-    docs: ".sl-markdown-content h2",
-  },
+  { role: "page title", notFound: "main h1", docs: "h1" },
   {
     role: "body copy",
-    landing: "#the-approach + p",
+    notFound: "main h1 + p",
     docs: ".sl-markdown-content p",
   },
 ] as const
@@ -127,21 +125,21 @@ async function headingsSmallerThanTheirBody(page: Page): Promise<Failure[]> {
 async function rolesTheTwoHalvesDisagreeOn(page: Page): Promise<Failure[]> {
   const failures: Failure[] = []
 
-  for (const { role, landing, docs } of SHARED_ROLES) {
-    await visit(page, "/")
-    const landingPx = await fontSizeOf(page, landing)
+  for (const { role, notFound, docs } of SHARED_ROLES) {
+    await visit(page, NOT_FOUND)
+    const notFoundPx = await fontSizeOf(page, notFound)
     await visit(page, "/docs/why/")
     const docsPx = await fontSizeOf(page, docs)
 
-    if (landingPx === null)
-      failures.push(`landing page has no ${role} matching \`${landing}\`.`)
+    if (notFoundPx === null)
+      failures.push(`${NOT_FOUND} has no ${role} matching \`${notFound}\`.`)
     if (docsPx === null)
       failures.push(`documentation has no ${role} matching \`${docs}\`.`)
-    if (landingPx === null || docsPx === null) continue
+    if (notFoundPx === null || docsPx === null) continue
 
-    if (landingPx !== docsPx) {
+    if (notFoundPx !== docsPx) {
       failures.push(
-        `${role} is ${landingPx}px on / and ${docsPx}px on /docs — ` +
+        `${role} is ${notFoundPx}px on ${NOT_FOUND} and ${docsPx}px on /docs — ` +
           `the two halves are setting one role at two sizes.`
       )
     }

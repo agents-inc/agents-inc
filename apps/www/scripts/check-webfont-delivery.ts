@@ -17,8 +17,8 @@ const DIST = fileURLToPath(new URL("../dist/", import.meta.url))
 
 const PORT = 4320
 
-// One page per half, since each has its own head.
-const COLD_PAGES = ["/", "/docs/quickstart/"]
+// One page per half, since each has its own head: the 404 is not Starlight's.
+const COLD_PAGES = ["/404.html", "/docs/quickstart/"]
 const NAVIGATE_FROM = "/docs/quickstart/"
 const NAVIGATE_TO = "/docs/why/"
 

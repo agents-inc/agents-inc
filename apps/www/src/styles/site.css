@@ -1,6 +1,6 @@
 /*
- * Loaded by Starlight (`customCss`) and imported by the landing page and 404,
- * so both halves share one definition of every prose size.
+ * Loaded by Starlight (`customCss`) and imported by the 404, so both share
+ * one definition of every prose size.
  */
 
 /*
@@ -129,7 +129,7 @@
   box-shadow: inset 2px 0 0 var(--color-brand);
 }
 
-/* Group headings are labels, so the landing page's mono label treatment. */
+/* Group headings are labels, so mono. */
 :root nav.sidebar .group-label .large {
   font-family: var(--font-mono);
   font-size: var(--text-body-sm);
@@ -150,7 +150,7 @@
   color: var(--color-muted-foreground);
 }
 
-/* The wordmark, matching the landing page's; amber is reserved for user choices. */
+/* The wordmark, matching the 404 header's; amber is reserved for user choices. */
 :root a.site-title {
   font-family: var(--font-mono);
   font-size: var(--text-11);
@@ -335,7 +335,7 @@
 }
 
 /*
- * The landing page and 404 frame: a dot field (`::before`) under opaque
+ * The 404's frame: a dot field (`::before`) under opaque
  * content, so it shows only in the voids. `--frame-gutter` must match the
  * wrappers' padding or the rails miss the content edge.
  */
@@ -356,7 +356,6 @@ body.framed {
   }
 }
 
-/* Wide band only at full width; earlier it crushes the three-column grids. */
 @media (width >= 64rem) {
   body.framed {
     --frame-gutter: 8.75rem;
@@ -365,8 +364,7 @@ body.framed {
 
 /* Moves content in from the rail; unlayered, so it beats the utilities. */
 body.framed > header,
-body.framed > main,
-body.framed > footer {
+body.framed > main {
   padding-inline: calc(var(--frame-gutter) + var(--frame-inset));
 }
 
@@ -391,15 +389,8 @@ body.framed > * {
   z-index: 1;
 }
 
-/* `main` paints the column, so a section is only a positioning context. */
-body.framed main > section {
-  position: relative;
-  z-index: 1;
-}
-
 /* A gradient rather than negative margins, which would override `mx-auto`. */
-body.framed > header,
-body.framed > footer {
+body.framed > header {
   position: relative;
   z-index: 1;
   background: linear-gradient(

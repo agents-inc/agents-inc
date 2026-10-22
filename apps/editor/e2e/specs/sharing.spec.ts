@@ -40,7 +40,6 @@ test.describe("sharing a configuration", () => {
     ).toBeVisible()
 
     const copied = await page.evaluate(() => navigator.clipboard.readText())
-    // The base path matters: without it the link lands on the landing page.
     expect(copied).toContain(`/editor/?fromId=${STORED_ID}`)
   })
 

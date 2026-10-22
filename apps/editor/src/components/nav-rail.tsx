@@ -53,7 +53,7 @@ const SWAP_IN = "hidden group-hover:inline group-focus-visible:inline"
  * and silently match nothing, so these are plain anchors.
  */
 const SITE_LINKS = [
-  { href: "/", label: "About" },
+  { href: "/docs/why", label: "About" },
   { href: "/docs", label: "Docs" },
 ] as const
 

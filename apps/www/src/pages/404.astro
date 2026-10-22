@@ -4,7 +4,7 @@ import "../styles/site.css"
 import FontPreloads from "../components/font-preloads.astro"
 import SiteHeader from "../components/site-header.astro"
 
-import { DOCS_PATH, HOME_PATH } from "../lib/links"
+import { DOCS_PATH, EDITOR_URL } from "../lib/links"
 
 const PAGE_TITLE = "Page not found | Agents Inc"
 ---
@@ -29,7 +29,7 @@ const PAGE_TITLE = "Page not found | Agents Inc"
         out of date.
       </p>
       <p class="text-body mt-4">
-        <a href={HOME_PATH}>Home</a> &middot; <a href={DOCS_PATH}>Documentation</a>
+        <a href={EDITOR_URL}>Editor</a> &middot; <a href={DOCS_PATH}>Documentation</a>
       </p>
     </main>
   </body>

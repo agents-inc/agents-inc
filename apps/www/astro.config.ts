@@ -69,6 +69,8 @@ export default defineConfig({
 
       customCss: ["./src/styles/site.css"],
 
+      routeMiddleware: "./src/route-data.ts",
+
       components: {
         ThemeProvider: "./src/components/theme-provider.astro",
         ThemeSelect: "./src/components/theme-select.astro",

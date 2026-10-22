@@ -1,11 +1,10 @@
 ---
-/** Shared by the landing page and 404. Classes mirror the editor's NavRail. */
+/** The 404's header. Classes mirror the editor's NavRail. */
 import {
   DOCS_PATH,
   EDITOR_URL,
   EXTERNAL_LINK_ATTRS,
   GITHUB_REPO_URL,
-  HOME_PATH,
   SKILLS_REPO_URL,
 } from "../lib/links"
 
@@ -16,7 +15,7 @@ const NAV_LINK_CLASS =
 
 {/* The 60px gutter is a desktop constant; phones get px-8. */}
 <header class="mx-auto flex max-w-page items-center gap-4 px-8 pt-10 sm:px-gutter">
-  <a href={HOME_PATH} class="flex items-center gap-[0.6875rem]" aria-label="Agents Inc, home">
+  <a href={EDITOR_URL} class="flex items-center gap-[0.6875rem]" aria-label="Agents Inc, home">
     <span
       class="flex size-[2.375rem] shrink-0 items-center justify-center border border-brand font-mono text-12 font-semibold tracking-[.02em] text-brand-ink"
       aria-hidden="true">a-i</span

@@ -8,8 +8,6 @@ export const CHANGELOG_URL = `${GITHUB_REPO_URL}/releases`
 
 export const DOCS_PATH = "/docs"
 
-export const HOME_PATH = "/"
-
 // Served by the editor's Worker on the same hostname, so it 404s locally.
 export const EDITOR_URL = "/editor"
 

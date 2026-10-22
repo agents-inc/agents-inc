@@ -2,9 +2,8 @@
  * Holds the docs to the editor address in packages/cli/src/cli/consts.ts: the
  * site's `EDITOR_URL` path agrees, every address on this host is the editor's,
  * share links have `editorConfigUrl`'s shape, and a link whose text names the
- * host writes and targets the full address. A wrong address does not 404 (the
- * apex serves the landing page), so nothing else notices. Cannot see a host used
- * as a name, link text naming no address, or anything outside src/content/docs/.
+ * host writes and targets the full address. Cannot see a host used as a name,
+ * link text naming no address, or anything outside src/content/docs/.
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs"
@@ -427,9 +426,7 @@ function exitWith(drift: Drift[], judged: Judged): never {
   }
   console.error(
     `\n'${DEFAULT_EDITOR_URL_CONSTANT}' in ${CONSTS_LABEL} is where the editor is, and` +
-      `\n'${SHARE_LINK_FUNCTION}' beside it is the shape of a share link. The` +
-      `\napex serves the landing page, so a reference that drops the path still` +
-      `\nrenders — nothing but this will tell you it is wrong.`
+      `\n'${SHARE_LINK_FUNCTION}' beside it is the shape of a share link.`
   )
   process.exit(1)
 }
