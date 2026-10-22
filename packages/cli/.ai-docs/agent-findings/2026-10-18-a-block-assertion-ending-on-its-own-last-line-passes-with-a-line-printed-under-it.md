@@ -11,7 +11,15 @@ reporting_agent: web-developer
 category: testing
 domain: cli
 root_cause: rule-not-specific-enough
-status: open
+status: resolved
+resolved_by: >-
+  2026-10-19. The Proposed Standard is the CLAUDE.md "Test Assertions" line that says a pinned
+  block ends on the line after the block. "gives a sub-agent moved into the project its own copy,
+  and keeps the global one" now ends its block on "", "". Shown able to fail: with the reassignment
+  line put back under the block, the new assertion failed and the old one passed. Census of the
+  class (every toContain over a joined array in src/cli/lib/__tests__/commands/ ending on a single
+  "", any heading; an AST scan, not committed): 11 members on 2026-10-19, 1 corrected (the spec
+  above), 10 reported to the owner and left as they are.
 ---
 
 ## What Was Wrong
@@ -45,3 +53,10 @@ what they pin.
 `CLAUDE.md` -> "Test Assertions": a `toContain` pinning a block of output ends with the line that
 follows the block — the blank line, or the next line — never with the block's own last line. Not
 in conflict with any NEVER/ALWAYS rule there; it narrows "the rendered frame is the contract".
+
+## Correction
+
+2026-10-19: the census above found two `Changes:` blocks ending on one `""`; there were three. The
+third, in "names the global entries it keeps as installed, and the global sub-agent an arriving
+skill joins" (`edit-from-says-what-it-did.test.ts`), is formatted across lines, which a line-based
+search does not see.

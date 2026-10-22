@@ -12,7 +12,10 @@ reporting_agent: cli-tester
 category: testing
 domain: cli
 root_cause: missing-rule
-status: open
+status: resolved
+resolved_by: >-
+  matrix-loader.test.ts no longer mocks loadConfig; its two schema-refusal specs go red when
+  loadConfig skips safeParse.
 ---
 
 ## What Was Wrong
