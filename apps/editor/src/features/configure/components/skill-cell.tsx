@@ -14,6 +14,12 @@ import { useEffect, useMemo, useRef } from "react"
 import { SkillIcon } from "@/components/skill-icon"
 import type { SkillCellView } from "@/features/configure/lib/derive"
 import {
+  isHeldSkill,
+  pressOnHeldSkill,
+  skillChangeRefusal,
+  skillToggleRefusal,
+} from "@/features/configure/lib/held-global"
+import {
   UNOFFERED_PLACEMENT_ERROR,
   offersPlacement,
   patchForPress,
@@ -21,6 +27,7 @@ import {
 } from "@/features/configure/lib/provider"
 import { track } from "@/lib/analytics/track"
 import { freshEntry, isEjectOnly, useConfigStore } from "@/stores/config-store"
+import { useHeldGlobalStore } from "@/stores/held-global-store"
 import {
   SKILL_INSTALL_MODES,
   SKILL_SCOPES,
@@ -76,8 +83,19 @@ export function SkillCell({
   const togglePanel = useUiStore((state) => state.togglePanel)
   const openPanel = useUiStore((state) => state.openPanel)
   const previewSkill = useUiStore((state) => state.previewSkill)
+  const held = useHeldGlobalStore((state) => state.held)
 
   const { skill, entry, selected, incompatible } = view
+  // Primitives, so a change elsewhere in the selection redraws no cell.
+  const heldHere = useConfigStore((state) => isHeldSkill(held, state, skill.id))
+  const toggleRefusal = useConfigStore((state) =>
+    skillToggleRefusal(held, state, skill.id)
+  )
+  const changeRefusal = useConfigStore((state) =>
+    skillChangeRefusal(held, state, skill.id)
+  )
+  // A sibling a held skill keeps out of its one-of category.
+  const swapRefused = !selected && toggleRefusal !== undefined
   const open = openPanelSkillId === skill.id
   const inLastColumn = column === columns - 1
   const ejectOnly = isEjectOnly(skill.id)
@@ -108,13 +126,16 @@ export function SkillCell({
     if (!incompatible) togglePanel(skill.id)
   }
 
+  const landed = (patch: Partial<SkillOptions>) =>
+    heldHere ? pressOnHeldSkill(provider, patch) : patch
+
   const refusalFor = (patch: Partial<SkillOptions>) =>
-    pressRefusal(provider, options, patch)
+    pressRefusal(provider, options, landed(patch))
 
   const flip = (patch: Partial<SkillOptions>) => {
     if (incompatible || refusalFor(patch) !== undefined) return
 
-    setSkillOption(skill.id, patchForPress(provider, patch))
+    setSkillOption(skill.id, patchForPress(provider, landed(patch)))
   }
 
   // Presses inside are ignored, or the ••• would close then reopen.
@@ -140,7 +161,7 @@ export function SkillCell({
     <LatticeCell
       ref={cellRef}
       selected={selected}
-      disabled={incompatible}
+      disabled={incompatible || heldHere || swapRefused}
       interactive={!incompatible}
       overflow={selected || open ? "visible" : "clip"}
       className={cn(
@@ -153,8 +174,8 @@ export function SkillCell({
         tabIndex={incompatible ? -1 : 0}
         aria-label={skill.displayName}
         aria-pressed={selected}
-        aria-disabled={incompatible || undefined}
-        title={view.incompatibleReason}
+        aria-disabled={incompatible || toggleRefusal !== undefined || undefined}
+        title={view.incompatibleReason ?? toggleRefusal}
         onClick={select}
       />
 
@@ -252,7 +273,7 @@ export function SkillCell({
                 key={mode}
                 value={mode}
                 active={options.install === mode}
-                refusal={refusalFor({ install: mode })}
+                refusal={changeRefusal ?? refusalFor({ install: mode })}
                 onPick={() => flip({ install: mode })}
               />
             ))}

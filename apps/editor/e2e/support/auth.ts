@@ -6,6 +6,7 @@ import {
   composeRefusedHandlerFor,
   composeTooLongHandler,
   composeUnreachableHandler,
+  readConfigHandler,
   savedStack,
   signInUnreachableHandler,
   signOutUnreachableHandler,
@@ -43,7 +44,9 @@ export const stubSignedOut = (page: Page) => stubWith(page, authHandlers)
 
 /**
  * Signed in with these stacks. Returns the stored `POST /stacks` bodies and
- * `refusing` (names answered 503). Ahead of the signed-in set.
+ * `refusing` (names answered 503). Ahead of the signed-in set. The grid reads
+ * each stack's payload, so the config store answers too: an id stubbed with
+ * `stubGetConfig` before or after still wins.
  */
 export const stubSignedIn = (page: Page, stacks: SavedStack[] = []) => {
   const created: StackBody[] = []
@@ -65,6 +68,7 @@ export const stubSignedIn = (page: Page, stacks: SavedStack[] = []) => {
       return HttpResponse.json(saved, { status: CREATED })
     }),
     ...signedInHandlers,
+    readConfigHandler,
   ])
 
   return { created, refusing }

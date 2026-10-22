@@ -5,7 +5,11 @@ import {
 import { create } from "zustand"
 
 import { sameName } from "@/features/configure/lib/save-name"
-import { createSharedConfig, type ShareRefusal } from "@/lib/api/configs"
+import {
+  createSharedConfig,
+  fetchSharedConfig,
+  type ShareRefusal,
+} from "@/lib/api/configs"
 import { readSession, type Session } from "@/lib/api/auth"
 import {
   createStack,
@@ -35,7 +39,13 @@ type AccountState = {
   clashes: string[]
   // `false` until the first `refresh` lands, so the rail never flashes "Sign in".
   ready: boolean
+  // Config id → the payload a stack points at, which the grid matches the
+  // selection against. An id names one payload forever, so each is read once.
+  payloads: Readonly<Record<string, SeedPayload>>
   refresh: () => Promise<void>
+  // Reads each listed stack's payload not yet held; one the store cannot serve
+  // is asked for again next time.
+  readPayloads: () => Promise<void>
   save: (name: string, configId: string) => Promise<StackResult>
   carryRenamed: (save: SavedStack, name: string) => Promise<Carried>
   // Still owed: the next sign-in asks again.
@@ -137,6 +147,32 @@ const settleOwed = (owed: string[]) => {
   if (!unchanged) store.setOwed(owed)
 }
 
+const unheldConfigIds = (
+  stacks: readonly RemoteStack[],
+  payloads: AccountState["payloads"]
+) => [
+  ...new Set(
+    stacks
+      .map((stack) => stack.configId)
+      .filter((configId) => !Object.hasOwn(payloads, configId))
+  ),
+]
+
+const readUnheldPayloads = async (
+  stacks: readonly RemoteStack[],
+  payloads: AccountState["payloads"]
+) => {
+  const read = await Promise.all(
+    unheldConfigIds(stacks, payloads).map(
+      async (configId) => [configId, await fetchSharedConfig(configId)] as const
+    )
+  )
+
+  return read.flatMap(([configId, result]) =>
+    result.ok ? [[configId, result.payload] as const] : []
+  )
+}
+
 // One refresh at a time: two overlapping (StrictMode, sign-out-then-refresh)
 // would both read an empty account and adopt every save twice.
 let inFlight: Promise<void> | null = null
@@ -156,9 +192,16 @@ export const useAccountStore = create<AccountState>()((set, get) => ({
   unadopted: {},
   clashes: [],
   ready: false,
+  payloads: {},
 
   refresh: () =>
     (inFlight ??= refreshOnce(set).finally(() => (inFlight = null))),
+
+  readPayloads: async () => {
+    const read = await readUnheldPayloads(get().stacks, get().payloads)
+    if (read.length > 0)
+      set({ payloads: { ...get().payloads, ...Object.fromEntries(read) } })
+  },
 
   // Leaves `unadopted` alone: a save of some other selection reaches no local
   // save.
@@ -194,6 +237,7 @@ const refreshOnce = async (set: (state: Partial<AccountState>) => void) => {
       stacks: [],
       unadopted: {},
       clashes: [],
+      payloads: {},
     })
 
   const { owed, ...adoption } = await adoptLocalSaves(await listStacks())

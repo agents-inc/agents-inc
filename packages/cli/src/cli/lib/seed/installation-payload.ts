@@ -25,15 +25,28 @@ import type { SeedPayload } from "@workspace/matrix/seed";
 
 /**
  * Counts come off the payload, not the config, so what is announced matches what is posted.
- * `leftBehind`: carried skills the payload's one marketplace does not serve.
+ * `leftBehind`: carried skills the payload's one marketplace does not serve. `inProject`: read from
+ * a project's config rather than HOME's.
  */
 export type InstallationPayload =
-  | { ok: true; payload: SeedPayload; skills: number; agents: number; leftBehind: SkillId[] }
+  | {
+      ok: true;
+      payload: SeedPayload;
+      skills: number;
+      agents: number;
+      leftBehind: SkillId[];
+      inProject: boolean;
+    }
   | { ok: false; error: string };
 
 /** `inheritedFrom` is absent when the config read is the global one already. */
 type InstalledConfig =
-  | { ok: true; config: ProjectConfig; inheritedFrom: ProjectConfig | undefined }
+  | {
+      ok: true;
+      config: ProjectConfig;
+      inheritedFrom: ProjectConfig | undefined;
+      inProject: boolean;
+    }
   | { ok: false; error: string };
 
 type MappedPayload = { ok: true; payload: SeedPayload } | { ok: false; error: string };
@@ -42,7 +55,7 @@ type RoundTrip = { config: ProjectConfig; content: ContentReading };
 
 type SkillJudgement = { skill: SkillConfig; owned: boolean; carried: OwnedSkillDir | null };
 
-/** Shared by `share` and `edit --ui` so both mint the same id; fails as a message, never a throw. */
+/** `share`'s, and what `edit --ui` marks; fails as a message, never a throw. */
 export async function seedPayloadForInstallation(projectDir: string): Promise<InstallationPayload> {
   const installed = await readInstalledConfig(projectDir);
   if (!installed.ok) return installed;
@@ -59,7 +72,20 @@ export async function seedPayloadForInstallation(projectDir: string): Promise<In
   if (skills === 0 && agents === 0) return { ok: false, error: ERROR_MESSAGES.NO_INSTALLATION };
 
   const leftBehind = skillsItsMarketplaceLeavesBehind(roundTrip.config, payload);
-  return { ok: true, payload, skills, agents, leftBehind };
+  return { ok: true, payload, skills, agents, leftBehind, inProject: installed.inProject };
+}
+
+/**
+ * Made in a project, the link says so: the editor holds its global entries, which a run there
+ * cannot change. A share's recipient has a global install of their own, so `share` never marks.
+ */
+export async function editorPayloadForInstallation(
+  projectDir: string,
+): Promise<InstallationPayload> {
+  const prepared = await seedPayloadForInstallation(projectDir);
+  if (!prepared.ok || !prepared.inProject) return prepared;
+
+  return { ...prepared, payload: { ...prepared.payload, fromProject: true } };
 }
 
 /** An unloadable config, HOME's included, is reported as its own error, not "not installed". */
@@ -68,7 +94,12 @@ async function readInstalledConfig(projectDir: string): Promise<InstalledConfig>
     const loaded = await loadProjectConfig(projectDir);
     if (!loaded) return { ok: false, error: ERROR_MESSAGES.NO_INSTALLATION };
     const inheritedFrom = await readInheritedConfig(loaded);
-    return { ok: true, config: withInheritedCuration(loaded.config, inheritedFrom), inheritedFrom };
+    return {
+      ok: true,
+      config: withInheritedCuration(loaded.config, inheritedFrom),
+      inheritedFrom,
+      inProject: !isGlobalConfig(loaded),
+    };
   } catch (error) {
     return { ok: false, error: getErrorMessage(error) };
   }

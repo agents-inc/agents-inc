@@ -51,7 +51,7 @@ const BODY_CAP_BYTES = 1_048_576
 
 // Its payload hashes to `+/…` in standard base64, so both characters a URL
 // cannot carry fall inside the id.
-const URL_UNSAFE_STACK_ID = "url-unsafe-16"
+const URL_UNSAFE_STACK_ID = "url-unsafe-540"
 
 const sha256 = (text: string) =>
   crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))
@@ -63,6 +63,30 @@ const payloadOfLength = (bytes: number) => {
 }
 
 const storeFailure = new Error("the store is down")
+
+const CARRIED_ID = "external-web-framework-house"
+
+/**
+ * The House skill under the id intake mints, holding `file` beside its SKILL.md. Spread over
+ * `payload()` rather than passed to it: the fixture parses, and would refuse an escaping file.
+ */
+const carryingHouseFile = (file: string): SeedPayload => ({
+  ...payload({
+    skills: {
+      [CARRIED_ID]: { install: "eject", scope: "project", assignments: {} },
+    },
+  }),
+  external: {
+    [CARRIED_ID]: {
+      displayName: "House",
+      description: "The house framework skill.",
+      categoryId: "web-framework",
+      repo: "acme/skills",
+      path: "skills/house",
+      files: { "SKILL.md": "# House\n", [file]: "owned\n" },
+    },
+  },
+})
 
 // `clearMocks` does not restore a spy, and these replace console and KV.
 afterEach(() => {
@@ -210,6 +234,28 @@ describe("POST /configs", () => {
     }
   )
 
+  it.each([
+    ["climbs out of its folder", "../victim.md"],
+    ["climbs out of its folder on Windows", "..\\victim.md"],
+  ])(
+    "refuses a carried skill whose file %s, and stores nothing",
+    async (_, file) => {
+      const put = vi.spyOn(env.CONFIGS, "put")
+
+      const response = await post(carryingHouseFile(file))
+
+      expect(response.status).toBe(400)
+      expect(put).not.toHaveBeenCalled()
+    }
+  )
+
+  // The control: the same file kept inside the skill's folder.
+  it("stores a carried skill whose file sits in a folder of its own", async () => {
+    const response = await post(carryingHouseFile("reference/victim.md"))
+
+    expect(response.status).toBe(201)
+  })
+
   // A `+` or `/` in the id would break the share link the editor builds from it.
   it("names a payload by the base64url SHA-256 of what it stores", async () => {
     const response = await post(payload({ stackId: URL_UNSAFE_STACK_ID }))
@@ -315,6 +361,19 @@ describe("GET /configs/:id", () => {
     )
 
     const response = await SELF.fetch(`${BASE}/configs/corrupt1`)
+
+    expect(response.status).toBe(500)
+    expect(await response.text()).toBe(UNREADABLE_CONFIG_BODY)
+  })
+
+  // A link stored before the mint refused such a file.
+  it("500s rather than serving a stored payload whose carried file climbs out of its folder", async () => {
+    await env.CONFIGS.put(
+      "escaping",
+      JSON.stringify(carryingHouseFile("../victim.md"))
+    )
+
+    const response = await SELF.fetch(`${BASE}/configs/escaping`)
 
     expect(response.status).toBe(500)
     expect(await response.text()).toBe(UNREADABLE_CONFIG_BODY)

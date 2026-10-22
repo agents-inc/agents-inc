@@ -7,7 +7,7 @@ import {
 } from "@workspace/matrix/skill-index"
 
 import type { AssignmentTarget } from "@workspace/matrix"
-import type { SeedPayload, SeedSkill } from "@workspace/matrix/seed"
+import type { SeedAgent, SeedPayload, SeedSkill } from "@workspace/matrix/seed"
 
 // Plain values: no mocking library is imported here.
 
@@ -91,6 +91,39 @@ export const cliMintedPayload = (
         .map((agent) => [agent, { on: true, scope: "global" }])
     ),
   })
+
+/**
+ * As a bare `edit` mints it inside a project: marked as made there, with `projectAgents` the
+ * project's own and every other sub-agent resting in the global install.
+ */
+export const projectMintedPayload = (
+  skills: SeedPayload["skills"],
+  projectAgents: readonly string[] = []
+): SeedPayload => {
+  const minted = cliMintedPayload(skills, projectAgents)
+  const atItsScope = ([agent, entry]: [string, SeedAgent]): [
+    string,
+    SeedAgent,
+  ] => [
+    agent,
+    projectAgents.includes(agent) ? { ...entry, scope: "project" } : entry,
+  ]
+
+  return seedPayloadSchema.parse({
+    ...minted,
+    fromProject: true,
+    agents: Object.fromEntries(Object.entries(minted.agents).map(atItsScope)),
+  })
+}
+
+/** A skill a project installed for itself, carried by its own sub-agents. */
+export const projectOwnSkill = (agentIds: readonly string[]): SeedSkill => ({
+  install: "plugin",
+  scope: "project",
+  assignments: Object.fromEntries(
+    agentIds.map((agentId) => [agentId, "lazy" as const])
+  ),
+})
 
 // The selection defaults, as an installation of an untouched pick records them.
 const mintedSkill = (targets: readonly AssignmentTarget[]): SeedSkill => ({

@@ -1,17 +1,22 @@
 import { Lattice, LatticeCell } from "@workspace/ui/components/lattice"
-import { useMemo } from "react"
+import { useEffect, useMemo } from "react"
 
 import {
   displayNameOf,
   isStackCustom,
   type ConfigSelection,
 } from "@/features/configure/lib/derive"
+import {
+  holdsAnything,
+  replaceableSkillCount,
+} from "@/features/configure/lib/held-global"
 import { useLocalSavesOnGrid } from "@/features/configure/lib/save-stack"
 import { matchesSavedStack } from "@/features/configure/lib/seed"
 import { useApplyStackRequest } from "@/features/configure/lib/use-apply-stack-request"
 import { useLatticeColumns } from "@/features/configure/lib/use-lattice-columns"
 import { expandActiveStack, useCatalogStore } from "@/stores/catalog-store"
 import { useConfigStore } from "@/stores/config-store"
+import { useHeldGlobalStore } from "@/stores/held-global-store"
 import {
   useAccountStore,
   type AdoptionRefusal,
@@ -19,6 +24,9 @@ import {
 } from "@/stores/account-store"
 import type { SavedStack } from "@/stores/saved-stack-store"
 import { useUiStore, type StackRequest } from "@/stores/ui-store"
+
+import type { RemoteStack } from "@/lib/api/stacks"
+import type { SeedPayload } from "@workspace/matrix"
 
 export const SCRATCH_NAME = "Start from scratch"
 export const CLEARED_SCRATCH_NAME = "Clear and start from scratch"
@@ -48,22 +56,26 @@ const SCRATCH_AT_REST = {
   members: "no stack · pick every skill yourself",
 } as const
 
-// "and every sub-agent" because the roster empties with the selection.
-const clearedScratchWords = (selectedCount: number) => ({
+// "and every sub-agent" because the roster empties with the selection, but for
+// what a project's link holds.
+const clearedScratchWords = (removedCount: number, keepsGlobal: boolean) => ({
   name: CLEARED_SCRATCH_NAME,
-  members: `removes ${selectedCount} ${
-    selectedCount === 1 ? "skill" : "skills"
-  } and every sub-agent`,
+  members: `removes ${removedCount} ${
+    removedCount === 1 ? "skill" : "skills"
+  } and every sub-agent${keepsGlobal ? " not installed globally" : ""}`,
 })
 
 // The first cell is the reset, and once there is something to clear both its
 // lines say what the press costs.
-const scratchCell = (selectedCount: number): StackCell => ({
+const scratchCell = (
+  removedCount: number,
+  keepsGlobal: boolean
+): StackCell => ({
   key: "scratch",
   request: { kind: "stack", stackId: null },
-  ...(selectedCount === 0
+  ...(removedCount === 0
     ? SCRATCH_AT_REST
-    : clearedScratchWords(selectedCount)),
+    : clearedScratchWords(removedCount, keepsGlobal)),
 })
 
 const toCatalogueCells = (
@@ -135,6 +147,20 @@ const appliedSaveIdsOf = (
       .map((save) => save.id)
   )
 
+// An account's stacks the selection is, by the config id each points at.
+const appliedConfigIdsOf = (
+  config: ConfigSelection,
+  stacks: readonly RemoteStack[],
+  payloads: Readonly<Record<string, SeedPayload>>
+) =>
+  new Set(
+    stacks
+      .map((stack) => stack.configId)
+      .filter((configId) =>
+        matchesSavedStack(config, payloads[configId] ?? null)
+      )
+  )
+
 // A stack's own expansion and a save already on the grid are nothing to lose,
 // so only work that exists nowhere else stands behind the confirm.
 export function StackGrid() {
@@ -142,7 +168,10 @@ export function StackGrid() {
   const skills = useConfigStore((state) => state.skills)
   const agents = useConfigStore((state) => state.agents)
   const localSaves = useLocalSavesOnGrid()
+  const held = useHeldGlobalStore((state) => state.held)
   const accountStacks = useAccountStore((state) => state.stacks)
+  const accountPayloads = useAccountStore((state) => state.payloads)
+  const readAccountPayloads = useAccountStore((state) => state.readPayloads)
   const unadopted = useAccountStore((state) => state.unadopted)
   const stacks = useCatalogStore((state) => state.stacks)
   const requestStack = useUiStore((state) => state.requestStack)
@@ -154,11 +183,24 @@ export function StackGrid() {
     [stackId, skills, agents]
   )
 
+  useEffect(() => {
+    void readAccountPayloads()
+  }, [accountStacks, readAccountPayloads])
+
   const appliedSaveIds = useMemo(
     () => appliedSaveIdsOf({ stackId, skills, agents }, localSaves),
     [stackId, skills, agents, localSaves]
   )
-  const onASave = appliedSaveIds.size > 0
+  const appliedConfigIds = useMemo(
+    () =>
+      appliedConfigIdsOf(
+        { stackId, skills, agents },
+        accountStacks,
+        accountPayloads
+      ),
+    [stackId, skills, agents, accountStacks, accountPayloads]
+  )
+  const onASave = appliedSaveIds.size > 0 || appliedConfigIds.size > 0
 
   const unsaved = edited && !onASave
 
@@ -166,19 +208,22 @@ export function StackGrid() {
 
   const cells = useMemo(
     () => [
-      scratchCell(Object.keys(skills).length),
+      scratchCell(
+        replaceableSkillCount(held, { skills, agents }),
+        holdsAnything(held)
+      ),
       ...localSaves.map(localCell),
       ...accountCells(accountStacks),
       ...catalogueCells,
     ],
-    [skills, localSaves, accountStacks, catalogueCells]
+    [held, skills, agents, localSaves, accountStacks, catalogueCells]
   )
 
   // A save is recognised only by the selection being it, and that wins over
-  // the `stackId` underneath. An account's stack is behind a fetch, so never.
+  // the `stackId` underneath. An account's is matched once its payload is read.
   const isApplied = (request: StackRequest) => {
     if (request.kind === "saved") return appliedSaveIds.has(request.saveId)
-    if (request.kind === "remote") return false
+    if (request.kind === "remote") return appliedConfigIds.has(request.configId)
 
     return !onASave && request.stackId === stackId
   }

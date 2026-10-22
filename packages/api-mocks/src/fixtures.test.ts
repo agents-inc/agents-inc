@@ -47,6 +47,8 @@ import {
   cliMintedPayload,
   cliMintedStackPayload,
   freshlyPickedSkill,
+  projectMintedPayload,
+  projectOwnSkill,
   seedPayload,
 } from "./fixtures"
 
@@ -127,6 +129,37 @@ describe("a selection as a bare `edit` mints it", () => {
 
   it("switches on nothing for no skills and no sub-agents named", () => {
     expect(cliMintedPayload({}).agents).toStrictEqual({})
+  })
+})
+
+describe("a selection as a bare `edit` mints it inside a project", () => {
+  it("is marked as made there, with the project's own sub-agents at project scope", () => {
+    const minted = projectMintedPayload(
+      {
+        [REACT]: pickedFor("web-developer"),
+        [HONO]: projectOwnSkill(["api-developer"]),
+      },
+      ["api-developer"]
+    )
+
+    expect({
+      fromProject: minted.fromProject,
+      agents: minted.agents,
+    }).toStrictEqual({
+      fromProject: true,
+      agents: {
+        "api-developer": { on: true, scope: "project" },
+        "web-developer": AT_REST_GLOBALLY,
+      },
+    })
+  })
+
+  it("carries a project's own skill at project scope, on its sub-agents only", () => {
+    expect(projectOwnSkill(["api-developer", "api-tester"])).toStrictEqual({
+      install: "plugin",
+      scope: "project",
+      assignments: { "api-developer": "lazy", "api-tester": "lazy" },
+    })
   })
 })
 

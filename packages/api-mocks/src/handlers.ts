@@ -89,19 +89,23 @@ const createConfig = http.post(CONFIGS_URL, async ({ request }) => {
   )
 })
 
-const readConfig = http.get<{ id: string }>(READ_CONFIG_URL, ({ params }) => {
-  if (params.id === STORED_ID) return HttpResponse.json(STORED_PAYLOAD)
+/** Every id: the stored payload, the unreadable one, and 404 for the rest. */
+export const readConfigHandler = http.get<{ id: string }>(
+  READ_CONFIG_URL,
+  ({ params }) => {
+    if (params.id === STORED_ID) return HttpResponse.json(STORED_PAYLOAD)
 
-  if (params.id === UNREADABLE_CONFIG_ID) {
-    return workerText(UNREADABLE_CONFIG_BODY, INTEGRITY_FAILURE)
+    if (params.id === UNREADABLE_CONFIG_ID) {
+      return workerText(UNREADABLE_CONFIG_BODY, INTEGRITY_FAILURE)
+    }
+
+    return workerText(NO_CONFIG_BODY, NOT_FOUND)
   }
+)
 
-  return workerText(NO_CONFIG_BODY, NOT_FOUND)
-})
+export const configHandlers = [createConfig, readConfigHandler]
 
-export const configHandlers = [createConfig, readConfig]
-
-/** Install ahead of `configHandlers`, whose `readConfig` claims every id. */
+/** Install ahead of `configHandlers`, whose `readConfigHandler` claims every id. */
 export const storedConfigHandlerFor = (id: string, payload: JsonBodyType) =>
   http.get(`${CONFIGS_URL}/${id}`, () => HttpResponse.json(payload))
 

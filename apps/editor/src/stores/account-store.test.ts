@@ -84,6 +84,7 @@ beforeEach(() => {
     stacks: [],
     unadopted: {},
     ready: false,
+    payloads: {},
   })
   useSavedStackStore.setState({ saves: [], owed: [] })
 })
@@ -461,5 +462,81 @@ describe("two owed saves whose names the account lists", () => {
     useAccountStore.getState().defer(first.id)
 
     expect(useAccountStore.getState().clashes).toStrictEqual([second.id])
+  })
+})
+
+// The grid matches the selection against them, as it does a local save's.
+describe("the payload behind each of the account's stacks", () => {
+  const MISSING_ID = "gone0001"
+
+  // Each config id the store was asked to read, in order.
+  const recordReads = () => {
+    const read: string[] = []
+    configMockServer.use(
+      http.get<{ id: string }>(`${CONFIGS_URL}/:id`, ({ params }) => {
+        read.push(params.id)
+        return params.id === STORED_ID
+          ? HttpResponse.json(STORED_PAYLOAD)
+          : HttpResponse.json(null, { status: 404 })
+      })
+    )
+    return read
+  }
+
+  const payloads = () => useAccountStore.getState().payloads
+
+  it("is read for every stack the account lists", async () => {
+    accountHolding([savedStack("Weekday", STORED_ID)])
+    await useAccountStore.getState().refresh()
+
+    await useAccountStore.getState().readPayloads()
+
+    expect(payloads()).toStrictEqual({ [STORED_ID]: STORED_PAYLOAD })
+  })
+
+  it("is read once, however many stacks point at it and however often it is asked for", async () => {
+    accountHolding([savedStack("Weekday", STORED_ID), savedStack("Client work")])
+    const read = recordReads()
+    await useAccountStore.getState().refresh()
+
+    await useAccountStore.getState().readPayloads()
+    await useAccountStore.getState().readPayloads()
+
+    expect(read).toStrictEqual([STORED_ID])
+  })
+
+  it("is left out when the store holds nothing under its id, and asked for again next time", async () => {
+    accountHolding([savedStack("Weekday", MISSING_ID)])
+    const read = recordReads()
+    await useAccountStore.getState().refresh()
+
+    await useAccountStore.getState().readPayloads()
+    await useAccountStore.getState().readPayloads()
+
+    expect({ payloads: payloads(), read }).toStrictEqual({
+      payloads: {},
+      read: [MISSING_ID, MISSING_ID],
+    })
+  })
+
+  it("is read for a stack saved since the last read", async () => {
+    accountHolding([])
+    await useAccountStore.getState().refresh()
+    await useAccountStore.getState().save(NEXT_JS, STORED_ID)
+
+    await useAccountStore.getState().readPayloads()
+
+    expect(payloads()).toStrictEqual({ [STORED_ID]: STORED_PAYLOAD })
+  })
+
+  it("is forgotten on a sign-out", async () => {
+    accountHolding([savedStack("Weekday", STORED_ID)])
+    await useAccountStore.getState().refresh()
+    await useAccountStore.getState().readPayloads()
+
+    configMockServer.resetHandlers()
+    await useAccountStore.getState().refresh()
+
+    expect(payloads()).toStrictEqual({})
   })
 })

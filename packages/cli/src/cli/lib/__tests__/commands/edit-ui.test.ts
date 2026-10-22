@@ -11,6 +11,7 @@ import { STORED_ID, storeRefusedHandler } from "@workspace/api-mocks";
 import { configMockServer } from "@workspace/api-mocks/node";
 
 import { CLI_ROOT } from "../helpers/cli-runner.js";
+import { firstElement } from "../helpers/element-at.js";
 import { useMockWorker } from "../helpers/mock-worker.js";
 import { cleanupTempDir, createTempDir } from "../test-fs-utils";
 import { buildSkillConfig } from "../helpers/index.js";
@@ -109,6 +110,27 @@ describe("edit --ui", () => {
       expect(output).toContain(STORED_ID);
       expect(output).toContain(`${EDITOR_URL}/?fromId=${STORED_ID}`);
       expect(output).toContain(`init --from ${STORED_ID}`);
+    });
+
+    // The editor holds a project link's global entries, which a run in that project cannot change.
+    it("marks the link it mints in a project", async () => {
+      await installConfig(installedOverrides());
+
+      await runEditUi();
+
+      const posted: unknown = JSON.parse(await firstElement(worker.requests).text());
+      expect(posted).toHaveProperty("fromProject", true);
+    });
+
+    it("leaves the link it mints at HOME unmarked, since a run there changes the global install", async () => {
+      await writeTestTsConfig(tempDir, buildProjectConfig(installedOverrides()));
+      process.chdir(tempDir);
+
+      const error = await runEditUi();
+
+      expect(error).toBeUndefined();
+      const posted: unknown = JSON.parse(await firstElement(worker.requests).text());
+      expect(posted).not.toHaveProperty("fromProject");
     });
 
     it("never loads the catalogue, because there is no wizard to open it for", async () => {

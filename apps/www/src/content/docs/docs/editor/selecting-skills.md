@@ -43,7 +43,7 @@ Every cell carries two pairs, and **both values of each are on screen**. The one
 | Install mode | `plugin` `eject`   | Whether the skill is registered as a Claude Code plugin or copied into `.claude/skills/`. |
 | Scope        | `project` `global` | Whether it installs into this project or into `~/.claude`.                                |
 
-That table is Claude Code. With the [provider](/docs/editor/install-and-share#the-provider-step-and-what-moves-with-it) on Codex, an ejected project skill lands in `.agents/skills/`, global means `~/.codex`, `plugin` on a project skill moves it to global, and `project` on a plugin one is disabled, its hover text naming the three placements Codex offers.
+That table is Claude Code. With the [provider](/docs/editor/install-and-share#the-provider-step-and-what-moves-with-it) on Codex, an ejected project skill lands in `.agents/skills/`, global means `~/.codex`, `plugin` on a project skill moves it to global, and `project` on a plugin one is disabled, its hover text naming the three placements Codex offers — except on a link a bare `edit` minted inside a project, where a global plugin's `project` gives the project an ejected copy.
 
 [Install modes](/docs/concepts/install-modes) explains both choices. On a skill you added yourself the install mode isn't a pair at all, but a single `eject` statement — there's no plugin form of it, so there's nothing to choose between.
 

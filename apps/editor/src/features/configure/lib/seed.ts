@@ -19,6 +19,7 @@ import {
 import { activeDescription, stackSelection } from "@/stores/config-store"
 import {
   isAgentOn,
+  isKnownSkill,
   pruneUnknownIds,
   resolveAgentOptions,
   type AgentEntry,
@@ -148,16 +149,49 @@ const asSelection = (payload: SeedPayload) => ({
   agents: mapValues(payload.agents, fromSeedAgent),
 })
 
+const assignedAgents = (skills: PersistedConfig["skills"]) => [
+  ...new Set(
+    Object.values(skills).flatMap((entry) => Object.keys(entry.assignments))
+  ),
+]
+
+const withKnownSkillsOnly = (config: PersistedConfig): PersistedConfig => ({
+  ...config,
+  skills: Object.fromEntries(
+    Object.entries(config.skills).filter(([skillId]) => isKnownSkill(skillId))
+  ),
+})
+
+const pinnedOn = (agents: PersistedConfig["agents"], agentIds: string[]) => ({
+  ...agents,
+  ...Object.fromEntries(
+    agentIds.map((agentId) => [agentId, { ...agents[agentId], on: true }])
+  ),
+})
+
+// A sub-agent never depends on a skill loading, as `init --from` installs it:
+// one only an unknown skill reaches is pinned on before the prune drops it.
+const keepingAgentsOn = (arrived: PersistedConfig): PersistedConfig => {
+  const known = withKnownSkillsOnly(arrived)
+  const onlyAnUnknownSkillReaches = (agentId: string) =>
+    isAgentOn(arrived, agentId) && !isAgentOn(known, agentId)
+  const kept = assignedAgents(arrived.skills).filter(onlyAnUnknownSkillReaches)
+
+  return { ...arrived, agents: pinnedOn(arrived.agents, kept) }
+}
+
 // Unknown ids are pruned, skip-don't-fail, as the CLI does.
 export const fromSeedPayload = (payload: SeedPayload): PersistedConfig =>
-  pruneUnknownIds({
-    stackId: payload.stackId,
-    ...asSelection(payload),
-    remembered: {},
-    ...(payload.description !== undefined && {
-      description: payload.description,
-    }),
-  })
+  pruneUnknownIds(
+    keepingAgentsOn({
+      stackId: payload.stackId,
+      ...asSelection(payload),
+      remembered: {},
+      ...(payload.description !== undefined && {
+        description: payload.description,
+      }),
+    })
+  )
 
 // The saved snapshot has no id, so it is recognised by what it installs.
 export const matchesSavedStack = (
@@ -167,7 +201,8 @@ export const matchesSavedStack = (
 
 /**
  * A link minted without a stack id, as the CLI mints, opens on the built-in
- * stack it is, as that stack applied; anything else opens as it arrived.
+ * stack it is, as that stack applied but keeping its own description, which
+ * `init --from` writes over the stack's; anything else opens as it arrived.
  */
 export const recogniseStack = (
   payload: SeedPayload,
@@ -179,8 +214,9 @@ export const recogniseStack = (
   const recognised = appliedStacks().find(
     (applied) => meaningOfSelection(applied) === arrived
   )
+  if (recognised === undefined) return adopted
 
-  return recognised ?? adopted
+  return { ...recognised, description: adopted.description }
 }
 
 // What a receiver installs, and nothing of how it was spelled: no stack id,

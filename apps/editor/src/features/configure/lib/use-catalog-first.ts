@@ -6,6 +6,7 @@ import {
   readSavedConfig,
   useConfigStore,
 } from "@/stores/config-store"
+import { useHeldGlobalStore } from "@/stores/held-global-store"
 import { useMarketplaceStore } from "@/stores/marketplace-store"
 import { useUiStore } from "@/stores/ui-store"
 import {
@@ -16,6 +17,7 @@ import {
   type RecoveryEndings,
   type Unseated,
 } from "./seat-catalog"
+import { heldGlobalOf } from "./held-global"
 import { adoptSeedPayload, recogniseStack, unknownPayloadIds } from "./seed"
 
 import type { SeedPayload } from "@workspace/matrix"
@@ -62,9 +64,11 @@ export const useCatalogFirst = (fromId: string): void => {
     if (opened.current === fromId) return
     opened.current = fromId
 
-    // The screen stays mounted across addresses, so the last one's notice and
-    // recovery (whose endings close over its payload) are cleared here.
+    // The screen stays mounted across addresses, so the last one's notice,
+    // recovery (whose endings close over its payload) and held entries are
+    // cleared here.
     say(null)
+    useHeldGlobalStore.getState().release()
 
     if (fromId) void openShared(fromId)
     else void openOwn()
@@ -101,7 +105,9 @@ const openShared = async (id: string) => {
 // replaces it with that stack's own records.
 const applyShared = (payload: SeedPayload) => {
   const adopted = adoptSeedPayload(payload)
-  useConfigStore.getState().importConfig(recogniseStack(payload, adopted))
+  const opened = recogniseStack(payload, adopted)
+  useConfigStore.getState().importConfig(opened)
+  useHeldGlobalStore.getState().hold(heldGlobalOf(payload, opened))
   say(
     sentences([
       SHARED_NOTICE,

@@ -5,7 +5,7 @@ import { DEFAULT_SELECTION_OPTIONS } from "./read-model/selection-defaults"
 // The shared-config wire contract: the editor POSTs it, `init --from` reads it.
 
 // Bump on any shape change; only this exact version is accepted.
-export const SEED_VERSION = 6
+export const SEED_VERSION = 7
 
 export const seedModelSchema = z.enum(["opus", "fable", "sonnet", "haiku"])
 export const seedEffortSchema = z.enum([
@@ -43,6 +43,10 @@ export const MAX_EXTERNAL_SKILL_BYTES = 262_144
 
 const SKILL_MANIFEST = "SKILL.md"
 
+const PATH_SEPARATOR = /[/\\]/
+
+const PARENT_DIRECTORY = ".."
+
 const treeBytes = (files: Record<string, string>) => {
   const encoder = new TextEncoder()
   return Object.values(files).reduce(
@@ -50,6 +54,10 @@ const treeBytes = (files: Record<string, string>) => {
     0
   )
 }
+
+// Both separators, as for ids. A `..` landing back inside is refused too: no real tree holds one.
+const leavesItsDirectory = (key: string) =>
+  key.includes("\0") || key.split(PATH_SEPARATOR).includes(PARENT_DIRECTORY)
 
 /** A skill's directory, keyed by relative path (`reference/api.md`). */
 export const seedSkillTreeSchema = z
@@ -59,6 +67,17 @@ export const seedSkillTreeSchema = z
   })
   .refine((files) => treeBytes(files) <= MAX_EXTERNAL_SKILL_BYTES, {
     message: `a skill directory may not exceed ${String(MAX_EXTERNAL_SKILL_BYTES)} bytes`,
+  })
+  // On the tree, not the key schema, which would replace the message with "Invalid key in record".
+  .superRefine((files, ctx) => {
+    for (const key of Object.keys(files).filter(leavesItsDirectory)) {
+      ctx.addIssue({
+        code: "custom",
+        path: [key],
+        message:
+          "a skill directory's files must stay inside it, so no path may step through '..' or hold a null byte",
+      })
+    }
   })
 
 /** A skill from outside the payload's catalogue; `repo` and `path` are provenance only. */
@@ -84,6 +103,8 @@ export const seedPayloadSchema = z.object({
   description: z.string().exactOptional(),
   // As `--marketplace` takes it; absent is the public catalogue.
   marketplace: z.string().exactOptional(),
+  // Minted inside a project, whose run adds to the global install but changes nothing it holds.
+  fromProject: z.literal(true).exactOptional(),
   // Presence is selection.
   skills: z.record(z.string(), seedSkillSchema),
   // For ids no catalogue can resolve.
@@ -132,8 +153,6 @@ export const unwritableSeedAssignments = (
       .filter((agent) => isUnwritablePair(payload.agents, skill.scope, agent))
       .map((agent) => ({ skillId, agent }))
   )
-
-const PATH_SEPARATOR = /[/\\]/
 
 // C0, DEL and C1: a terminal acts on them wherever the directory is named. Read off the code unit,
 // since a regex would need control characters in a class (`no-control-regex`).

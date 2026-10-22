@@ -21,11 +21,16 @@ import {
   type RosterSkillRow,
 } from "@/features/configure/lib/derive"
 import {
+  agentPinRefusal,
+  assignmentRefusal,
+} from "@/features/configure/lib/held-global"
+import {
   agentRefusal,
   unofferedPlacementLabel,
 } from "@/features/configure/lib/provider"
 import { useShareLink } from "@/features/configure/lib/use-share-link"
 import { useConfigStore } from "@/stores/config-store"
+import { useHeldGlobalStore } from "@/stores/held-global-store"
 import { ROSTER_GROUP_BYS, type RosterGroupBy } from "@/stores/persisted-schema"
 import { useUiStore } from "@/stores/ui-store"
 
@@ -184,6 +189,10 @@ function SkillRow({
     (state) => state.toggleAssignmentEnabled
   )
   const flipAssignmentLoad = useConfigStore((state) => state.flipAssignmentLoad)
+  const held = useHeldGlobalStore((state) => state.held)
+  const refusal = useConfigStore((state) =>
+    assignmentRefusal(held, state, skill.id, agentId)
+  )
 
   // A scope error is neither switch: the row stays live and gains a marker.
   const live = agentOn && skill.enabled
@@ -199,6 +208,8 @@ function SkillRow({
         aria-pressed={skill.enabled}
         aria-label={`${skill.displayName} on ${agentId}`}
         aria-describedby={TIP_ID}
+        aria-disabled={refusal !== undefined || undefined}
+        title={refusal}
         onClick={() => toggleAssignmentEnabled(skill.id, agentId)}
         onFocus={(event) => onShowUses(event.currentTarget, skill)}
         onBlur={onHideUses}
@@ -229,6 +240,8 @@ function SkillRow({
       <button
         type="button"
         aria-label={`Load mode: ${skill.load}`}
+        aria-disabled={refusal !== undefined || undefined}
+        title={refusal}
         onClick={() => flipAssignmentLoad(skill.id, agentId)}
         className="relative z-1 cursor-pointer pr-1.5 text-right font-mono text-8 font-medium tracking-[.06em] text-roster-off uppercase hover:text-ink-primary"
       >
@@ -264,7 +277,11 @@ function AgentBlock({
 }) {
   const toggleAgentPin = useConfigStore((state) => state.toggleAgentPin)
   const provider = useUiStore((state) => state.provider)
+  const held = useHeldGlobalStore((state) => state.held)
   const { agent, on, skills } = row
+  const switchOffRefusal = useConfigStore((state) =>
+    agentPinRefusal(held, state, agent.id)
+  )
 
   // Shown and inert rather than hidden, so the roster and the install agree.
   const leftOut = agentRefusal(provider, agent.id)
@@ -285,8 +302,10 @@ function AgentBlock({
         <button
           type="button"
           aria-pressed={installed}
-          aria-disabled={leftOut !== undefined || undefined}
-          title={leftOut}
+          aria-disabled={
+            leftOut !== undefined || switchOffRefusal !== undefined || undefined
+          }
+          title={leftOut ?? switchOffRefusal}
           onClick={() => leftOut === undefined && toggleAgentPin(agent.id)}
           // The size on the button, not the span: the button's own strut
           // would otherwise set the line at the body's size.

@@ -12,8 +12,13 @@ import {
 import { moveToAdjacentRadio } from "@workspace/ui/lib/radio-row"
 import { cn } from "@workspace/ui/lib/utils"
 
+import {
+  agentChangeRefusal,
+  agentPinRefusal,
+} from "@/features/configure/lib/held-global"
 import { agentRefusal } from "@/features/configure/lib/provider"
 import { useConfigStore } from "@/stores/config-store"
+import { useHeldGlobalStore } from "@/stores/held-global-store"
 import {
   AGENT_EFFORTS,
   AGENT_SCOPES,
@@ -42,11 +47,13 @@ function EffortTrack({
   agentId,
   effort,
   installed,
+  refusal,
   onPick,
 }: {
   agentId: string
   effort: AgentEffort
   installed: boolean
+  refusal: string | undefined
   onPick: (effort: AgentEffort) => void
 }) {
   const level = AGENT_EFFORTS.indexOf(effort)
@@ -64,6 +71,7 @@ function EffortTrack({
       <div
         role="radiogroup"
         aria-label={`Effort for ${agentId}`}
+        aria-disabled={refusal !== undefined || undefined}
         onKeyDown={moveToAdjacentRadio}
         className="group/track pointer-events-auto flex items-center gap-[0.3125rem]"
       >
@@ -78,7 +86,7 @@ function EffortTrack({
               role="radio"
               aria-checked={checked}
               aria-label={value}
-              title={value}
+              title={refusal ?? value}
               tabIndex={checked ? 0 : -1}
               data-filled={filled || undefined}
               onClick={() => onPick(value)}
@@ -100,10 +108,17 @@ type ModelRowProps = {
   agentId: string
   options: AgentOptions
   tone: SegmentTone
+  refusal: string | undefined
   onPatch: (patch: Partial<AgentOptions>) => void
 }
 
-function ClaudeModelRadios({ agentId, options, tone, onPatch }: ModelRowProps) {
+function ClaudeModelRadios({
+  agentId,
+  options,
+  tone,
+  refusal,
+  onPatch,
+}: ModelRowProps) {
   const chosen = chosenModelFor("claude", options)
 
   return (
@@ -119,6 +134,8 @@ function ClaudeModelRadios({ agentId, options, tone, onPatch }: ModelRowProps) {
           tone={tone}
           active={value === chosen}
           aria-label={value}
+          aria-disabled={refusal !== undefined || undefined}
+          title={refusal}
           onClick={() => onPatch(modelPatchFor("claude", value))}
         >
           {label}
@@ -129,7 +146,13 @@ function ClaudeModelRadios({ agentId, options, tone, onPatch }: ModelRowProps) {
 }
 
 // Toggles, not radios: none pressed is the session's own model.
-function CodexModelToggles({ agentId, options, tone, onPatch }: ModelRowProps) {
+function CodexModelToggles({
+  agentId,
+  options,
+  tone,
+  refusal,
+  onPatch,
+}: ModelRowProps) {
   const pinned = chosenModelFor("codex", options)
   const released = restingAgentOptions(agentId).codexModel
 
@@ -148,6 +171,8 @@ function CodexModelToggles({ agentId, options, tone, onPatch }: ModelRowProps) {
             type="button"
             aria-pressed={pressed}
             aria-label={value}
+            aria-disabled={refusal !== undefined || undefined}
+            title={refusal}
             onClick={() =>
               onPatch(modelPatchFor("codex", pressed ? released : value))
             }
@@ -181,10 +206,13 @@ export function SubAgentCard({
   const toggleAgentPin = useConfigStore((state) => state.toggleAgentPin)
   const setAgentOption = useConfigStore((state) => state.setAgentOption)
   const provider = useUiStore((state) => state.provider)
+  const held = useHeldGlobalStore((state) => state.held)
 
   const refusal = agentRefusal(provider, agent.id)
   const pressable = refusal === undefined
   const installed = pressable && isAgentOn(config, agent.id)
+  const switchOffRefusal = agentPinRefusal(held, config, agent.id)
+  const changeRefusal = agentChangeRefusal(held, config, agent.id)
   const options = resolveAgentOptions(config.agents, agent.id)
   const tone = installed ? "plain" : "recede"
   const configure = (patch: Partial<AgentOptions>) =>
@@ -194,13 +222,16 @@ export function SubAgentCard({
     <LatticeCell
       selected={installed}
       interactive={pressable}
+      disabled={changeRefusal !== undefined}
       className="px-3 pt-[0.6875rem] pb-2.5"
     >
       <LatticeCellButton
         aria-label={agent.label}
         aria-pressed={installed}
-        aria-disabled={!pressable || undefined}
-        title={refusal}
+        aria-disabled={
+          !pressable || switchOffRefusal !== undefined || undefined
+        }
+        title={refusal ?? switchOffRefusal}
         onClick={() => pressable && toggleAgentPin(agent.id)}
       />
 
@@ -217,6 +248,7 @@ export function SubAgentCard({
           agentId={agent.id}
           effort={options.effort}
           installed={installed}
+          refusal={changeRefusal}
           onPick={(effort) => configure({ effort })}
         />
       </div>
@@ -228,6 +260,7 @@ export function SubAgentCard({
             agentId={agent.id}
             options={options}
             tone={tone}
+            refusal={changeRefusal}
             onPatch={configure}
           />
         ) : (
@@ -235,6 +268,7 @@ export function SubAgentCard({
             agentId={agent.id}
             options={options}
             tone={tone}
+            refusal={changeRefusal}
             onPatch={configure}
           />
         )}

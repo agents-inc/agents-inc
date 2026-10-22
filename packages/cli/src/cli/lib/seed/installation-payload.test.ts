@@ -4,7 +4,11 @@ import { mkdir, readFile, writeFile } from "fs/promises";
 import { MAX_EXTERNAL_SKILL_BYTES, SEED_VERSION } from "@workspace/matrix/seed";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { seedPayloadForInstallation, skillsAuthoredHere } from "./installation-payload.js";
+import {
+  editorPayloadForInstallation,
+  seedPayloadForInstallation,
+  skillsAuthoredHere,
+} from "./installation-payload.js";
 import { registerExternalSkills, writeExternalSkills } from "./external-skills.js";
 import {
   CLAUDE_DIR,
@@ -91,6 +95,45 @@ describe("seedPayloadForInstallation", () => {
     });
     expect(prepared.ok && prepared.skills).toBe(1);
     expect(prepared.ok && prepared.agents).toBe(1);
+  });
+
+  describe("where the link was made", () => {
+    it("marks the link a bare edit opens from a project, whose run cannot change the global install", async () => {
+      await installConfig(installedOverrides());
+
+      const prepared = await editorPayloadForInstallation(projectDir);
+
+      expect(prepared.ok && prepared.payload.fromProject).toBe(true);
+    });
+
+    it("leaves the link a bare edit opens at HOME unmarked, since a run there changes the global install", async () => {
+      await writeTestTsConfig(tempDir, buildProjectConfig(installedOverrides()));
+
+      const prepared = await editorPayloadForInstallation(tempDir);
+
+      expect(prepared.ok).toBe(true);
+      expect(prepared.ok && prepared.payload).not.toHaveProperty("fromProject");
+    });
+
+    it("leaves the link a share mints in a project unmarked, since its recipient's global install is their own", async () => {
+      await installConfig(installedOverrides());
+
+      const prepared = await seedPayloadForInstallation(projectDir);
+
+      expect(prepared.ok).toBe(true);
+      expect(prepared.ok && prepared.payload).not.toHaveProperty("fromProject");
+    });
+
+    it("says the same of an installation either way, the mark aside", async () => {
+      await installConfig(installedOverrides());
+
+      const shared = await seedPayloadForInstallation(projectDir);
+      const opened = await editorPayloadForInstallation(projectDir);
+
+      expect(opened.ok && opened.payload).toStrictEqual(
+        shared.ok && { ...shared.payload, fromProject: true },
+      );
+    });
   });
 
   it("reports a directory with nothing installed rather than throwing", async () => {

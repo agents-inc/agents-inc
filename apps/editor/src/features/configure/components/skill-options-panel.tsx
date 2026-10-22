@@ -20,9 +20,14 @@ import {
   type MatrixGroup,
   type RoleColumn,
 } from "@/features/configure/lib/agent-placement"
+import {
+  pressOnHeldSkill,
+  skillChangeRefusal,
+} from "@/features/configure/lib/held-global"
 import { patchForPress, pressRefusal } from "@/features/configure/lib/provider"
 import { usePanelRoom } from "@/features/configure/lib/use-panel-room"
 import { isEjectOnly, useConfigStore } from "@/stores/config-store"
+import { useHeldGlobalStore } from "@/stores/held-global-store"
 import {
   SKILL_INSTALL_MODES,
   SKILL_SCOPES,
@@ -122,6 +127,10 @@ export function SkillOptionsPanel({
   const setSkillOption = useConfigStore((state) => state.setSkillOption)
   const cycleAssignment = useConfigStore((state) => state.cycleAssignment)
   const provider = useUiStore((state) => state.provider)
+  const held = useHeldGlobalStore((state) => state.held)
+  const changeRefusal = useConfigStore((state) =>
+    skillChangeRefusal(held, state, skillId)
+  )
   const [metaOpen, setMetaOpen] = useState(false)
 
   const panelRef = useRef<HTMLDivElement>(null)
@@ -129,14 +138,17 @@ export function SkillOptionsPanel({
 
   const ejectOnly = isEjectOnly(skillId)
 
+  const landed = (patch: Partial<SkillOptions>) =>
+    changeRefusal === undefined ? patch : pressOnHeldSkill(provider, patch)
+
   // The second door onto the cell's pairs, so it asks the same rule.
   const refusalFor = (patch: Partial<SkillOptions>) =>
-    pressRefusal(provider, entry, patch)
+    pressRefusal(provider, entry, landed(patch))
 
   const pick = (patch: Partial<SkillOptions>) => {
     if (refusalFor(patch) !== undefined) return
 
-    setSkillOption(skillId, patchForPress(provider, patch))
+    setSkillOption(skillId, patchForPress(provider, landed(patch)))
   }
 
   const toMatrixCell = (group: MatrixGroup, role: RoleColumn) => {
@@ -170,6 +182,15 @@ export function SkillOptionsPanel({
         flip ? "right-[calc(100%+0.3125rem)]" : "left-[calc(100%+0.3125rem)]"
       }`}
     >
+      {changeRefusal !== undefined && (
+        <p
+          role="note"
+          className="px-[0.625rem] pt-1 font-mono text-9 text-muted-foreground"
+        >
+          {changeRefusal}
+        </p>
+      )}
+
       <FieldLabel first>Install mode</FieldLabel>
       <Segmented>
         {SKILL_INSTALL_MODES.map((install) => (
@@ -179,7 +200,7 @@ export function SkillOptionsPanel({
             active={entry.install === install}
             // An added skill has no plugin form; the store refuses it too.
             disabled={ejectOnly && install === "plugin"}
-            refusal={refusalFor({ install })}
+            refusal={changeRefusal ?? refusalFor({ install })}
             onPick={() => pick({ install })}
           />
         ))}

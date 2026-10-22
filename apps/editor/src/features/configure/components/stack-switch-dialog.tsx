@@ -8,9 +8,14 @@ import {
   AlertDialogHeader,
 } from "@workspace/ui/components/alert-dialog"
 
+import {
+  holdsAnything,
+  replaceableSkillCount,
+} from "@/features/configure/lib/held-global"
 import { useApplyStackRequest } from "@/features/configure/lib/use-apply-stack-request"
 import { activeStacks } from "@/stores/catalog-store"
 import { useConfigStore } from "@/stores/config-store"
+import { useHeldGlobalStore } from "@/stores/held-global-store"
 import { useUiStore, type StackRequest } from "@/stores/ui-store"
 
 import { SCRATCH_NAME } from "./stack-grid"
@@ -32,7 +37,10 @@ export function StackSwitchDialog() {
   const pending = useUiStore((state) => state.pendingStack)
   const dismiss = useUiStore((state) => state.dismissStackRequest)
   const applyStackRequest = useApplyStackRequest()
-  const skillCount = useConfigStore((state) => Object.keys(state.skills).length)
+  const held = useHeldGlobalStore((state) => state.held)
+  const skillCount = useConfigStore((state) =>
+    replaceableSkillCount(held, state)
+  )
 
   const open = pending !== null
   const targetName = pending ? targetNameOf(pending) : ""
@@ -51,6 +59,7 @@ export function StackSwitchDialog() {
           your current setup, discarding {skillCount} selected{" "}
           {skillCount === 1 ? "skill" : "skills"}, their options and their
           sub-agent assignments.
+          {holdsAnything(held) && " What is installed globally stays."}
         </AlertDialogDescription>
         <AlertDialogFooter>
           <AlertDialogCancel>Keep my setup</AlertDialogCancel>

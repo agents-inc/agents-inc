@@ -41,6 +41,12 @@ const API_DEV = E2E_AGENT["api-developer"].name;
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
+function postedBodies(store: SeedConfigStore): unknown[] {
+  return store.requests
+    .filter((request) => request.method === "POST")
+    .map((request) => JSON.parse(request.body));
+}
+
 function postedSkills(store: SeedConfigStore): unknown {
   const posted: { skills: unknown } = JSON.parse(
     firstElement(store.requests.filter((request) => request.method === "POST")).body,
@@ -93,6 +99,32 @@ describe("minting an id in a project that inherits sub-agents from HOME", () => 
       postedSkills(store),
       "the payload the editor opens must carry the rows of the sub-agents the project inherits from HOME",
     ).toStrictEqual(skills);
+  });
+
+  // The editor holds a project link's global entries, which a run in that project cannot change.
+  it("edit --ui marks the link it mints in a project, and not the one it mints at HOME", async () => {
+    store.publish(
+      "Inherit3",
+      buildSeedPayload({
+        v: PINNED_WIRE_VERSION,
+        skills: { [E2E_SKILL.react.id]: ejectedGlobalSkill() },
+      }),
+    );
+    const origin = await takeEnvironment();
+    const project = { dir: origin.projectDir, globalHome: origin.fakeHome };
+    const installed = await runInitFrom(store, "Inherit3", project, E2E_SOURCE.sourceDir);
+    expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
+
+    const inProject = await runEditUi(store, project);
+    const atHome = await runEditUi(store, { dir: origin.fakeHome, globalHome: origin.fakeHome });
+
+    expect(inProject.exitCode, `edit --ui failed: ${inProject.output}`).toBe(EXIT_CODES.SUCCESS);
+    expect(atHome.exitCode, `edit --ui at HOME failed: ${atHome.output}`).toBe(
+      EXIT_CODES.SUCCESS,
+    );
+    const [mintedInProject, mintedAtHome] = postedBodies(store);
+    expect(mintedInProject).toHaveProperty("fromProject", true);
+    expect(mintedAtHome).not.toHaveProperty("fromProject");
   });
 });
 
@@ -191,6 +223,41 @@ describe.skipIf(!claudeAvailable)("sharing a project that inherits sub-agents fr
       expect(Object.keys(originProjectBodies)).toStrictEqual([`${WEB_DEV}.md`]);
       expect(await readCompiledAgents(rebuilt.fakeHome)).toStrictEqual(originGlobalBodies);
       expect(await readCompiledAgents(rebuilt.projectDir)).toStrictEqual(originProjectBodies);
+    },
+  );
+
+  // Its recipient's global install is their own, so the editor must hold none of it.
+  it(
+    "share leaves the link it mints in a project unmarked, as edit --ui does not",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async () => {
+      store.publish(
+        "Inherit4",
+        buildSeedPayload({
+          v: PINNED_WIRE_VERSION,
+          skills: {
+            [E2E_SKILL.react.id]: buildSeedSkill({
+              install: "plugin",
+              scope: "global",
+              assignments: { [WEB_DEV]: "lazy" },
+            }),
+          },
+          agents: { [WEB_DEV]: { scope: "project" } },
+        }),
+      );
+      const origin = await takeEnvironment();
+      const project = { dir: origin.projectDir, globalHome: origin.fakeHome };
+      const installed = await runInitFrom(store, "Inherit4", project, fixture.sourceDir);
+      expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
+
+      const shared = await runShare(store, project);
+      const opened = await runEditUi(store, project);
+
+      expect(shared.exitCode, `share failed: ${shared.output}`).toBe(EXIT_CODES.SUCCESS);
+      expect(opened.exitCode, `edit --ui failed: ${opened.output}`).toBe(EXIT_CODES.SUCCESS);
+      const [mintedByShare, mintedByEdit] = postedBodies(store);
+      expect(mintedByShare).not.toHaveProperty("fromProject");
+      expect(mintedByEdit).toHaveProperty("fromProject", true);
     },
   );
 });

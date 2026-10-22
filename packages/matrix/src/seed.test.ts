@@ -135,20 +135,47 @@ describe("seedPayloadSchema with external skills", () => {
 
 /** Literals, not `SEED_VERSION ± 1`, so a wrong-way bump fails. */
 describe("the version", () => {
-  it("is 6, the version that carries a sub-agent's Codex model", () => {
-    expect(SEED_VERSION).toBe(6)
+  it("is 7, the version that says a link was made in a project", () => {
+    expect(SEED_VERSION).toBe(7)
   })
 
-  it("decodes a v6 payload", () => {
-    expect(seedPayloadSchema.safeParse(payload({ v: 6 })).success).toBe(true)
+  it("decodes a v7 payload", () => {
+    expect(seedPayloadSchema.safeParse(payload({ v: 7 })).success).toBe(true)
   })
 
-  it("refuses a payload minted against v5", () => {
-    expect(seedPayloadSchema.safeParse(payload({ v: 5 })).success).toBe(false)
+  it("refuses a payload minted against v6", () => {
+    expect(seedPayloadSchema.safeParse(payload({ v: 6 })).success).toBe(false)
   })
 
   it("refuses a payload minted against a version this build does not know", () => {
-    expect(seedPayloadSchema.safeParse(payload({ v: 7 })).success).toBe(false)
+    expect(seedPayloadSchema.safeParse(payload({ v: 8 })).success).toBe(false)
+  })
+})
+
+describe("a link made in a project", () => {
+  it("says so, so the editor can hold the global entries a project run cannot change", () => {
+    expect(
+      seedPayloadSchema.parse(payload({ fromProject: true })).fromProject
+    ).toBe(true)
+  })
+
+  it("leaves the field off a link made anywhere else", () => {
+    expect(seedPayloadSchema.parse(payload())).not.toHaveProperty(
+      "fromProject"
+    )
+  })
+
+  // Absent is the only other spelling, so one payload has one id.
+  it("refuses false", () => {
+    expect(
+      seedPayloadSchema.safeParse(payload({ fromProject: false })).success
+    ).toBe(false)
+  })
+
+  it("refuses the field present holding undefined", () => {
+    expect(
+      seedPayloadSchema.safeParse(payload({ fromProject: undefined })).success
+    ).toBe(false)
   })
 })
 
@@ -435,6 +462,46 @@ describe("a carried skill's id", () => {
   })
 })
 
+const ESCAPING_FILE = "../victim.md"
+
+const carryingFile = (key: string) =>
+  external({ files: files({ [key]: "owned\n" }) })
+
+// A file key is joined under the skill's directory; refusal and permission pinned together.
+describe("a carried skill's file paths", () => {
+  it.each([
+    ["the parent directory's child", ESCAPING_FILE],
+    ["a path climbing out through a child", "reference/../../victim.md"],
+    ["a Windows path to the parent's child", "..\\victim.md"],
+    ["a Windows path climbing out through a child", "reference\\..\\..\\victim.md"],
+    ["the parent directory", ".."],
+    ["a step through the parent that lands back inside", "reference/../SKILL.md"],
+    ["a null byte", "reference/api\0.md"],
+  ])("refuses a file path naming %s", (_, key) => {
+    expect(seedExternalSkillSchema.safeParse(carryingFile(key)).success).toBe(
+      false
+    )
+  })
+
+  it.each([
+    ["dots inside a name", "notes..v2.md"],
+    ["dots leading a name", "..hidden.md"],
+  ])("accepts a file path holding %s, which steps through no parent", (_, key) => {
+    expect(seedExternalSkillSchema.safeParse(carryingFile(key)).success).toBe(
+      true
+    )
+  })
+
+  // No repair makes such a tree a skill directory, so reading refuses it as minting does.
+  it("is refused by the read schema too, not only when minting", () => {
+    const escaping = payload({
+      external: { [MINTED_EXTERNAL_ID]: carryingFile(ESCAPING_FILE) },
+    })
+
+    expect(seedPayloadSchema.safeParse(escaping).success).toBe(false)
+  })
+})
+
 describe("the vocabularies a payload speaks", () => {
   it.each(["opus", "fable", "sonnet", "haiku"])(
     "accepts a sub-agent on the %s model",
@@ -546,6 +613,18 @@ describe("what a refusal says", () => {
         path: ["external", PARENT_ESCAPING_ID],
         message:
           "a carried skill's id is the directory it is written into, so it must name exactly one directory and hold no control character",
+      },
+    ])
+  })
+
+  it("names the carried file that climbs out of its folder", () => {
+    expect(
+      refusalsOf(seedExternalSkillSchema.safeParse(carryingFile(ESCAPING_FILE)))
+    ).toStrictEqual([
+      {
+        path: ["files", ESCAPING_FILE],
+        message:
+          "a skill directory's files must stay inside it, so no path may step through '..' or hold a null byte",
       },
     ])
   })

@@ -196,7 +196,7 @@ describe("share command", () => {
     const ID_LINES = [
       `✓ Shared as ${STORED_ID}`,
       `  Install it:  npx agents-inc init --from ${STORED_ID}`,
-      `  Open it:     https://agentsinc.sh/editor/?fromId=${STORED_ID}`,
+      `  Open it:     http://localhost:5173/editor/?fromId=${STORED_ID}`,
     ];
 
     it("counts what it shares, then names the id and both ways to use it", async () => {
@@ -317,7 +317,7 @@ describe("share command", () => {
           [
             `✓ Shared as ${STORED_ID}`,
             `  Install it:  npx agents-inc init --from ${STORED_ID}`,
-            `  Open it:     https://agentsinc.sh/editor/?fromId=${STORED_ID}`,
+            `  Open it:     http://localhost:5173/editor/?fromId=${STORED_ID}`,
             "",
           ].join("\n"),
         );
