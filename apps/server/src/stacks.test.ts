@@ -96,8 +96,6 @@ describe("the GitHub token never leaves the worker", () => {
 describe("the write rate limit on POST /configs", () => {
   // Each case brings its own `cf-connecting-ip`; the pool shares state across a
   // file, so a shared key would make these order-dependent.
-  const LIMIT = 20
-
   const post = (ip: string) =>
     SELF.fetch(`${BASE}/configs`, {
       method: "POST",
@@ -110,31 +108,41 @@ describe("the write rate limit on POST /configs", () => {
       body: JSON.stringify({ v: SEED_VERSION }),
     })
 
-  it(`lets ${LIMIT} writes through from one address and refuses the next`, async () => {
+  // Stubbed: the binding's own window is the wall clock's minute, which a
+  // burst cannot be held inside.
+  it("lets a write through while the limiter allows it, and refuses one it turns down", async () => {
+    vi.spyOn(env.CONFIG_WRITES, "limit")
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({ success: false })
     const ip = "203.0.113.10"
 
-    for (let attempt = 0; attempt < LIMIT; attempt++) {
-      expect((await post(ip)).status).not.toBe(429)
-    }
-
+    expect((await post(ip)).status).not.toBe(429)
     expect((await post(ip)).status).toBe(429)
   })
 
-  it("holds the allowance per address rather than for everybody at once", async () => {
-    const spender = "203.0.113.20"
-    for (let attempt = 0; attempt <= LIMIT; attempt++) await post(spender)
+  // One write per key, however the worker spells its keys.
+  it("limits each address apart, so one refused address leaves another let through", async () => {
+    const spent = new Set<string>()
+    vi.spyOn(env.CONFIG_WRITES, "limit").mockImplementation(({ key }) => {
+      const success = !spent.has(key)
+      spent.add(key)
+      return Promise.resolve({ success })
+    })
+    const refusedAddress = "203.0.113.20"
 
-    // One client exhausting its allowance must not lock others out.
+    expect((await post(refusedAddress)).status).not.toBe(429)
+    expect((await post(refusedAddress)).status).toBe(429)
     expect((await post("203.0.113.21")).status).not.toBe(429)
   })
 
   // `retry-after` must also be exposed to a cross-origin reader. Pinned against
   // the api-mocks mirror.
   it("tells the refused caller when to try again, in a header a browser may read", async () => {
-    const ip = "203.0.113.30"
-    for (let attempt = 0; attempt < LIMIT; attempt++) await post(ip)
+    vi.spyOn(env.CONFIG_WRITES, "limit").mockResolvedValueOnce({
+      success: false,
+    })
 
-    const refused = await post(ip)
+    const refused = await post("203.0.113.30")
 
     expect(refused.status).toBe(429)
     expect(await refused.text()).toBe(RATE_LIMITED_BODY)

@@ -1,6 +1,5 @@
 export {
-  type SkillManifestOptions,
-  type AgentManifestOptions,
+  agentPluginName,
   generateSkillPluginManifest,
   generateAgentPluginManifest,
   writePluginManifest,
@@ -16,20 +15,14 @@ export {
   readPluginManifest,
 } from "./plugin-finder";
 
-export {
-  type InstallationInfo,
-  getInstallationInfo,
-  formatInstallationDisplay,
-} from "./plugin-info";
+export { getInstallationInfo, formatInstallationDisplay } from "./plugin-info";
 
 export {
-  validatePluginStructure,
-  validatePluginManifest,
   validateSkillFrontmatter,
   validateAgentFrontmatter,
   validatePlugin,
   validateAllPlugins,
-  printPluginValidationResult,
+  listPluginDirNames,
 } from "./plugin-validator";
 
 export {
@@ -39,10 +32,7 @@ export {
 } from "./plugin-discovery";
 
 export {
-  type PluginKey,
   type ResolvedPlugin,
-  getEnabledPluginKeys,
   getInstalledPluginsRegistryPath,
-  listPluginInstallsForProject,
   listRegisteredPluginInstalls,
 } from "./plugin-settings";

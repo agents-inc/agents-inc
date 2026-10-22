@@ -1,6 +1,10 @@
 import { env } from "cloudflare:test"
+import { HttpResponse, http } from "msw"
 import { describe, expect, it } from "vitest"
 
+import { upstreamMock } from "../vitest.setup"
+import { createAuth } from "./auth"
+import { seedSession } from "./db/seed-session"
 import { app } from "./index"
 
 // The first leg of a GitHub sign-in: Better Auth builds the authorize URL and
@@ -18,6 +22,18 @@ const PRODUCTION: Env = {
   WEB_ORIGIN: "https://agentsinc.sh",
   AUTH_BASE_URL: "https://api.agentsinc.sh",
 }
+
+// An editor on https in front of a worker addressed over plain http.
+const HTTPS_EDITOR_HTTP_WORKER: Env = {
+  ...env,
+  WEB_ORIGIN: "https://agentsinc.sh",
+  AUTH_BASE_URL: "http://localhost:8787",
+}
+
+// Worthless, and not the pool's: the process environment carries that one.
+const ANOTHER_SECRET = "another-fake-secret-another-fake-secret-32"
+
+const GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
 
 /**
  * Better Auth limits sign-ins per `x-forwarded-for`, in D1, which outlives a
@@ -120,5 +136,86 @@ describe("the cookies it sets", () => {
     expect(cookies).toContain("Domain=.agentsinc.sh")
     expect(cookies).toContain("; Secure")
     expect(cookies).toContain("SameSite=Lax")
+  })
+
+  // `Secure` follows the editor's scheme, not the worker's own address.
+  it("marks them Secure while the editor runs on https, though the worker is addressed over http", async () => {
+    const cookies = cookiesOf(
+      await signIn(
+        fromTheEditor(HTTPS_EDITOR_HTTP_WORKER),
+        HTTPS_EDITOR_HTTP_WORKER
+      )
+    )
+
+    expect(cookies).toContain("; Secure")
+  })
+})
+
+// A session is signed with the secret in the bindings each request hands the
+// worker, which need not be the one the process environment carries.
+describe("the secret it signs sessions with", () => {
+  const ANOTHER_SECRETS_BINDINGS: Env = {
+    ...env,
+    BETTER_AUTH_SECRET: ANOTHER_SECRET,
+  }
+
+  const savedStacksWith = (cookie: string, bindings: Env) =>
+    app.request(
+      `${BASE}/stacks`,
+      { headers: { cookie, origin: bindings.WEB_ORIGIN } },
+      bindings
+    )
+
+  it("reads a session signed with the secret its bindings carry", async () => {
+    const { cookie } = await seedSession(ANOTHER_SECRETS_BINDINGS)
+
+    const response = await savedStacksWith(cookie, ANOTHER_SECRETS_BINDINGS)
+
+    expect(response.status).toBe(200)
+  })
+
+  it("refuses a session signed with any other secret", async () => {
+    const { cookie } = await seedSession(ANOTHER_SECRETS_BINDINGS)
+
+    const response = await savedStacksWith(cookie, env)
+
+    expect(response.status).toBe(401)
+  })
+})
+
+// The callback's last leg: GitHub's code redeemed for a token. GitHub is
+// mocked, so the request the worker sends is what is asserted.
+describe("redeeming GitHub's code", () => {
+  it("sends this worker's GitHub app and its secret", async () => {
+    const sent: { clientId: string | null; clientSecret: string | null }[] = []
+    upstreamMock.use(
+      http.post(GITHUB_TOKEN_URL, async ({ request }) => {
+        const form = new URLSearchParams(await request.text())
+        sent.push({
+          clientId: form.get("client_id"),
+          clientSecret: form.get("client_secret"),
+        })
+        return HttpResponse.json({
+          access_token: "not-a-real-github-token",
+          token_type: "bearer",
+          scope: "read:user",
+        })
+      })
+    )
+    const { socialProviders } = await createAuth(env).$context
+    const github = socialProviders.find((provider) => provider.id === "github")
+    if (!github) throw new Error("the worker configures no GitHub provider")
+
+    await github.validateAuthorizationCode({
+      code: "a-code-github-issued",
+      redirectURI: `${env.AUTH_BASE_URL}/api/auth/callback/github`,
+    })
+
+    expect(sent).toStrictEqual([
+      {
+        clientId: env.GITHUB_CLIENT_ID,
+        clientSecret: env.GITHUB_CLIENT_SECRET,
+      },
+    ])
   })
 })

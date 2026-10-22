@@ -9,6 +9,8 @@ import {
 } from "@workspace/ui/components/segmented"
 
 const INSTALL_MODES = ["plugin", "eject"] as const
+// Three, because on a row of two the previous option and the next are the same one.
+const SIZES = ["small", "medium", "large"] as const
 
 // The panel is 210px wide.
 const meta = {
@@ -52,12 +54,16 @@ export const WithFieldLabel: Story = {
 }
 
 // `Segmented` holds no state, so stories that move the choice hold it.
-function ControlledRow() {
-  const [selected, setSelected] = useState<string>("plugin")
+function ControlledRow({
+  options = INSTALL_MODES,
+}: {
+  options?: readonly [string, ...string[]]
+}) {
+  const [selected, setSelected] = useState<string>(options[0])
 
   return (
     <Segmented>
-      {INSTALL_MODES.map((mode) => (
+      {options.map((mode) => (
         <SegmentedItem
           key={mode}
           active={mode === selected}
@@ -114,6 +120,35 @@ export const ArrowKeysMoveTheActiveSegment: Story = {
     await userEvent.keyboard("{ArrowRight}")
 
     await expect(canvas.getByRole("radio", { name: "eject" })).toHaveAttribute(
+      "aria-checked",
+      "true"
+    )
+  },
+}
+
+// From the first option the previous one wraps to the last; moving forward would land on the second.
+export const ArrowLeftMovesToThePreviousSegment: Story = {
+  render: () => <ControlledRow options={SIZES} />,
+  play: async ({ canvas }) => {
+    canvas.getByRole("radio", { name: "small" }).focus()
+
+    await userEvent.keyboard("{ArrowLeft}")
+
+    await expect(canvas.getByRole("radio", { name: "large" })).toHaveAttribute(
+      "aria-checked",
+      "true"
+    )
+  },
+}
+
+export const ArrowUpMovesToThePreviousSegment: Story = {
+  render: () => <ControlledRow options={SIZES} />,
+  play: async ({ canvas }) => {
+    canvas.getByRole("radio", { name: "small" }).focus()
+
+    await userEvent.keyboard("{ArrowUp}")
+
+    await expect(canvas.getByRole("radio", { name: "large" })).toHaveAttribute(
       "aria-checked",
       "true"
     )

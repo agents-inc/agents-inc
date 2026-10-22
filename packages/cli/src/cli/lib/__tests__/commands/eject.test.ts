@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import path from "path";
-import { chmod, cp, mkdir, readFile, readdir, writeFile } from "fs/promises";
+import { chmod, cp, mkdir, readFile, readdir, rm, symlink, writeFile } from "fs/promises";
 import { argOptionRefusal, parseRefusal, runCliCommand } from "../helpers/cli-runner.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { fileExists, directoryExists } from "../test-fs-utils";
@@ -8,13 +8,18 @@ import { readTestYaml, readTestTsConfig, writeTestTsConfig } from "../helpers/co
 import { compactCliOutput, flattenCliOutput } from "../helpers/flatten-cli-output.js";
 import { buildSkillConfigs } from "../helpers/skill-config-builders.js";
 import { createMockMatrix } from "../factories/matrix-factories.js";
-import { buildInstallSelection, buildSourceResult } from "../factories/config-factories.js";
+import {
+  buildInstallSelection,
+  buildProjectConfig,
+  buildSourceResult,
+} from "../factories/config-factories.js";
 import { parseTestFrontmatter } from "../helpers/index.js";
 import { SKILLS } from "../test-fixtures";
 import {
   createTestSource,
   cleanupTestSource,
   inTestMarketplace,
+  testMarketplaceSkillId,
   type TestDirs,
 } from "../fixtures/create-test-source";
 import { DEFAULT_TEST_SKILLS } from "../mock-data/mock-skills";
@@ -50,6 +55,33 @@ const EJECTED_AGENT_DIRS = [
   "reviewer",
   "tester",
 ].sort();
+
+/** The sub-agent directories the CLI ships under `developer/`, by name. */
+const EJECTED_DEVELOPER_SUB_AGENTS = [
+  "ai-developer",
+  "api-developer",
+  "cli-developer",
+  "web-developer",
+].sort();
+
+/** What a user wrote into an ejected partial, which no eject without --force may replace. */
+const USERS_OWN_PARTIAL = "the user's own edit to a partial";
+/** What a user wrote into an ejected template, which no eject without --force may replace. */
+const USERS_OWN_TEMPLATE = "the user's own template";
+/** A link-local address the marketplace check refuses wherever the value comes from. */
+const PRIVATE_ADDRESS_MARKETPLACE = "http://169.254.169.254/latest";
+
+/** The skills the fixture marketplace publishes, as the folders an eject leaves. */
+const MARKETPLACE_SKILL_IDS = inTestMarketplace(DEFAULT_TEST_SKILLS)
+  .map((skill) => skill.id)
+  .sort();
+
+/** One ejected skill a user deleted, and one they edited, which a re-eject then skips. */
+const REMOVED_SKILL_ID = testMarketplaceSkillId("web-framework-react");
+const EDITED_SKILL_ID = testMarketplaceSkillId("web-state-zustand");
+/** The one ejected skill a re-eject finds still there, once the user deleted every other. */
+const KEPT_SKILL_ID = testMarketplaceSkillId("api-framework-hono");
+const USERS_OWN_SKILL_EDIT = "the user's own edit to an ejected skill";
 
 /** The partials `readAgentFiles` compiles from; the success log is asserted against this list. */
 const EJECTED_AGENT_PARTIAL_FILES = [
@@ -218,7 +250,7 @@ describe("eject command", () => {
 
       const configPath = getProjectConfigPath(projectDir, "claude");
       expect(await fileExists(configPath)).toBe(true);
-      // A literal: a folder name is text on disk, and a fresh project's eject creates the new one.
+      // A literal: a folder name is text on disk.
       expect(configPath).toBe(
         path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS),
       );
@@ -228,18 +260,16 @@ describe("eject command", () => {
       expect(content).toContain("name: 'project'");
     });
 
-    it("should not overwrite existing config.yaml", async () => {
-      // Eject checks both .ts and .yaml configs.
-      const configDir = sourceFolderInUse(projectDir, "claude").dir;
-      await mkdir(configDir, { recursive: true });
-      const configPath = path.join(configDir, "config.yaml");
-      const customContent = "name: my-custom-project\nauthor: test-author\n";
-      await writeFile(configPath, customContent);
+    it("should leave an existing config.ts as it was", async () => {
+      const configPath = await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({ name: "my-custom-project" }),
+      );
+      const before = await readFile(configPath, "utf-8");
 
       await runCliCommand(["eject", "agent-partials"]);
 
-      const content = await readFile(configPath, "utf-8");
-      expect(content).toBe(customContent);
+      expect(await readFile(configPath, "utf-8")).toBe(before);
     });
 
     it("should still create config.ts when using --output flag", async () => {
@@ -267,14 +297,13 @@ describe("eject command", () => {
       expect(await directoryExists(outputDir)).toBe(true);
     });
 
-    /** The first eject leaves `_templates`, so the second re-ejects rather than refusing. */
-    it("should skip templates and re-eject partials on a second run without --force", async () => {
+    it("should keep the partials and templates on a second run without --force", async () => {
       await runCliCommand(["eject", "agent-partials"]);
 
       const { stdout, stderr } = await runCliCommand(["eject", "agent-partials"]);
 
-      expect(stderr).toContain("Agent templates already exist");
-      expect(stdout).toContain("Agent partials ejected");
+      expect(stderr).toContain("Agent partials already exist at");
+      expect(stdout).not.toContain("Agent partials ejected");
     });
 
     it("should overwrite partials when --force is used", async () => {
@@ -305,23 +334,49 @@ describe("eject command", () => {
       expect(templateContent).toBe("custom template content");
     });
 
-    it("should block agent-partials eject when agents/ contains actual agent dirs", async () => {
+    /** A category folder holds sub-agents rather than being one, so a file of the user's there stays. */
+    it("should eject every sub-agent beside a category folder holding only a file of the user's", async () => {
       const agentsDir = path.join(
         sourceFolderInUse(projectDir, "claude").dir,
         path.basename(DIRS.agents),
       );
+      const usersFile = path.join(agentsDir, "developer", STANDARD_FILES.AGENT_METADATA_YAML);
+      await mkdir(path.dirname(usersFile), { recursive: true });
+      await writeFile(usersFile, "id: developer");
 
-      // An actual agent subdir simulates a prior full eject.
-      await mkdir(path.join(agentsDir, "developer"), { recursive: true });
-      await writeFile(
-        path.join(agentsDir, "developer", STANDARD_FILES.AGENT_METADATA_YAML),
-        "id: developer",
+      const { stdout } = await runCliCommand(["eject", "agent-partials"]);
+
+      expect(stdout).toContain("Agent partials ejected");
+      expect(await readFile(usersFile, "utf-8")).toBe("id: developer");
+      expect([...(await readdir(path.join(agentsDir, "developer")))].sort()).toStrictEqual(
+        [STANDARD_FILES.AGENT_METADATA_YAML, ...EJECTED_DEVELOPER_SUB_AGENTS].sort(),
       );
+      expect([...(await readdir(agentsDir))].sort()).toStrictEqual(EJECTED_AGENT_DIRS);
+    });
 
-      const { stderr } = await runCliCommand(["eject", "agent-partials"]);
+    it("should keep a sub-agent directory already there, naming it as skipped, and eject the others", async () => {
+      const agentsDir = path.join(
+        sourceFolderInUse(projectDir, "claude").dir,
+        path.basename(DIRS.agents),
+      );
+      const keptSubAgentDir = path.join(agentsDir, "developer", "web-developer");
+      const usersIdentity = path.join(keptSubAgentDir, STANDARD_FILES.IDENTITY_MD);
+      await mkdir(keptSubAgentDir, { recursive: true });
+      await writeFile(usersIdentity, USERS_OWN_PARTIAL);
 
-      expect(stderr).toContain("already exist");
-      expect(stderr).toContain("--force");
+      const { stdout, stderr } = await runCliCommand(["eject", "agent-partials"]);
+
+      expect(flattenCliOutput(stderr)).toContain("skipped 1 sub-agent: web-developer.");
+      expect(stdout).toContain("Agent partials ejected");
+      expect(await readFile(usersIdentity, "utf-8")).toBe(USERS_OWN_PARTIAL);
+      expect(
+        await readdir(keptSubAgentDir),
+        "a skipped sub-agent is left whole: none of the CLI's partials are written into it",
+      ).toStrictEqual([STANDARD_FILES.IDENTITY_MD]);
+      expect([...(await readdir(path.join(agentsDir, "developer")))].sort()).toStrictEqual(
+        EJECTED_DEVELOPER_SUB_AGENTS,
+      );
+      expect([...(await readdir(agentsDir))].sort()).toStrictEqual(EJECTED_AGENT_DIRS);
     });
   });
 
@@ -447,7 +502,6 @@ describe("eject command", () => {
 
       expect(error).toBeUndefined();
       expect(stdout).toContain("Agent partials ejected");
-      expect(stdout).toContain("Agent templates ejected");
       // Only `all` ejects the third type.
       expect(stdout).toMatch(/skills ejected to .+ from \S+/);
     });
@@ -472,7 +526,6 @@ describe("eject command", () => {
       const { stdout } = await runCliCommand(["eject", "all"]);
 
       expect(stdout).toContain("Agent partials ejected");
-      expect(stdout).toContain("Agent templates ejected");
 
       const agentsDir = path.join(
         sourceFolderInUse(projectDir, "claude").dir,
@@ -845,7 +898,7 @@ describe("what eject says", () => {
     expect(stdout).toContain(`✓ Agent partials ejected to ${agentsDirOf(projectDir)}`);
   });
 
-  it("re-ejects the partials over a config it made already, keeping the templates and saying so", async () => {
+  it("keeps the partials and templates already there on a second run, saying so", async () => {
     await runCliCommand(["eject", "agent-partials"]);
     const template = path.join(
       agentsDirOf(projectDir),
@@ -859,7 +912,28 @@ describe("what eject says", () => {
       "web-developer",
       STANDARD_FILES.IDENTITY_MD,
     );
-    await writeFile(partial, "an edit the re-eject replaces");
+    await writeFile(partial, USERS_OWN_PARTIAL);
+
+    const { stdout, stderr } = await runCliCommand(["eject", "agent-partials"]);
+
+    expect(stdout).toBe([...HEADER, ...ENDING].join("\n"));
+    expect(compactCliOutput(stderr)).toBe(
+      compactCliOutput(
+        `Warning: Agent partials already exist at ${agentsDirOf(projectDir)}. Use --force to overwrite.`,
+      ),
+    );
+    expect(await readFile(template, "utf-8")).toBe("the user's own template");
+    expect(await readFile(partial, "utf-8")).toBe(USERS_OWN_PARTIAL);
+  });
+
+  it("keeps the templates already there and ejects every sub-agent, naming none as skipped", async () => {
+    const template = path.join(
+      agentsDirOf(projectDir),
+      path.basename(DIRS.templates),
+      "agent.liquid",
+    );
+    await mkdir(path.dirname(template), { recursive: true });
+    await writeFile(template, "the user's own template");
 
     const { stdout, stderr } = await runCliCommand(["eject", "agent-partials"]);
 
@@ -868,6 +942,7 @@ describe("what eject says", () => {
         ...HEADER,
         `✓ Agent partials ejected to ${agentsDirOf(projectDir)}`,
         PARTIALS_CUSTOMIZABLE,
+        "✓ Created .agents-inc/claude/config.ts",
         ...ENDING,
       ].join("\n"),
     );
@@ -875,7 +950,16 @@ describe("what eject says", () => {
       "Warning: Agent templates already exist — skipping templates, only ejecting agent partials.",
     );
     expect(await readFile(template, "utf-8")).toBe("the user's own template");
-    expect(await readFile(partial, "utf-8")).not.toBe("an edit the re-eject replaces");
+  });
+
+  it("writes nothing into a templates folder it keeps, not even a folder the CLI ships in it", async () => {
+    const templatesDir = path.join(agentsDirOf(projectDir), path.basename(DIRS.templates));
+    await mkdir(templatesDir, { recursive: true });
+    await writeFile(path.join(templatesDir, "agent.liquid"), "the user's own template");
+
+    await runCliCommand(["eject", "agent-partials"]);
+
+    expect(await readdir(templatesDir)).toStrictEqual(["agent.liquid"]);
   });
 
   it("overwrites the templates too with --force, without a warning", async () => {
@@ -916,17 +1000,61 @@ describe("what eject says", () => {
     );
   });
 
-  it("refuses to eject partials into a folder that already holds sub-agent partials", async () => {
+  it("warns of nothing on a first templates eject, which skips no sub-agent and no templates", async () => {
+    const { stderr, error } = await runCliCommand(["eject", "templates"]);
+
+    expect(error).toBeUndefined();
+    expect(stderr).toBe("");
+  });
+
+  it("skips a sub-agent the folder already holds, naming it, and ejects the rest", async () => {
     const agentsDir = agentsDirOf(projectDir);
-    await mkdir(path.join(agentsDir, "developer"), { recursive: true });
+    const keptSubAgentDir = path.join(agentsDir, "developer", "web-developer");
+    await mkdir(keptSubAgentDir, { recursive: true });
+    await writeFile(path.join(keptSubAgentDir, STANDARD_FILES.IDENTITY_MD), USERS_OWN_PARTIAL);
+
+    const { stdout, stderr } = await runCliCommand(["eject", "agent-partials"]);
+
+    expect(compactCliOutput(stderr)).toBe(
+      compactCliOutput(
+        `Warning: Agent partials already exist at ${agentsDir} — skipped 1 sub-agent: web-developer. Use --force to overwrite them.`,
+      ),
+    );
+    expect(stdout).toBe(
+      [
+        ...HEADER,
+        `✓ Agent partials ejected to ${agentsDir}`,
+        PARTIALS_CUSTOMIZABLE,
+        "✓ Created .agents-inc/claude/config.ts",
+        ...ENDING,
+      ].join("\n"),
+    );
+  });
+
+  /** `developer/` comes before `meta/`, so the names in category order would be the other way round. */
+  it("names the sub-agents it skipped bytewise, rather than in the order of their categories", async () => {
+    const agentsDir = agentsDirOf(projectDir);
+    const keptIdentities = [
+      path.join(agentsDir, "developer", "web-developer", STANDARD_FILES.IDENTITY_MD),
+      path.join(agentsDir, "meta", "agent-summoner", STANDARD_FILES.IDENTITY_MD),
+    ];
+    await Promise.all(
+      keptIdentities.map(async (identity) => {
+        await mkdir(path.dirname(identity), { recursive: true });
+        await writeFile(identity, USERS_OWN_PARTIAL);
+      }),
+    );
 
     const { stderr } = await runCliCommand(["eject", "agent-partials"]);
 
     expect(compactCliOutput(stderr)).toBe(
       compactCliOutput(
-        `Warning: Agent partials already exist at ${agentsDir}. Use --force to overwrite.`,
+        `Warning: Agent partials already exist at ${agentsDir} — skipped 2 sub-agents: agent-summoner, web-developer. Use --force to overwrite them.`,
       ),
     );
+    expect(
+      await Promise.all(keptIdentities.map((identity) => readFile(identity, "utf-8"))),
+    ).toStrictEqual([USERS_OWN_PARTIAL, USERS_OWN_PARTIAL]);
   });
 
   it("names the output directory first when --output is given", async () => {
@@ -963,6 +1091,53 @@ describe("what eject says", () => {
 
     expect(error?.message).toBe(`Output path exists as a file: ${filePath}`);
     expect(error?.oclif?.exit).toBe(EXIT_CODES.INVALID_ARGS);
+  });
+
+  it("refuses an --output that is a link, as a usage error", async () => {
+    const realDir = path.join(tempDir, "real-dir");
+    const link = path.join(tempDir, "link");
+    await mkdir(realDir);
+    await symlink(realDir, link);
+
+    const { error } = await runCliCommand(["eject", "agent-partials", "--output", link]);
+
+    expect(error?.message).toBe(
+      `Output path is a link: ${link}. Name the folder it points to instead.`,
+    );
+    expect(error?.oclif?.exit).toBe(EXIT_CODES.INVALID_ARGS);
+    expect(await readdir(realDir)).toStrictEqual([]);
+    expect(await fileExists(getProjectConfigPath(projectDir, "claude"))).toBe(false);
+  });
+
+  /** The link is refused before the file check, so neither what it names nor its absence matters. */
+  it("refuses an --output that is a link to a file, as it refuses a link to a folder", async () => {
+    const realFile = path.join(tempDir, "a-file");
+    const link = path.join(tempDir, "link");
+    await writeFile(realFile, "");
+    await symlink(realFile, link);
+
+    const { error } = await runCliCommand(["eject", "agent-partials", "--output", link]);
+
+    expect(error?.message).toBe(
+      `Output path is a link: ${link}. Name the folder it points to instead.`,
+    );
+    expect(error?.oclif?.exit).toBe(EXIT_CODES.INVALID_ARGS);
+    expect(await readFile(realFile, "utf-8")).toBe("");
+  });
+
+  it("refuses an --output that is a link to nothing, writing nothing where it points", async () => {
+    const missingTarget = path.join(tempDir, "not-there");
+    const link = path.join(tempDir, "link");
+    await symlink(missingTarget, link);
+
+    const { error } = await runCliCommand(["eject", "agent-partials", "--output", link]);
+
+    expect(error?.message).toBe(
+      `Output path is a link: ${link}. Name the folder it points to instead.`,
+    );
+    expect(error?.oclif?.exit).toBe(EXIT_CODES.INVALID_ARGS);
+    expect(await directoryExists(missingTarget)).toBe(false);
+    expect(await fileExists(missingTarget)).toBe(false);
   });
 
   it("ejects into an --output directory that already exists and holds nothing", async () => {
@@ -1044,6 +1219,123 @@ describe("what eject says", () => {
       );
     });
 
+    it("warns of nothing on a first skills eject, when no skill was there to skip", async () => {
+      const { stderr, error } = await runCliCommand(["eject", "skills"]);
+
+      expect(error).toBeUndefined();
+      expect(stderr).toBe("");
+    });
+
+    it("ejects every skill into an --output folder that exists and holds nothing", async () => {
+      const outputDir = path.join(dirs.tempDir, "made-beforehand");
+      await mkdir(outputDir);
+
+      const { stdout, error } = await runCliCommand(["eject", "skills", "--output", outputDir]);
+
+      expect(error).toBeUndefined();
+      expect(stdout).toBe(
+        [
+          ...HEADER,
+          `Output directory: ${outputDir}`,
+          `✓ 4 skills ejected to ${outputDir} from ${dirs.sourceDir}`,
+          "You can now customize skill content locally.",
+          ...ENDING,
+        ].join("\n"),
+      );
+      expect([...(await readdir(outputDir))].sort()).toStrictEqual(MARKETPLACE_SKILL_IDS);
+    });
+
+    it("copies only the skills not already there, counting the ones it skipped", async () => {
+      const outputDir = path.join(dirs.tempDir, "ejected");
+      await runCliCommand(["eject", "skills", "--output", outputDir]);
+      await rm(path.join(outputDir, REMOVED_SKILL_ID), { recursive: true });
+      const editedSkillMd = path.join(outputDir, EDITED_SKILL_ID, STANDARD_FILES.SKILL_MD);
+      await writeFile(editedSkillMd, USERS_OWN_SKILL_EDIT);
+
+      const { stdout, stderr, error } = await runCliCommand([
+        "eject",
+        "skills",
+        "--output",
+        outputDir,
+      ]);
+
+      expect(error).toBeUndefined();
+      expect(compactCliOutput(stderr)).toBe(
+        compactCliOutput(
+          `Warning: Skills already exist at ${outputDir} — skipped 3 skills. Use --force to overwrite them.`,
+        ),
+      );
+      expect(stdout).toBe(
+        [
+          ...HEADER,
+          `Output directory: ${outputDir}`,
+          `✓ 1 skill ejected to ${outputDir} from ${dirs.sourceDir}`,
+          "You can now customize skill content locally.",
+          ...ENDING,
+        ].join("\n"),
+      );
+      expect(await readFile(editedSkillMd, "utf-8")).toBe(USERS_OWN_SKILL_EDIT);
+      expect([...(await readdir(outputDir))].sort()).toStrictEqual(MARKETPLACE_SKILL_IDS);
+    });
+
+    it("copies only the skills not already in the default destination, counting the ones it skipped", async () => {
+      const skillsDir = path.join(dirs.projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
+      await runCliCommand(["eject", "skills"]);
+      await rm(path.join(skillsDir, REMOVED_SKILL_ID), { recursive: true });
+
+      const { stdout, stderr, error } = await runCliCommand(["eject", "skills"]);
+
+      expect(error).toBeUndefined();
+      expect(compactCliOutput(stderr)).toBe(
+        compactCliOutput(
+          `Warning: Skills already exist at ${skillsDir} — skipped 3 skills. Use --force to overwrite them.`,
+        ),
+      );
+      expect(stdout).toBe(
+        [
+          ...HEADER,
+          `✓ 1 skill ejected to ${skillsDir} from ${dirs.sourceDir}`,
+          "You can now customize skill content locally.",
+          ...ENDING,
+        ].join("\n"),
+      );
+      expect([...(await readdir(skillsDir))].sort()).toStrictEqual(MARKETPLACE_SKILL_IDS);
+    });
+
+    it("counts a single skipped skill in the singular", async () => {
+      const outputDir = path.join(dirs.tempDir, "ejected");
+      await runCliCommand(["eject", "skills", "--output", outputDir]);
+      await Promise.all(
+        MARKETPLACE_SKILL_IDS.filter((id) => id !== KEPT_SKILL_ID).map((id) =>
+          rm(path.join(outputDir, id), { recursive: true }),
+        ),
+      );
+
+      const { stdout, stderr, error } = await runCliCommand([
+        "eject",
+        "skills",
+        "--output",
+        outputDir,
+      ]);
+
+      expect(error).toBeUndefined();
+      expect(compactCliOutput(stderr)).toBe(
+        compactCliOutput(
+          `Warning: Skills already exist at ${outputDir} — skipped 1 skill. Use --force to overwrite them.`,
+        ),
+      );
+      expect(stdout).toBe(
+        [
+          ...HEADER,
+          `Output directory: ${outputDir}`,
+          `✓ 3 skills ejected to ${outputDir} from ${dirs.sourceDir}`,
+          "You can now customize skill content locally.",
+          ...ENDING,
+        ].join("\n"),
+      );
+      expect([...(await readdir(outputDir))].sort()).toStrictEqual(MARKETPLACE_SKILL_IDS);
+    });
+
     it("leaves out a skill the project already holds a local copy of", async () => {
       const outputDir = path.join(dirs.tempDir, "ejected");
       await runCliCommand(["eject", "skills", "--output", outputDir]);
@@ -1062,6 +1354,56 @@ describe("what eject says", () => {
       expect(stdout).toContain(
         `✓ 3 skills ejected to ${path.join(dirs.tempDir, "again")} from ${dirs.sourceDir}`,
       );
+    });
+  });
+
+  describe("eject all, run twice into the default destination", () => {
+    let dirs: TestDirs;
+    let template: string;
+
+    beforeEach(async () => {
+      dirs = await createTestSource({ skills: inTestMarketplace(DEFAULT_TEST_SKILLS) });
+      await writeTestTsConfig(
+        dirs.projectDir,
+        buildProjectConfig({ skills: [], agents: [], marketplace: dirs.sourceDir }),
+      );
+      process.chdir(dirs.projectDir);
+      template = path.join(
+        agentsDirOf(dirs.projectDir),
+        path.basename(DIRS.templates),
+        "agent.liquid",
+      );
+      await runCliCommand(["eject", "all"]);
+      await writeFile(template, USERS_OWN_TEMPLATE);
+    });
+
+    afterEach(async () => {
+      await cleanupTestSource(dirs);
+    });
+
+    it("keeps the templates a second eject all finds there, without --force", async () => {
+      const skillsDir = path.join(dirs.projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
+
+      const { stdout, stderr, error } = await runCliCommand(["eject", "all"]);
+
+      expect(error).toBeUndefined();
+      expect(stdout).toBe([...HEADER, ...ENDING].join("\n"));
+      expect(compactCliOutput(stderr)).toBe(
+        compactCliOutput(
+          [
+            `Warning: Agent partials already exist at ${agentsDirOf(dirs.projectDir)}. Use --force to overwrite.`,
+            `Warning: Skills already exist at ${skillsDir}. Use --force to overwrite.`,
+          ].join("\n"),
+        ),
+      );
+      expect(await readFile(template, "utf-8")).toBe(USERS_OWN_TEMPLATE);
+    });
+
+    it("replaces the templates on eject all --force", async () => {
+      const { error } = await runCliCommand(["eject", "all", "--force"]);
+
+      expect(error).toBeUndefined();
+      expect(await readFile(template, "utf-8")).not.toBe(USERS_OWN_TEMPLATE);
     });
   });
 
@@ -1092,12 +1434,15 @@ describe("what eject says", () => {
       expect(run.stdout).toContain(`✓ 4 skills ejected to ${outputDir} from ${dirs.sourceDir}`);
     });
 
-    it("puts the skills on disk beside the partials and templates, none nested", async () => {
+    it("puts the skills on disk beside the partials, with the templates once, among them", async () => {
       const skillIds = inTestMarketplace(DEFAULT_TEST_SKILLS).map((skill) => skill.id);
 
       expect([...(await readdir(outputDir))].sort()).toStrictEqual(
-        [...EJECTED_AGENT_DIRS, ...EJECTED_TEMPLATE_ENTRIES, ...skillIds].sort(),
+        [...EJECTED_AGENT_DIRS, ...skillIds].sort(),
       );
+      expect(
+        [...(await readdir(path.join(outputDir, path.basename(DIRS.templates))))].sort(),
+      ).toStrictEqual(EJECTED_TEMPLATE_ENTRIES);
     });
 
     it("still refuses to copy over skills already in the default destination", async () => {
@@ -1191,6 +1536,40 @@ describe("what eject says", () => {
         "github:acme/skills",
         "acme",
       ]);
+    });
+
+    it("refuses a marketplace the global config names as an error, naming the file and copying nothing", async () => {
+      const globalConfigPath = await writeTestTsConfig(
+        fakeHome,
+        buildProjectConfig({
+          name: "global",
+          skills: [],
+          agents: [],
+          marketplace: PRIVATE_ADDRESS_MARKETPLACE,
+        }),
+      );
+      const globalConfigBefore = await readFile(globalConfigPath, "utf-8");
+
+      const { error } = await runCliCommand(["eject", "skills"]);
+
+      // `eject` does not catch this one, and the binary prints such an error as `<name>: <message>`.
+      expect([error?.name, error?.message]).toStrictEqual([
+        "Error",
+        [
+          `The marketplace in ${globalConfigPath} points to a private or reserved IP address: "${PRIVATE_ADDRESS_MARKETPLACE}"`,
+          "",
+          "Marketplace URLs must not target private network addresses.",
+          "Use a public hostname instead.",
+          "Examples:",
+          "  marketplace: 'https://github.com/user/repo'",
+          "  marketplace: 'https://gitlab.company.com/team/skills'",
+        ].join("\n"),
+      ]);
+      expect([
+        await directoryExists(path.join(projectDir, LOCAL_SKILLS_PATH)),
+        await fileExists(getProjectConfigPath(projectDir, "claude")),
+        await readFile(globalConfigPath, "utf-8"),
+      ]).toStrictEqual([false, false, globalConfigBefore]);
     });
 
     it("at home, creates the global config pair and records the marketplace in it", async () => {

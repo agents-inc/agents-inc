@@ -32,6 +32,11 @@ const BEFORE_BUILD = new Date("2026-01-01T00:00:00.000Z");
 const BUILT_AT = new Date("2026-01-02T00:00:00.000Z");
 const AFTER_BUILD = new Date("2026-01-03T00:00:00.000Z");
 
+/** The guard's clock-step tolerance, written out so moving its edge reddens these. */
+const CLOCK_STEP_TOLERANCE_MS = 3_000;
+const AT_THE_TOLERANCE = new Date(BUILT_AT.getTime() + CLOCK_STEP_TOLERANCE_MS);
+const PAST_THE_TOLERANCE = new Date(BUILT_AT.getTime() + CLOCK_STEP_TOLERANCE_MS + 1);
+
 const STALE_CLI_HEADLINE = "dist/ is stale — packages/cli/src changed since the last build.";
 const STALE_MATRIX_HEADLINE = "dist/ is stale — packages/matrix/src changed since the last build.";
 const STALE_BOTH_HEADLINE =
@@ -107,6 +112,18 @@ describe("assertDistIsFresh", () => {
 
   it("refuses when a CLI source file changed after the build", async () => {
     await utimes(path.join(cliRoot, CLI_SRC_FILE), AFTER_BUILD, AFTER_BUILD);
+
+    await expect(assertDistIsFresh(cliRoot)).rejects.toThrow(STALE_CLI_HEADLINE);
+  });
+
+  it("accepts a source stamped after dist/ by no more than a clock step", async () => {
+    await utimes(path.join(cliRoot, CLI_SRC_FILE), AT_THE_TOLERANCE, AT_THE_TOLERANCE);
+
+    await expect(assertDistIsFresh(cliRoot)).resolves.toBeUndefined();
+  });
+
+  it("refuses a source stamped after dist/ by more than a clock step", async () => {
+    await utimes(path.join(cliRoot, CLI_SRC_FILE), PAST_THE_TOLERANCE, PAST_THE_TOLERANCE);
 
     await expect(assertDistIsFresh(cliRoot)).rejects.toThrow(STALE_CLI_HEADLINE);
   });

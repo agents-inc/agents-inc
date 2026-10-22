@@ -12,9 +12,9 @@ export type CatalogRequirement = {
 
 export type CatalogCategory = {
   displayName: string
-/** Absent for a category no domain claims; such a category is skipped. */
+  /** Absent for a category no domain claims; such a category is skipped. */
   domain?: string
-/** Absent is not exclusive. */
+  /** Absent is not exclusive. */
   exclusive?: boolean
 }
 
@@ -22,7 +22,7 @@ export type CatalogSkill = {
   id: string
   displayName: string
   category: string
-/** The user's own skill rather than the catalogue's. */
+  /** The user's own skill rather than the catalogue's. */
   custom?: boolean
   conflictsWith?: readonly CatalogRelation[]
   requires?: readonly CatalogRequirement[]

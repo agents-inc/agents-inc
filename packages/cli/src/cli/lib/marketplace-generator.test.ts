@@ -118,6 +118,8 @@ describe("marketplace-generator", () => {
       expect(reactPlugin?.category).toBeUndefined();
     });
 
+    // The scan answers `web-state-mobx/` before `web-state/` ('-' sorts before '/'), so only the
+    // generator's own sort by name puts `web-state` first.
     it("should sort plugins alphabetically", async () => {
       await createPlugin("web-state-zustand", {
         name: "web-state-zustand",
@@ -134,11 +136,21 @@ describe("marketplace-generator", () => {
         description: "MobX state",
         version: "1.0.0",
       });
+      await createPlugin("web-state", {
+        name: "web-state",
+        description: "Shared state",
+        version: "1.0.0",
+      });
 
       const marketplace = await generateMarketplace(pluginsDir, TEST_MARKETPLACE_OPTIONS);
 
       const names = marketplace.plugins.map((p) => p.name);
-      expect(names).toStrictEqual(["api-http-axios", "web-state-mobx", "web-state-zustand"]);
+      expect(names).toStrictEqual([
+        "api-http-axios",
+        "web-state",
+        "web-state-mobx",
+        "web-state-zustand",
+      ]);
     });
 
     it("should include marketplace metadata", async () => {

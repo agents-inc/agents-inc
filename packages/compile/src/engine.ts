@@ -31,7 +31,7 @@ function templateFileSystem(templates: CompileTemplates): FS {
     templates[normalizeKey(file)]
 
   return {
-  // The record is rooted at the templates directory, so an empty root means the key is the path.
+    // The record is rooted at the templates directory, so an empty root means the key is the path.
     resolve: (dir: string, file: string, ext: string) =>
       [dir, file.endsWith(ext) ? file : `${file}${ext}`]
         .filter(Boolean)

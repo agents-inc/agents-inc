@@ -10,13 +10,16 @@ import {
 } from "@workspace/api-mocks";
 import { configMockServer } from "@workspace/api-mocks/node";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fetchSeedConfig, SEED_API_URL, SEED_USER_AGENT } from "./fetch-seed";
 import { firstElement } from "../__tests__/helpers/element-at.js";
 import { useMockWorker } from "../__tests__/helpers/mock-worker.js";
 
 const READ_CONFIG_URL = `${CONFIGS_URL}/:id`;
+
+/** Names the store's address; the suite's setup points it at the mock worker. */
+const STORE_ADDRESS_VARIABLE = "AGENTS_INC_API_URL";
 
 /** Answers the shared worker mock lacks: a dropped connection, and an intermediary's HTML. */
 const readUnreachableHandler = http.get(READ_CONFIG_URL, () => HttpResponse.error());
@@ -218,6 +221,22 @@ describe("fetchSeedConfig", () => {
     const result = await fetchSeedConfig(STORED_ID);
 
     expect(result.ok ? "" : result.error).toContain("re-share the configuration");
+  });
+});
+
+describe("the store fetchSeedConfig asks", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  // A literal: it is the address every user's install reads from.
+  it("is the public store when no other address is set", async () => {
+    vi.stubEnv(STORE_ADDRESS_VARIABLE, undefined);
+    vi.resetModules();
+
+    const { SEED_API_URL: storeAddress } = await import("./fetch-seed");
+
+    expect(storeAddress).toBe("https://api.agentsinc.sh");
   });
 });
 

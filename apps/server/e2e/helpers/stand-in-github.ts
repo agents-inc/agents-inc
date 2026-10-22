@@ -25,7 +25,7 @@ const GITHUB_HOSTS = [GITHUB_API_ORIGIN, GITHUB_RAW_ORIGIN].map(
 
 const LOOPBACK = "127.0.0.1"
 
-export type StandInTreeEntry = { path: string; type: string; size?: number }
+type StandInTreeEntry = { path: string; type: string; size?: number }
 
 export type StandInRepo = {
   stars: number

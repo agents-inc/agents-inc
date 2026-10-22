@@ -50,6 +50,11 @@ const standInSkill = (repo: string, at: number): SkillIndexEntry => {
 
 const CRAWLED: SkillIndexEntry[] = INDEXED_REPOS.map(standInSkill)
 
+const BUILT_FROM_THE_CRAWL: Record<keyof SkillIndex, unknown> = {
+  builtAt: expect.any(String),
+  skills: CRAWLED,
+}
+
 const skillMd = ({ name, description }: SkillIndexEntry) =>
   [
     "---",
@@ -164,42 +169,41 @@ afterEach(async () => {
 })
 
 describe("`bun run dev` in apps/server", () => {
-  it("builds the skill index into a store that has none, before the worker answers", async () => {
-    dev = await startDev(store(), environment())
+  it("builds the skill index into a store that has none, before the worker answers", async ({
+    signal,
+  }) => {
+    dev = await startDev(store(), environment(), signal)
 
     const served = await askForIndex(dev)
 
     expect(served.status, dev.output()).toBe(200)
     expect(served.freshness).toBe("fresh")
-    expect(served.body).toStrictEqual({
-      builtAt: expect.any(String) as string,
-      skills: CRAWLED,
-    })
+    expect(served.body).toStrictEqual(BUILT_FROM_THE_CRAWL)
   })
 
-  it("rebuilds an index older than three days", async () => {
-    publishIntoLocalStore(
+  it("rebuilds an index older than three days", async ({ signal }) => {
+    await publishIntoLocalStore(
       store(),
       indexBuiltAgo(OLDER_THAN_THREE_DAYS),
-      environment()
+      environment(),
+      signal
     )
-    dev = await startDev(store(), environment())
+    dev = await startDev(store(), environment(), signal)
 
     const served = await askForIndex(dev)
 
     expect(served.status, dev.output()).toBe(200)
     expect(served.freshness).toBe("fresh")
-    expect(served.body).toStrictEqual({
-      builtAt: expect.any(String) as string,
-      skills: CRAWLED,
-    })
+    expect(served.body).toStrictEqual(BUILT_FROM_THE_CRAWL)
   })
 
   // A fresh index is not rebuilt.
-  it("keeps an index younger than three days, and asks GitHub for nothing", async () => {
+  it("keeps an index younger than three days, and asks GitHub for nothing", async ({
+    signal,
+  }) => {
     const kept = indexBuiltAgo(YOUNGER_THAN_THREE_DAYS)
-    publishIntoLocalStore(store(), kept, environment())
-    dev = await startDev(store(), environment())
+    await publishIntoLocalStore(store(), kept, environment(), signal)
+    dev = await startDev(store(), environment(), signal)
 
     const served = await askForIndex(dev)
 
@@ -209,16 +213,19 @@ describe("`bun run dev` in apps/server", () => {
     expect(github.requested()).toStrictEqual([])
   })
 
-  it("applies the local D1 migrations, so signing in starts instead of failing", async () => {
-    dev = await startDev(store(), environment())
+  it("applies the local D1 migrations, so signing in starts instead of failing", async ({
+    signal,
+  }) => {
+    dev = await startDev(store(), environment(), signal)
 
     const signIn = await startSigningIn(dev)
+    const toGitHub: Record<string, unknown> = {
+      url: expect.stringMatching(GITHUB_AUTHORIZE),
+      redirect: true,
+    }
 
     expect(signIn.status, dev.output()).toBe(200)
-    expect(signIn.body).toStrictEqual({
-      url: expect.stringMatching(GITHUB_AUTHORIZE) as string,
-      redirect: true,
-    })
+    expect(signIn.body).toStrictEqual(toGitHub)
   })
 
   // GitHub out of reach never stops the worker from starting.
@@ -228,8 +235,10 @@ describe("`bun run dev` in apps/server", () => {
       github = await startStandInGitHub(scratch, GITHUB_DOWN)
     })
 
-    it("still starts the worker over a store with no index, and says skill search answers 503", async () => {
-      dev = await startDev(store(), environment())
+    it("still starts the worker over a store with no index, and says skill search answers 503", async ({
+      signal,
+    }) => {
+      dev = await startDev(store(), environment(), signal)
 
       const served = await askForIndex(dev)
 
@@ -241,10 +250,12 @@ describe("`bun run dev` in apps/server", () => {
     })
 
     // A stale index is still served, so 503 would be false.
-    it("still starts the worker over a stale index, and says it serves that copy marked stale", async () => {
+    it("still starts the worker over a stale index, and says it serves that copy marked stale", async ({
+      signal,
+    }) => {
       const left = indexBuiltAgo(OLDER_THAN_THREE_DAYS)
-      publishIntoLocalStore(store(), left, environment())
-      dev = await startDev(store(), environment())
+      await publishIntoLocalStore(store(), left, environment(), signal)
+      dev = await startDev(store(), environment(), signal)
 
       const served = await askForIndex(dev)
 
@@ -264,8 +275,10 @@ describe("`bun run dev` in apps/server", () => {
       github = await startStandInGitHub(scratch, GITHUB_SILENT)
     })
 
-    it("stops the crawl after 30 s, starts the worker, and says skill search answers 503", async () => {
-      dev = await startDev(store(), environment())
+    it("stops the crawl after 30 s, starts the worker, and says skill search answers 503", async ({
+      signal,
+    }) => {
+      dev = await startDev(store(), environment(), signal)
 
       const served = await askForIndex(dev)
 

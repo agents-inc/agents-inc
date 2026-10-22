@@ -7,6 +7,7 @@ import { validateSelection } from "./selection"
 import {
   buildCatalog,
   buildCatalogCategory,
+  buildCatalogKeyedBy,
   buildCatalogSkill,
 } from "./__tests__/factories/catalog-factories"
 
@@ -46,6 +47,26 @@ describe("a skill the catalogue does not carry", () => {
     expect(() => validateSelection([REACT], catalog)).toThrow(
       `Skill not found: ${REACT}`
     )
+  })
+})
+
+// The selection names catalogue keys; every check after resolution reads the skill's own id.
+describe("a catalogue that files a skill under a key other than its own id", () => {
+  it("judges nothing it cannot find under that id, rather than failing on the missing entry", () => {
+    const catalog = buildCatalogKeyedBy(
+      { "web-framework": EXCLUSIVE_FRAMEWORK },
+      {
+        [REACT]: buildCatalogSkill(VUE, {
+          displayName: "React",
+          category: "web-framework",
+        }),
+      }
+    )
+
+    expect(validateSelection([REACT], catalog)).toStrictEqual({
+      valid: true,
+      errors: [],
+    })
   })
 })
 

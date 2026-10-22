@@ -219,6 +219,29 @@ describe("isStackCustom", () => {
   })
 })
 
+// The stack sampled above pins a sub-agent; most vendored stacks pin none.
+describe("isStackCustom for a stack that pins no sub-agent", () => {
+  const unpinnedStackId = () => {
+    const stack = STACKS.find(
+      (candidate) => expandStack(candidate.id)?.skillLessAgentIds.length === 0
+    )
+    if (!stack) throw new Error("every vendored stack pins a sub-agent")
+    return stack.id
+  }
+
+  afterEach(() => {
+    useConfigStore.getState().reset()
+  })
+
+  it("is false straight after applying it, with no agent record to compare", () => {
+    useConfigStore.getState().applyStack(unpinnedStackId())
+    const { stackId, skills, agents } = useConfigStore.getState()
+
+    expect(agents).toStrictEqual({})
+    expect(isStackCustom({ stackId, skills, agents })).toBe(false)
+  })
+})
+
 describe("summarize", () => {
   it("counts nothing for an empty configuration", () => {
     expect(summarize(scratch())).toStrictEqual({

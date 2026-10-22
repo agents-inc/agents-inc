@@ -1,14 +1,11 @@
-// The selection semantics as implementation-neutral data; each runner maps its
-// API onto these fields. `outOfReach` and `inReach` are chosen samples, not
-// the whole catalogue.
+// Implementation-neutral: each runner maps its API onto these fields. `outOfReach` and `inReach`
+// are chosen samples, not the whole catalogue.
 
 import { CATALOG } from "../read-model/catalog"
 import type { SkillId } from "../vendor/generated/source-types"
 
 // Labels for the editor/CLI divergences a scenario guards against.
-export type SelectionDivergence =
-  | "discourages"
-  | "exclusive-forgiveness"
+export type SelectionDivergence = "discourages" | "exclusive-forgiveness"
 
 export type SelectionScenario = {
   id: string
@@ -188,7 +185,7 @@ export const SELECTION_SCENARIOS: readonly SelectionScenario[] = [
     inReach: [SHADCN, RADIX, MUI],
     discouraged: [],
     divergence: null,
-    why: "shadcn/ui needs both halves; MUI stands for the design-system kits, which are a pick-one category and so stay swappable while none is selected. A scenario pinning the opposite — kits disabling each other through a conflict group inside an open category — was dropped when that group died with the `web-ui-kit` radio, and no catalogued pair states that shape any more.",
+    why: "shadcn/ui needs both halves; MUI stands for the design-system kits, which are a pick-one category and so stay swappable while none is selected.",
   },
   {
     id: "a-meta-framework-rules-out-the-other-family",
@@ -233,7 +230,7 @@ export const SELECTION_SCENARIOS: readonly SelectionScenario[] = [
     inReach: [RADIX, VUETIFY, RHF, VUE_TEST_UTILS, TAILWIND],
     discouraged: [],
     divergence: null,
-    why: "Astro hosts neither React nor Vue, but it excludes neither: it conflicts only with its sibling meta-frameworks, so next-intl loses the Next.js it is built on while both component families stay satisfiable and therefore offerable. Until 2026-08-07 this scenario asserted the mirror image — all four families' companions ruled out — and carried `divergence: \"framework-constraint\"`, the CLI's `compatibleWith` whitelist answering 'is a declared host selected'. The owner ruled those verdicts an accepted loss and CLI-389 phase C deleted the field, so both sides now answer 'could this still become valid' and this is an agreement.",
+    why: "Astro hosts neither React nor Vue, but it excludes neither: it conflicts only with its sibling meta-frameworks, so next-intl loses the Next.js it is built on while both component families stay satisfiable and therefore offerable.",
   },
   {
     id: "a-companion-whose-base-is-merely-still-available",
@@ -245,7 +242,7 @@ export const SELECTION_SCENARIOS: readonly SelectionScenario[] = [
     inReach: [EXPO, REACT_NATIVE],
     discouraged: [],
     divergence: null,
-    why: "Expo is for React Native, and React alone is not React Native — but React rules React Native out of nothing, so Expo's requirement is unmet rather than unreachable and the cell stays live. Until 2026-08-07 this asserted Expo ruled out, on the CLI's `compatibleWith` whitelist; the owner ruled that verdict an accepted loss when CLI-389 phase C deleted the field. Nudging the user toward the base it still needs is another surface's job, not a verdict.",
+    why: "Expo is for React Native, and React alone is not React Native — but React rules React Native out of nothing, so Expo's requirement is unmet rather than unreachable and the cell stays live. Nudging the user toward the base it still needs is another surface's job, not a verdict.",
   },
   {
     id: "a-framework-beside-a-companion-bound-to-another",
@@ -257,7 +254,7 @@ export const SELECTION_SCENARIOS: readonly SelectionScenario[] = [
     inReach: [REACT, SVELTE],
     discouraged: [],
     divergence: null,
-    why: "Pinia needs Vue or Nuxt and cannot say which, so it drags neither in — and a framework it cannot run on is therefore excluded by nothing. Until 2026-08-07 React and Svelte were ruled out here through the CLI's `compatibleWith` whitelist, which read the companion's declared hosts back onto the frameworks; the owner ruled that an accepted loss and CLI-389 phase C deleted the field. The sibling scenario `a-choice-commits-to-none-of-its-options` pins what Pinia implies; this one pins what it does not rule out.",
+    why: "Pinia needs Vue or Nuxt and cannot say which, so it drags neither in — and a framework it cannot run on is therefore excluded by nothing. The sibling scenario `a-choice-commits-to-none-of-its-options` pins what Pinia implies; this one pins what it does not rule out.",
   },
   {
     id: "a-sibling-conflicting-with-a-merely-implied-skill",
@@ -280,7 +277,7 @@ export const SELECTION_SCENARIOS: readonly SelectionScenario[] = [
     inReach: [REMIX],
     discouraged: [],
     divergence: null,
-    why: "Both clash with the selected Next.js in a pick-one category, so the click swaps it out — which rescues Remix, built on the React that is also selected, and does nothing for Nuxt, which needs the Vue that same React rules out. Forgiveness reaches exactly as far as the swap does. React is named beside Next.js rather than left implied because the CLI computes no requires-closure yet, the same reason `selecting-the-base-alongside-changes-nothing` spells its base out. The exemplar was VitePress until the docs frameworks stopped requiring a base framework — a docs site is its own deployable — which left Nuxt carrying the fence this scenario is about.",
+    why: "Both clash with the selected Next.js in a pick-one category, so the click swaps it out — which rescues Remix, built on the React that is also selected, and does nothing for Nuxt, which needs the Vue that same React rules out. Forgiveness reaches exactly as far as the swap does. React is named beside Next.js rather than left implied because the CLI computes no requires-closure yet, the same reason `selecting-the-base-alongside-changes-nothing` spells its base out.",
   },
 ]
 

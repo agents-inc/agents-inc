@@ -1,14 +1,13 @@
 import path from "path";
 
 import { ensureDir, writeFile } from "../../utils/fs";
-import { DEFAULT_VERSION, PLUGIN_MANIFEST_DIR, STANDARD_FILES } from "../../consts";
+import { DEFAULT_VERSION } from "../../consts";
 import type { PluginAuthor, PluginManifest } from "../../types";
+import { getPluginManifestPath } from "./plugin-finder";
 
-const PLUGIN_DIR_NAME = PLUGIN_MANIFEST_DIR;
-const PLUGIN_MANIFEST_FILE = STANDARD_FILES.PLUGIN_JSON;
 const AGENT_PLUGIN_PREFIX = "agent-";
 
-export type SkillManifestOptions = {
+type SkillManifestOptions = {
   skillName: string;
   description?: string;
   author?: string;
@@ -18,7 +17,7 @@ export type SkillManifestOptions = {
   keywords?: string[];
 };
 
-export type AgentManifestOptions = {
+type AgentManifestOptions = {
   agentName: string;
   description?: string;
   version?: string;
@@ -44,9 +43,14 @@ export function generateSkillPluginManifest(options: SkillManifestOptions): Plug
   };
 }
 
+/** Both the plugin's manifest name and the folder it is built into. */
+export function agentPluginName(agentName: string): string {
+  return `${AGENT_PLUGIN_PREFIX}${agentName}`;
+}
+
 export function generateAgentPluginManifest(options: AgentManifestOptions): PluginManifest {
   return {
-    name: `${AGENT_PLUGIN_PREFIX}${options.agentName}`,
+    name: agentPluginName(options.agentName),
     version: options.version ?? DEFAULT_VERSION,
     agents: "./agents/",
     ...(options.description ? { description: options.description } : {}),
@@ -57,10 +61,9 @@ export async function writePluginManifest(
   outputDir: string,
   manifest: PluginManifest,
 ): Promise<string> {
-  const pluginDir = path.join(outputDir, PLUGIN_DIR_NAME);
-  const manifestPath = path.join(pluginDir, PLUGIN_MANIFEST_FILE);
+  const manifestPath = getPluginManifestPath(outputDir);
 
-  await ensureDir(pluginDir);
+  await ensureDir(path.dirname(manifestPath));
 
   const content = JSON.stringify(manifest, null, 2);
   await writeFile(manifestPath, content);

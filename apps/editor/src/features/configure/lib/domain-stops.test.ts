@@ -68,6 +68,15 @@ describe("progressAt", () => {
   it("is at the last domain at max", () => {
     expect(progressAt(STOPS, MAX)).toStrictEqual({ index: 3, t: 0 })
   })
+
+  // `domainStops` keeps its input's order, so nothing makes the stops rise.
+  it("stays at the start of a domain whose next stop lies above it", () => {
+    expect(progressAt([10, 5], 3)).toStrictEqual({ index: 0, t: 0 })
+  })
+
+  it("stays at the start of a domain when two stops share a height and the position is not a number", () => {
+    expect(progressAt([5, 5], Number.NaN)).toStrictEqual({ index: 0, t: 0 })
+  })
 })
 
 describe("currentIndex", () => {

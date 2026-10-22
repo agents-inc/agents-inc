@@ -5,10 +5,11 @@ import { CLI } from "../fixtures/cli.js";
 import "../matchers/setup.js";
 import {
   MONOREPO_ROOT,
-  agentsPath,
   createTempDir,
   cleanupTempDir,
   directoryExists,
+  isClaudeCLIAvailable,
+  readCompiledAgents,
 } from "../helpers/test-utils.js";
 import { readActiveAgentNames } from "../fixtures/dual-scope-helpers.js";
 import {
@@ -17,15 +18,14 @@ import {
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
 import { E2E_AGENT } from "../fixtures/expected-values.js";
-import { listCompiledAgentNames } from "../../src/cli/lib/agents/list-compiled-agents.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * `init --from` against the real local skills repository (`--marketplace` at the local clone, so
- * no network). Skipped when that directory is absent; `SKILLS_SOURCE` overrides it.
+ * `--marketplace` points at the local skills clone, so no network. Needs `claude` because the
+ * shared setup installs plugins.
  */
 
 // A sibling checkout of the monorepo, hence MONOREPO_ROOT rather than the CLI package root.
@@ -34,6 +34,7 @@ const SKILLS_SOURCE = process.env.SKILLS_SOURCE ?? path.resolve(MONOREPO_ROOT, "
 const REAL_INSTALL_TIMEOUT = TIMEOUTS.PLUGIN_INSTALL;
 
 const hasSkillsSource = await directoryExists(path.join(SKILLS_SOURCE, SOURCE_PATHS.SKILLS_DIR));
+const claudeAvailable = await isClaudeCLIAvailable();
 
 /**
  * A ref names the marketplace that resolved it; a bare `toContain("agents-inc")` is this CLI's own
@@ -53,7 +54,7 @@ const pluginOnWebDev = buildSeedSkill({
   assignments: { [WEB_DEV]: "lazy" },
 });
 
-describe.skipIf(!hasSkillsSource)("real marketplace", () => {
+describe.skipIf(!hasSkillsSource || !claudeAvailable)("real marketplace", () => {
   let projectDir: string;
   let store: SeedConfigStore;
   let initOutput: string;
@@ -113,11 +114,11 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
         "config.ts must name exactly the sub-agents the configuration switches on",
       ).toStrictEqual([WEB_DEV]);
 
-      const compiled = await listCompiledAgentNames(agentsPath(sharedHome));
+      const compiled = await readCompiledAgents(sharedHome);
       expect(
-        compiled.sort(),
+        Object.keys(compiled).sort(),
         "the compiled agents on disk must be exactly that roster",
-      ).toStrictEqual([WEB_DEV]);
+      ).toStrictEqual([`${WEB_DEV}.md`]);
     });
 
     it("should have compiled agents with real content", async () => {

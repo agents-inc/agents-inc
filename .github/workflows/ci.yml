@@ -38,6 +38,9 @@ jobs:
       - name: Workspaces must agree with each other
         run: bun run deps:check
 
+      - name: Every TypeScript file must be formatted
+        run: bun run format:check
+
       # Fast staleness checks run before the suites.
       - name: The vendored catalog must match what is committed
         working-directory: packages/cli

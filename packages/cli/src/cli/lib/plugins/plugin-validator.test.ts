@@ -2,8 +2,6 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import {
-  validatePluginStructure,
-  validatePluginManifest,
   validateSkillFrontmatter,
   validateAgentFrontmatter,
   validatePlugin,
@@ -31,36 +29,42 @@ describe("plugin-validator", () => {
   });
 
   async function writePluginJson(dir: string, manifest: Record<string, unknown>) {
-    await mkdir(path.join(dir, PLUGIN_MANIFEST_DIR), { recursive: true });
-    await writeFile(
-      path.join(dir, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE),
-      JSON.stringify(manifest),
-    );
+    await writePluginJsonText(dir, JSON.stringify(manifest));
   }
 
-  describe("validatePluginStructure", () => {
-    it("should pass for valid plugin structure", async () => {
-      await writePluginJson(tempDir, { name: "test-plugin" });
-      await writeFile(path.join(tempDir, "README.md"), "# Test Plugin");
+  async function writePluginJsonText(dir: string, text: string) {
+    await mkdir(path.join(dir, PLUGIN_MANIFEST_DIR), { recursive: true });
+    await writeFile(path.join(dir, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE), text);
+  }
 
-      const result = await validatePluginStructure(tempDir);
+  /** A README keeps the structure's one recommendation out of what a manifest spec asserts. */
+  async function writeReadme(dir: string) {
+    await writeFile(path.join(dir, STANDARD_FILES.README_MD), "# Test Plugin");
+  }
 
-      expect(result.valid).toBe(true);
-      expect(result.errors).toHaveLength(0);
-      expect(result.warnings).toHaveLength(0);
+  describe("a plugin's structure", () => {
+    it("passes a plugin with a manifest and a README", async () => {
+      await writePluginJson(tempDir, { name: "test-plugin", description: "A test plugin" });
+      await writeReadme(tempDir);
+
+      expect(await validatePlugin(tempDir)).toStrictEqual({
+        valid: true,
+        errors: [],
+        warnings: [],
+      });
     });
 
     it("should fail if plugin directory does not exist", async () => {
       const nonexistentPath = path.join(tempDir, "nonexistent");
 
-      const result = await validatePluginStructure(nonexistentPath);
+      const result = await validatePlugin(nonexistentPath);
 
       expect(result.valid).toBe(false);
       expect(result.errors).toStrictEqual([`Plugin directory does not exist: ${nonexistentPath}`]);
     });
 
     it("should fail if .claude-plugin/plugin.json missing", async () => {
-      const result = await validatePluginStructure(tempDir);
+      const result = await validatePlugin(tempDir);
 
       expect(result.valid).toBe(false);
       expect(result.errors).toContain("Missing .claude-plugin/ directory");
@@ -69,7 +73,7 @@ describe("plugin-validator", () => {
     it("should fail if plugin.json is missing but .claude-plugin exists", async () => {
       await mkdir(path.join(tempDir, PLUGIN_MANIFEST_DIR), { recursive: true });
 
-      const result = await validatePluginStructure(tempDir);
+      const result = await validatePlugin(tempDir);
 
       expect(result.valid).toBe(false);
       expect(result.errors).toContain("Missing .claude-plugin/plugin.json");
@@ -78,45 +82,35 @@ describe("plugin-validator", () => {
     it("should warn if README.md is missing", async () => {
       await writePluginJson(tempDir, { name: "test-plugin" });
 
-      const result = await validatePluginStructure(tempDir);
+      const result = await validatePlugin(tempDir);
 
       expect(result.valid).toBe(true);
       expect(result.warnings).toContain("Missing README.md (recommended for documentation)");
     });
   });
 
-  describe("validatePluginManifest", () => {
-    it("should pass for valid manifest", async () => {
-      const manifestPath = path.join(tempDir, PLUGIN_MANIFEST_FILE);
-      await writeFile(
-        manifestPath,
-        JSON.stringify({
-          name: "test-plugin",
-          version: "1.0.0",
-          description: "A test plugin",
-        }),
-      );
+  describe("a plugin's manifest", () => {
+    beforeEach(async () => {
+      await writeReadme(tempDir);
+    });
 
-      const result = await validatePluginManifest(manifestPath);
+    it("should pass for valid manifest", async () => {
+      await writePluginJson(tempDir, {
+        name: "test-plugin",
+        version: "1.0.0",
+        description: "A test plugin",
+      });
+
+      const result = await validatePlugin(tempDir);
 
       expect(result.valid).toBe(true);
       expect(result.errors).toHaveLength(0);
     });
 
-    it("should fail if file does not exist", async () => {
-      const nonexistentPath = path.join(tempDir, "nonexistent.json");
-
-      const result = await validatePluginManifest(nonexistentPath);
-
-      expect(result.valid).toBe(false);
-      expect(result.errors).toStrictEqual([`Manifest file not found: ${nonexistentPath}`]);
-    });
-
     it("should fail if JSON is invalid", async () => {
-      const manifestPath = path.join(tempDir, PLUGIN_MANIFEST_FILE);
-      await writeFile(manifestPath, "{ invalid json }");
+      await writePluginJsonText(tempDir, "{ invalid json }");
 
-      const result = await validatePluginManifest(manifestPath);
+      const result = await validatePlugin(tempDir);
 
       expect(result.valid).toBe(false);
       expect(result.errors).toHaveLength(1);
@@ -124,25 +118,18 @@ describe("plugin-validator", () => {
     });
 
     it("should fail if JSON parses to something other than an object", async () => {
-      const manifestPath = path.join(tempDir, PLUGIN_MANIFEST_FILE);
-      await writeFile(manifestPath, JSON.stringify(["not", "a", "manifest"]));
+      await writePluginJsonText(tempDir, JSON.stringify(["not", "a", "manifest"]));
 
-      const result = await validatePluginManifest(manifestPath);
+      const result = await validatePlugin(tempDir);
 
       expect(result.valid).toBe(false);
       expect(result.errors).toStrictEqual([`${PLUGIN_MANIFEST_FILE} must contain a JSON object`]);
     });
 
     it("should fail if name missing", async () => {
-      const manifestPath = path.join(tempDir, PLUGIN_MANIFEST_FILE);
-      await writeFile(
-        manifestPath,
-        JSON.stringify({
-          version: "1.0.0",
-        }),
-      );
+      await writePluginJson(tempDir, { version: "1.0.0" });
 
-      const result = await validatePluginManifest(manifestPath);
+      const result = await validatePlugin(tempDir);
 
       expect(result.valid).toBe(false);
       expect(result.errors).toHaveLength(1);
@@ -150,31 +137,18 @@ describe("plugin-validator", () => {
     });
 
     it("should fail if name not kebab-case", async () => {
-      const manifestPath = path.join(tempDir, PLUGIN_MANIFEST_FILE);
-      await writeFile(
-        manifestPath,
-        JSON.stringify({
-          name: "TestPlugin", // PascalCase - invalid
-        }),
-      );
+      await writePluginJson(tempDir, { name: "TestPlugin" });
 
-      const result = await validatePluginManifest(manifestPath);
+      const result = await validatePlugin(tempDir);
 
       expect(result.valid).toBe(false);
       expect(result.errors).toContain('name must be kebab-case: "TestPlugin"');
     });
 
     it("should fail if version is not valid semver", async () => {
-      const manifestPath = path.join(tempDir, PLUGIN_MANIFEST_FILE);
-      await writeFile(
-        manifestPath,
-        JSON.stringify({
-          name: "test-plugin",
-          version: 1, // Integer - should be semver string
-        }),
-      );
+      await writePluginJson(tempDir, { name: "test-plugin", version: 1 });
 
-      const result = await validatePluginManifest(manifestPath);
+      const result = await validatePlugin(tempDir);
 
       expect(result.valid).toBe(false);
       expect(result.errors).toHaveLength(1);
@@ -182,32 +156,21 @@ describe("plugin-validator", () => {
     });
 
     it("should pass with valid semver version", async () => {
-      const manifestPath = path.join(tempDir, PLUGIN_MANIFEST_FILE);
-      await writeFile(
-        manifestPath,
-        JSON.stringify({
-          name: "test-plugin",
-          version: "3.2.1",
-          description: "Test plugin",
-        }),
-      );
+      await writePluginJson(tempDir, {
+        name: "test-plugin",
+        version: "3.2.1",
+        description: "Test plugin",
+      });
 
-      const result = await validatePluginManifest(manifestPath);
+      const result = await validatePlugin(tempDir);
 
       expect(result.valid).toBe(true);
     });
 
     it("should fail if version is invalid semver", async () => {
-      const manifestPath = path.join(tempDir, PLUGIN_MANIFEST_FILE);
-      await writeFile(
-        manifestPath,
-        JSON.stringify({
-          name: "test-plugin",
-          version: "v1.0", // Invalid semver format
-        }),
-      );
+      await writePluginJson(tempDir, { name: "test-plugin", version: "v1.0" });
 
-      const result = await validatePluginManifest(manifestPath);
+      const result = await validatePlugin(tempDir);
 
       expect(result.valid).toBe(false);
       expect(result.errors).toHaveLength(1);
@@ -217,15 +180,9 @@ describe("plugin-validator", () => {
     });
 
     it("should warn if description missing", async () => {
-      const manifestPath = path.join(tempDir, PLUGIN_MANIFEST_FILE);
-      await writeFile(
-        manifestPath,
-        JSON.stringify({
-          name: "test-plugin",
-        }),
-      );
+      await writePluginJson(tempDir, { name: "test-plugin" });
 
-      const result = await validatePluginManifest(manifestPath);
+      const result = await validatePlugin(tempDir);
 
       expect(result.valid).toBe(true);
       expect(result.warnings).toStrictEqual([
@@ -235,9 +192,8 @@ describe("plugin-validator", () => {
 
     it("should fail if skills path does not exist", async () => {
       await writePluginJson(tempDir, { name: "test-plugin", skills: "./skills/" });
-      const manifestPath = path.join(tempDir, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE);
 
-      const result = await validatePluginManifest(manifestPath);
+      const result = await validatePlugin(tempDir);
 
       expect(result.valid).toBe(false);
       expect(result.errors).toContain("Skills path does not exist: ./skills/");
@@ -250,9 +206,8 @@ describe("plugin-validator", () => {
         skills: "./skills/",
       });
       await mkdir(path.join(tempDir, STANDARD_DIRS.SKILLS), { recursive: true });
-      const manifestPath = path.join(tempDir, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE);
 
-      const result = await validatePluginManifest(manifestPath);
+      const result = await validatePlugin(tempDir);
 
       expect(result.valid).toBe(true);
     });
@@ -408,6 +363,22 @@ description: Expert frontend developer
       expect(result.errors).toContain('name must be kebab-case: "FrontendDeveloper"');
     });
 
+    it("refuses an empty name through the schema alone, with no second kebab-case error", async () => {
+      const agentPath = path.join(tempDir, "agent.md");
+      // YAML's empty string: a bare `name:` parses as null.
+      const emptyYamlString = '""';
+      await writeFile(agentPath, renderAgentMd(emptyYamlString, "Expert frontend developer"));
+
+      expect(await validateAgentFrontmatter(agentPath)).toStrictEqual({
+        valid: false,
+        errors: [
+          "name: Invalid string: must match pattern /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/",
+          "name: Too small: expected string to have >=1 characters",
+        ],
+        warnings: [],
+      });
+    });
+
     it("should fail if description missing", async () => {
       const agentPath = path.join(tempDir, "agent.md");
       await writeFile(
@@ -561,31 +532,6 @@ name: bad-skill
       return path.join(tempDir, "agents");
     }
 
-    it("refuses a manifest whose agents path does not exist", async () => {
-      await writeAgentsPlugin();
-
-      const result = await validatePluginManifest(
-        path.join(tempDir, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE),
-      );
-
-      expect(result).toStrictEqual({
-        valid: false,
-        errors: [`Agents path does not exist: ${AGENTS_PATH}`],
-        warnings: [],
-      });
-    });
-
-    it("accepts a manifest whose agents path exists", async () => {
-      const agentsDir = await writeAgentsPlugin();
-      await mkdir(agentsDir, { recursive: true });
-
-      const result = await validatePluginManifest(
-        path.join(tempDir, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE),
-      );
-
-      expect(result).toStrictEqual({ valid: true, errors: [], warnings: [] });
-    });
-
     it("validates no agent files where the agents path is missing", async () => {
       await writeAgentsPlugin();
 
@@ -637,6 +583,17 @@ name: bad-skill
         warnings: [],
       });
     });
+
+    it("reads none of the plugin's own files as agents where the agents path is empty", async () => {
+      await writePluginJson(tempDir, { name: "test-plugin", description: "Test", agents: "" });
+      await writeReadme(tempDir);
+
+      expect(await validatePlugin(tempDir)).toStrictEqual({
+        valid: true,
+        errors: [],
+        warnings: [],
+      });
+    });
   });
 
   describe("the skills a plugin declares", () => {
@@ -672,6 +629,17 @@ name: bad-skill
         valid: true,
         errors: [],
         warnings: ["Skills directory exists but contains no SKILL.md files: ./skills/"],
+      });
+    });
+
+    it("looks for no SKILL.md files where the skills path is empty", async () => {
+      await writePluginJson(tempDir, { name: "test-plugin", description: "Test", skills: "" });
+      await writeReadme(tempDir);
+
+      expect(await validatePlugin(tempDir)).toStrictEqual({
+        valid: true,
+        errors: [],
+        warnings: [],
       });
     });
   });
@@ -793,7 +761,7 @@ name: bad-skill
 });
 
 /** Semantic Versioning 2.0.0's own grammar, read edge by edge. */
-describe("validatePluginManifest and semantic versions", () => {
+describe("a plugin manifest's semantic version", () => {
   let tempDir: string;
 
   beforeEach(async () => {
@@ -805,12 +773,12 @@ describe("validatePluginManifest and semantic versions", () => {
   });
 
   async function versionValid(version: string): Promise<boolean> {
-    const manifestPath = path.join(tempDir, PLUGIN_MANIFEST_FILE);
+    await mkdir(path.join(tempDir, PLUGIN_MANIFEST_DIR), { recursive: true });
     await writeFile(
-      manifestPath,
+      path.join(tempDir, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE),
       JSON.stringify({ name: "test-plugin", version, description: "Test plugin" }),
     );
-    return (await validatePluginManifest(manifestPath)).valid;
+    return (await validatePlugin(tempDir)).valid;
   }
 
   it.each([

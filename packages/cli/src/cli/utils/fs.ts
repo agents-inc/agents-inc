@@ -4,6 +4,7 @@ import os from "os";
 import path from "path";
 import { PROVIDERS, STANDARD_FILES } from "../consts";
 import { sourceDir } from "../lib/installation/install-layout.js";
+import { bytewise } from "./string.js";
 // Private gate module, allowed here by an eslint exception: this is the write choke point.
 import { assertGateToken } from "../lib/config-gate/gate-token.js";
 
@@ -49,22 +50,41 @@ export async function directoryExists(dirPath: string): Promise<boolean> {
   }
 }
 
+/** Asks of the path's last part itself, where `fileExists` and `directoryExists` follow a link. */
+export async function isSymlink(filePath: string): Promise<boolean> {
+  try {
+    const entry = await fs.lstat(filePath);
+    return entry.isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+/** Sorted bytewise: readdir answers in the file system's order, which differs between runtimes. */
 export async function listDirectories(dirPath: string): Promise<string[]> {
   try {
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
-    return entries.filter((e) => e.isDirectory()).map((e) => e.name);
+    return entries
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .toSorted(bytewise);
   } catch {
     return [];
   }
 }
 
-/** @param dot Off for scans; on for reads that must reproduce a directory faithfully. */
+/**
+ * Sorted bytewise, because fast-glob answers in the order its concurrent directory reads finish,
+ * which changes from run to run.
+ * @param dot Off for scans; on for reads that must reproduce a directory faithfully.
+ */
 export async function glob(
   pattern: string,
   cwd: string,
   { dot = false }: { dot?: boolean } = {},
 ): Promise<string[]> {
-  return fg(pattern, { cwd, onlyFiles: true, dot });
+  const matches = await fg(pattern, { cwd, onlyFiles: true, dot });
+  return matches.toSorted(bytewise);
 }
 
 const PAIR_HALVES = [STANDARD_FILES.CONFIG_TS, STANDARD_FILES.CONFIG_TYPES_TS];
@@ -81,15 +101,11 @@ function everyGlobalPairPath(): string[] {
   );
 }
 
-// Resolved-path compare, so any spelling of the path is caught.
-function isGlobalPairPath(resolvedPath: string): boolean {
-  return everyGlobalPairPath().includes(resolvedPath);
-}
-
 export async function writeFile(filePath: string, content: string): Promise<void> {
-  // Runtime tripwire: a global pair write without the gate's token throws.
+  // Runtime tripwire: a global pair write without the gate's token throws. Resolved, so any
+  // spelling of the path is caught.
   const resolvedPath = path.resolve(filePath);
-  if (isGlobalPairPath(resolvedPath)) assertGateToken(resolvedPath);
+  if (everyGlobalPairPath().includes(resolvedPath)) assertGateToken(resolvedPath);
 
   await fs.ensureDir(path.dirname(filePath));
   await fs.writeFile(filePath, content, "utf-8");

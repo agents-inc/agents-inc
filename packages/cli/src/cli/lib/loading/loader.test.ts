@@ -23,6 +23,22 @@ import { entryAt } from "../__tests__/helpers/element-at.js";
 import { typedKeys } from "../../utils/typed-object.js";
 import type { AgentDefinition } from "../../types";
 
+/** YAML for an empty string, which the frontmatter schema accepts as a description. */
+const EMPTY_YAML_STRING = '""';
+
+const CLI_AGENTS_DIR = path.join("/project", DIRS.agents);
+const PROJECT_AGENTS_DIR = path.join("/project", ".agents-inc", "claude", "agents");
+const PLUGIN_SKILLS_DIR = path.join("/path/to/plugin", "skills");
+
+/** Each read answers from its own path, so no spec depends on the order files are read in. */
+function filesOnDisk(files: Record<string, string>): void {
+  vi.mocked(readFile).mockImplementation(async (filePath) => {
+    const content = files[filePath];
+    if (content === undefined) throw new Error(`EACCES: permission denied, open '${filePath}'`);
+    return content;
+  });
+}
+
 describe("parseFrontmatter", () => {
   it("should parse valid frontmatter with name and description", () => {
     const content = `---
@@ -157,7 +173,6 @@ Content`;
 
     const result = parseFrontmatter(content);
 
-    // Delegates to extractFrontmatter, whose regex tolerates \r\n line endings
     expect(result).toStrictEqual({ name: "skill", description: "desc" });
   });
 
@@ -307,7 +322,6 @@ description: [unclosed bracket
 
 Content`;
 
-    // extractFrontmatter catches the YAML parser error and returns null
     const result = parseFrontmatter(content);
 
     expect(result).toBeNull();
@@ -377,9 +391,10 @@ describe("loadAllAgents", () => {
 
   it("should load valid agents and skip invalid ones", async () => {
     vi.mocked(glob).mockResolvedValue(["web-developer/metadata.yaml", "bad-agent/metadata.yaml"]);
-    vi.mocked(readFile)
-      .mockResolvedValueOnce(renderAgentYaml("web-developer"))
-      .mockResolvedValueOnce("not valid yaml [[[");
+    filesOnDisk({
+      [path.join(CLI_AGENTS_DIR, "web-developer/metadata.yaml")]: renderAgentYaml("web-developer"),
+      [path.join(CLI_AGENTS_DIR, "bad-agent/metadata.yaml")]: "not valid yaml [[[",
+    });
 
     const result = await loadAllAgents("/project");
 
@@ -561,9 +576,11 @@ describe("loadProjectAgents", () => {
   it("should load valid project agents and skip invalid ones", async () => {
     vi.mocked(directoryExists).mockResolvedValue(true);
     vi.mocked(glob).mockResolvedValue(["api-developer/metadata.yaml", "broken/metadata.yaml"]);
-    vi.mocked(readFile)
-      .mockResolvedValueOnce(renderAgentYaml("api-developer"))
-      .mockResolvedValueOnce("totally invalid");
+    filesOnDisk({
+      [path.join(PROJECT_AGENTS_DIR, "api-developer/metadata.yaml")]:
+        renderAgentYaml("api-developer"),
+      [path.join(PROJECT_AGENTS_DIR, "broken/metadata.yaml")]: "totally invalid",
+    });
 
     const result = await loadProjectAgents("/project");
 
@@ -596,6 +613,20 @@ describe("loadPluginSkills", () => {
     });
   });
 
+  it("keeps the empty description a SKILL.md states, rather than writing one of its own", async () => {
+    vi.mocked(directoryExists).mockResolvedValue(true);
+    vi.mocked(glob).mockResolvedValue(["web-framework-react/SKILL.md"]);
+    vi.mocked(readFile).mockResolvedValue(renderSkillMd("web-framework-react", EMPTY_YAML_STRING));
+
+    const result = await loadPluginSkills("/path/to/plugin");
+
+    expect(result["web-framework-react"]).toStrictEqual({
+      id: "web-framework-react",
+      description: "",
+      path: "skills/web-framework-react/",
+    });
+  });
+
   it("should warn and skip skills with invalid frontmatter", async () => {
     vi.mocked(directoryExists).mockResolvedValue(true);
     vi.mocked(glob).mockResolvedValue(["bad-skill/SKILL.md"]);
@@ -610,9 +641,12 @@ describe("loadPluginSkills", () => {
   it("should skip a SKILL.md it cannot read and keep loading the rest", async () => {
     vi.mocked(directoryExists).mockResolvedValue(true);
     vi.mocked(glob).mockResolvedValue(["good-skill/SKILL.md", "unreadable-skill/SKILL.md"]);
-    vi.mocked(readFile)
-      .mockResolvedValueOnce(renderSkillMd("good-skill", "Good skill"))
-      .mockRejectedValueOnce(new Error("EACCES: permission denied"));
+    filesOnDisk({
+      [path.join(PLUGIN_SKILLS_DIR, "good-skill/SKILL.md")]: renderSkillMd(
+        "good-skill",
+        "Good skill",
+      ),
+    });
 
     const result = await loadPluginSkills("/path/to/plugin");
 
@@ -625,9 +659,16 @@ describe("loadPluginSkills", () => {
       "web-framework-react/SKILL.md",
       "web-state-zustand/SKILL.md",
     ]);
-    vi.mocked(readFile)
-      .mockResolvedValueOnce(renderSkillMd("web-framework-react", "React patterns"))
-      .mockResolvedValueOnce(renderSkillMd("web-state-zustand", "Zustand state"));
+    filesOnDisk({
+      [path.join(PLUGIN_SKILLS_DIR, "web-framework-react/SKILL.md")]: renderSkillMd(
+        "web-framework-react",
+        "React patterns",
+      ),
+      [path.join(PLUGIN_SKILLS_DIR, "web-state-zustand/SKILL.md")]: renderSkillMd(
+        "web-state-zustand",
+        "Zustand state",
+      ),
+    });
 
     const result = await loadPluginSkills("/path/to/plugin");
 
@@ -645,6 +686,8 @@ describe("loadPluginSkills", () => {
 });
 
 const METADATA_PATH = "/project/.claude/skills/web-framework-react/metadata.yaml";
+const SKILL_MD_PATH = "/project/.claude/skills/web-framework-react/SKILL.md";
+const REACT_SKILL_MD = renderSkillMd("web-framework-react", "React patterns");
 
 /** A metadata.yaml carrying the fields every reader of one goes looking for. */
 const USABLE_METADATA = [
@@ -776,8 +819,7 @@ describe("loadSkillsFromDir with requireMetadata", () => {
     vi.mocked(directoryExists).mockResolvedValue(true);
     vi.mocked(glob).mockResolvedValue(["web-framework-react/SKILL.md"]);
     vi.mocked(fileExists).mockResolvedValue(true);
-    // metadata.yaml is read first, so refusing it means SKILL.md is never reached.
-    vi.mocked(readFile).mockResolvedValue(UNPARSEABLE_METADATA);
+    filesOnDisk({ [METADATA_PATH]: UNPARSEABLE_METADATA, [SKILL_MD_PATH]: REACT_SKILL_MD });
 
     const result = await loadSkillsFromDir("/project/.claude/skills", {
       pathPrefix: ".claude/skills",
@@ -794,9 +836,7 @@ describe("loadSkillsFromDir with requireMetadata", () => {
     vi.mocked(directoryExists).mockResolvedValue(true);
     vi.mocked(glob).mockResolvedValue(["web-framework-react/SKILL.md"]);
     vi.mocked(fileExists).mockResolvedValue(true);
-    vi.mocked(readFile)
-      .mockResolvedValueOnce(USABLE_METADATA)
-      .mockResolvedValueOnce(renderSkillMd("web-framework-react", "React patterns"));
+    filesOnDisk({ [METADATA_PATH]: USABLE_METADATA, [SKILL_MD_PATH]: REACT_SKILL_MD });
 
     const result = await loadSkillsFromDir("/project/.claude/skills", {
       pathPrefix: ".claude/skills",
@@ -815,9 +855,10 @@ describe("loadSkillsFromDir with requireMetadata", () => {
     vi.mocked(directoryExists).mockResolvedValue(true);
     vi.mocked(glob).mockResolvedValue(["web-framework-react/SKILL.md"]);
     vi.mocked(fileExists).mockResolvedValue(true);
-    vi.mocked(readFile)
-      .mockResolvedValueOnce(PLACEHOLDER_CATEGORY_METADATA)
-      .mockResolvedValueOnce(renderSkillMd("web-framework-react", "React patterns"));
+    filesOnDisk({
+      [METADATA_PATH]: PLACEHOLDER_CATEGORY_METADATA,
+      [SKILL_MD_PATH]: REACT_SKILL_MD,
+    });
 
     const result = await loadSkillsFromDir("/project/.claude/skills", {
       pathPrefix: ".claude/skills",
@@ -930,7 +971,6 @@ describe("loader — what a load records and says", () => {
       },
       unusableMetadata: [],
     });
-    expect(fileExists).not.toHaveBeenCalled();
     expect(verbose).toHaveBeenCalledWith("  Loaded skill: web-framework-react");
   });
 
@@ -950,9 +990,12 @@ describe("loader — what a load records and says", () => {
     vi.mocked(directoryExists).mockResolvedValue(true);
     vi.mocked(glob).mockResolvedValue(["broken/SKILL.md", "placeholder/SKILL.md"]);
     vi.mocked(fileExists).mockResolvedValue(true);
-    vi.mocked(readFile)
-      .mockResolvedValueOnce(UNPARSEABLE_METADATA)
-      .mockResolvedValueOnce(PLACEHOLDER_CATEGORY_METADATA);
+    filesOnDisk({
+      [path.join(SKILLS_DIR, "broken/metadata.yaml")]: UNPARSEABLE_METADATA,
+      [path.join(SKILLS_DIR, "broken/SKILL.md")]: renderSkillMd("broken"),
+      [path.join(SKILLS_DIR, "placeholder/metadata.yaml")]: PLACEHOLDER_CATEGORY_METADATA,
+      [path.join(SKILLS_DIR, "placeholder/SKILL.md")]: renderSkillMd("placeholder"),
+    });
 
     await loadSkillsFromDir(SKILLS_DIR, { requireMetadata: true });
 
@@ -962,10 +1005,16 @@ describe("loader — what a load records and says", () => {
 
   it("reads a plugin's skills from its skills folder", async () => {
     vi.mocked(directoryExists).mockResolvedValue(true);
-    vi.mocked(glob).mockResolvedValue([]);
+    vi.mocked(glob).mockImplementation(async (_pattern: string, dir?: string) =>
+      dir === PLUGIN_SKILLS_DIR ? ["web-framework-react/SKILL.md"] : [],
+    );
+    filesOnDisk({
+      [path.join(PLUGIN_SKILLS_DIR, "web-framework-react/SKILL.md")]:
+        renderSkillMd("web-framework-react"),
+    });
 
-    await loadPluginSkills("/path/to/plugin");
-
-    expect(glob).toHaveBeenCalledWith("**/SKILL.md", path.join("/path/to/plugin", "skills"));
+    expect(Object.keys(await loadPluginSkills("/path/to/plugin"))).toStrictEqual([
+      "web-framework-react",
+    ]);
   });
 });

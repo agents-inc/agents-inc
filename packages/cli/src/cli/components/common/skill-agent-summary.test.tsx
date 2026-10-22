@@ -280,6 +280,37 @@ describe("SkillAgentSummary component", () => {
     });
   });
 
+  describe("rows removed in one render and restored in the next", () => {
+    const INSTALLED: Partial<SkillAgentSummaryProps> = {
+      installedSkillConfigs: buildSkillConfigs(["web-framework-react", "web-state-zustand"]),
+      installedAgentConfigs: buildAgentConfigs(["web-developer", "api-developer"], {
+        scope: "project",
+      }),
+    };
+
+    it("shows each removed skill and agent once after the re-render", () => {
+      const { lastFrame, rerender, unmount } = renderSummary(INSTALLED);
+      cleanup = unmount;
+
+      rerender(
+        <SkillAgentSummary
+          {...NOTHING_INSTALLED}
+          {...INSTALLED}
+          skillConfigs={buildSkillConfigs(["web-state-zustand"])}
+          agentConfigs={buildAgentConfigs(["api-developer"], { scope: "project" })}
+        />,
+      );
+
+      expect(lastFrame()).toMatchInlineSnapshot(`
+        "Skills                                                           │  Agents
+                                                                         │
+         Project                                                         │   Project
+        • Zustand ⏏                     - React ⏏                        │  • api-developer
+                                                                         │  - web-developer"
+      `);
+    });
+  });
+
   describe("an installation shown as it stands", () => {
     it("should mark every row unchanged when the installed configuration is the current one", () => {
       const skillConfigs = [

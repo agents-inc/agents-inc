@@ -14,6 +14,7 @@ export const copy = vi.fn();
 export const glob = vi.fn();
 export const fileExists = vi.fn();
 export const directoryExists = vi.fn();
+export const isSymlink = vi.fn();
 export const listDirectories = vi.fn();
 export const isDirectoryEmpty = vi.fn();
 export const removeDirIfEmpty = vi.fn();

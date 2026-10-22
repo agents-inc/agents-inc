@@ -49,4 +49,14 @@ describe("useTerminalDimensions", () => {
   it("falls back to the defaults when a resized stream reports no size", async () => {
     expect(await resizedTo(rendered(), { columns: 0, rows: undefined })).toBe("80x24");
   });
+
+  it("leaves no resize listener on the stream once unmounted", async () => {
+    const { stdout, unmount } = render(<DimensionsShown />);
+    await delay(RENDER_DELAY_MS);
+
+    unmount();
+    await delay(RENDER_DELAY_MS);
+
+    expect(stdout.listeners("resize")).toStrictEqual([]);
+  });
 });

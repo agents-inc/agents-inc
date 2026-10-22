@@ -2,7 +2,14 @@ import { Args, Flags } from "@oclif/core";
 import path from "path";
 import os from "os";
 import { BaseCommand } from "../base-command.js";
-import { copy, ensureDir, directoryExists, fileExists, listDirectories } from "../utils/fs.js";
+import {
+  copy,
+  ensureDir,
+  directoryExists,
+  fileExists,
+  isSymlink,
+  listDirectories,
+} from "../utils/fs.js";
 import { DIRS, PROJECT_ROOT } from "../consts.js";
 import {
   providerInUse,
@@ -13,11 +20,7 @@ import { EXIT_CODES } from "../lib/exit-codes.js";
 import { type SourceLoadResult } from "../lib/loading/index.js";
 import { loadSource } from "../lib/operations/index.js";
 import { matrix } from "../lib/matrix/matrix-provider";
-import {
-  resolveSource,
-  loadProjectSourceConfig,
-  getProjectConfigPath,
-} from "../lib/configuration/index.js";
+import { resolveSource, getProjectConfigPath } from "../lib/configuration/index.js";
 import {
   ensureBlankPair,
   lazyGateDeps,
@@ -33,7 +36,7 @@ import {
 import { copySkillsToLocalFlattened, type CopiedSkill } from "../lib/skills/index.js";
 import { INCOMPLETE_WORK_RECOVERY, INFO_MESSAGES } from "../utils/messages.js";
 import { getErrorMessage } from "../utils/errors.js";
-import { plural } from "../utils/string.js";
+import { bytewise, plural } from "../utils/string.js";
 import type { MergedSkillsMatrix } from "../types/index.js";
 
 const EJECT_TYPES = ["agent-partials", "templates", "skills", "all"] as const;
@@ -155,25 +158,29 @@ export default class Eject extends BaseCommand {
     flags: { output: string | undefined },
     projectDir: string,
   ): Promise<string> {
-    if (flags.output) {
-      const expandedPath = flags.output.startsWith("~")
-        ? path.join(os.homedir(), flags.output.slice(1))
-        : flags.output;
-      const outputBase = path.resolve(projectDir, expandedPath);
+    if (!flags.output) return sourceFolderInUse(projectDir, providerInUse(projectDir)).dir;
 
-      // `fileExists` is true of a directory too; an existing directory is written into, and each
-      // kind then skips its own destination unless --force.
-      const namesAFile = (await fileExists(outputBase)) && !(await directoryExists(outputBase));
-      if (namesAFile) {
-        this.error(`Output path exists as a file: ${outputBase}`, {
-          exit: EXIT_CODES.INVALID_ARGS,
-        });
-      }
+    const outputBase = path.resolve(projectDir, expandHome(flags.output));
+    await this.refuseUnwritableOutput(outputBase);
+    return outputBase;
+  }
 
-      return outputBase;
+  private async refuseUnwritableOutput(outputBase: string): Promise<void> {
+    // First, as the checks below follow a link, and so would every write.
+    if (await isSymlink(outputBase)) {
+      this.error(`Output path is a link: ${outputBase}. Name the folder it points to instead.`, {
+        exit: EXIT_CODES.INVALID_ARGS,
+      });
     }
 
-    return sourceFolderInUse(projectDir, providerInUse(projectDir)).dir;
+    // `fileExists` is true of a directory too; an existing directory is written into, and each
+    // kind then skips what it would write there already unless --force.
+    const namesAFile = (await fileExists(outputBase)) && !(await directoryExists(outputBase));
+    if (namesAFile) {
+      this.error(`Output path exists as a file: ${outputBase}`, {
+        exit: EXIT_CODES.INVALID_ARGS,
+      });
+    }
   }
 
   private printHeader(brandingName: string, outputBase?: string): void {
@@ -218,7 +225,7 @@ export default class Eject extends BaseCommand {
           throw new Error("The marketplace must be loaded for skills eject");
         }
         await this.handleSkills(
-          await skillsDestinationOf(projectDir, directOutput, outputBase),
+          skillsDestination(projectDir, directOutput, outputBase),
           flags.force,
           sourceResult,
         );
@@ -227,11 +234,13 @@ export default class Eject extends BaseCommand {
         if (!sourceResult) {
           throw new Error("The marketplace must be loaded for full eject");
         }
-        // Read before the partials land: under --output they create the directory skills share.
-        const skillsDestination = await skillsDestinationOf(projectDir, directOutput, outputBase);
+        // The partials carry the templates as one unit, so they arrive once and obey --force.
         await this.handleAgentPartials(outputBase, flags.force, directOutput, false);
-        await this.handleAgentPartials(outputBase, true, directOutput, true);
-        await this.handleSkills(skillsDestination, flags.force, sourceResult);
+        await this.handleSkills(
+          skillsDestination(projectDir, directOutput, outputBase),
+          flags.force,
+          sourceResult,
+        );
         break;
       }
       default: {
@@ -286,6 +295,10 @@ export default class Eject extends BaseCommand {
       return;
     }
 
+    if (result.skippedSubAgents.length > 0) {
+      this.warn(subAgentsAlreadyThere(result.destDir, result.skippedSubAgents));
+    }
+
     if (result.templatesSkipped) {
       this.warn(
         "Agent templates already exist — skipping templates, only ejecting agent partials.",
@@ -303,22 +316,51 @@ export default class Eject extends BaseCommand {
   }
 
   private async handleSkills(
-    destination: SkillsDestination,
+    destinationDir: string,
     force: boolean,
     sourceResult: SourceLoadResult,
   ): Promise<void> {
-    const result = await ejectSkills({ destination, force, sourceResult, matrix });
+    const result = await ejectSkills({ destinationDir, force, sourceResult, matrix });
 
     if (result.skipped) {
       this.warn(result.skipReason);
       return;
     }
 
+    if (result.skippedSkillCount > 0) {
+      this.warn(skillsAlreadyThere(destinationDir, result.skippedSkillCount));
+    }
+
     this.logSuccess(
-      `${plural(result.copiedSkills.length, "skill")} ejected to ${destination.dir} from ${result.sourceLabel}`,
+      `${plural(result.copiedSkills.length, "skill")} ejected to ${destinationDir} from ${result.sourceLabel}`,
     );
     this.log("You can now customize skill content locally.");
   }
+}
+
+function expandHome(outputPath: string): string {
+  return outputPath.startsWith("~") ? path.join(os.homedir(), outputPath.slice(1)) : outputPath;
+}
+
+/** Some of what an eject copies was already there: named, with the rest copied beside it. */
+function subAgentsAlreadyThere(destDir: string, subAgents: readonly string[]): string {
+  return `Agent partials already exist at ${destDir} — skipped ${plural(subAgents.length, "sub-agent")}: ${subAgents.join(", ")}. Use --force to overwrite them.`;
+}
+
+/** Counted rather than named: a re-run into a nearly full folder skips most of the marketplace. */
+function skillsAlreadyThere(destinationDir: string, skippedCount: number): string {
+  return `Skills already exist at ${destinationDir} — skipped ${plural(skippedCount, "skill")}. Use --force to overwrite them.`;
+}
+
+/** Those of `names` already at `dir`, file or folder: what an eject without --force leaves. */
+async function alreadyIn<Name extends string>(
+  dir: string,
+  names: readonly Name[],
+): Promise<Name[]> {
+  const checked = await Promise.all(
+    names.map(async (name) => ({ name, there: await fileExists(path.join(dir, name)) })),
+  );
+  return checked.filter(({ there }) => there).map(({ name }) => name);
 }
 
 type EjectAgentPartialsOptions = {
@@ -332,15 +374,15 @@ type EjectAgentPartialsResult =
   | {
       skipped: true;
       skipReason: string;
-      templatesSkipped: false;
     }
   | {
       skipped: false;
       destDir: string;
+      /** The sub-agents left as they were, by name, bytewise-sorted. */
+      skippedSubAgents: string[];
       templatesSkipped: boolean;
     };
 
-/** Direct output writes to the base itself; otherwise agents/, or agents/templates/. */
 function resolveEjectDestDir(
   outputBase: string,
   directOutput: boolean,
@@ -355,83 +397,112 @@ async function ejectAgentPartials(
   options: EjectAgentPartialsOptions,
 ): Promise<EjectAgentPartialsResult> {
   const { outputBase, force, directOutput = false, templatesOnly = false } = options;
+  const destDir = resolveEjectDestDir(outputBase, directOutput, templatesOnly);
 
-  const sourceDir = templatesOnly
-    ? path.join(PROJECT_ROOT, DIRS.templates)
-    : path.join(PROJECT_ROOT, DIRS.agents);
+  return templatesOnly ? ejectTemplates(destDir, force) : ejectSubAgentPartials(destDir, force);
+}
+
+/** Whole or not at all: a templates folder already there is kept unless --force. */
+async function ejectTemplates(destDir: string, force: boolean): Promise<EjectAgentPartialsResult> {
+  const sourceDir = path.join(PROJECT_ROOT, DIRS.templates);
 
   if (!(await directoryExists(sourceDir))) {
+    return { skipped: true, skipReason: "No agent templates found in CLI." };
+  }
+
+  if ((await directoryExists(destDir)) && !force) {
     return {
       skipped: true,
-      skipReason: templatesOnly
-        ? "No agent templates found in CLI."
-        : "No agent partials found in CLI.",
-      templatesSkipped: false,
+      skipReason: `Agent templates already exist at ${destDir}. Use --force to overwrite.`,
     };
   }
 
-  const destDir = resolveEjectDestDir(outputBase, directOutput, templatesOnly);
-
-  const templatesBasename = path.basename(DIRS.templates);
-
-  if ((await directoryExists(destDir)) && !force) {
-    if (templatesOnly) {
-      return {
-        skipped: true,
-        skipReason: `Agent templates already exist at ${destDir}. Use --force to overwrite.`,
-        templatesSkipped: false,
-      };
-    }
-
-    const hasTemplates = await directoryExists(path.join(destDir, templatesBasename));
-    if ((await hasAgentPartialDirs(destDir)) && !hasTemplates) {
-      return {
-        skipped: true,
-        skipReason: `Agent partials already exist at ${destDir}. Use --force to overwrite.`,
-        templatesSkipped: false,
-      };
-    }
-  }
-
   await ensureDir(destDir);
+  await copy(sourceDir, destDir);
+  return { skipped: false, destDir, skippedSubAgents: [], templatesSkipped: false };
+}
 
-  const skipTemplates =
-    !templatesOnly && !force && (await directoryExists(path.join(destDir, templatesBasename)));
+/** Unit by unit: one already there is kept unless --force, and the rest are copied beside it. */
+async function ejectSubAgentPartials(
+  destDir: string,
+  force: boolean,
+): Promise<EjectAgentPartialsResult> {
+  const sourceDir = path.join(PROJECT_ROOT, DIRS.agents);
 
-  if (skipTemplates) {
-    const sourceEntries = await listDirectories(sourceDir);
-    const nonTemplateEntries = sourceEntries.filter((entry) => entry !== templatesBasename);
-    for (const entry of nonTemplateEntries) {
-      await copy(path.join(sourceDir, entry), path.join(destDir, entry));
-    }
-  } else {
-    await copy(sourceDir, destDir);
+  if (!(await directoryExists(sourceDir))) {
+    return { skipped: true, skipReason: "No agent partials found in CLI." };
   }
+
+  const units = await partialUnitsIn(sourceDir);
+  const present = force ? [] : await alreadyIn(destDir, units);
+  const absent = units.filter((unit) => !present.includes(unit));
+
+  if (absent.length === 0) {
+    return {
+      skipped: true,
+      skipReason: `Agent partials already exist at ${destDir}. Use --force to overwrite.`,
+    };
+  }
+
+  await copyUnits(absent, sourceDir, destDir);
 
   return {
     skipped: false,
     destDir,
-    templatesSkipped: skipTemplates,
+    skippedSubAgents: subAgentNames(present),
+    templatesSkipped: present.some(isTemplatesUnit),
   };
 }
 
-/** Where skills eject to, and whether it was there before this run wrote anything. */
-type SkillsDestination = {
-  dir: string;
-  existed: boolean;
-};
+const TEMPLATES_UNIT = path.basename(DIRS.templates);
 
-async function skillsDestinationOf(
-  projectDir: string,
-  directOutput: boolean,
-  outputBase: string,
-): Promise<SkillsDestination> {
-  const dir = directOutput ? outputBase : installedSkillsDir(projectDir);
-  return { dir, existed: await directoryExists(dir) };
+function isTemplatesUnit(unit: string): boolean {
+  return unit === TEMPLATES_UNIT;
+}
+
+/**
+ * What a re-eject keeps or copies whole: each sub-agent's directory, as `<category>/<agent>`, and
+ * the templates. A category folder is not one, so a file of the user's in it is written beside.
+ */
+async function partialUnitsIn(agentsSourceDir: string): Promise<string[]> {
+  const entries = await listDirectories(agentsSourceDir);
+  const categories = entries.filter((entry) => !isTemplatesUnit(entry));
+  const subAgentDirs = await Promise.all(
+    categories.map((category) => subAgentDirsOf(agentsSourceDir, category)),
+  );
+  return [...entries.filter(isTemplatesUnit), ...subAgentDirs.flat()];
+}
+
+async function subAgentDirsOf(agentsSourceDir: string, category: string): Promise<string[]> {
+  const agents = await listDirectories(path.join(agentsSourceDir, category));
+  return agents.map((agent) => path.join(category, agent));
+}
+
+/** As the skipped-list warning names them: by directory name, bytewise-sorted. */
+function subAgentNames(units: readonly string[]): string[] {
+  return units
+    .filter((unit) => !isTemplatesUnit(unit))
+    .map((unit) => path.basename(unit))
+    .sort(bytewise);
+}
+
+/** `copy` makes the folders above each unit. */
+async function copyUnits(
+  units: readonly string[],
+  sourceDir: string,
+  destDir: string,
+): Promise<void> {
+  for (const unit of units) {
+    await copy(path.join(sourceDir, unit), path.join(destDir, unit));
+  }
+}
+
+function skillsDestination(projectDir: string, directOutput: boolean, outputBase: string): string {
+  return directOutput ? outputBase : installedSkillsDir(projectDir);
 }
 
 type EjectSkillsOptions = {
-  destination: SkillsDestination;
+  destinationDir: string;
   force: boolean;
   sourceResult: SourceLoadResult;
   matrix: MergedSkillsMatrix;
@@ -441,41 +512,41 @@ type EjectSkillsResult =
   | {
       skipped: true;
       skipReason: string;
-      copiedSkills: [];
     }
   | {
       skipped: false;
       copiedSkills: CopiedSkill[];
+      /** How many skills were left as they were. */
+      skippedSkillCount: number;
       sourceLabel: string;
     };
 
-/** Only the loaded marketplace's own non-local skills: others' skills are not on disk here. */
+/**
+ * Only the loaded marketplace's own non-local skills: others' skills are not on disk here. One
+ * already in the destination is skipped first, as the local copy may be the one there.
+ */
 async function ejectSkills(options: EjectSkillsOptions): Promise<EjectSkillsResult> {
-  const { destination, force, sourceResult, matrix } = options;
+  const { destinationDir, force, sourceResult, matrix } = options;
 
-  if (destination.existed && !force) {
+  const marketplaceSkillIds = [...sourceResult.marketplaceSkillIds];
+  const alreadyThere = force ? [] : await alreadyIn(destinationDir, marketplaceSkillIds);
+  const notThere = marketplaceSkillIds.filter((skillId) => !alreadyThere.includes(skillId));
+  const skillIds = notThere.filter((skillId) => !matrix.skills[skillId]?.local);
+
+  if (skillIds.length === 0 && alreadyThere.length > 0) {
     return {
       skipped: true,
-      skipReason: `Skills already exist at ${destination.dir}. Use --force to overwrite.`,
-      copiedSkills: [],
+      skipReason: `Skills already exist at ${destinationDir}. Use --force to overwrite.`,
     };
   }
-
-  const skillIds = [...sourceResult.marketplaceSkillIds].filter(
-    (skillId) => !matrix.skills[skillId]?.local,
-  );
 
   if (skillIds.length === 0) {
-    return {
-      skipped: true,
-      skipReason: "No skills found in the marketplace to eject.",
-      copiedSkills: [],
-    };
+    return { skipped: true, skipReason: "No skills found in the marketplace to eject." };
   }
 
-  await ensureDir(destination.dir);
+  await ensureDir(destinationDir);
 
-  const copiedSkills = await copySkillsToLocalFlattened(skillIds, destination.dir, sourceResult);
+  const copiedSkills = await copySkillsToLocalFlattened(skillIds, destinationDir, sourceResult);
 
   const sourceLabel = sourceResult.isLocal
     ? sourceResult.sourcePath
@@ -484,6 +555,7 @@ async function ejectSkills(options: EjectSkillsOptions): Promise<EjectSkillsResu
   return {
     skipped: false,
     copiedSkills,
+    skippedSkillCount: alreadyThere.length,
     sourceLabel,
   };
 }
@@ -519,13 +591,12 @@ async function ensureMinimalConfig(
   // ABORT on an unreadable global config: the invented file would record a marketplace from nowhere.
   const resolvedConfig =
     sourceResult?.sourceConfig ?? (await resolveSource({ caller: "stored", projectDir }));
-  const existingProjectConfig = await loadProjectSourceConfig(projectDir);
   const source = resolvedConfig.source || undefined;
 
   // At home the invented config is the global manifest, which needs its config-types sibling.
   if (isHomeDirectory(projectDir)) {
     await ensureBlankPair(provider);
-    if (source) await recordSource(projectDir, source);
+    if (source) await recordSourceInGlobal(projectDir, source);
     return { configPath: tsConfigPath, created: true };
   }
 
@@ -536,10 +607,6 @@ async function ensureMinimalConfig(
       agents: [],
       ...(source ? { marketplace: source } : {}),
       ...(resolvedConfig.marketplace ? { marketplaceName: resolvedConfig.marketplace } : {}),
-      ...(existingProjectConfig?.author ? { author: existingProjectConfig.author } : {}),
-      ...(existingProjectConfig?.agentsSource
-        ? { agentsSource: existingProjectConfig.agentsSource }
-        : {}),
     },
     { fallbackName: path.basename(projectDir) },
   );
@@ -548,26 +615,9 @@ async function ensureMinimalConfig(
 }
 
 /** At home the config is the global manifest projects inline from, so it goes through the gate. */
-async function recordSource(projectDir: string, source: string): Promise<void> {
-  if (isHomeDirectory(projectDir)) {
-    await mutateGlobal(
-      { kind: "set-source", source, fallbackName: path.basename(projectDir) },
-      lazyGateDeps(projectDir),
-    );
-    return;
-  }
-
-  // ABORT on an unreadable config: `?? {}` is for an absent one, and would overwrite the user's file.
-  const existing = (await loadProjectSourceConfig(projectDir)) ?? {};
-  await writeProjectPartial(
-    projectDir,
-    { ...existing, marketplace: source },
-    { fallbackName: path.basename(projectDir) },
+async function recordSourceInGlobal(projectDir: string, source: string): Promise<void> {
+  await mutateGlobal(
+    { kind: "set-source", source, fallbackName: path.basename(projectDir) },
+    lazyGateDeps(projectDir),
   );
-}
-
-async function hasAgentPartialDirs(agentsDir: string): Promise<boolean> {
-  const subdirs = await listDirectories(agentsDir);
-  const templatesBasename = path.basename(DIRS.templates);
-  return subdirs.some((dir) => dir !== templatesBasename);
 }

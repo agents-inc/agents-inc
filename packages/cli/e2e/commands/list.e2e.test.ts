@@ -252,7 +252,7 @@ describe("list command", () => {
 
   describe("with multiple skills installed", () => {
     // Known gap: `list` shows counts, not skill ids.
-    it.fails("should show all skill IDs in output", async () => {
+    it.fails("should show all skill IDs in output", { retry: 0 }, async () => {
       const project = await ProjectBuilder.editable({
         skills: [E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.zustand.id],
       });
@@ -270,32 +270,36 @@ describe("list command", () => {
 
   describe("skill type distinction", () => {
     // Known gap: `list` does not distinguish CLI-managed from user-created skills.
-    it.fails("should distinguish CLI-managed and user-created skills in output", async () => {
-      const project = await ProjectBuilder.editable({
-        skills: [E2E_SKILL.react.id, E2E_SKILL.vitest.id],
-      });
-      tempDir = path.dirname(project.dir);
-      const projectDir = project.dir;
+    it.fails(
+      "should distinguish CLI-managed and user-created skills in output",
+      { retry: 0 },
+      async () => {
+        const project = await ProjectBuilder.editable({
+          skills: [E2E_SKILL.react.id, E2E_SKILL.vitest.id],
+        });
+        tempDir = path.dirname(project.dir);
+        const projectDir = project.dir;
 
-      await createLocalSkill(projectDir, "web-utilities-date-fns", {
-        description: "A user-created custom skill",
-        metadata: renderMetadataYaml({
-          custom: true,
-          author: "@local",
-          displayName: "My Custom Helper",
-          category: "web-utilities",
-          contentHash: "custom-hash",
-        }),
-      });
+        await createLocalSkill(projectDir, "web-utilities-date-fns", {
+          description: "A user-created custom skill",
+          metadata: renderMetadataYaml({
+            custom: true,
+            author: "@local",
+            displayName: "My Custom Helper",
+            category: "web-utilities",
+            contentHash: "custom-hash",
+          }),
+        });
 
-      const { exitCode, stdout } = await CLI.run(["list"], { dir: projectDir });
+        const { exitCode, stdout } = await CLI.run(["list"], { dir: projectDir });
 
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).toContain(E2E_SKILL.react.id);
-      expect(stdout).toContain(E2E_SKILL.vitest.id);
-      expect(stdout).toContain("web-utilities-date-fns");
-      expect(stdout).toMatch(/custom|user|local/i);
-    });
+        expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+        expect(stdout).toContain(E2E_SKILL.react.id);
+        expect(stdout).toContain(E2E_SKILL.vitest.id);
+        expect(stdout).toContain("web-utilities-date-fns");
+        expect(stdout).toMatch(/custom|user|local/i);
+      },
+    );
   });
 
   describe("edge cases", () => {

@@ -1,9 +1,9 @@
 import { isRecord } from "../../utils/type-guards.js";
 import path from "path";
-import fg from "fast-glob";
 import { getErrorMessage } from "../../utils/errors";
 import {
   fileExists,
+  glob,
   readFile,
   readFileSafe,
   directoryExists,
@@ -12,7 +12,6 @@ import {
 import type { ValidationResult } from "../../types";
 import { validResult, invalidResult, mergeValidationResults } from "../validation-result";
 import { extractFrontmatter } from "../../utils/frontmatter";
-import { log } from "../../utils/logger";
 import { formatZodErrors } from "../schema-validator";
 import {
   pluginManifestValidationSchema,
@@ -26,9 +25,8 @@ import {
   STANDARD_FILES,
 } from "../../consts";
 import { getPluginManifestPath } from "./plugin-finder";
+import { agentCodec } from "../installation/install-layout";
 
-const PLUGIN_DIR = PLUGIN_MANIFEST_DIR;
-const PLUGIN_MANIFEST = STANDARD_FILES.PLUGIN_JSON;
 const SEMVER_REGEX =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
 
@@ -40,7 +38,11 @@ function isValidSemver(str: string): boolean {
   return SEMVER_REGEX.test(str);
 }
 
-export async function validatePluginStructure(pluginPath: string): Promise<ValidationResult> {
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value !== "";
+}
+
+async function validatePluginStructure(pluginPath: string): Promise<ValidationResult> {
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -48,14 +50,14 @@ export async function validatePluginStructure(pluginPath: string): Promise<Valid
     return invalidResult(`Plugin directory does not exist: ${pluginPath}`);
   }
 
-  const pluginDir = path.join(pluginPath, PLUGIN_DIR);
+  const pluginDir = path.join(pluginPath, PLUGIN_MANIFEST_DIR);
   if (!(await directoryExists(pluginDir))) {
-    errors.push(`Missing ${PLUGIN_DIR}/ directory`);
+    errors.push(`Missing ${PLUGIN_MANIFEST_DIR}/ directory`);
   }
 
-  const manifestPath = path.join(pluginDir, PLUGIN_MANIFEST);
+  const manifestPath = path.join(pluginDir, STANDARD_FILES.PLUGIN_JSON);
   if (!(await fileExists(manifestPath))) {
-    errors.push(`Missing ${PLUGIN_DIR}/${PLUGIN_MANIFEST}`);
+    errors.push(`Missing ${PLUGIN_MANIFEST_DIR}/${STANDARD_FILES.PLUGIN_JSON}`);
   }
 
   const readmePath = path.join(pluginPath, STANDARD_FILES.README_MD);
@@ -74,18 +76,16 @@ export async function validatePluginManifest(manifestPath: string): Promise<Vali
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  if (!(await fileExists(manifestPath))) {
-    return invalidResult(`Manifest file not found: ${manifestPath}`);
-  }
-
   let manifest: Record<string, unknown>;
   try {
     const content = await readFileSafe(manifestPath, MAX_PLUGIN_FILE_SIZE);
     const parsed: unknown = JSON.parse(content);
-    if (!isRecord(parsed)) return invalidResult(`${PLUGIN_MANIFEST} must contain a JSON object`);
+    if (!isRecord(parsed)) {
+      return invalidResult(`${STANDARD_FILES.PLUGIN_JSON} must contain a JSON object`);
+    }
     manifest = parsed;
   } catch (err) {
-    return invalidResult(`Invalid JSON in ${PLUGIN_MANIFEST}: ${getErrorMessage(err)}`);
+    return invalidResult(`Invalid JSON in ${STANDARD_FILES.PLUGIN_JSON}: ${getErrorMessage(err)}`);
   }
 
   const result = pluginManifestValidationSchema.safeParse(manifest);
@@ -94,13 +94,13 @@ export async function validatePluginManifest(manifestPath: string): Promise<Vali
     errors.push(...formatZodErrors(result.error));
   }
 
-  if (manifest.name && typeof manifest.name === "string") {
+  if (isNonEmptyString(manifest.name)) {
     if (!isKebabCase(manifest.name)) {
       errors.push(`name must be kebab-case: "${manifest.name}"`);
     }
   }
 
-  if (manifest.version && typeof manifest.version === "string") {
+  if (isNonEmptyString(manifest.version)) {
     if (!isValidSemver(manifest.version)) {
       errors.push(
         `version "${manifest.version}" is not valid semver (expected: major.minor.patch)`,
@@ -114,14 +114,14 @@ export async function validatePluginManifest(manifestPath: string): Promise<Vali
 
   const pluginDir = path.dirname(path.dirname(manifestPath));
 
-  if (manifest.skills && typeof manifest.skills === "string") {
+  if (isNonEmptyString(manifest.skills)) {
     const skillsPath = path.join(pluginDir, manifest.skills);
     if (!(await directoryExists(skillsPath))) {
       errors.push(`Skills path does not exist: ${manifest.skills}`);
     }
   }
 
-  if (manifest.agents && typeof manifest.agents === "string") {
+  if (isNonEmptyString(manifest.agents)) {
     const agentsPath = path.join(pluginDir, manifest.agents);
     if (!(await directoryExists(agentsPath))) {
       errors.push(`Agents path does not exist: ${manifest.agents}`);
@@ -187,7 +187,7 @@ export async function validateAgentFrontmatter(agentPath: string): Promise<Valid
   // Boundary cast: parsed YAML frontmatter, narrowed for field access.
   const fm = frontmatter as Record<string, unknown>;
 
-  if (fm.name && typeof fm.name === "string") {
+  if (isNonEmptyString(fm.name)) {
     if (!isKebabCase(fm.name)) {
       errors.push(`name must be kebab-case: "${fm.name}"`);
     }
@@ -208,6 +208,22 @@ function prefixResult(result: ValidationResult, prefix: string): ValidationResul
   };
 }
 
+/** Each file's result is named by its path in the plugin. */
+async function validateEachFile(
+  pluginPath: string,
+  scannedDir: string,
+  files: string[],
+  validate: (filePath: string) => Promise<ValidationResult>,
+): Promise<ValidationResult> {
+  const results = await Promise.all(
+    files.map(async (file) => {
+      const filePath = path.join(scannedDir, file);
+      return prefixResult(await validate(filePath), path.relative(pluginPath, filePath));
+    }),
+  );
+  return mergeValidationResults(results);
+}
+
 async function validatePluginSkillFiles(
   pluginPath: string,
   skillsRelPath: string,
@@ -215,7 +231,7 @@ async function validatePluginSkillFiles(
   const skillsDir = path.join(pluginPath, skillsRelPath);
   if (!(await directoryExists(skillsDir))) return validResult();
 
-  const files = await fg(`**/${STANDARD_FILES.SKILL_MD}`, { cwd: skillsDir, absolute: true });
+  const files = await glob(`**/${STANDARD_FILES.SKILL_MD}`, skillsDir);
   if (files.length === 0) {
     return {
       valid: true,
@@ -224,12 +240,7 @@ async function validatePluginSkillFiles(
     };
   }
 
-  const results = await Promise.all(
-    files.map(async (f) =>
-      prefixResult(await validateSkillFrontmatter(f), path.relative(pluginPath, f)),
-    ),
-  );
-  return mergeValidationResults(results);
+  return validateEachFile(pluginPath, skillsDir, files, validateSkillFrontmatter);
 }
 
 async function validatePluginAgentFiles(
@@ -239,7 +250,7 @@ async function validatePluginAgentFiles(
   const agentsDir = path.join(pluginPath, agentsRelPath);
   if (!(await directoryExists(agentsDir))) return validResult();
 
-  const files = await fg("*.md", { cwd: agentsDir, absolute: true });
+  const files = await glob(agentCodec("claude").listGlob, agentsDir);
   if (files.length === 0) {
     return {
       valid: true,
@@ -248,12 +259,7 @@ async function validatePluginAgentFiles(
     };
   }
 
-  const results = await Promise.all(
-    files.map(async (f) =>
-      prefixResult(await validateAgentFrontmatter(f), path.relative(pluginPath, f)),
-    ),
-  );
-  return mergeValidationResults(results);
+  return validateEachFile(pluginPath, agentsDir, files, validateAgentFrontmatter);
 }
 
 async function loadManifestForValidation(
@@ -273,77 +279,98 @@ export async function validatePlugin(pluginPath: string): Promise<ValidationResu
   if (!structureResult.valid) return structureResult;
 
   const manifestPath = getPluginManifestPath(pluginPath);
-  const manifestResult = await validatePluginManifest(manifestPath);
-  const manifest = await loadManifestForValidation(manifestPath);
-
-  const skillsResult =
-    manifest?.skills && typeof manifest.skills === "string"
-      ? await validatePluginSkillFiles(pluginPath, manifest.skills)
-      : validResult();
-
-  const agentsResult =
-    manifest?.agents && typeof manifest.agents === "string"
-      ? await validatePluginAgentFiles(pluginPath, manifest.agents)
-      : validResult();
+  const [manifestResult, manifest] = await Promise.all([
+    validatePluginManifest(manifestPath),
+    loadManifestForValidation(manifestPath),
+  ]);
+  const skillsResult = await validateDeclaredDir(
+    pluginPath,
+    manifest?.skills,
+    validatePluginSkillFiles,
+  );
+  const agentsResult = await validateDeclaredDir(
+    pluginPath,
+    manifest?.agents,
+    validatePluginAgentFiles,
+  );
 
   return mergeValidationResults([structureResult, manifestResult, skillsResult, agentsResult]);
 }
 
-export async function validateAllPlugins(pluginsDir: string): Promise<{
+/** A manifest field naming no directory leaves nothing to validate. */
+async function validateDeclaredDir(
+  pluginPath: string,
+  declaredRelPath: unknown,
+  validate: (pluginPath: string, relPath: string) => Promise<ValidationResult>,
+): Promise<ValidationResult> {
+  if (!isNonEmptyString(declaredRelPath)) return validResult();
+  return validate(pluginPath, declaredRelPath);
+}
+
+type NamedPluginValidation = { name: string; result: ValidationResult };
+
+type PluginsDirValidation = {
   valid: boolean;
-  results: Array<{ name: string; result: ValidationResult }>;
+  results: NamedPluginValidation[];
   summary: {
     total: number;
     valid: number;
     invalid: number;
     withWarnings: number;
   };
-}> {
-  const results: Array<{ name: string; result: ValidationResult }> = [];
+};
 
+export async function validateAllPlugins(pluginsDir: string): Promise<PluginsDirValidation> {
   if (!(await directoryExists(pluginsDir))) {
-    return {
-      valid: false,
-      results: [
-        {
-          name: pluginsDir,
-          result: invalidResult(`Directory does not exist: ${pluginsDir}`),
-        },
-      ],
-      summary: { total: 0, valid: 0, invalid: 1, withWarnings: 0 },
-    };
+    return refusedPluginsDir(pluginsDir, `Directory does not exist: ${pluginsDir}`);
   }
 
+  const pluginDirs = await listPluginDirNames(pluginsDir);
+  if (pluginDirs.length === 0) {
+    return refusedPluginsDir(
+      pluginsDir,
+      `No plugins found in directory: ${pluginsDir}. Plugins must contain a ${PLUGIN_MANIFEST_DIR}/ directory.`,
+    );
+  }
+
+  const results = await validateEachPlugin(pluginsDir, pluginDirs);
+  return summarizePluginValidations(results);
+}
+
+/** The directory itself stands as the one invalid result: nothing inside it was validated. */
+function refusedPluginsDir(pluginsDir: string, message: string): PluginsDirValidation {
+  return {
+    valid: false,
+    results: [{ name: pluginsDir, result: invalidResult(message) }],
+    summary: { total: 0, valid: 0, invalid: 1, withWarnings: 0 },
+  };
+}
+
+/** Direct children carrying a plugin manifest directory, in listing order. */
+export async function listPluginDirNames(pluginsDir: string): Promise<string[]> {
   const allDirs = await listDirectories(pluginsDir);
   const dirChecks = await Promise.all(
     allDirs.map(async (dirName) => ({
       dirName,
-      isPlugin: await directoryExists(path.join(pluginsDir, dirName, PLUGIN_DIR)),
+      isPlugin: await directoryExists(path.join(pluginsDir, dirName, PLUGIN_MANIFEST_DIR)),
     })),
   );
-  const pluginDirs = dirChecks.filter((c) => c.isPlugin).map((c) => c.dirName);
+  return dirChecks.filter((c) => c.isPlugin).map((c) => c.dirName);
+}
 
-  if (pluginDirs.length === 0) {
-    return {
-      valid: false,
-      results: [
-        {
-          name: pluginsDir,
-          result: invalidResult(
-            `No plugins found in directory: ${pluginsDir}. Plugins must contain a ${PLUGIN_DIR}/ directory.`,
-          ),
-        },
-      ],
-      summary: { total: 0, valid: 0, invalid: 1, withWarnings: 0 },
-    };
-  }
-
+async function validateEachPlugin(
+  pluginsDir: string,
+  pluginDirs: string[],
+): Promise<NamedPluginValidation[]> {
+  const results: NamedPluginValidation[] = [];
   for (const pluginName of pluginDirs) {
-    const pluginPath = path.join(pluginsDir, pluginName);
-    const result = await validatePlugin(pluginPath);
+    const result = await validatePlugin(path.join(pluginsDir, pluginName));
     results.push({ name: pluginName, result });
   }
+  return results;
+}
 
+function summarizePluginValidations(results: NamedPluginValidation[]): PluginsDirValidation {
   const validCount = results.filter((r) => r.result.valid).length;
   const summary = {
     total: results.length,
@@ -357,24 +384,4 @@ export async function validateAllPlugins(pluginsDir: string): Promise<{
     results,
     summary,
   };
-}
-
-export function printPluginValidationResult(name: string, result: ValidationResult): void {
-  const status = result.valid ? "\u2713" : "\u2717";
-
-  if (result.valid && result.warnings.length === 0) {
-    return;
-  }
-
-  log(`\n  ${status} ${name}`);
-
-  if (result.errors.length > 0) {
-    log("    Errors:");
-    result.errors.forEach((e) => log(`      - ${e}`));
-  }
-
-  if (result.warnings.length > 0) {
-    log("    Warnings:");
-    result.warnings.forEach((w) => log(`      - ${w}`));
-  }
 }

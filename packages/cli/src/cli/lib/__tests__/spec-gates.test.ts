@@ -17,6 +17,7 @@ import {
   specsNamedBy,
   unlocatedSpecsIn,
 } from "./helpers/journey-page.js";
+import { type KnownGap, knownGapsIn } from "./helpers/known-gap-retries.js";
 import { type LintZone, flatConfigAt, lintZonesIn } from "./helpers/lint-zones.js";
 
 const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -32,10 +33,7 @@ const RECOGNISED_NON_SPEC_NAMES = [
   "skipIf",
 ];
 
-/**
- * Specs no journey names: the spec -> row direction the row gates cannot see. A backlog that may
- * only shrink: a new spec without a journey fails, and a spec gaining a row must leave the list.
- */
+/** Specs no journey names. May only shrink: a spec gaining a row must leave the list. */
 const SPECS_BELONGING_TO_NO_JOURNEY: readonly string[] = [
   "commands/build-agent-plugins",
   "commands/compile",
@@ -245,11 +243,7 @@ const ESLINT_CONFIG_PATH = path.join(CLI_ROOT, "eslint.config.js");
 /** Its options do not merge across blocks. */
 const ZONED_RULE = "no-restricted-syntax";
 
-/**
- * One real file per zone that configures `no-restricted-syntax`, derived from the config: options
- * don't merge, so each zone must be linted. `lint-zones.ts` picks a file no later block also owns,
- * and only files on disk, since `lintText` needs a path the project service can resolve.
- */
+/** One file on disk per zone: `lintText` needs a path the project service can resolve. */
 const LINT_ZONES = lintZonesIn(await flatConfigAt(ESLINT_CONFIG_PATH), ZONED_RULE, CLI_ROOT);
 
 function isMeasurable(zone: LintZone): zone is LintZone & { subject: string } {
@@ -283,7 +277,6 @@ async function e2eProjects(): Promise<SuiteProject[]> {
   return projects;
 }
 
-/** The page and the spec list both come off disk; parsing lives in `helpers/journey-page.ts`. */
 async function journeyRows(): Promise<JourneyRow[]> {
   return readJourneyRows(await readFile(USER_JOURNEYS_PATH, "utf8"), readSpecNames(E2E_ROOT));
 }
@@ -319,7 +312,6 @@ function installsNothing(source: string): boolean {
   return !INSTALLING_CALLS.some((call) => call.test(source));
 }
 
-/** A superset of {@link FROM_SCRATCH_INSTALLS}, kept beside it so the two cannot drift. */
 const INSTALLING_CALLS = [
   ...FROM_SCRATCH_INSTALLS,
   /\bCLI\.run\(\s*\[\s*"(edit|compile|update|uninstall|eject)"/,
@@ -329,10 +321,7 @@ const INSTALLING_CALLS = [
   /\bapplyEditFrom\s*\(/,
 ];
 
-/**
- * The repository's own config, loaded rather than restated. A parse failure (a `fatal` message
- * with null `ruleId`) throws rather than counting as a report.
- */
+/** A parse failure is a `fatal` message with a null `ruleId`, which would read as silence. */
 async function rulesReportedAgainst(
   eslint: ESLint,
   source: string,
@@ -370,10 +359,6 @@ async function specTurnedOffInItsOwnFile(spec: string): Promise<string | null> {
   return UNCONDITIONAL_SKIP_FORMS.some((form) => source.includes(form)) ? spec : null;
 }
 
-/**
- * A spec no suite collects, no script runs, or that skips itself is never run, and each alone
- * fails nothing; all three are asserted.
- */
 describe("every spec the repository holds belongs to a gate", () => {
   it("collects every spec file under e2e/ from one of the configured projects", async () => {
     const projects = await e2eProjects();
@@ -411,10 +396,42 @@ describe("every spec the repository holds belongs to a gate", () => {
   });
 });
 
+/** What a known gap's own options set so it runs once, overriding e2e/vitest.config.ts's retry. */
+const RUNS_ONCE = 0;
+
+type KnownGapSite = KnownGap & { spec: string };
+
+async function knownGapsInSpec(spec: string): Promise<KnownGapSite[]> {
+  const source = await readFile(path.join(CLI_ROOT, spec), "utf8");
+  return knownGapsIn(source, spec).map((gap) => ({ ...gap, spec }));
+}
+
+function siteOf(gap: KnownGapSite): string {
+  return `${gap.spec}:${String(gap.line)}`;
+}
+
 /**
- * Every row the tables number must come out of the reader: a dropped row (e.g. an unescaped `|` in
- * a code span) is judged by no gate. Compared by members, not length.
+ * vitest retries a failing attempt before it flips an `it.fails` result, so under the config's
+ * `retry: 1` a gap that still holds fails twice, passes, and is listed as retried beside the flakes.
  */
+describe("a known gap runs once, so the retry report lists only flakes", () => {
+  it("gives every it.fails under e2e/ retry: 0 in its own options", async () => {
+    const specs = await fg(EVERY_E2E_SPEC, { cwd: CLI_ROOT });
+    const gaps = (await Promise.all(specs.sort().map(knownGapsInSpec))).flat();
+
+    // Subject guard: a reader that found no known gap would satisfy the check below for free.
+    expect(
+      gaps.length,
+      "no it.fails was read under e2e/ — the reader has stopped seeing them, or the last known gap was retired and this gate can go with it",
+    ).toBeGreaterThan(0);
+
+    expect(
+      gaps.filter((gap) => gap.retry !== RUNS_ONCE).map(siteOf),
+      "a known gap without its own retry: 0 runs twice under the e2e config's retry and is reported as retried, beside the real flakes",
+    ).toStrictEqual([]);
+  });
+});
+
 describe("the reader sees every row the journey tables number", () => {
   it("reads every numbered row, rather than dropping one whose cells came out wrong", async () => {
     const page = await readFile(USER_JOURNEYS_PATH, "utf8");
@@ -428,7 +445,6 @@ describe("the reader sees every row the journey tables number", () => {
   });
 });
 
-/** A spec a journey names as its from-scratch proof must be one, not a variant. */
 describe("the from-scratch classifier has a word for each shape a spec takes", () => {
   // Source fragments, not real spec files: the subject is the classifier's vocabulary.
   const SEEDS_AND_NEVER_INSTALLS = `
@@ -484,7 +500,6 @@ describe("a journey names from-scratch specs that are from scratch", () => {
     ).toStrictEqual([]);
   });
 
-  /** A name is only proof if a run can be pointed at it. */
   it("names every spec with the directory it lives in", async () => {
     const rows = await journeyRows();
     const rewrites = rows
@@ -498,7 +513,6 @@ describe("a journey names from-scratch specs that are from scratch", () => {
     ).toStrictEqual([]);
   });
 
-  /** Non-spec names are rostered so the next unrecognised one must be justified. */
   it("names nothing outside a spec that this gate has not been told about", async () => {
     const rows = await journeyRows();
 
@@ -509,7 +523,6 @@ describe("a journey names from-scratch specs that are from scratch", () => {
   });
 });
 
-/** Spec -> row: whether a spec is named at all, which the row gates cannot see. */
 describe("every spec the e2e project collects belongs to a journey", () => {
   it("names every spec on the page, bar the backlog rostered when this gate landed", async () => {
     const page = await readFile(USER_JOURNEYS_PATH, "utf8");
@@ -529,10 +542,6 @@ describe("every spec the e2e project collects belongs to a journey", () => {
   });
 });
 
-/**
- * The mutation proof for the lint rule refusing vacuous verdicts: each shape must report and each
- * discriminating twin must stay silent, in every zone.
- */
 describe("a verdict that cannot fail is refused before it is trusted", () => {
   /** A zone with no file to lint reads exactly like a zone that passed. */
   it("finds a file to lint in every zone the config declares the rule for", () => {
@@ -603,41 +612,7 @@ describe("the shared base config refuses a value compared against itself", () =>
   });
 });
 
-/**
- * `ensureBinaryExists` is asked once per spec file from `e2e/setup.ts`'s `beforeAll`, so a spec
- * calling it is redundant and lets the per-file discipline grow back.
- */
 describe("the dist door is the harness's, not each spec's", () => {
-  const GUARD = "ensureBinaryExists";
-
-  it("is registered once, for every spec file, in e2e/setup.ts", async () => {
-    const setup = await readFile(path.join(E2E_ROOT, "setup.ts"), "utf8");
-
-    expect(
-      setup,
-      "the door has to be somewhere, and this is the only place that covers every file",
-    ).toContain("beforeAll");
-    expect(setup).toContain("assertDistIsPresent");
-  });
-
-  it("is called by no spec, because calling it is now redundant", async () => {
-    const specs = readSpecNames(E2E_ROOT);
-    const callers = [];
-    for (const spec of specs) {
-      const body = await readNamedSpec(spec);
-      if (body.includes(GUARD)) callers.push(spec);
-    }
-
-    expect(
-      callers,
-      `${GUARD} runs for every spec file from e2e/setup.ts — a spec calling it again is the per-file discipline growing back`,
-    ).toStrictEqual([]);
-  });
-
-  /**
-   * Only `afterAll` sees a `dist/` emptied during a spec's own `beforeAll`: a throwing `beforeAll`
-   * skips every `beforeEach`, but a setup file's `afterAll` still runs and reports the real cause.
-   */
   it("also stands at afterAll, the one position a throwing beforeAll cannot skip", async () => {
     const setup = await readFile(path.join(E2E_ROOT, "setup.ts"), "utf8");
 

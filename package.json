@@ -13,6 +13,8 @@
     "lint": "turbo lint",
     "//format": "One run from the root, not `turbo format`, so the root .prettierignore applies.",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
+    "//format:check": "The same glob as `format`, so what CI refuses is what `format` fixes.",
+    "format:check": "prettier --check \"**/*.{ts,tsx}\"",
     "typecheck": "turbo typecheck",
     "//deps:check": "Cross-workspace checks no per-workspace gate can see: syncpack ranges plus shared tsconfig, vitest and eslint configs. A workspace opts out with a //no-shared-* key giving the reason.",
     "deps:check": "syncpack lint && bun packages/cli/scripts/run-check-shared-tsconfig.ts && bun packages/cli/scripts/run-check-shared-vitest-config.ts && bun packages/cli/scripts/run-check-shared-eslint-config.ts",

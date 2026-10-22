@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import path from "path";
-import { chmod, mkdir, readdir, stat, writeFile as fsWriteFile } from "fs/promises";
+import { chmod, mkdir, readdir, stat, symlink, writeFile as fsWriteFile } from "fs/promises";
 import {
   copy,
   glob,
+  isSymlink,
   listDirectories,
   readFileOptional,
   readFileSafe,
@@ -148,6 +149,44 @@ describe("fs utilities", () => {
         ".hidden",
         "shown",
       ]);
+    });
+  });
+
+  describe("telling a link from what it names", () => {
+    let folder: string;
+    let file: string;
+
+    beforeEach(async () => {
+      folder = path.join(tempDir, "a-folder");
+      file = path.join(tempDir, "a-file.md");
+      await mkdir(path.join(folder, "inside"), { recursive: true });
+      await fsWriteFile(file, "");
+    });
+
+    it("answers true for a link to a folder, to a file and to nothing", async () => {
+      const toAFolder = path.join(tempDir, "link-to-a-folder");
+      const toAFile = path.join(tempDir, "link-to-a-file");
+      const toNothing = path.join(tempDir, "link-to-nothing");
+      await symlink(folder, toAFolder);
+      await symlink(file, toAFile);
+      await symlink(path.join(tempDir, "absent"), toNothing);
+
+      expect(await isSymlink(toAFolder)).toBe(true);
+      expect(await isSymlink(toAFile)).toBe(true);
+      expect(await isSymlink(toNothing)).toBe(true);
+    });
+
+    it("answers false for a folder, a file and a path with nothing at it", async () => {
+      expect(await isSymlink(folder)).toBe(false);
+      expect(await isSymlink(file)).toBe(false);
+      expect(await isSymlink(path.join(tempDir, "absent"))).toBe(false);
+    });
+
+    it("reads only the last part of the path, so a folder reached through a link is no link", async () => {
+      const toAFolder = path.join(tempDir, "link-to-a-folder");
+      await symlink(folder, toAFolder);
+
+      expect(await isSymlink(path.join(toAFolder, "inside"))).toBe(false);
     });
   });
 

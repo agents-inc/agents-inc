@@ -1,4 +1,3 @@
-import { readdir } from "fs/promises";
 import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
@@ -7,19 +6,17 @@ import {
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
 import { readCodexPrompt, runCodex } from "../fixtures/codex.js";
 import {
   CODEX_OFFERED_CELLS,
   CODEX_REFUSED_CELL,
+  PROVIDER_CLAUDE,
   codexGlobalSkillsDir,
   codexProjectSkillsDir,
   runInitFromOnCodex,
 } from "../fixtures/codex-install.js";
-import {
-  runInitFrom,
-  startSeedConfigStore,
-  type SeedConfigStore,
-} from "../fixtures/seed-config-store.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   cleanupFixture,
@@ -29,18 +26,17 @@ import {
   flattenCliOutput,
   listFiles,
 } from "../helpers/test-utils.js";
-import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.js";
+import { pluginKeyFor } from "../fixtures/plugin-install-state.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
-import { EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
 /**
- * Codex's three offered placements and the refused fourth. Each offered one is pinned on disk and
- * in the prompt the pinned binary would send (`readCodexPrompt`), since Codex may ignore a path.
- * The probe writes, so filesystem assertions come first. `plugin + project` is refused beside
- * `plugin + global` installing.
+ * Each offered placement is pinned on disk and in the prompt the pinned binary would send
+ * (`readCodexPrompt`), since Codex may ignore a path. The probe writes, so filesystem assertions
+ * come first.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -62,6 +58,7 @@ describe("the placements a Codex installation offers", () => {
   let fixture: E2EPluginSource;
   let store: SeedConfigStore;
   let env: TestEnvironment | undefined;
+  let prompt: InteractivePrompt | undefined;
 
   beforeAll(async () => {
     fixture = await createE2EPluginSource();
@@ -74,6 +71,8 @@ describe("the placements a Codex installation offers", () => {
   });
 
   afterEach(async () => {
+    await prompt?.destroy();
+    prompt = undefined;
     store.reset();
     if (env) await cleanupTempDir(env.tempDir);
     env = undefined;
@@ -84,7 +83,7 @@ describe("the placements a Codex installation offers", () => {
     { timeout: TIMEOUTS.PLUGIN_TEST },
     async () => {
       env = await createTestEnvironment({ permissions: false });
-      const reactRef = buildMarketplacePluginRef(E2E_SKILL.react.id, fixture.marketplaceName);
+      const reactRef = pluginKeyFor(E2E_SKILL.react.id, fixture.marketplaceName);
       store.publish(
         "CdxPlgGl",
         buildSeedPayload({
@@ -200,7 +199,6 @@ describe("the placements a Codex installation offers", () => {
       // Not a root Codex reads; one path segment from the one above, so asserted.
       expect(await directoryExists(path.join(env.projectDir, "skills"))).toBe(false);
 
-      // No plugin, marketplace, trust entry or global config file.
       const insideTheRepo = await readCodexPrompt(env.fakeHome, env.projectDir);
       expect(insideTheRepo).toContain(skillRootLine(projectSkills));
       expect(insideTheRepo).toContain(availableSkillLine(E2E_SKILL.react.id));
@@ -238,7 +236,6 @@ describe("the placements a Codex installation offers", () => {
       const said = flattenCliOutput(output);
 
       expect(exitCode, said).not.toBe(EXIT_CODES.SUCCESS);
-      // The message names every cell it could have been asked for instead.
       expect(said).toContain(E2E_SKILL.react.id);
       expect(said).toContain(CODEX_REFUSED_CELL);
       for (const cell of CODEX_OFFERED_CELLS) expect(said).toContain(cell);
@@ -257,7 +254,7 @@ describe("the placements a Codex installation offers", () => {
 
   it(
     "offers plugin + project on Claude, which is what makes the Codex refusal a refusal",
-    { timeout: TIMEOUTS.PLUGIN_TEST },
+    { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
       env = await createTestEnvironment({ permissions: false });
       store.publish(
@@ -274,20 +271,27 @@ describe("the placements a Codex installation offers", () => {
         }),
       );
 
-      const { exitCode, output } = await runInitFrom(
-        store,
-        "ClaPlgPr",
-        { dir: env.projectDir, globalHome: env.fakeHome },
-        fixture.sourceDir,
+      // Same cell, same skill, other host. Denied at the question: past it, a plugin install
+      // needs the claude binary, and the subject is only that the cell is admitted.
+      prompt = new InteractivePrompt(
+        ["init", "--from", "ClaPlgPr", "--marketplace", fixture.sourceDir, ...PROVIDER_CLAUDE],
+        env.projectDir,
+        { env: { AGENTS_INC_API_URL: store.url, HOME: env.fakeHome } },
       );
-      const said = flattenCliOutput(output);
+      await prompt.waitForTextOrExit(STEP_TEXT.SHARED_CONFIG_INSTALL_CONFIRM);
+      const shown = prompt.getOutput();
 
-      expect(exitCode, said).toBe(EXIT_CODES.SUCCESS);
-      expect(said).not.toContain(CODEX_REFUSED_CELL);
-      // Same cell, same skill, other host: the refusal is not a guard that swallowed plugin mode.
-      expect((await readdir(path.join(env.projectDir, ".agents-inc"))).sort()).toStrictEqual([
-        "claude",
-      ]);
+      expect(shown).toContain(STEP_TEXT.SHARED_CONFIG_LIST_PROJECT);
+      expect(shown).toContain(STEP_TEXT.SHARED_CONFIG_INSTALL_CONFIRM);
+      expect(flattenCliOutput(shown)).not.toContain(CODEX_REFUSED_CELL);
+
+      await prompt.deny();
+      expect(await prompt.waitForExit(TIMEOUTS.EXIT_WAIT)).toBe(EXIT_CODES.CANCELLED);
+
+      expect(await directoryExists(codexProjectSkillsDir(env.projectDir))).toBe(false);
+      expect(await directoryExists(codexGlobalSkillsDir(env.fakeHome))).toBe(false);
+      expect(await directoryExists(path.join(env.projectDir, ".agents-inc"))).toBe(false);
+      expect(await directoryExists(path.join(env.fakeHome, ".agents-inc"))).toBe(false);
     },
   );
 });

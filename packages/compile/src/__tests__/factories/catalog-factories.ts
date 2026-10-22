@@ -33,3 +33,11 @@ export function buildCatalog(
     skills: Object.fromEntries(skills.map((skill) => [skill.id, skill])),
   }
 }
+
+/** Files each skill under the key given, which may differ from its id: no schema ties the two. */
+export function buildCatalogKeyedBy(
+  categories: Record<string, CatalogCategory>,
+  skillsByKey: Record<string, CatalogSkill>
+): CompileCatalog {
+  return { categories, skills: { ...skillsByKey } }
+}

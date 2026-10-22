@@ -7,6 +7,13 @@ import fg from "fast-glob";
 const EVERY_ENTRY = "**";
 const NOTHING_FOUND = 0;
 
+/**
+ * How far a build input may be stamped after dist/ and still count as built: a wall clock stepped
+ * back between writes (about 1.2 s was measured) stamps dist/ older than its sources. Cost: an edit
+ * made within this long of a build goes unseen.
+ */
+const CLOCK_STEP_TOLERANCE_MS = 3_000;
+
 const DIST_DIR = "dist";
 
 /** Every build rewrites this file, so its mtime stands in for dist/ in the per-test checks. */
@@ -27,9 +34,7 @@ const REPLACED_DIST_HEADLINE = "dist/ was replaced while this run was in flight.
 const WHY_A_REBUILD_EMPTIES_DIST =
   "tsup builds with `clean: true`, so a `bun run build` started from anywhere else empties dist/ " +
   "before refilling it, and nothing serialises that against a suite already executing out of it. " +
-  "The npm `pretest*` hooks used to be three such places and were removed on 2026-08-23 — " +
-  "turbo.json already ordered a build ahead of each task, so they were a second build that raced " +
-  "the first. What remains is a second AGENT, or a build run by hand in another terminal.";
+  "The usual source is a second agent, or a build run by hand in another terminal.";
 
 const WHY_THE_SYMPTOM_MISLEADS =
   "Commands resolve from ./dist/commands (package.json -> oclif.commands.target), so one invoked " +
@@ -68,10 +73,9 @@ const WHY_MATRIX_COUNTS =
   "dist exactly as src/ is, and it has no build output of its own to go stale instead.";
 
 const WHY_API_COUNTS =
-  "@workspace/api is private and ships as TypeScript, so tsup inlines it the same way — and it " +
-  "brings hono/client with it, which is the whole of what `fetch-seed.ts` gained by moving onto " +
-  "the shared worker client. It arrived on 2026-08-29 and this list is what stops a dist built " +
-  "before it from being read as current.";
+  "@workspace/api is private and ships as TypeScript, so tsup inlines it the same way, " +
+  "hono/client included. Listing it stops a dist built before a change to it from being read " +
+  "as current.";
 
 const REBUILD_HINT =
   "Run `bun run build` first, or `turbo run test`, which orders a build ahead of it.";
@@ -112,7 +116,8 @@ const BUILD_INPUT_TREES = [
 ] as const satisfies readonly BuildInputTree[];
 
 /**
- * Refuses a run whose `dist/` predates any tree compiled into it; a refusal, not a rebuild.
+ * Refuses a run whose `dist/` predates any tree compiled into it by more than a clock step; a
+ * refusal, not a rebuild.
  * Keep this module free of imports beyond node builtins and fast-glob: a `globalSetup` loads it.
  */
 export async function assertDistIsFresh(cliRoot: string): Promise<void> {
@@ -127,7 +132,7 @@ export async function assertDistIsFresh(cliRoot: string): Promise<void> {
     throw new Error(unreadableTreeMessage(unreadable));
   }
 
-  const staleTrees = trees.filter((tree) => tree.changedAt > distBuiltAt);
+  const staleTrees = trees.filter((tree) => changedAfterBuildBeyondClockStep(tree, distBuiltAt));
   if (staleTrees.length === 0) return;
 
   throw new Error(staleDistMessage(distBuiltAt, staleTrees));
@@ -255,6 +260,10 @@ async function readEntries(
 // A count, since a tree whose every reading is accounted for still holds build inputs.
 function holdsNothing(tree: ScannedTree): boolean {
   return tree.buildInputCount === NOTHING_FOUND;
+}
+
+function changedAfterBuildBeyondClockStep(tree: ScannedTree, distBuiltAt: number): boolean {
+  return tree.changedAt - distBuiltAt > CLOCK_STEP_TOLERANCE_MS;
 }
 
 function staleDistMessage(distBuiltAt: number, staleTrees: readonly ScannedTree[]): string {

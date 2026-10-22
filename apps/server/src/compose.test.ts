@@ -10,10 +10,8 @@ import { http, HttpResponse } from "msw"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { upstreamMock } from "../vitest.setup"
-import { composeRoute } from "./compose"
 import { seedSession } from "./db/seed-session"
 import { app } from "./index"
-import { listStacksRoute } from "./stacks"
 
 // `clearMocks` does not restore a spy, and some cases replace console or a binding.
 afterEach(() => {
@@ -202,17 +200,16 @@ describe("what the model is asked", () => {
     const asked = recordAsking()
 
     await signedIn(cookie, "  a react app  ")
+    const cachedCatalogue: Record<string, unknown> = {
+      type: "text",
+      text: expect.stringContaining(CATALOGUE_AS_PROMPTED),
+      cache_control: { type: "ephemeral" },
+    }
 
     expect(asked).toStrictEqual([
       expect.objectContaining({
         model: "claude-opus-5",
-        system: [
-          {
-            type: "text",
-            text: expect.stringContaining(CATALOGUE_AS_PROMPTED) as string,
-            cache_control: { type: "ephemeral" },
-          },
-        ],
+        system: [cachedCatalogue],
         messages: [{ role: "user", content: "a react app" }],
       }),
     ])
@@ -274,13 +271,14 @@ describe("when the model does not answer usefully", () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {})
 
     const response = await signedIn(cookie, "a react app")
+    const failure: Record<string, unknown> = {
+      event: "compose_failure",
+      message: expect.stringContaining("the request was malformed"),
+    }
 
     expect(response.status).toBe(502)
     expect(await response.json()).toStrictEqual(COMPOSE_FAILED_BODY)
-    expect(logged).toHaveBeenCalledWith({
-      event: "compose_failure",
-      message: expect.stringContaining("the request was malformed") as string,
-    })
+    expect(logged).toHaveBeenCalledWith(failure)
   })
 })
 
@@ -315,9 +313,41 @@ describe("what the editor is handed back", () => {
 })
 
 describe("a request with no session", () => {
-  // Every guarded route declares the same 401 body.
-  const bodySchemaOf = (route: typeof composeRoute | typeof listStacksRoute) =>
-    route.responses[401].content["application/json"].schema
+  const NEEDS_A_SESSION = [
+    { method: "post", path: "/compose" },
+    { method: "get", path: "/stacks" },
+    { method: "post", path: "/stacks" },
+    { method: "patch", path: "/stacks/{id}" },
+    { method: "delete", path: "/stacks/{id}" },
+  ] as const
+
+  // Read off the document the exported app generates, so a route may be
+  // declared anywhere.
+  const declaredRefusals = () => {
+    const { paths = {} } = app.getOpenAPI31Document({
+      openapi: "3.1.0",
+      info: { title: "agents-inc", version: "0" },
+    })
+
+    return NEEDS_A_SESSION.map(
+      ({ method, path }): unknown => paths[path]?.[method]?.responses?.["401"]
+    )
+  }
+
+  const REFUSAL_DECLARED: Record<string, unknown> = {
+    description: expect.any(String),
+    content: {
+      "application/json": {
+        schema: {
+          type: "object",
+          properties: {
+            error: { type: "string", enum: [UNAUTHORIZED_BODY.error] },
+          },
+          required: ["error"],
+        },
+      },
+    },
+  }
 
   it("is refused with the body the routes declare", async () => {
     const response = await ask("a react app")
@@ -326,12 +356,9 @@ describe("a request with no session", () => {
     expect(await response.json()).toEqual(UNAUTHORIZED_BODY)
   })
 
-  it("declares that body identically on /compose and on /stacks", () => {
-    for (const route of [composeRoute, listStacksRoute]) {
-      const schema = bodySchemaOf(route)
-
-      expect(schema.safeParse(UNAUTHORIZED_BODY).success).toBe(true)
-      expect(schema.safeParse({ error: "nope" }).success).toBe(false)
-    }
+  it("declares that body on every route that needs a session", () => {
+    expect(declaredRefusals()).toStrictEqual(
+      NEEDS_A_SESSION.map(() => REFUSAL_DECLARED)
+    )
   })
 })

@@ -260,7 +260,9 @@ describe("eject command", () => {
 
   /**
    * Project from one marketplace under global plugins from another: `eject skills` copies only what
-   * the project's marketplace carries and leaves the global installation alone.
+   * the project's marketplace carries and leaves the global installation alone. Observed red
+   * against a build that seated the global skill in the project's catalogue: it read that skill out
+   * of the project marketplace's folder and exited 1 on ENOENT.
    */
   describe("beside a global plugin installation from another marketplace", () => {
     const ONLY_IN_GLOBAL_MARKETPLACE = E2E_SKILL["visual-regression"];
@@ -474,7 +476,7 @@ describe("eject command", () => {
 
   // Known bug: a re-eject with --force exits 0, but `copySkillsToLocalFlattened` returns nothing,
   // so no "skills ejected" line.
-  it.fails("should overwrite existing skills with --force", async () => {
+  it.fails("should overwrite existing skills with --force", { retry: 0 }, async () => {
     tempDir = await createTempDir();
 
     const { exitCode: setupExitCode } = await CLI.run(
@@ -550,8 +552,10 @@ describe("eject command", () => {
 
   /**
    * On Codex `eject skills` copies into `<repo>/.agents/skills` (project) or `$CODEX_HOME/skills`
-   * (global), never `.claude/skills`. The first three install sub-agents with no skill; the last
-   * pair is about the copies.
+   * (global), never `.claude/skills`. Observed red before the fix at all of the first three: each
+   * run wrote `.claude/skills`, creating `.claude/` in a Codex-only project and filling the Claude
+   * installation's folder when `--provider codex` chose Codex in a scope holding both. The first
+   * three install sub-agents with no skill; the last pair is about the copies.
    */
   describe("on a Codex installation", () => {
     const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -716,7 +720,7 @@ describe("eject command", () => {
      */
     it.fails(
       "leaves out the skill a Codex global already holds as its own copy",
-      { timeout: TIMEOUTS.LIFECYCLE },
+      { retry: 0, timeout: TIMEOUTS.LIFECYCLE },
       async () => {
         const env = await freshEnvironment();
         const project = { dir: env.projectDir, globalHome: env.fakeHome };
