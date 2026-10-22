@@ -39,12 +39,12 @@ Agents Inc. Doctor
     Placements Offered      ✓  Every configured skill is placeable
     Skills Resolved         ✓  44/44 skills found
     Agents Compiled         ✓  13/13 agents compiled
-    No Orphans              ✓  No orphaned skills or agent files
+    No Orphans              ✓  No orphaned agent files
     Skills Installed        ✓  No eject-mode skills configured
     Plugins Installed       ✓  44/44 plugin-mode skills installed
     Marketplace Reachable   ✓  Connected to remote: /home/me/.cache/agents-inc/sources/github-agents-inc-skills-53f27da1d39533ac
                                239 skills available
-                               Fetched github:agents-inc/skills over the network — named by the global configuration
+                               Reached github:agents-inc/skills over the network — named by the global configuration
 
   Summary: 14 passed, 0 warnings, 0 errors
 ```
@@ -135,5 +135,4 @@ Reported here rather than left to be rediscovered.
 
 - **`doctor` exits 1 in a directory with nothing installed.** `config.ts not found` is a failed row like any other. If "not installed yet" is an acceptable state for your script, match the message rather than the exit code.
 - **`Skipped (config invalid)` also prints when the config is merely absent.** Read the `Config Valid` row above it, which distinguishes the two.
-- **`Fetched … over the network` prints for a cache hit too.** The line reports whether the marketplace is local or remote, not whether this run actually downloaded anything.
 - **The summary omits skipped rows,** so its total can be lower than the number of rows printed.

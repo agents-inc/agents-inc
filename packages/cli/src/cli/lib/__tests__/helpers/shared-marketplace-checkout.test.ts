@@ -7,7 +7,12 @@ import { DEFAULT_PLUGIN_NAME } from "../../../consts.js";
 import { DEFAULT_SOURCE } from "../../configuration/config.js";
 import { fetchRecordPath, sanitizeSourceForCache } from "../../loading/source-fetcher.js";
 import { createTempDir, cleanupTempDir, fileExists } from "../test-fs-utils.js";
-import { ensureRecordedCheckout, linkSharedCache } from "./shared-marketplace-checkout.js";
+import {
+  ensureRecordedCheckout,
+  fingerprintSharedCheckout,
+  linkSharedCache,
+  SHARED_CHECKOUT_ETAG,
+} from "./shared-marketplace-checkout.js";
 
 // Assembled independently of the module under test, so a wrong address there can fail.
 function expectedCheckoutDir(cacheDir: string): string {
@@ -170,5 +175,46 @@ describe("linkSharedCache", () => {
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("fingerprintSharedCheckout", () => {
+  let tempDir: string;
+  let fakeHome: string;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir("cc-shared-checkout-spec-");
+    fakeHome = path.join(tempDir, "fakehome");
+    await mkdir(fakeHome, { recursive: true });
+    await linkSharedCache(fakeHome);
+  });
+
+  it("gives the home its own record, carrying the ETag, over a link to the shared checkout", async () => {
+    try {
+      await fingerprintSharedCheckout(fakeHome);
+
+      const checkout = expectedCheckoutDir(path.join(fakeHome, ".cache"));
+      expect((await lstat(path.join(fakeHome, ".cache"))).isSymbolicLink()).toBe(false);
+      expect(await realpath(checkout)).toBe(await realpath(expectedCheckoutDir(SHARED_CACHE_DIR)));
+      expect(JSON.parse(await readFile(fetchRecordPath(checkout), "utf8"))).toStrictEqual({
+        tar: NEVER_REVALIDATED_TARBALL,
+        etag: SHARED_CHECKOUT_ETAG,
+      });
+      expect(
+        JSON.parse(await readFile(fetchRecordPath(expectedCheckoutDir(SHARED_CACHE_DIR)), "utf8")),
+        "the shared record stays without an ETag for every other spec",
+      ).toStrictEqual({ tar: NEVER_REVALIDATED_TARBALL });
+    } finally {
+      await cleanupTempDir(tempDir);
+    }
+  });
+
+  it("survives the teardown that removes the fake home holding the link", async () => {
+    await fingerprintSharedCheckout(fakeHome);
+    await cleanupTempDir(tempDir);
+
+    await expect(lstat(tempDir)).rejects.toThrow();
+    const entries = await readdir(expectedCheckoutDir(SHARED_CACHE_DIR));
+    expect(entries.length).toBeGreaterThan(0);
   });
 });

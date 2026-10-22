@@ -1,17 +1,17 @@
 /**
  * What an installation holds that its configuration does not account for: `doctor`'s No Orphans
- * row. Agent files are judged against the configuration whatever wrote them; a skill folder only
- * when it carries `forkedFrom`, so a user's own folder is never an orphan.
+ * row. An agents folder a configuration declares is judged against it, whatever wrote the files;
+ * one none declares, by this CLI's marker. Skill folders only where no configuration exists at
+ * all, by `forkedFrom`: `eject skills` copies in stamped folders that no configuration lists.
  */
 
 import path from "path";
-import { groupBy } from "remeda";
+import { groupBy, unique } from "remeda";
 
 import type { CheckedInstallation, ConfigState, Hosts } from "./installation-reads.js";
 import { listAgentFilesOf } from "../agents/index.js";
 import {
   agentFilesWithOurProvenanceIn,
-  listSkillDirsWithOurProvenance,
   skillDirsWithOurProvenanceIn,
 } from "../content-validator.js";
 import {
@@ -24,22 +24,18 @@ import { directoryExists } from "../../utils/fs.js";
 import { typedValues } from "../../utils/typed-object.js";
 import type { ProjectConfig, SkillScope } from "../../types/index.js";
 
-export type Orphans = { skills: string[]; agents: string[] };
-
 export type Ownership = {
   /** Display paths of what this CLI provably wrote into a folder no configuration declares. */
-  unowned: Orphans;
-  /** File and folder names, not paths, in a declared folder its configuration does not claim. */
-  orphans: Orphans;
+  unowned: { skills: string[]; agents: string[] };
+  /** File names, not paths, in a declared agents folder its configuration does not claim. */
+  orphanedAgentFiles: string[];
 };
 
 /**
- * One folder of one kind, once however many scopes share it, and the names a configuration claims
- * in it: `null` where none declares its scope, so only what this CLI provably wrote there is named.
+ * One agents folder, once however many scopes share it, and the names a configuration claims in
+ * it: `null` where none declares its scope, so only what this CLI provably wrote there is named.
  */
-type JudgedFolder = { dir: string; claimed: ReadonlySet<string> | null };
-
-type JudgedAgentFolder = JudgedFolder & { codec: AgentCodec };
+type JudgedAgentFolder = { dir: string; codec: AgentCodec; claimed: ReadonlySet<string> | null };
 
 /** `config` is `null` only where `state` is absent: a config the checks rejected is not judged. */
 export async function judgeOwnership(
@@ -48,13 +44,13 @@ export async function judgeOwnership(
   installation: CheckedInstallation,
 ): Promise<Ownership> {
   const agentFolders = agentFoldersToJudge(state, config, installation);
-  const skillFolders = skillFoldersToJudge(state, config, installation);
 
-  const [unowned, orphans] = await Promise.all([
-    unownedIn(agentFolders, skillFolders),
-    orphansIn(agentFolders, skillFolders),
+  const [skills, agents, orphanedAgentFiles] = await Promise.all([
+    unownedSkillDirs(state, installation),
+    unownedAgentFiles(agentFolders),
+    Promise.all(agentFolders.map(unclaimedAgentFiles)),
   ]);
-  return { unowned, orphans };
+  return { unowned: { skills, agents }, orphanedAgentFiles: orphanedAgentFiles.flat() };
 }
 
 function agentFoldersToJudge(
@@ -71,17 +67,18 @@ function agentFoldersToJudge(
   );
 }
 
-function skillFoldersToJudge(
+/** Only where no configuration exists anywhere: then every stamped folder is a leftover. */
+async function unownedSkillDirs(
   state: ConfigState,
-  config: ProjectConfig | null,
   { projectDir, hosts }: CheckedInstallation,
-): JudgedFolder[] {
-  return oncePerFolder(
-    scopesToJudge(state, hosts).map((scope) => ({
-      dir: skillsDir(hosts[scope], scope, projectDir),
-      claimed: claimed(state, scope, config && skillIdsClaimedIn(config, scope)),
-    })),
+): Promise<string[]> {
+  if (state.kind !== "absent") return [];
+
+  const dirs = unique(
+    scopesToJudge(state, hosts).map((scope) => skillsDir(hosts[scope], scope, projectDir)),
   );
+  const listed = await Promise.all(dirs.map(skillDirsWithOurProvenanceIn));
+  return listed.flat();
 }
 
 /**
@@ -113,64 +110,31 @@ function agentNamesClaimedIn(config: ProjectConfig, scope: SkillScope): string[]
   return config.agents.filter((agent) => claimsAt(agent, scope)).map((agent) => agent.name);
 }
 
-function skillIdsClaimedIn(config: ProjectConfig, scope: SkillScope): string[] {
-  return config.skills.filter((skill) => claimsAt(skill, scope)).map((skill) => skill.id);
-}
-
 /** An excluded global entry still serves other projects; an excluded project one serves nothing. */
 function claimsAt(entry: { scope: SkillScope; excluded?: boolean }, scope: SkillScope): boolean {
   return entry.scope === scope && (scope === "global" || !entry.excluded);
 }
 
 /** Two scopes can share a folder (Claude's at home): judged once, against both claims. */
-function oncePerFolder<Folder extends JudgedFolder>(folders: Folder[]): Folder[] {
+function oncePerFolder(folders: JudgedAgentFolder[]): JudgedAgentFolder[] {
   return typedValues(groupBy(folders, (folder) => folder.dir)).map((sharing) =>
     sharing.reduce(joinClaims),
   );
 }
 
-function joinClaims<Folder extends JudgedFolder>(into: Folder, from: Folder): Folder {
+function joinClaims(into: JudgedAgentFolder, from: JudgedAgentFolder): JudgedAgentFolder {
   if (into.claimed === null) return from;
   if (from.claimed === null) return into;
   return { ...into, claimed: new Set([...into.claimed, ...from.claimed]) };
 }
 
-async function unownedIn(
-  agentFolders: JudgedAgentFolder[],
-  skillFolders: JudgedFolder[],
-): Promise<Orphans> {
-  const [skills, agents] = await Promise.all([
-    Promise.all(
-      skillFolders.filter(isUnclaimed).map(({ dir }) => skillDirsWithOurProvenanceIn(dir)),
-    ),
-    Promise.all(
-      agentFolders
-        .filter(isUnclaimed)
-        .map(({ dir, codec }) => agentFilesWithOurProvenanceIn(dir, codec)),
-    ),
-  ]);
-  return { skills: skills.flat(), agents: agents.flat() };
-}
-
-async function orphansIn(
-  agentFolders: JudgedAgentFolder[],
-  skillFolders: JudgedFolder[],
-): Promise<Orphans> {
-  const [skills, agents] = await Promise.all([
-    Promise.all(skillFolders.map(unclaimedSkillDirs)),
-    Promise.all(agentFolders.map(unclaimedAgentFiles)),
-  ]);
-  return { skills: skills.flat(), agents: agents.flat() };
-}
-
-function isUnclaimed(folder: JudgedFolder): boolean {
-  return folder.claimed === null;
-}
-
-async function unclaimedSkillDirs({ dir, claimed }: JudgedFolder): Promise<string[]> {
-  if (claimed === null) return [];
-  const ours = await listSkillDirsWithOurProvenance(dir);
-  return ours.filter((name) => !claimed.has(name));
+async function unownedAgentFiles(agentFolders: JudgedAgentFolder[]): Promise<string[]> {
+  const listed = await Promise.all(
+    agentFolders
+      .filter((folder) => folder.claimed === null)
+      .map(({ dir, codec }) => agentFilesWithOurProvenanceIn(dir, codec)),
+  );
+  return listed.flat();
 }
 
 async function unclaimedAgentFiles({ dir, codec, claimed }: JudgedAgentFolder): Promise<string[]> {

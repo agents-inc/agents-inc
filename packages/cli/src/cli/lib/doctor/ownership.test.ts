@@ -21,7 +21,7 @@ const CLI_PROVENANCE = {
   date: "2026-01-01",
 };
 
-const NOTHING = { skills: [], agents: [] };
+const NOTHING_UNOWNED = { skills: [], agents: [] };
 
 async function writeSkillThisCliCopied(dir: string, name: string): Promise<void> {
   await mkdir(path.join(dir, name), { recursive: true });
@@ -79,7 +79,7 @@ describe("judgeOwnership", () => {
     return { projectDir: dir, hosts: hostsOf("claude") };
   }
 
-  it("names the skill folders and agent files a project's own config does not claim", async () => {
+  it("names the agent files a project's own config does not claim, and judges none of its skill folders", async () => {
     const config = buildProjectConfig({
       skills: buildSkillConfigs(["web-framework-react"]),
       agents: buildAgentConfigs(["web-developer"]),
@@ -92,20 +92,20 @@ describe("judgeOwnership", () => {
     await writeHandWrittenAgent(agents, "pm.md");
 
     expect(await judgeOwnership(ownConfig(config), config, onClaude(projectDir))).toStrictEqual({
-      unowned: NOTHING,
-      orphans: { skills: ["web-state-zustand"], agents: ["pm.md"] },
+      unowned: NOTHING_UNOWNED,
+      orphanedAgentFiles: ["pm.md"],
     });
   });
 
-  it("leaves a skill folder that carries no provenance alone, as the user's own", async () => {
-    const config = buildProjectConfig({ skills: buildSkillConfigs(["web-framework-react"]) });
-    const skills = skillsDir("claude", "project", projectDir);
-    await writeSkillThisCliCopied(skills, "web-framework-react");
-    await writeUsersOwnSkill(skills, "context7-mcp");
+  it("leaves the skill folders `eject skills` copies in alone, in the project and at home, beside a config listing none", async () => {
+    const config = buildProjectConfig({ skills: [], agents: buildAgentConfigs(["web-developer"]) });
+    await writeSkillThisCliCopied(skillsDir("claude", "project", projectDir), "web-state-zustand");
+    await writeSkillThisCliCopied(skillsDir("claude", "global", projectDir), "web-framework-react");
+    await writeAgentThisCliCompiled(agentsDir("claude", "project", projectDir), "web-developer");
 
     expect(await judgeOwnership(ownConfig(config), config, onClaude(projectDir))).toStrictEqual({
-      unowned: NOTHING,
-      orphans: NOTHING,
+      unowned: NOTHING_UNOWNED,
+      orphanedAgentFiles: [],
     });
   });
 
@@ -122,11 +122,11 @@ describe("judgeOwnership", () => {
         skills: [path.join(skills, "web-state-zustand")],
         agents: [path.join(agents, "pm.md")],
       },
-      orphans: NOTHING,
+      orphanedAgentFiles: [],
     });
   });
 
-  it("judges a project inheriting the global config by provenance in its own folders and by claims in the global ones", async () => {
+  it("judges a project inheriting the global config's agent files by provenance in its own folder and by claims in the global one, and none of its skill folders", async () => {
     const config = buildProjectConfig({
       skills: [],
       agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
@@ -136,12 +136,14 @@ describe("judgeOwnership", () => {
     await writeAgentThisCliCompiled(projectAgents, "pm");
     await writeAgentThisCliCompiled(globalAgents, "web-developer");
     await writeHandWrittenAgent(globalAgents, "reviewer.md");
+    await writeSkillThisCliCopied(skillsDir("claude", "project", projectDir), "web-state-zustand");
+    await writeSkillThisCliCopied(skillsDir("claude", "global", projectDir), "web-framework-react");
 
     expect(
       await judgeOwnership(inheritedConfig(config), config, onClaude(projectDir)),
     ).toStrictEqual({
       unowned: { skills: [], agents: [path.join(projectAgents, "pm.md")] },
-      orphans: { skills: [], agents: ["reviewer.md"] },
+      orphanedAgentFiles: ["reviewer.md"],
     });
   });
 
@@ -157,8 +159,8 @@ describe("judgeOwnership", () => {
     await writeAgentThisCliCompiled(agentsDir("claude", "global", projectDir), "pm");
 
     expect(await judgeOwnership(ownConfig(config), config, onClaude(projectDir))).toStrictEqual({
-      unowned: NOTHING,
-      orphans: { skills: [], agents: ["web-developer.md"] },
+      unowned: NOTHING_UNOWNED,
+      orphanedAgentFiles: ["web-developer.md"],
     });
   });
 
@@ -175,8 +177,8 @@ describe("judgeOwnership", () => {
     };
 
     expect(await judgeOwnership(ownConfig(config), config, installation)).toStrictEqual({
-      unowned: NOTHING,
-      orphans: { skills: [], agents: ["pm.toml"] },
+      unowned: NOTHING_UNOWNED,
+      orphanedAgentFiles: ["pm.toml"],
     });
   });
 
@@ -194,17 +196,21 @@ describe("judgeOwnership", () => {
     await writeHandWrittenAgent(shared, "reviewer.md");
 
     expect(await judgeOwnership(ownConfig(config), config, onClaude(home.dir))).toStrictEqual({
-      unowned: NOTHING,
-      orphans: { skills: [], agents: ["reviewer.md"] },
+      unowned: NOTHING_UNOWNED,
+      orphanedAgentFiles: ["reviewer.md"],
     });
   });
 
-  it("names what this CLI wrote into the folder both scopes share at home once, under ~", async () => {
+  it("names what this CLI wrote into the folders both scopes share at home once, under ~", async () => {
     await writeAgentThisCliCompiled(agentsDir("claude", "global", home.dir), "pm");
+    await writeSkillThisCliCopied(skillsDir("claude", "global", home.dir), "web-state-zustand");
 
     expect(await judgeOwnership({ kind: "absent" }, null, onClaude(home.dir))).toStrictEqual({
-      unowned: { skills: [], agents: [path.join("~", ".claude", "agents", "pm.md")] },
-      orphans: NOTHING,
+      unowned: {
+        skills: [path.join("~", ".claude", "skills", "web-state-zustand")],
+        agents: [path.join("~", ".claude", "agents", "pm.md")],
+      },
+      orphanedAgentFiles: [],
     });
   });
 });

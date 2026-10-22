@@ -12,6 +12,11 @@ import { execa } from "execa";
 export type TarballSourceServer = {
   url: string;
   publish: (sourceDir: string) => Promise<void>;
+  /**
+   * Answers every request with `status`, no ETag and no body, as GitHub answers for a repository
+   * gone or private; `publish` serves again.
+   */
+  refuse: (status: number) => void;
   /** In order, as `"<METHOD> <status>"`. */
   requests: string[];
   close: () => Promise<void>;
@@ -23,9 +28,17 @@ const TARBALL_NAME = "source.tar.gz";
 export async function startTarballSourceServer(sourceDir: string): Promise<TarballSourceServer> {
   let body = await packDirectory(sourceDir);
   let etag = etagFor(body);
+  let refusing: number | undefined;
   const requests: string[] = [];
 
   const server = createServer((request, response) => {
+    if (refusing !== undefined) {
+      requests.push(`${request.method ?? "?"} ${refusing}`);
+      response.writeHead(refusing, { "content-length": "0" });
+      response.end();
+      return;
+    }
+
     const status = statusFor(request.method, request.headers["if-none-match"], etag);
     requests.push(`${request.method ?? "?"} ${status}`);
 
@@ -45,6 +58,10 @@ export async function startTarballSourceServer(sourceDir: string): Promise<Tarba
     publish: async (nextSourceDir: string) => {
       body = await packDirectory(nextSourceDir);
       etag = etagFor(body);
+      refusing = undefined;
+    },
+    refuse: (status: number) => {
+      refusing = status;
     },
     close: () =>
       new Promise<void>((resolve) => {

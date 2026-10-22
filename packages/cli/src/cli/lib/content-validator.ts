@@ -300,7 +300,7 @@ async function listAgentFilesWithOurProvenance(
 }
 
 /** By `forkedFrom` alone, as `uninstall` reads it; unreadable metadata carries none. */
-export async function listSkillDirsWithOurProvenance(skillsDir: string): Promise<string[]> {
+async function listSkillDirsWithOurProvenance(skillsDir: string): Promise<string[]> {
   const [ours] = await partitionByVerdict(await listDirectories(skillsDir), (name) =>
     carriesOurProvenance(skillsDir, name),
   );

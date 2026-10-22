@@ -12,6 +12,10 @@ import {
   type ResolvedConfig,
 } from "../lib/configuration";
 import { loadSkillsMatrixFromSource, type SourceLoadResult } from "../lib/loading";
+import {
+  askingEachMarketplaceItself,
+  MarketplaceUnreachableError,
+} from "../lib/loading/source-fetcher";
 import { matrix } from "../lib/matrix/matrix-provider";
 import { getStackSkillIds } from "../lib/stacks";
 import { filterExcludedEntries } from "../lib/agents";
@@ -40,7 +44,7 @@ import {
   type CheckedInstallation,
   type ConfigState,
 } from "../lib/doctor/installation-reads";
-import { judgeOwnership, type Orphans, type Ownership } from "../lib/doctor/ownership";
+import { judgeOwnership, type Ownership } from "../lib/doctor/ownership";
 import {
   layoutIsCurrent,
   providerArgument,
@@ -341,39 +345,38 @@ async function checkNoOrphans(
   return ownershipResult(state, await judgeOwnership(state, config, installation));
 }
 
-function ownershipResult(state: ConfigState, { unowned, orphans }: Ownership): CheckResult {
+function ownershipResult(
+  state: ConfigState,
+  { unowned, orphanedAgentFiles }: Ownership,
+): CheckResult {
   if (unowned.skills.length > 0 || unowned.agents.length > 0) {
     return {
       kind: "orphans-unowned",
       status: "fail",
       message: `${countedArtifacts(unowned.skills, unowned.agents)} installed here, and no configuration declares them`,
-      details: [...unowned.skills, ...unowned.agents, ...orphanLines(orphans)].map(
+      details: [...unowned.skills, ...unowned.agents, ...orphanLines(orphanedAgentFiles)].map(
         (line) => `- ${line}`,
       ),
     };
   }
 
-  if (orphans.skills.length > 0 || orphans.agents.length > 0) {
+  if (orphanedAgentFiles.length > 0) {
     return {
       kind: "orphans",
       status: "warn",
-      message: countedOrphans(orphans),
-      details: orphanLines(orphans).map((line) => `- ${line}`),
+      message: plural(orphanedAgentFiles.length, "orphaned agent file"),
+      details: orphanLines(orphanedAgentFiles).map((line) => `- ${line}`),
     };
   }
 
   // With no configuration and nothing this CLI wrote, there is nothing to own: `init`'s state.
   if (state.kind === "absent") return skippedResult("orphans");
 
-  return { kind: "orphans", status: "pass", message: "No orphaned skills or agent files" };
+  return { kind: "orphans", status: "pass", message: "No orphaned agent files" };
 }
 
-function orphanLines({ skills, agents }: Orphans): string[] {
-  return [...skills, ...agents].map((name) => `${name} (not in config)`);
-}
-
-function countedOrphans({ skills, agents }: Orphans): string {
-  return nonZeroCounts([skills.length, "orphaned skill"], [agents.length, "orphaned agent file"]);
+function orphanLines(fileNames: string[]): string[] {
+  return fileNames.map((name) => `${name} (not in config)`);
 }
 
 function ratio(found: number, total: number, noun: string): string {
@@ -508,48 +511,58 @@ const MARKETPLACE_CHOSEN_BY = {
 } as const satisfies Record<ResolvedConfig["sourceOrigin"], string>;
 
 function howItWasReached(source: string, isLocal: boolean): string {
-  return isLocal ? `Read ${source} from disk` : `Fetched ${source} over the network`;
+  return isLocal ? `Read ${source} from disk` : `Reached ${source} over the network`;
 }
 
 /** Counts the marketplace's own skills, not the loaded matrix, which also holds local ones. */
 function reachedMarketplace(result: SourceLoadResult): CheckResult {
   const { source, sourceOrigin } = result.sourceConfig;
-  const available = `${plural(result.marketplaceSkillIds.size, "skill")} available`;
-  const chosenBy = MARKETPLACE_CHOSEN_BY[sourceOrigin];
-
-  if (result.unreachable) {
-    return {
-      kind: "source",
-      status: "warn",
-      message: `Could not reach ${source} — read its cached copy instead`,
-      details: [available, `The copy at ${result.sourcePath} may be out of date — ${chosenBy}`],
-    };
-  }
-
   return {
     kind: "source",
     status: "pass",
     message: `Connected to ${result.isLocal ? "local" : "remote"}: ${result.sourcePath}`,
-    details: [available, `${howItWasReached(source, result.isLocal)} — ${chosenBy}`],
+    details: [
+      `${plural(result.marketplaceSkillIds.size, "skill")} available`,
+      `${howItWasReached(source, result.isLocal)} — ${MARKETPLACE_CHOSEN_BY[sourceOrigin]}`,
+    ],
   };
 }
 
+/** Asks the marketplace itself: a saved copy is read only once it answers with that copy's ETag. */
 async function checkSourceReachable({
   projectDir,
   hosts,
 }: CheckedInstallation): Promise<CheckResult> {
   try {
     return reachedMarketplace(
-      await loadSkillsMatrixFromSource({ projectDir, provider: hosts.project }),
+      await askingEachMarketplaceItself(() =>
+        loadSkillsMatrixFromSource({ projectDir, provider: hosts.project }),
+      ),
     );
   } catch (error) {
+    return marketplaceNotLoaded(error);
+  }
+}
+
+const NO_SAVED_COPY_READ =
+  "Doctor asks the marketplace itself, not the saved copy, which other commands still read offline";
+
+function marketplaceNotLoaded(error: unknown): CheckResult {
+  if (error instanceof MarketplaceUnreachableError) {
     return {
       kind: "source",
       status: "fail",
-      message: refusedOr(error, "Failed to load marketplace"),
-      details: [getErrorMessage(error)],
+      message: `Could not reach ${error.source}`,
+      details: [error.reason, NO_SAVED_COPY_READ],
     };
   }
+
+  return {
+    kind: "source",
+    status: "fail",
+    message: refusedOr(error, "Failed to load marketplace"),
+    details: [getErrorMessage(error)],
+  };
 }
 
 type ContentCheck = {
@@ -793,7 +806,7 @@ async function recreateConfigTips(
 
 const INSTALLATIONS_ROW_NAME = "Installations";
 
-/** Still a finding beside the blocks below: every acting command refuses to guess between them. */
+/** A pass, as two installations are no fault; its detail names the flag acting commands need. */
 async function checkInstallationsInPlay(
   projectDir: string,
   providers: Provider[],
@@ -801,7 +814,7 @@ async function checkInstallationsInPlay(
   const finding = await ambiguityFinding(projectDir);
   return {
     kind: "installations",
-    status: "fail",
+    status: "pass",
     message: `${providers.length} installations here, each checked below`,
     details: finding === null ? [] : [`- ${finding}`],
   };

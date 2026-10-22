@@ -84,4 +84,4 @@ For private repositories, set the GIGET_AUTH environment variable:
   export GIGET_AUTH=ghp_your_github_token
 ```
 
-`npx agents-inc doctor` reports the same marketplace, alongside whatever else is wrong. Once a marketplace has been fetched once, a later run that can't reach it falls back to the cached copy and warns rather than failing.
+`npx agents-inc doctor` reports the same marketplace, alongside whatever else is wrong. Once a marketplace has been fetched once, a later command other than `doctor` that can't reach it falls back to the cached copy and warns rather than failing.

@@ -5,7 +5,7 @@ import { CLI } from "../fixtures/cli.js";
 
 /**
  * `doctor` over an empty directory: no loader trace between headings and rows, and the marketplace
- * row names what it fetched. Reachability is not stubbed: with no config the public catalogue is
+ * row names what it reached. Reachability is not stubbed: with no config the public catalogue is
  * really fetched.
  */
 
@@ -60,7 +60,7 @@ describe("the report doctor prints over a directory holding nothing", () => {
 
     expect(
       stdout,
-      "the row reported the cache directory it landed in and never the marketplace it fetched",
-    ).toContain(STEP_TEXT.DOCTOR_MARKETPLACE_DEFAULT_FETCHED);
+      "the row reported the cache directory it landed in and never the marketplace it reached",
+    ).toContain(STEP_TEXT.DOCTOR_MARKETPLACE_DEFAULT_REACHED);
   });
 });

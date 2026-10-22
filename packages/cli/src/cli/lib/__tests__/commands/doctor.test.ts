@@ -1,8 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import path from "path";
 import { mkdir, rm, writeFile } from "fs/promises";
 import { missingArgsRefusal, runCliCommand } from "../helpers/cli-runner.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
+import {
+  fingerprintSharedCheckout,
+  SHARED_CHECKOUT_ETAG,
+} from "../helpers/shared-marketplace-checkout.js";
 import { EXIT_CODES } from "../../exit-codes";
 import { renderAgentMd, renderMetadataYaml, renderSkillMd } from "../content-generators";
 import { stampProvenanceMarker } from "../../agents/agent-provenance.js";
@@ -44,9 +48,16 @@ describe("doctor command", () => {
 
   beforeEach(async () => {
     ({ projectDir, fakeHome, cleanup } = await setupIsolatedHome("doctor-test-home-"));
+    // Doctor asks the marketplace itself, which here confirms the shared checkout current.
+    await fingerprintSharedCheckout(fakeHome);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { headers: { etag: SHARED_CHECKOUT_ETAG } })),
+    );
   });
 
   afterEach(async () => {
+    vi.unstubAllGlobals();
     await cleanup();
   });
 

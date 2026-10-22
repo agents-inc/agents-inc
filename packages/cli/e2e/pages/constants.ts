@@ -22,6 +22,8 @@ export const DIRS = {
   CODEX_PROJECT_SKILLS: ".agents/skills",
   // The Claude CLI's session-state backups under its config dir.
   CLAUDE_BACKUPS: "backups",
+  /** Mirrors `cacheRoot()` under HOME: the CLI's saved copies, not giget's tarballs beside them. */
+  SOURCE_CACHE: ".cache/agents-inc",
 } as const;
 
 export const FILES = {
@@ -57,8 +59,13 @@ export const STEP_TEXT = {
   CONFIG_LOAD_FAILED: "could not be loaded", // ConfigLoadError
   // Single unbroken tokens: oclif word-wraps error text at the terminal width.
   CONFIG_UNREADABLE_RECREATE: "recreate",
-  // `/editor`: the bare host is the landing page.
-  EDITOR_URL: "https://agentsinc.sh/editor",
+  // `LOCAL_EDITOR_URL`: every e2e worker runs on this machine, so every printed link opens it.
+  EDITOR_URL: "http://localhost:5173/editor",
+  // `DEFAULT_EDITOR_URL`, beside a worker elsewhere.
+  LIVE_EDITOR_URL: "https://agentsinc.sh/editor",
+  // The two above without their scheme, as help text names the editor.
+  EDITOR_ADDRESS: "localhost:5173/editor",
+  LIVE_EDITOR_ADDRESS: "agentsinc.sh/editor",
   CONFIG_UNREADABLE_DOCTOR: "doctor",
   // Composed with ` '<path>'`.
   CONFIG_UNREADABLE_GLOBAL: "The global installation's config at",
@@ -102,8 +109,8 @@ export const STEP_TEXT = {
   RECORDED_MARKETPLACE_NAME_FIELD: "marketplaceName",
   // `skippedUnknownSkills`.
   CATALOG_DOES_NOT_KNOW: "this catalog does not know:",
-  // `skippedUnknownSkills`, the line naming the sub-agents skipped with a skill.
-  SKIPPED_WITH_THE_SKILL: "carrying nothing else this catalog knows:",
+  // `skippedUnknownSkills`, the line naming the sub-agents installed without a skill.
+  INSTALLED_WITHOUT_THE_SKILL: "carrying nothing else this catalog knows:",
   UNRESOLVED_SLUG: "Unresolved slug",
   // `checkMatrixHealth`'s prefix; doctor's Marketplaces row omits it.
   MATRIX_HEALTH_SAID: "[matrix]",
@@ -119,10 +126,12 @@ export const STEP_TEXT = {
   INSTALLED_SKILL_METADATA_MISSING: "is missing metadata.yaml — skipped",
   // Assert through `flattenCliOutput`.
   METADATA_UNUSABLE_WAY_OUT: "Fix the file, or delete the skill directory",
-  // Counts projects rewritten — config pair or sub-agents — not projects reached.
-  PROPAGATED_RECOMPILE_ONE: "Registered projects: 1 rewritten,",
+  // Every project reached and recompiled, whether or not its files came out changed.
+  PROPAGATED_RECOMPILE_ONE: "Registered projects: 1 recompiled",
   // `BaseCommand.reportPropagatedRecompile`.
   PROPAGATED_RECOMPILE: "Registered projects:",
+  // Composed as `${PROPAGATED_RECOMPILE} <n> ${PROPAGATED_RECOMPILED}`, with no unchanged count.
+  PROPAGATED_RECOMPILED: "recompiled",
   LOADED: "Loaded",
   LOADED_SKILL: "Loaded skill:",
   COMPILED_LIST: "Compiled:",
@@ -140,9 +149,6 @@ export const STEP_TEXT = {
   UPDATE_NO_CLAUDE_CLI: "Claude CLI not found",
 
   CONFIRM_UNINSTALL: "Are you sure you want to uninstall",
-  UNINSTALL_PREVIEW: "The following will be removed",
-  UNINSTALL_PREVIEW_HEADING: "The following will be removed:",
-  UNINSTALL_CONFIG_SECTION: "Config:",
   UNINSTALL_PROJECTS_UPDATED_ONE: "Updated 1 registered project",
   UNINSTALL_PROJECT_SKIPPED: "Could not update registered project at",
   // Composed as `${SKIPPED_REGISTERED_PROJECT} <path>: ${REGISTERED_PROJECT_CONFIG_UNREADABLE}`.
@@ -157,8 +163,6 @@ export const STEP_TEXT = {
   UNINSTALL_NOTHING_TO_UNINSTALL: "Nothing to uninstall",
   UNINSTALL_NOT_INSTALLED: "is not installed in this project",
   UNINSTALL_NO_CHANGES_MADE: "No changes made.",
-  UNINSTALL_CLI_COMPILED: "(CLI-compiled)",
-  UNINSTALL_CLI_MANAGED_SECTION: "CLI-managed files:",
   UNINSTALL_AGENTS_KEPT_ONE: "Kept 1 agent in",
   UNINSTALL_AGENTS_KEPT_TWO: "Kept 2 agents in",
   UNINSTALL_AGENTS_KEPT_REASON: "no agents-inc marker",
@@ -204,9 +208,9 @@ export const STEP_TEXT = {
   DOCTOR_SOURCE_LOCAL: "Connected to local:",
   DOCTOR_SKILLS_AVAILABLE: "skills available",
   DOCTOR_ONE_SKILL_AVAILABLE: "1 skill available",
-  // Whole: both halves are the claim (which marketplace, and that it was fetched).
-  DOCTOR_MARKETPLACE_DEFAULT_FETCHED:
-    "Fetched github:agents-inc/skills over the network — nothing here names one, so this is the default",
+  // Whole: both halves are the claim (which marketplace, and that the network reached it).
+  DOCTOR_MARKETPLACE_DEFAULT_REACHED:
+    "Reached github:agents-inc/skills over the network — nothing here names one, so this is the default",
   DOCTOR_AGENTS_NEED_RECOMPILATION: "recompilation",
   // The half without `CLI_INVOKE_COMMAND`; never assert the bare word "compile".
   DOCTOR_TIP_COMPILE_AGENTS: "to generate missing agent files",
@@ -239,6 +243,10 @@ export const STEP_TEXT = {
   DOCTOR_NO_AGENTS_CONFIGURED: "No agents configured",
   // `loadConfig`'s reason, quoted by the finding.
   CONFIG_LOAD_REASON: "Failed to load config from",
+  // `NO_VALID_DEFAULT_EXPORT`, the reason a config that declares nothing is refused.
+  NO_VALID_DEFAULT_EXPORT: "the file has no valid default export",
+  // `configUnreadableError`, which sends the reader to the marketplace's repository.
+  MARKETPLACE_OWN_CONFIG: "This is the marketplace's own config rather than an installation's",
 
   NO_INSTALLATION: "No installation found",
 
@@ -283,10 +291,14 @@ export const STEP_TEXT = {
   CONFIG_CODEX_MODEL_REFUSED:
     'agents.0.codexModel: Invalid option: expected one of "gpt-6-astra"|"gpt-5.6-sol"|"gpt-5.6-terra"|"gpt-5.6-luna"',
 
+  // The summary panel at a question, or where one would be: its header row, then its scope labels.
+  PANEL_HEADER: "│  Marketplace ",
+  PANEL_ALL_SKILLS_EJECTED: "│  Marketplace All skills ejected ",
+  PANEL_PROJECT_SCOPE: " Project ",
+  PANEL_GLOBAL_SCOPE: " Global ",
+
   // Short fragments: oclif wraps error text.
-  SHARED_CONFIG_APPLY_PREVIEW: "Applying this configuration will remove:",
   SHARED_CONFIG_APPLY_CONFIRM: "Apply this configuration?",
-  SHARED_CONFIG_APPLY_NOTHING_REMOVED: "Nothing is removed",
   SHARED_CONFIG_NEEDS_TERMINAL: "no terminal here to confirm it at",
   UNINSTALL_NEEDS_TERMINAL: "Uninstalling removes files, so it has to be confirmed",
   UNINSTALL_NEEDS_TERMINAL_REMEDY: "uninstall --yes",
@@ -296,20 +308,16 @@ export const STEP_TEXT = {
   SHARED_CONFIG_KEPT_UNPLACEABLE_REMEDY: "then apply the configuration again",
   SHARED_CONFIG_KEPT_UNASSIGNED: "kept, no longer assigned to",
   SHARED_CONFIG_SLOT_OVERFULL: "is exclusive but holds",
-  // Two fragments: the line wraps on a long label.
-  SHARED_CONFIG_PROJECT_COPY_REMOVED: "this project's copy is removed",
-  SHARED_CONFIG_GLOBAL_TAKES_OVER: "the global one takes over",
-  // `projectCopyMovedToGlobal`, before the shared tail above.
-  SHARED_CONFIG_MOVES_TO_GLOBAL: "moves to the global install",
-  SHARED_CONFIG_OVERWRITTEN: "Will be overwritten:",
-  // `registeredProjectsRewritten`.
-  SHARED_CONFIG_REGISTERED_REWRITTEN: "is rewritten to match",
-  // Assert the order heading → entry → next heading, not a heading alone.
-  SHARED_CONFIG_LIST_PROJECT: "Into this project:",
-  SHARED_CONFIG_LIST_GLOBAL: "Into the global install:",
-  SHARED_CONFIG_LIST_SKIPPED: "Skipped, already in the global install:",
+  // `registeredProjectsRecompiled`.
+  SHARED_CONFIG_REGISTERED_RECOMPILED: "is recompiled to match",
   SHARED_CONFIG_INSTALL_CONFIRM: "Install this configuration?",
   SHARED_CONFIG_KEPT_AS_INSTALLED: "Kept as installed in the global install",
+  // `keptAsInstalledGlobally`'s route, after the command it hands out.
+  SHARED_CONFIG_KEPT_CHANGE_FROM_HOME: "from your home directory.",
+  // `subAgentChanged`: composed as `~ <name> (global): gains <skill>` under the panel.
+  SUB_AGENT_CHANGED_GLOBALLY: "(global):",
+  SUB_AGENT_GAINS: "gains",
+  SUB_AGENT_LOSES: "loses",
   SHARED_CONFIG_ADDED_TO_GLOBAL: "Added to sub-agents in the global install",
   // Composed after "~ <name> ".
   EDIT_GLOBAL_SUB_AGENT_SKILLS_ADDED: "[G] (agent: skills added)",
@@ -332,8 +340,9 @@ export const STEP_TEXT = {
   // formatSourceDisplayName("eject").
   SOURCE_DISPLAY_EJECT: "Eject",
 
+  // Between the folder under a root and the destination under the same root.
   RETIRED_SOURCE_FOLDER_UNSUPPORTED:
-    "is no longer supported (agents-inc now serves Claude and Codex). Move it to .agents-inc/claude/.",
+    " is no longer supported (agents-inc now serves Claude and Codex). Move it to ",
   DOCTOR_ROW_LAYOUT: "Layout",
   DOCTOR_LAYOUT_CURRENT: "on .agents-inc/claude/",
   // `codexProjectTrustMessage`.
@@ -357,6 +366,16 @@ export const MANIFEST_REFUSAL_BUILDS_IN_ORDER = new RegExp(
 
 export const REMOVED_MARKER = "-";
 export const CHANGED_MARKER = "~";
+export const ADDED_MARKER = "+";
+export const UNCHANGED_MARKER = "•";
+export const OVERWRITTEN_MARKER = "↻";
+/** The summary panel's mark for a skill installed as a local copy. */
+export const LOCAL_COPY_MARK = "⏏";
+
+/** One of the summary panel's rows: its mark, then the skill's display name or the sub-agent's. */
+export function panelRow(marker: string, name: string): string {
+  return ` ${marker} ${name} `;
+}
 
 /** Mirrors `CLI_INVOKE_COMMAND` in `src/cli/consts.ts`. */
 export const CLI_INVOKE_COMMAND = "npx agents-inc";
@@ -451,4 +470,8 @@ export const TERMINAL_SIZE = {
   TALL: { rows: 60, cols: 120 },
   /** `rows` is exactly `MIN_TERMINAL_SIZE.ROWS`; one lower and specs hang on the resize prompt. */
   SHORT: { rows: 20, cols: 100 },
+  /** `cols` is exactly `MIN_TERMINAL_SIZE.COLS`, the narrowest terminal the CLI draws at. */
+  NARROWEST: { rows: 40, cols: 80 },
+  /** Between the narrowest and the PTY default, where a name that fits at 120 still overruns. */
+  MIDDLE: { rows: 40, cols: 100 },
 } as const;

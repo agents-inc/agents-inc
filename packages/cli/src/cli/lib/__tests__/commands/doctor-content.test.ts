@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { TEST_SOURCE_URL } from "../test-constants.js";
 import path from "path";
 import { chmod, mkdir, rm, writeFile } from "fs/promises";
@@ -15,6 +15,10 @@ import {
   writeTestPluginManifest,
 } from "../helpers/disk-writers.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
+import {
+  fingerprintSharedCheckout,
+  SHARED_CHECKOUT_ETAG,
+} from "../helpers/shared-marketplace-checkout.js";
 import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
 import { renderUnparseableConfigTs } from "../factories/unloadable-config-factories.js";
 import { buildSkillConfigs, type FixtureProjectConfig } from "../helpers/skill-config-builders.js";
@@ -111,6 +115,18 @@ const SUMMARY_LINE = "Summary:";
 const MARKETPLACE_MANIFEST_FILE = path.join(PLUGIN_MANIFEST_DIR, MARKETPLACE_JSON);
 
 const MANIFEST_DEFECTS = ["absent", "unparseable", "refused by the schema"] as const;
+
+// Doctor asks the marketplace itself, which here confirms the shared checkout current.
+beforeEach(() => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(null, { headers: { etag: SHARED_CHECKOUT_ETAG } })),
+  );
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 async function breakMarketplaceManifest(
   sourceDir: string,
@@ -407,6 +423,7 @@ describe("doctor content checks", () => {
 
   beforeEach(async () => {
     ({ tempDir, projectDir, fakeHome, cleanup } = await setupIsolatedHome("cc-doctor-content-"));
+    await fingerprintSharedCheckout(fakeHome);
   });
 
   afterEach(async () => {
@@ -1937,6 +1954,7 @@ describe("the doctor report, line by line", () => {
 
   beforeEach(async () => {
     ({ tempDir, projectDir, fakeHome, cleanup } = await setupIsolatedHome("cc-doctor-report-"));
+    await fingerprintSharedCheckout(fakeHome);
   });
 
   afterEach(async () => {
@@ -2001,7 +2019,7 @@ describe("the doctor report, line by line", () => {
         "    Placements Offered      ✓  Every configured skill is placeable",
         "    Skills Resolved         ✓  1/1 skill found",
         "    Agents Compiled         ✓  1/1 agent compiled",
-        "    No Orphans              ✓  No orphaned skills or agent files",
+        "    No Orphans              ✓  No orphaned agent files",
         "    Skills Installed        ✓  1/1 eject-mode skill installed",
         "    Plugins Installed       ✓  No plugin-mode skills configured",
         ...reachedLocally(sourceDir, "named by this project's configuration"),
@@ -2032,7 +2050,7 @@ describe("the doctor report, line by line", () => {
       ].join("\n"),
     );
     expect(stdout).toContain(
-      "Fetched github:agents-inc/skills over the network — nothing here names one, so this is the default\n",
+      "Reached github:agents-inc/skills over the network — nothing here names one, so this is the default\n",
     );
     expect(
       stdout.endsWith(
@@ -2045,6 +2063,42 @@ describe("the doctor report, line by line", () => {
         ].join("\n"),
       ),
     ).toBe(true);
+  });
+
+  it("fails the marketplace row when the marketplace does not answer, reading no saved copy", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed")));
+    await writeTestTsConfig(
+      projectDir,
+      buildProjectConfig({
+        name: "test-project",
+        skills: [],
+        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
+        marketplace: TEST_SOURCE_URL,
+      }),
+    );
+    await writeValidInstalledAgent(
+      path.join(projectDir, INSTALLED_AGENTS_SUBDIR),
+      CONFIGURED_AGENT_NAME,
+    );
+
+    const { stdout, error } = await runCliCommand(["doctor"]);
+
+    expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+    expect(stdout).toContain(
+      [
+        "    Skills Resolved         –  Skipped (marketplace unreachable)",
+        "    Agents Compiled         ✓  1/1 agent compiled",
+      ].join("\n"),
+    );
+    expect(stdout).toContain(
+      [
+        `    Marketplace Reachable   ✗  Could not reach ${TEST_SOURCE_URL}`,
+        "                               fetch failed",
+        "                               Doctor asks the marketplace itself, not the saved copy, which other commands still read offline",
+        "",
+        "  Summary:",
+      ].join("\n"),
+    );
   });
 
   it("names the global config a project without its own inherits, and the agent it must recompile", async () => {
@@ -2066,7 +2120,7 @@ describe("the doctor report, line by line", () => {
         "    Skills Resolved         ✓  No skills configured",
         "    Agents Compiled         !  1 agent needs recompilation",
         "                               - web-developer (missing)",
-        "    No Orphans              ✓  No orphaned skills or agent files",
+        "    No Orphans              ✓  No orphaned agent files",
         "    Skills Installed        ✓  No eject-mode skills configured",
         "    Plugins Installed       ✓  No plugin-mode skills configured",
         ...reachedLocally(sourceDir, "named by the global configuration"),
@@ -2197,7 +2251,7 @@ describe("the doctor report, line by line", () => {
 
     const { stdout } = await runCliCommand(["doctor"]);
 
-    expect(stdout).toContain("    No Orphans              ✓  No orphaned skills or agent files\n");
+    expect(stdout).toContain("    No Orphans              ✓  No orphaned agent files\n");
   });
 
   it("counts a project agent's file in the global folder as an orphan", async () => {
@@ -2237,7 +2291,7 @@ describe("the doctor report, line by line", () => {
 
     const { stdout } = await runCliCommand(["doctor"]);
 
-    expect(stdout).toContain("    No Orphans              ✓  No orphaned skills or agent files\n");
+    expect(stdout).toContain("    No Orphans              ✓  No orphaned agent files\n");
   });
 
   it("names each plugin-mode skill no enabled plugin provides", async () => {
@@ -2265,12 +2319,12 @@ describe("the doctor report, line by line", () => {
 
     const { stdout, error } = await runCliCommand(["doctor"]);
 
-    expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+    expect(error, "a second installation is a finding, not an error").toBeUndefined();
     expect(compactCliOutput(stdout)).toContain(
       compactCliOutput(
         [
           "  Operational checks",
-          "    Installations           ✗  2 installations here, each checked below",
+          "    Installations           ✓  2 installations here, each checked below",
           `                               - ${process.cwd()} holds 2 installations — claude and codex — so every command that acts on one cannot tell which one you mean. Name it with --provider <claude|codex>. Nothing has been changed.`,
           "",
           "  The claude installation",
@@ -2402,7 +2456,7 @@ describe("the doctor report, line by line", () => {
 
     const { stdout } = await runCliCommand(["doctor"]);
 
-    expect(stdout).toContain("    No Orphans              ✓  No orphaned skills or agent files\n");
+    expect(stdout).toContain("    No Orphans              ✓  No orphaned agent files\n");
   });
 
   it("counts a global agent's file in the project's folder as an orphan", async () => {
@@ -2620,7 +2674,7 @@ describe("the doctor report, line by line", () => {
     );
 
     expect(stdout).toContain(
-      `  Tip: There is no automatic repair — recreate the configuration by running 'npx agents-inc uninstall' from '${process.cwd()}', which still works on a config it cannot read, then 'npx agents-inc init --from <id>' with an id from https://agentsinc.sh/editor\n`,
+      `  Tip: There is no automatic repair — recreate the configuration by running 'npx agents-inc uninstall' from '${process.cwd()}', which still works on a config it cannot read, then 'npx agents-inc init --from <id>' with an id from http://localhost:5173/editor\n`,
     );
   });
 
@@ -2661,7 +2715,7 @@ describe("the doctor report, line by line", () => {
     );
   }
 
-  describe("the No Orphans row over skill folders", () => {
+  describe("the No Orphans row beside skill folders", () => {
     async function installEjectedSkill(): Promise<string> {
       const skillsDir = path.join(projectDir, INSTALLED_SKILLS_SUBDIR);
       await setupValidatedProject(tempDir, projectDir, {
@@ -2675,22 +2729,21 @@ describe("the doctor report, line by line", () => {
       return skillsDir;
     }
 
-    it("names a skill folder this CLI installed that the configuration does not claim", async () => {
+    it("names no skill folder this CLI installed that the configuration does not claim, as `eject skills` leaves each one", async () => {
       const skillsDir = await installEjectedSkill();
       await writeValidInstalledSkill(skillsDir, UNRELATED_INSTALLED_SKILL_ID);
 
-      const { stdout } = await runCliCommand(["doctor"]);
+      const { stdout, error } = await runCliCommand(["doctor"]);
 
+      expect(error).toBeUndefined();
       expect(stdout).toContain(
-        [
-          "    No Orphans              !  1 orphaned skill",
-          `                               - ${UNRELATED_INSTALLED_SKILL_ID} (not in config)`,
-          "    Skills Installed",
-        ].join("\n"),
+        ["    No Orphans              ✓  No orphaned agent files", "    Skills Installed"].join(
+          "\n",
+        ),
       );
     });
 
-    it("counts orphaned skills and agent files apart", async () => {
+    it("names the orphaned agent file and not the unclaimed skill folder beside it", async () => {
       const skillsDir = await installEjectedSkill();
       await writeValidInstalledSkill(skillsDir, UNRELATED_INSTALLED_SKILL_ID);
       await writeValidInstalledAgent(
@@ -2702,8 +2755,7 @@ describe("the doctor report, line by line", () => {
 
       expect(stdout).toContain(
         [
-          "    No Orphans              !  1 orphaned skill and 1 orphaned agent file",
-          `                               - ${UNRELATED_INSTALLED_SKILL_ID} (not in config)`,
+          "    No Orphans              !  1 orphaned agent file",
           `                               - ${ORPHANED_AGENT_NAME}.md (not in config)`,
           "    Skills Installed",
         ].join("\n"),
@@ -2716,12 +2768,10 @@ describe("the doctor report, line by line", () => {
 
       const { stdout } = await runCliCommand(["doctor"]);
 
-      expect(stdout).toContain(
-        "    No Orphans              ✓  No orphaned skills or agent files\n",
-      );
+      expect(stdout).toContain("    No Orphans              ✓  No orphaned agent files\n");
     });
 
-    it("names the stranded skill and agent of a project whose config is gone, under a live global installation", async () => {
+    it("names the stranded agent of a project whose config is gone, under a live global installation, and not its skill folder", async () => {
       await setupValidatedProject(tempDir, fakeHome, {
         agents: buildAgentConfigs([CONFIGURED_AGENT_NAME], { scope: "global" }),
       });
@@ -2740,8 +2790,7 @@ describe("the doctor report, line by line", () => {
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
       expect(stdout).toContain(
         [
-          "    No Orphans              ✗  1 skill and 1 agent installed here, and no configuration declares them",
-          `                               - ${path.join(projectDir, INSTALLED_SKILLS_SUBDIR, UNRELATED_INSTALLED_SKILL_ID)}`,
+          "    No Orphans              ✗  1 agent installed here, and no configuration declares them",
           `                               - ${path.join(projectDir, INSTALLED_AGENTS_SUBDIR, `${ORPHANED_AGENT_NAME}.md`)}`,
           "    Skills Installed",
         ].join("\n"),
@@ -2784,9 +2833,7 @@ describe("the doctor report, line by line", () => {
 
       const { stdout } = await runCliCommand(["doctor"]);
 
-      expect(stdout).toContain(
-        "    No Orphans              ✓  No orphaned skills or agent files\n",
-      );
+      expect(stdout).toContain("    No Orphans              ✓  No orphaned agent files\n");
     });
   });
 
@@ -2841,13 +2888,13 @@ describe("the doctor report, line by line", () => {
 
       const { stdout, error } = await runCliCommand(["doctor"]);
 
-      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(error, "two installations are not an error, and warnings exit 0").toBeUndefined();
       expect(stdout).toBe(
         [
           ...HEADER,
           ...cleanContent(sourceDir, { skills: 1, agents: 1 }),
           "  Operational checks",
-          "    Installations           ✗  2 installations here, each checked below",
+          "    Installations           ✓  2 installations here, each checked below",
           `                               - ${process.cwd()} holds 2 installations — claude and codex — so every command that acts on one cannot tell which one you mean. Name it with --provider <claude|codex>. Nothing has been changed.`,
           "",
           "  The claude installation",
@@ -2856,7 +2903,7 @@ describe("the doctor report, line by line", () => {
           "    Placements Offered      ✓  Every configured skill is placeable",
           "    Skills Resolved         ✓  1/1 skill found",
           "    Agents Compiled         ✓  1/1 agent compiled",
-          "    No Orphans              ✓  No orphaned skills or agent files",
+          "    No Orphans              ✓  No orphaned agent files",
           "    Skills Installed        ✓  1/1 eject-mode skill installed",
           "    Plugins Installed       ✓  No plugin-mode skills configured",
           ...reachedLocally(sourceDir, "named by this project's configuration"),
@@ -2868,13 +2915,13 @@ describe("the doctor report, line by line", () => {
           "    Skills Resolved         ✓  1/1 skill found",
           "    Agents Compiled         !  1 agent needs recompilation",
           `                               - ${CONFIGURED_AGENT_NAME} (missing)`,
-          "    No Orphans              ✓  No orphaned skills or agent files",
+          "    No Orphans              ✓  No orphaned agent files",
           "    Skills Installed        !  1 skill missing from disk",
           `                               - ${CONFIGURED_SKILL_ID} (not found in .agents/skills/)`,
           "    Plugins Installed       ✓  No plugin-mode skills configured",
           ...reachedLocally(sourceDir, "named by this project's configuration"),
           "",
-          "  Summary: 21 passed, 2 warnings, 1 error",
+          "  Summary: 22 passed, 2 warnings, 0 errors",
           "",
           "  Tip: Run 'npx agents-inc compile --provider codex' to generate missing agent files",
           "  Tip: Re-eject the missing skills from the marketplace to restore their files",
@@ -2909,7 +2956,7 @@ describe("the doctor report, line by line", () => {
       );
     });
 
-    it("finds each installation whole where both are", async () => {
+    it("finds each installation whole where both are, and calls two healthy installations healthy", async () => {
       await installBoth();
       await writeValidInstalledSkill(
         path.join(projectDir, INSTALLED_SKILLS_SUBDIR),
@@ -2927,9 +2974,10 @@ describe("the doctor report, line by line", () => {
         CONFIGURED_SKILL_ID,
       );
 
-      const { stdout } = await runCliCommand(["doctor"]);
+      const { stdout, error } = await runCliCommand(["doctor"]);
 
-      expect(stdout).toContain("  Summary: 23 passed, 0 warnings, 1 error\n");
+      expect(stdout).toContain("  Summary: 24 passed, 0 warnings, 0 errors\n");
+      expect(error, "doctor exits 0 on two healthy installations").toBeUndefined();
     });
 
     it("names in the tip for files nothing declares the installation whose block found them", async () => {

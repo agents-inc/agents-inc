@@ -7,6 +7,7 @@ import { createDualScopeEnvFromSeed } from "../fixtures/e2e-stack-seed.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import {
   configTsPath,
+  directoryExists,
   fileExists,
   readTreeSnapshot,
   type TreeSnapshotEntry,
@@ -108,25 +109,32 @@ describe("doctor's Config Valid row under a live global installation", () => {
       );
     });
 
-    /** What the project's own configuration put there (`DUAL_SCOPE`), now declared by nothing. */
-    it("names the project's stranded skill and agent, which no configuration declares", () => {
+    /**
+     * What the project's own configuration put there (`DUAL_SCOPE`), now declared by nothing. Its
+     * skill folder is not judged: doctor names skill folders only where no configuration exists.
+     */
+    it("names the project's stranded agent, which no configuration declares, and not its skill folder", async () => {
       const inTheProject = (...segments: string[]) =>
         path.join("~", path.relative(env.fakeHome, env.projectDir), ...segments);
 
-      expect(deleted.stdout, deleted.output).toMatch(
-        /No Orphans\s+✗\s+1 skill and 1 agent installed here, and no configuration declares them\n/,
-      );
-      expect(deleted.stdout).toContain(
-        `- ${inTheProject(DIRS.CLAUDE, DIRS.SKILLS, E2E_SKILL.hono.id)}\n`,
-      );
-      expect(deleted.stdout).toContain(
-        `- ${inTheProject(DIRS.CLAUDE, DIRS.AGENTS, `${E2E_AGENT["api-developer"].name}.md`)}\n`,
+      expect(
+        await directoryExists(
+          path.join(env.projectDir, DIRS.CLAUDE, DIRS.SKILLS, E2E_SKILL.hono.id),
+        ),
+        "the subject: the project's skill folder is still on disk",
+      ).toBe(true);
+      expect(deleted.stdout, deleted.output).toContain(
+        [
+          "    No Orphans              ✗  1 agent installed here, and no configuration declares them",
+          `                               - ${inTheProject(DIRS.CLAUDE, DIRS.AGENTS, `${E2E_AGENT["api-developer"].name}.md`)}`,
+          "    Skills Installed",
+        ].join("\n"),
       );
     });
 
     it("finds nothing stranded while the project still has its own config", () => {
       expect(ownConfig.stdout, ownConfig.output).toMatch(
-        /No Orphans\s+✓\s+No orphaned skills or agent files\n/,
+        /No Orphans\s+✓\s+No orphaned agent files\n/,
       );
     });
 

@@ -32,7 +32,7 @@ The id comes from the editor's install dialog, or from `npx agents-inc share` ru
 | `eject <type>`                                          | yes      | exits 0 even when the whole copy was skipped                                                                             |
 | `uninstall --yes`                                       | yes      | prints the plan instead of prompting                                                                                     |
 | `new marketplace`, `build plugins`, `build marketplace` | yes      |                                                                                                                          |
-| `edit --from <id>`                                      | **no**   | exits **1**, not 4 — match on the message, not the code                                                                  |
+| `edit --from <id>`                                      | **no**   | exits **1**, not 4, when the id changes something — match on the message, not the code; an id that changes nothing exits 0 |
 | `uninstall` without `--yes`                             | **no**   | exits **1** with nothing changed                                                                                         |
 
 The terminal-size gate never bites in CI. It reads `process.stdout.columns` and `rows`, which are undefined when standard output isn't a terminal, so a piped run always clears the minimum.
@@ -70,9 +70,10 @@ Completed with 1 failure(s) — the changes above landed, these did not:
 | `GIGET_AUTH`                           | any command that fetches a private marketplace                            |
 | `HTTPS_PROXY`, `FORCE_NODE_FETCH=true` | fetching from behind a corporate proxy                                    |
 | `AGENTS_INC_API_URL`                   | `share`, `edit` and `--from`, to point at a different configuration store |
-| `AGENTS_INC_EDITOR_URL`                | every editor link the CLI prints or opens, to point at a different editor |
 
-There's no refresh flag and no offline flag. Every load revalidates its cached copy of the marketplace against the remote with a five-second budget, and on failure uses the cache and warns:
+A store on this machine (`localhost`, `127.x.x.x` or `[::1]`) also points every editor link the CLI prints or opens at the local editor, `http://localhost:5173/editor`.
+
+There's no refresh flag and no offline flag. Every load revalidates its cached copy of the marketplace against the remote with a five-second budget, and on failure uses the cache and warns (`doctor` fails its `Marketplace Reachable` row instead):
 
 ```
 Could not reach github:acme/skills — using the cached copy, which may be out of date.

@@ -82,3 +82,23 @@ async function recordCheckout(checkout: string): Promise<void> {
 export async function linkSharedCache(fakeHome: string): Promise<void> {
   await symlink(cacheDirUnder(SHARED_CACHE_HOME), path.join(fakeHome, ".cache"), "dir");
 }
+
+/** Recorded by `fingerprintSharedCheckout`; a spec's stubbed `fetch` answers with it. */
+export const SHARED_CHECKOUT_ETAG = 'W/"shared-checkout"';
+
+/**
+ * For `doctor`, which downloads over a copy no ETag vouches for: swaps the linked `.cache` for the
+ * home's own, whose default-marketplace copy links the shared checkout under a record carrying
+ * `SHARED_CHECKOUT_ETAG`, so a download never lands in the shared one. `rm` only unlinks.
+ */
+export async function fingerprintSharedCheckout(fakeHome: string): Promise<void> {
+  await rm(cacheDirUnder(fakeHome), { force: true });
+
+  const checkout = defaultCheckoutDir(fakeHome);
+  await mkdir(path.dirname(checkout), { recursive: true });
+  await symlink(defaultCheckoutDir(SHARED_CACHE_HOME), checkout, "dir");
+  await writeFile(
+    fetchRecordPath(checkout),
+    JSON.stringify({ tar: NEVER_REVALIDATED_TARBALL, etag: SHARED_CHECKOUT_ETAG }),
+  );
+}

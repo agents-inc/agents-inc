@@ -1,4 +1,6 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "crypto";
+import { rename } from "fs/promises";
 import { isRecord } from "../../utils/type-guards.js";
 import { downloadTemplate, type DownloadTemplateResult } from "giget";
 import os from "os";
@@ -65,6 +67,40 @@ type FetchResult = {
   unreachable: boolean;
   source: string;
 };
+
+/** A remote marketplace a load inside `askingEachMarketplaceItself` could not ask. */
+export class MarketplaceUnreachableError extends Error {
+  constructor(
+    readonly source: string,
+    readonly reason: string,
+  ) {
+    super(`Could not reach ${source}: ${reason}`);
+    this.name = "MarketplaceUnreachableError";
+  }
+}
+
+/** The marketplace answered a load that must reach it, but without the tarball. */
+class TarballWithheldError extends Error {
+  constructor({ status, statusText }: Response) {
+    super(`the marketplace answered ${status} ${statusText}`.trimEnd());
+    this.name = "TarballWithheldError";
+  }
+}
+
+const marketplaceMustAnswer = new AsyncLocalStorage<true>();
+
+/**
+ * Loads in `body` ask each remote marketplace itself: one that does not answer, or answers without
+ * its content, is refused rather than stood in for by its saved copy, which stays on disk for every
+ * other load. A copy is read only when the marketplace answers with the ETag it was saved under.
+ */
+export function askingEachMarketplaceItself<T>(body: () => T): T {
+  return marketplaceMustAnswer.run(true, body);
+}
+
+function mustAnswer(): boolean {
+  return marketplaceMustAnswer.getStore() === true;
+}
 
 export function sanitizeSourceForCache(source: string): string {
   const hash = createHash("sha256").update(source).digest("hex").slice(0, CACHE_HASH_LENGTH);
@@ -179,10 +215,12 @@ async function fetchFromRemoteSource(source: string, subdir?: string): Promise<F
     }
 
     announceRefetch(verdict);
-    await discardCachedCopy(cacheDir, source);
+    if (!mustAnswer()) await discardCachedCopy(cacheDir, source);
   }
 
-  return downloadFreshCopy(cacheDir, source, fullSource);
+  return mustAnswer()
+    ? downloadAnsweredFor(cacheDir, source, fullSource)
+    : downloadFreshCopy(cacheDir, source, fullSource);
 }
 
 async function discardCachedCopy(cacheDir: string, source: string): Promise<void> {
@@ -219,8 +257,56 @@ async function downloadFreshCopy(
   }
 }
 
-/** `unrecorded`: no fetch record beside the cache, so it is re-fetched once, quietly. */
-type CacheVerdict = "current" | "superseded" | "unrecorded" | "unreachable";
+/** Beside the cache directory, as its fetch record is. */
+const STAGED_DOWNLOAD_SUFFIX = ".download";
+
+/**
+ * giget extracts its own saved tarball when a download fails or is refused, so only the answer
+ * after it shows the marketplace served one. Staged, so a refusal leaves the copy and its record.
+ */
+async function downloadAnsweredFor(
+  cacheDir: string,
+  source: string,
+  fullSource: string,
+): Promise<FetchResult> {
+  const staged = `${cacheDir}${STAGED_DOWNLOAD_SUFFIX}`;
+  await ensureDir(path.dirname(cacheDir));
+
+  try {
+    const result = await downloadTemplate(fullSource, {
+      dir: staged,
+      force: true,
+      forceClean: true,
+      offline: false,
+    });
+    const record = await askAfterTheDownload(result, source);
+    await replaceCopy(cacheDir, staged, record);
+    markCopyCurrentForThisRun(cacheDir);
+
+    return { path: cacheDir, fromCache: false, unreachable: false, source: fullSource };
+  } catch (error) {
+    if (error instanceof MarketplaceUnreachableError) throw error;
+    throw createDetailedFetchError(error, source);
+  } finally {
+    await remove(staged);
+  }
+}
+
+async function replaceCopy(
+  cacheDir: string,
+  staged: string,
+  record: SourceRevalidation,
+): Promise<void> {
+  await remove(cacheDir);
+  await rename(staged, cacheDir);
+  await writeFile(fetchRecordPath(cacheDir), JSON.stringify(record));
+}
+
+/**
+ * `unrecorded`: no fetch record beside the cache, so it is re-fetched once, quietly.
+ * `unconfirmed`: a load that must reach the marketplace had no ETag pair to hold the copy to.
+ */
+type CacheVerdict = "current" | "superseded" | "unrecorded" | "unconfirmed" | "unreachable";
 
 type SourceRevalidation = z.infer<typeof sourceRevalidationSchema>;
 
@@ -233,19 +319,27 @@ const FETCH_RECORD_SUFFIX = ".etag.json";
 /** One question per source per process: a command loads the same source more than once. */
 const askedThisRun = new Map<string, Promise<CacheVerdict>>();
 
-/** Silent for `unrecorded`, which is housekeeping rather than news. */
-function announceRefetch(verdict: Extract<CacheVerdict, "superseded" | "unrecorded">): void {
+/** Kept apart: a verdict reached without asking must not answer a load that has to ask. */
+const askedItselfThisRun = new Map<string, Promise<CacheVerdict>>();
+
+function verdictsThisRun(): Map<string, Promise<CacheVerdict>> {
+  return mustAnswer() ? askedItselfThisRun : askedThisRun;
+}
+
+/** Silent for `unrecorded` and `unconfirmed`, which are housekeeping rather than news. */
+function announceRefetch(verdict: Exclude<CacheVerdict, "current" | "unreachable">): void {
   if (verdict === "superseded") {
     log(STATUS_MESSAGES.MARKETPLACE_HAS_NEWER_CONTENT);
   }
 }
 
 function revalidateCachedCopy(cacheDir: string, source: string): Promise<CacheVerdict> {
-  const asked = askedThisRun.get(cacheDir);
+  const verdicts = verdictsThisRun();
+  const asked = verdicts.get(cacheDir);
   if (asked) return asked;
 
   const verdict = classifyCachedCopy(cacheDir, source);
-  askedThisRun.set(cacheDir, verdict);
+  verdicts.set(cacheDir, verdict);
   return verdict;
 }
 
@@ -253,41 +347,54 @@ function revalidateCachedCopy(cacheDir: string, source: string): Promise<CacheVe
  * A copy this run just downloaded is current by construction, so later loads do not re-fetch it.
  */
 function markCopyCurrentForThisRun(cacheDir: string): void {
-  askedThisRun.set(cacheDir, Promise.resolve("current"));
+  verdictsThisRun().set(cacheDir, Promise.resolve("current"));
 }
 
-/** Warns about an unreachable source here, where the verdict is memoised: once per run. */
+/**
+ * Warns about an unreachable source here, where the verdict is memoised: once per run. A load that
+ * must reach the marketplace asks even with no ETag to compare, and an unanswered one throws.
+ */
 async function classifyCachedCopy(cacheDir: string, source: string): Promise<CacheVerdict> {
   const record = await readFetchRecord(cacheDir);
   if (!record) return "unrecorded";
 
-  if (record.etag === undefined) {
+  if (record.etag === undefined && !mustAnswer()) {
     verbose(`No ETag was recorded for ${record.tar} — keeping the cached copy`);
     return "current";
   }
 
   try {
     const live = await fetchEtag(record.tar);
-    if (live === undefined) {
-      verbose(`${record.tar} answered without an ETag — keeping the cached copy`);
-      return "current";
+    if (live !== undefined && record.etag !== undefined) {
+      return live === record.etag ? "current" : "superseded";
     }
-    return live === record.etag ? "current" : "superseded";
+    if (mustAnswer()) return "unconfirmed";
+
+    verbose(`${record.tar} answered without an ETag — keeping the cached copy`);
+    return "current";
   } catch (error) {
+    if (error instanceof TarballWithheldError) throw createDetailedFetchError(error, source);
     verbose(`Could not revalidate ${record.tar}: ${getErrorMessage(error)}`);
+    if (mustAnswer()) throw new MarketplaceUnreachableError(source, getErrorMessage(error));
     warn(sourceUnreachableUsingCache(source));
     return "unreachable";
   }
 }
 
-/** A HEAD from the same runtime as giget, so the two agree; the token is never stored. */
+/**
+ * From the same runtime as giget, so the two agree; the token is never stored. A load that must
+ * reach the marketplace asks for the tarball itself, its body left unread, since a HEAD refused
+ * says nothing of the content; an answer withholding it is refused.
+ */
 async function fetchEtag(tar: string): Promise<string | undefined> {
   const auth = process.env.GIGET_AUTH;
   const response = await fetch(tar, {
-    method: "HEAD",
+    method: mustAnswer() ? "GET" : "HEAD",
     ...(auth && { headers: { Authorization: `Bearer ${auth}` } }),
     signal: AbortSignal.timeout(REVALIDATION_TIMEOUT_MS),
   });
+  await response.body?.cancel();
+  if (mustAnswer() && !response.ok) throw new TarballWithheldError(response);
   return response.headers.get("etag") ?? undefined;
 }
 
@@ -311,15 +418,51 @@ async function readFetchRecord(cacheDir: string): Promise<SourceRevalidation | u
 
 /** The tarball URL is narrowed from giget's untyped result; without one, nothing is recorded. */
 async function recordFetchedCopy(cacheDir: string, result: DownloadTemplateResult): Promise<void> {
-  const tar: unknown = result.tar;
-  if (typeof tar !== "string") {
+  const tar = tarballOf(result);
+  if (tar === undefined) {
     verbose("No tarball URL came back from the download — the copy cannot be revalidated");
     return;
   }
 
-  const etag = await fetchEtag(tar).catch(() => undefined);
-  const record: SourceRevalidation = { tar, ...(etag !== undefined && { etag }) };
-  await writeFile(fetchRecordPath(cacheDir), JSON.stringify(record));
+  const etag = await etagIfAnswered(tar);
+  await writeFile(fetchRecordPath(cacheDir), JSON.stringify(fetchRecord(tar, etag)));
+}
+
+/** Outside the scope an unanswered question records no ETag, and the copy is kept as it is. */
+async function etagIfAnswered(tar: string): Promise<string | undefined> {
+  try {
+    return await fetchEtag(tar);
+  } catch (error) {
+    verbose(`Could not ask ${tar} after the download: ${getErrorMessage(error)}`);
+    return undefined;
+  }
+}
+
+/** A withheld tarball is detailed by `downloadAnsweredFor`, as a failed download is. */
+async function askAfterTheDownload(
+  result: DownloadTemplateResult,
+  source: string,
+): Promise<SourceRevalidation> {
+  const tar = tarballOf(result);
+  if (tar === undefined) {
+    throw new Error("the download named no tarball to ask the marketplace about");
+  }
+
+  try {
+    return fetchRecord(tar, await fetchEtag(tar));
+  } catch (error) {
+    if (error instanceof TarballWithheldError) throw error;
+    throw new MarketplaceUnreachableError(source, getErrorMessage(error));
+  }
+}
+
+function tarballOf(result: DownloadTemplateResult): string | undefined {
+  const tar: unknown = result.tar;
+  return typeof tar === "string" ? tar : undefined;
+}
+
+function fetchRecord(tar: string, etag: string | undefined): SourceRevalidation {
+  return { tar, ...(etag !== undefined && { etag }) };
 }
 
 function parseJsonOrUndefined(raw: string): unknown {

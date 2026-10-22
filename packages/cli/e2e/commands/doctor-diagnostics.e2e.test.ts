@@ -1,7 +1,7 @@
 import path from "path";
 import { writeFile, mkdir, rm } from "fs/promises";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
+import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
   agentsPath,
   createLocalSkill,
@@ -22,7 +22,7 @@ import {
 } from "../helpers/tarball-source-server.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { E2E_SKILL, E2E_SKILL_IDS } from "../fixtures/expected-values.js";
-import { CLI } from "../fixtures/cli.js";
+import { CLI, type CLIResult } from "../fixtures/cli.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -198,11 +198,15 @@ describe("doctor diagnostics", () => {
     });
   });
 
-  /** A served tarball, since a local marketplace is read where it is and never cached. */
+  /**
+   * A served tarball, since a local marketplace is read where it is and never cached. Doctor asks
+   * the marketplace itself; `search` is the other commands, which still read the saved copy.
+   */
   describe("a remote marketplace, reached once and then not", () => {
     let server: TarballSourceServer;
-    let reached: { exitCode: number; stdout: string };
-    let unreached: { exitCode: number; stdout: string };
+    let reached: CLIResult;
+    let unreached: CLIResult;
+    let searchedOffline: CLIResult;
 
     beforeAll(async () => {
       server = await startTarballSourceServer(source.sourceDir);
@@ -221,6 +225,7 @@ describe("doctor diagnostics", () => {
       reached = await CLI.run(["doctor"], { dir: tempDir });
       await server.close();
       unreached = await CLI.run(["doctor"], { dir: tempDir });
+      searchedOffline = await CLI.run(["search", E2E_SKILL.vitest.slug], { dir: tempDir });
     });
 
     afterAll(async () => {
@@ -228,17 +233,161 @@ describe("doctor diagnostics", () => {
     });
 
     it("says it connected while the marketplace answers", () => {
+      expect(reached.exitCode, reached.stdout).toBe(EXIT_CODES.SUCCESS);
       expect(reached.stdout).toMatch(/Marketplace Reachable\s+✓\s+Connected to remote: /);
     });
 
-    it("warns that the cached copy stood in while the marketplace could not be reached", () => {
-      expect(unreached.exitCode, unreached.stdout).toBe(EXIT_CODES.SUCCESS);
-      expect(unreached.stdout).toMatch(/Marketplace Reachable\s+!\s+Could not reach /);
-      expect(unreached.stdout).toContain(
-        `Could not reach ${server.url} — read its cached copy instead\n`,
+    it("fails the marketplace row while the marketplace cannot be reached, reading no saved copy", () => {
+      expect(unreached.exitCode, unreached.output).toBe(EXIT_CODES.ERROR);
+      expect(unreached.stdout).toContain(`Could not reach ${server.url}\n`);
+      expect(unreached.stdout).toMatch(
+        new RegExp(
+          `${STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE}\\s+${STEP_TEXT.DOCTOR_STATUS_FAIL}\\s`,
+        ),
       );
-      expect(unreached.stdout, "a stale copy is not a connection").not.toMatch(
-        /Marketplace Reachable\s+✓/,
+      expect(unreached.stdout).toMatch(
+        /Skills Resolved\s+–\s+Skipped \(marketplace unreachable\)\n/,
+      );
+      expect(unreached.output, "the saved copy never stands in for doctor").not.toContain(
+        STEP_TEXT.SOURCE_UNREACHABLE_CACHED,
+      );
+    });
+
+    it("leaves the saved copy for the other commands, which still read it offline", () => {
+      expect(searchedOffline.exitCode, searchedOffline.output).toBe(EXIT_CODES.SUCCESS);
+      expect(searchedOffline.output).toContain(E2E_SKILL.vitest.display);
+      expect(searchedOffline.output).toContain(STEP_TEXT.SOURCE_UNREACHABLE_CACHED);
+    });
+  });
+
+  /**
+   * Answered with no ETag: a 404, as GitHub answers a repository gone or private, and a 405 to
+   * every method, which a HEAD alone cannot tell from a host refusing only that method. Doctor asks
+   * twice: over the saved copy, then with only giget's tarball left, which giget extracts anyway.
+   */
+  describe.each([
+    { status: 404, refusal: (url: string) => `Repository not found: ${url}\n` },
+    {
+      status: 405,
+      refusal: (url: string) =>
+        `Failed to fetch ${url}: the marketplace answered 405 Method Not Allowed\n`,
+    },
+  ])(
+    "a remote marketplace that answers $status, withholding its content",
+    ({ status, refusal }) => {
+      let server: TarballSourceServer;
+      let reached: CLIResult;
+      let refused: CLIResult;
+      let searchedRefused: CLIResult;
+      let refusedAfterDownload: CLIResult;
+      let searchedAfterDownload: CLIResult;
+
+      beforeAll(async () => {
+        server = await startTarballSourceServer(source.sourceDir);
+        tempDir = await createTempDir();
+        await writeProjectConfig(
+          tempDir,
+          buildProjectConfig({
+            name: "refusing-marketplace",
+            skills: [],
+            agents: buildAgentConfigs(["web-developer"]),
+            marketplace: server.url,
+          }),
+        );
+        await writeAgentFile(tempDir, "web-developer", { frontmatter: true });
+
+        reached = await CLI.run(["doctor"], { dir: tempDir });
+        server.refuse(status);
+        refused = await CLI.run(["doctor"], { dir: tempDir });
+        searchedRefused = await CLI.run(["search", E2E_SKILL.vitest.slug], { dir: tempDir });
+
+        await rm(path.join(tempDir, DIRS.SOURCE_CACHE), { recursive: true });
+        refusedAfterDownload = await CLI.run(["doctor"], { dir: tempDir });
+        searchedAfterDownload = await CLI.run(["search", E2E_SKILL.vitest.slug], { dir: tempDir });
+      }, TIMEOUTS.SETUP_DUAL);
+
+      afterAll(async () => {
+        await server.close();
+      });
+
+      it("says it connected while the marketplace serves its content", () => {
+        expect(reached.exitCode, reached.output).toBe(EXIT_CODES.SUCCESS);
+        expect(reached.stdout).toMatch(/Marketplace Reachable\s+✓\s+Connected to remote: /);
+      });
+
+      it.each([
+        ["over the saved copy", () => refused],
+        ["after giget extracts its saved tarball", () => refusedAfterDownload],
+      ])("fails the marketplace row on the refusal %s, vouching for no copy", (_when, result) => {
+        const { exitCode, output, stdout } = result();
+        expect(exitCode, output).toBe(EXIT_CODES.ERROR);
+        expect(stdout).toMatch(
+          new RegExp(
+            `${STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE}\\s+${STEP_TEXT.DOCTOR_STATUS_FAIL}\\s+${STEP_TEXT.DOCTOR_MARKETPLACE_LOAD_FAILED}\n`,
+          ),
+        );
+        expect(stdout).toContain(refusal(server.url));
+        expect(stdout).toMatch(/Skills Resolved\s+–\s+Skipped \(marketplace unreachable\)\n/);
+        expect(stdout, "a refusal is not a connection").not.toContain("Connected to remote");
+      });
+
+      it.each([
+        ["over the saved copy", () => searchedRefused],
+        ["after giget extracts its saved tarball", () => searchedAfterDownload],
+      ])("leaves the copy for the other commands on the refusal %s", (_when, result) => {
+        const { exitCode, output } = result();
+        expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+        expect(output).toContain(E2E_SKILL.vitest.display);
+      });
+    },
+  );
+
+  /**
+   * A refused load reads giget's saved tarball and records it with no ETag; the marketplace then
+   * withdraws a skill. Doctor downloads rather than read a copy no fingerprint vouches for.
+   */
+  describe("a remote marketplace whose saved copy no fingerprint vouches for", () => {
+    const UNAVAILABLE = 503;
+    let withdrawn: E2ESource;
+    let server: TarballSourceServer;
+    let searchedRefused: CLIResult;
+    let reachedOverTheCopy: CLIResult;
+
+    beforeAll(async () => {
+      withdrawn = await createE2ESource({ withoutSkills: [E2E_SKILL.vitest.id] });
+      server = await startTarballSourceServer(source.sourceDir);
+      tempDir = await createTempDir();
+      await writeProjectConfig(
+        tempDir,
+        buildProjectConfig({
+          name: "unfingerprinted-marketplace",
+          skills: [],
+          agents: buildAgentConfigs(["web-developer"]),
+          marketplace: server.url,
+        }),
+      );
+      await writeAgentFile(tempDir, "web-developer", { frontmatter: true });
+
+      await CLI.run(["doctor"], { dir: tempDir });
+      await rm(path.join(tempDir, DIRS.SOURCE_CACHE), { recursive: true });
+      server.refuse(UNAVAILABLE);
+      searchedRefused = await CLI.run(["search", E2E_SKILL.vitest.slug], { dir: tempDir });
+      await server.publish(withdrawn.sourceDir);
+      reachedOverTheCopy = await CLI.run(["doctor"], { dir: tempDir });
+    }, TIMEOUTS.SETUP_DUAL);
+
+    afterAll(async () => {
+      await server.close();
+      await cleanupTempDir(withdrawn.tempDir);
+    });
+
+    it("counts what the marketplace serves now, not the copy a refused load left", () => {
+      expect(searchedRefused.output, "the copy still carries the withdrawn skill").toContain(
+        E2E_SKILL.vitest.display,
+      );
+      expect(reachedOverTheCopy.exitCode, reachedOverTheCopy.output).toBe(EXIT_CODES.SUCCESS);
+      expect(reachedOverTheCopy.stdout).toContain(
+        ` ${E2E_SKILL_IDS.length - 1} ${STEP_TEXT.DOCTOR_SKILLS_AVAILABLE}\n`,
       );
     });
   });
@@ -264,18 +413,30 @@ describe("doctor diagnostics", () => {
       expect(stdout).toContain("- orphan-agent.md (not in config)");
     });
 
-    it("should warn about a skill folder this CLI installed that the config does not claim", async () => {
-      const project = await ProjectBuilder.editable({ agents: ["web-developer"] });
-      tempDir = path.dirname(project.dir);
-      await writeAgentFile(project.dir, "web-developer", { frontmatter: true });
-      await createLocalSkill(project.dir, E2E_SKILL.vitest.id, { metadata: FORKED_FROM_METADATA });
-      await recordInstallSource([project.dir], source.sourceDir);
+    it("should name none of the skill folders eject skills copies in, though no config lists them", async () => {
+      tempDir = await createTempDir();
+      await writeProjectConfig(
+        tempDir,
+        buildProjectConfig({
+          name: "ejected-everything",
+          skills: [],
+          agents: buildAgentConfigs(["web-developer"]),
+          marketplace: source.sourceDir,
+        }),
+      );
+      await writeAgentFile(tempDir, "web-developer", { frontmatter: true });
 
-      const { exitCode, stdout } = await CLI.run(["doctor"], { dir: project.dir });
+      const eject = await CLI.run(["eject", "skills"], { dir: tempDir });
+      expect(eject.exitCode, eject.output).toBe(EXIT_CODES.SUCCESS);
+      expect(
+        (await listFiles(skillsPath(tempDir))).sort(),
+        "the subject: every skill the marketplace ships, copied in",
+      ).toStrictEqual([...E2E_SKILL_IDS].sort());
 
+      const { exitCode, stdout } = await CLI.run(["doctor"], { dir: tempDir });
+
+      expect(stdout).toMatch(/No Orphans\s+✓\s+No orphaned agent files\n/);
       expect(exitCode, stdout).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).toMatch(/No Orphans\s+!\s+1 orphaned skill\n/);
-      expect(stdout).toContain(`- ${E2E_SKILL.vitest.id} (not in config)\n`);
     });
 
     it("should leave a skill folder alone that carries no provenance, the user's own", async () => {
@@ -288,7 +449,7 @@ describe("doctor diagnostics", () => {
       const { exitCode, stdout } = await CLI.run(["doctor"], { dir: project.dir });
 
       expect(exitCode, stdout).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).toMatch(/No Orphans\s+✓\s+No orphaned skills or agent files\n/);
+      expect(stdout).toMatch(/No Orphans\s+✓\s+No orphaned agent files\n/);
     });
 
     /**

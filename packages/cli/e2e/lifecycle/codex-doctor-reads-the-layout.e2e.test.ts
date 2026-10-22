@@ -167,31 +167,51 @@ describe("doctor over a project holding a Claude and a Codex installation", () =
     env = undefined;
   });
 
+  /** One configuration installed on both providers, each half whole. */
+  async function installBothHalves(sharedId: string): Promise<{ dir: string; globalHome: string }> {
+    env = await createTestEnvironment({ permissions: false });
+    const project = { dir: env.projectDir, globalHome: env.fakeHome };
+    store.publish(
+      sharedId,
+      buildSeedPayload({
+        skills: {
+          [E2E_SKILL.react.id]: buildSeedSkill({
+            install: "eject",
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
+        },
+        agents: { [WEB_DEV]: PINNED_TO_PROJECT },
+      }),
+    );
+    for (const install of [runInitFromOnClaude, runInitFromOnCodex]) {
+      const { exitCode, output } = await install(store, sharedId, project, fixture.sourceDir);
+      expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
+    }
+    return project;
+  }
+
+  it(
+    "calls two healthy installations healthy, exiting 0",
+    { timeout: TIMEOUTS.PLUGIN_TEST },
+    async () => {
+      const project = await installBothHalves("BothDoc0");
+
+      const { exitCode, stdout } = await CLI.run(["doctor"], project);
+
+      expect(stdout).toMatch(/Installations\s+✓\s+2 installations here, each checked below\n/);
+      expect(stdout).toMatch(/Summary: \d+ passed, 0 warnings, 0 errors\n/);
+      expect(exitCode, stdout).toBe(EXIT_CODES.SUCCESS);
+    },
+  );
+
   it(
     "reports each installation in a block of its own, naming what the Codex half lost",
     { timeout: TIMEOUTS.PLUGIN_TEST },
     async () => {
-      env = await createTestEnvironment({ permissions: false });
-      const project = { dir: env.projectDir, globalHome: env.fakeHome };
-      store.publish(
-        "BothDoc1",
-        buildSeedPayload({
-          skills: {
-            [E2E_SKILL.react.id]: buildSeedSkill({
-              install: "eject",
-              scope: "project",
-              assignments: { [WEB_DEV]: "lazy" },
-            }),
-          },
-          agents: { [WEB_DEV]: PINNED_TO_PROJECT },
-        }),
-      );
-      for (const install of [runInitFromOnClaude, runInitFromOnCodex]) {
-        const { exitCode, output } = await install(store, "BothDoc1", project, fixture.sourceDir);
-        expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
-      }
-      await rm(path.join(env.projectDir, DIRS.CODEX, DIRS.AGENTS, `${WEB_DEV}.toml`));
-      await rm(path.join(codexProjectSkillsDir(env.projectDir), E2E_SKILL.react.id), {
+      const project = await installBothHalves("BothDoc1");
+      await rm(path.join(project.dir, DIRS.CODEX, DIRS.AGENTS, `${WEB_DEV}.toml`));
+      await rm(path.join(codexProjectSkillsDir(project.dir), E2E_SKILL.react.id), {
         recursive: true,
       });
 
