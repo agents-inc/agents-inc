@@ -15,23 +15,24 @@ started. See the root `CLAUDE.md`.
 
 ## Waiting on the owner — the wizard removal's loose ends (2026-10-15)
 
-0.169.0 (CLI-923/924) and 0.170.0 (CLI-926 to CLI-929) are pushed; 0.170.1 (the built-in matrix regenerated from
-skills 4865dfd1) is the release to publish, and npm is at 0.168.0.
+0.169.0 (CLI-923/924), 0.170.0 (CLI-926 to CLI-929) and 0.170.1 are pushed, and npm is at 0.170.1. 0.170.2 (mutation
+testing, REPO-44 step 8's first run) is committed but not pushed.
 CLI-925's findings and the lane questions are cards on the decisions page linked from
 `plans/2026-10-14-session-queue.md`; EDITOR-97 (the `stackId: null` ruling) waits on its R1.
 
 ## Next — REPO-44: tech debt and lint rules
 
-Step 1 (lint-rules measurement) landed 2026-10-15; the rest is next. Order: `plans/REPO-44-tech-debt-and-lint.md`.
+Steps 1 (lint-rules measurement) and 2 (CLI-923) landed 2026-10-15, step 8's first Stryker run in 0.170.2;
+steps 4-8 landed 2026-10-21 (step 3 removed by the owner; step 5's measured rules wait for the lint-rules package run;
+whole-repo expressive-ts rounds queued, CLI and lint-rules).
+Order: `plans/REPO-44-tech-debt-and-lint.md`. Open and queued, both repositories: [`outstanding.md`](./outstanding.md).
 
 ## 2026-10-04: the post-CLI-902 audit, rounds 1–6 landed
 
 Following CLI-902, the owner asked for a cycle: run every suite and every user journey by hand, test every new failure,
-fix it, and repeat. Six rounds have landed, all uncommitted.
+fix it, and repeat. Six rounds have landed (0.166.0).
 
 - **Fixed:** about 70 issues, each with a test that failed first, and the gates green on this tree after every round.
-- **Record:** the root `audit-issues.md`, with the patches in the journey-fixes plan folder (`audit-fix-1` to
-  `audit-fix-6`).
 - **Not tracked:** wizard-only failures. The owner is removing the wizard.
 
 **Open, filed 2026-10-04:**
@@ -48,10 +49,7 @@ fix it, and repeat. Six rounds have landed, all uncommitted.
 
 ## 2026-10-03: the manual journey run's failures are fixed
 
-Release 0.165.0 is committed (27 commits, `80b5f979`..`3ecb959a`) and is neither pushed nor published; both wait on
-the owner.
-
-**CLI-902 has landed, uncommitted.** A manual run of every user journey against 0.165.0 failed 14 non-Codex
+**CLI-902 has landed** (0.166.0). A manual run of every user journey against 0.165.0 failed 14 non-Codex
 journeys, and all 14 are now fixed as the owner ruled them. Each was done tests-first and verified independently; the
 full gates are green on this tree, and the account is in [archive.md](./archive.md).
 
@@ -77,7 +75,7 @@ the Codex gate plugin and its hook trust, attempt budgets — is reverted out of
 CLI-715 is retired on the ruling rather than built. **What stays:** Codex as a second provider (below),
 the CLI-890 review clean-ups and doc sweeps, CLI-898, CLI-899, the `compile` fix for an installation with
 no skills, three fixes the gate work found, reshaped without it, and HEAD's typecheck completion gate as
-it was. The account is in [archive.md](./archive.md).
+it was (removed 2026-10-21 on lint-rules answer #9). The account is in [archive.md](./archive.md).
 
 **Waiting on the owner:** his Codex hand-check run-through (CLI-891), and doc round 3 of his full review,
 which he put on hold (CLI-890). **Next Codex fix:** CLI-901. The revert's hand-run found that a global Codex `uninstall`
@@ -111,11 +109,9 @@ session ran long. It is a standing assertion about a value that changes daily, w
 claim this file should not carry at all: read `git status`, not this line.
 
 **In flight as of 2026-08-20: the seventeen-ruling round.** The owner settled every open ruling in
-one pass — the twelve in [`plans/open-rulings-2026-08-19.md`](./plans/open-rulings-2026-08-19.md)
+one pass — the twelve open rulings of 2026-08-19 (plan file deleted 2026-10-14)
 plus CLI-538, CLI-590, CLI-591, CLI-592 and CLI-595. Six closed with no work needed, four of those
 because the premise was checked and found narrower than written. The rest are in implementation.
-**The decisions are recorded in the plan file, not here** — this roadmap orders work; it is not the
-decision record.
 
 All CLI figures below re-measured 2026-08-20 on a clean tree with nothing rebuilding `dist/` —
 which matters, because every intermediate reading taken during the ruling round was corrupted by
@@ -236,7 +232,7 @@ The documentation was re-derived from source across 51 documents on the assumpti
 wrong, and the 382-finding corpus was graded, re-audited and pruned. Both are in `archive.md` under
 those dates. The programme then ran in three phases:
 
-- **Phase A — the worklist.** D1–D8 and M1–M20 from [`plans/accuracy-worklist.md`](./plans/accuracy-worklist.md),
+- **Phase A — the worklist.** D1–D8 and M1–M20 from the accuracy worklist (deleted 2026-10-14),
   executed across sixteen briefs. **Every one of the sixteen executing agents corrected something in
   its own brief**, which is the single most useful measurement the programme produced.
 - **Phase B — all 39 user journeys, walked by hand.** Thirty-six through the CLI harness, two in the
@@ -345,7 +341,6 @@ and CLI-425 are not, and stay here.
 
 ## Queued by the owner for their own session
 
-- **CLI-473** — delete the init hook's dead `sourceConfig` plumbing; no readers anywhere.
 - **SERVER-03** — the share-link attribution route; the CLI's user-agent half already ships. Know
   what the number is worth first: the GET is served immutable, so the count is a floor, not a census.
 
@@ -364,16 +359,6 @@ Seven classes were found over this programme; five had never been censused, and 
 incidentally while doing something else. That is not evidence they were isolated. The census settles
 it: **two classes are worth a gate, three are not, and one has no further instances at all.**
 
-- **CLI-657 → CLI-658** — eleven dead exported symbols carry **116 test invocations**; `installEject`
-  alone carries 35 across six specs while `init.tsx` calls `lib/operations/` instead. **CLI-657
-  first** — a gate run before the delete-or-wire decision rosters every one as an allowed exception
-  and makes it permanent.
-- **CLI-663 → CLI-664** — the roster-of-producers that is a hand-written subset. The one gate here
-  worth building unconditionally: the property is syntactic and the tree already holds four correct
-  implementations to copy.
-- **CLI-659** · **CLI-660** · **CLI-661** · **CLI-662** — one-off cleanups. Deliberately no gate: the
-  false-positive rates are 97%, 75% and semantic respectively, and a weak gate is worse than none.
-- **CLI-665** — a finding's frontmatter contradicting its own body.
 - **CLI-655 is closed on a clean negative** — no further half-redirected mocks exist, and the reason
   is that the class was closed at its cause rather than policed at its symptom.
 
@@ -381,9 +366,6 @@ it: **two classes are worth a gate, three are not, and one has no further instan
 constants became functions, a page object became closed-loop, a fixture gained a deliberate
 divergence. Gate only where no subject can be removed.
 
-- **CLI-493** — the codex-keeper doc batch: M-2's three sites, the badge notation, the
-  `plugin marketplace update` correction, two CLI-479 drifts (phantom hotkey constants, `STEP_TEXT`
-  count 139 → 149).
 - **CLI-497** — `SOURCE_ROW_WALK_LENGTH` is fixture-sized (12); a larger source under-walks and
   passes vacuously. **This ID has no record in any tracker and none in `archive.md`**, so whether it
   landed, was withdrawn or was never started cannot be recovered from this folder. Re-derive it
@@ -462,7 +444,7 @@ and was deleted when the second pass finished.
 **All eight ready rows landed 2026-09-02** — CLI-854, CLI-855, CLI-856, CLI-867, CLI-870 (was
 CLI-857), EDITOR-66, EDITOR-67 and EDITOR-69, each with an `archive.md` entry. A verification pass
 proved seven of them real by mutation and un-landed none. **What remains open** is CLI-865
-(`Investigate` — its filed cause was falsified and the real one is unknown), CLI-868, CLI-869,
+(`Investigate` — its filed cause was falsified and the real one is unknown), CLI-869,
 EDITOR-70, EDITOR-71, EDITOR-72 and REPO-42, all filed by those lanes; plus the docs and test-gap
 follow-ups the verification pass named.
 
@@ -512,7 +494,7 @@ exactly where that gets missed.
 **Phases F and G are why "there is no v6" is not the same as "the design is fixed".** The folder is
 refreshed in place, so the citation never rots and the claim always can: two of the programme's own
 recorded rulings were reversed by the 2026-08-30 refresh, and G then reversed three of F's own five
-items six days later. A brief quoting the plan rather than re-reading `DECISIONS.md` would have
+items six days later. A brief quoting the plan rather than re-reading `decisions.md` would have
 rebuilt what the refresh had just cut, twice. **Re-read the design folder before dispatching against
 it**, whatever this roadmap or that plan says.
 
@@ -538,7 +520,7 @@ filter — provenance is a filter, not a category) · **EDITOR-28** (favourites)
 not fire (`repository_dispatch` reads the token, not the workflow), so a marketplace merge still
 wants the catalog regenerated by hand here. State unconfirmed as of 2026-08-16; check before
 assuming either way. · **CLI-467** (the knip deletion rounds against the recorded baseline) ·
-**REPO-37** (dependency-cruiser graph + one architecture assessment) · **REPO-40** (`packages/api-mocks` describes the worker for one workspace out of ten; `apps/server` and `packages/cli` each re-implement `/configs`) · **CLI-737** (README GIF).
+**REPO-37** (dependency-cruiser graph + one architecture assessment) · **REPO-40** (the residue after the one-mock migration) · **CLI-737** (README GIF).
 
 ## The editor's open rows this file did not carry
 
@@ -561,7 +543,7 @@ adapters (each lands only with hand-verification against the live registry) · *
 **SERVER-02 landed 2026-08-29** — one configured client in the editor, mocks and unit coverage
 for the three newest worker clients. The lane declined to create `packages/api` and **the owner
 overruled that on the same day**, on the measured grounds that the bundle cost was negligible; the
-workspace exists, and `apps/server/src/index.ts`'s `AppType` is imported by it and by nothing else.
+workspace exists, and `apps/server/src/index.ts`'s `AppType` is imported by it and by the server's own tests.
 
 ## The long tail
 

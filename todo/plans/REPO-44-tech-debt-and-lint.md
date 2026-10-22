@@ -5,23 +5,29 @@ Owner 2026-10-15. Order matters: nothing is polished, linted or mutation-tested 
 ## Steps
 
 1. **Measure lint-rules on this repo** — done 2026-10-15: [Measurement](#measurement).
-2. **CLI-923** — remove the wizard (`CLI-923-spec.md`).
-3. **Finish the docs cut.** `packages/cli/CLAUDE.md` to one line per rule (it loads for every agent that reads a file
-   under `packages/cli`). Delete the doc-only gates: `check-finding-citations`, `check-findings-frontmatter`,
-   `check-briefing-contract`, `check-enumeration-drift`. Trim what is left of `.ai-docs`.
-4. **Comment purge.** Essay and dated-history comments in source and tests, one agent per directory.
+2. **CLI-923** — remove the wizard: done 2026-10-15 (0.169.0).
+3. Removed (owner, 2026-10-20): how to reduce `packages/cli/CLAUDE.md` and `.ai-docs` is decided separately, later.
+   That holds step 5's prose deletion too.
+4. **Comment purge.** Essay and dated-history comments in source and tests, one agent per directory. Done 2026-10-21.
 5. **Lint rules, from the measurement.** Zero-violation rules on at `error`; autofix; fix rules with few violations;
    switch off high-count, low-value ones; the rest converge through the changed-lines `check` runner once lint-rules
-   builds it. Delete each enforced rule's prose from `CLAUDE.md`.
-6. **expressive-ts, one pass**, on source files over 800 lines.
-7. **Test prune.** Tests that pin implementation rather than behaviour (the "tests survive refactor" ruling).
-8. **Stryker**, scoped to `packages/compile`, `packages/matrix` and pure `cli/lib` modules. Reuse lint-rules' Stryker
-   10 + vitest-runner config. Surviving mutants are a weak-test list, not a score.
+   builds it. Delete each enforced rule's prose from `CLAUDE.md`. Also (owner, 2026-10-19): sweep the unused exports
+   `bun run deps:dead` lists, and a lint rule against matcher casts in tests (`expect.any(String) as unknown`).
+   2026-10-20: the measured rules wait for the lint-rules package run against this repo (owner: not yet); the
+   deps:dead sweep, the matcher-cast rule and the `fast-glob` import ban landed 2026-10-21.
+6. **expressive-ts, one pass**, on source files over 800 lines: done 2026-10-21. Then (owner, 2026-10-21, after a pause): several
+   rounds over the whole repo and lint-rules, a different focus each, queued behind the running work.
+7. **Test prune.** Tests that pin implementation rather than behaviour (the "tests survive refactor" ruling). Split
+   the test files that mix source-reading tests with others, so the rest rejoin mutation runs, then shrink
+   `READS_SOURCE_TEXT` in `packages/cli/vitest.mutation.config.ts`. Done 2026-10-21.
+8. **Stryker** ran early, in 0.170.2, over all eight workspaces with this repo's own root configs
+   (`stryker.config.json`, `stryker.workspace.mjs`, `stryker.*.config.mjs`); how to run it: `docs/architecture.md` ›
+   Mutation testing. Re-run on the lines steps 4-7 changed: done 2026-10-21. Surviving mutants are a weak-test list, not a score.
 9. **Skills repo**, with what budget is left.
 
 ## Census commands
 
-- Files over 800 lines: `git ls-files 'packages/*/src' 'apps/*/src' | grep -E '\.tsx?$' | grep -vE '\.test\.|__tests__|/generated/' | xargs wc -l | awk '$1>800 && $2!="total"'`
+- Files over 800 lines: `git ls-files 'packages/*/src/*' 'apps/*/src/*' | grep -E '\.tsx?$' | grep -vE '\.test\.|__tests__|/generated/' | xargs wc -l | awk '$1>800 && $2!="total"'`
 - Comment lines vs code lines: count `//` and `/* */` lines against non-blank others over the same file list.
 
 ## Measurement
