@@ -37,6 +37,17 @@ export const skillEntry = (
   ...overrides,
 })
 
+/** A selected skill each of these sub-agents carries live. */
+export const skillCarriedBy = (
+  agentIds: readonly string[],
+  load: LoadState = "lazy"
+): SkillEntry =>
+  skillEntry({
+    assignments: Object.fromEntries(
+      agentIds.map((agentId) => [agentId, liveAssignment(load)])
+    ),
+  })
+
 /**
  * A configuration holding nothing: no stack, no skill, no remembered setup, and
  * no decision about any sub-agent.

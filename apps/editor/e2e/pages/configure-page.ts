@@ -16,6 +16,7 @@ import { ProviderControl } from "./provider-control"
 import { RosterPanel } from "./roster-panel"
 import { SkillCell } from "./skill-cell"
 import { SubAgentCards } from "./sub-agent-cards"
+import { Toasts } from "./toasts"
 
 const CONFIGURE_URL = "/"
 
@@ -169,6 +170,7 @@ export class ConfigurePage {
   readonly navRail: Locator
   // Whichever skill's ••• panel is open; only one can be.
   readonly skillOptions: OptionsPanel
+  readonly toasts: Toasts
 
   constructor(readonly page: Page) {
     this.stacks = page.getByRole("group", { name: "Stacks" })
@@ -217,6 +219,7 @@ export class ConfigurePage {
       .getByRole("link", { name: "Editor", exact: true })
     this.navRail = page.getByRole("navigation")
     this.skillOptions = new OptionsPanel(page)
+    this.toasts = new Toasts(page)
   }
 
   // Parsed rather than matched as a string: a blob filing the token under the
@@ -329,7 +332,11 @@ export class ConfigurePage {
 
   async goto(search = "") {
     await this.page.goto(`${CONFIGURE_URL}${search}`)
-    await this.stacks.waitFor()
+    // Hidden ones too: a dialog that opens on arrival hides the stacks from
+    // role queries, and can be up before this first looks.
+    await this.page
+      .getByRole("group", { name: "Stacks", includeHidden: true })
+      .waitFor()
     // The grids make the page tall enough to scroll, and a late webfont swap
     // reflows it, so both are waited for before any spec scrolls.
     await this.skillCells.first().waitFor()

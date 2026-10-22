@@ -150,6 +150,19 @@ export class RosterPanel {
     })
   }
 
+  // Every row one sub-agent holds, live or switched off.
+  skillRowsOn(agentId: string): Locator {
+    return this.root.getByRole("button", {
+      name: new RegExp(` on ${agentId}$`),
+    })
+  }
+
+  liveSkillRowsOn(agentId: string): Locator {
+    return this.skillRowsOn(agentId).and(
+      this.page.locator('[aria-pressed="true"]')
+    )
+  }
+
   skillRowCell(skillName: string, agentId: string): Locator {
     return this.skillRow(skillName, agentId).locator("..")
   }

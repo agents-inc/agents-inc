@@ -6,6 +6,7 @@ import {
   offAssignment,
   persistedConfig,
   savedConfigBlob,
+  skillCarriedBy,
   skillEntry,
 } from "@/__tests__/factories/config-selection-factories"
 import {
@@ -14,6 +15,7 @@ import {
 } from "@/__tests__/factories/external-skill-factories"
 import { summarize } from "@/features/configure/lib/derive"
 import { setAnalyticsSink } from "@/lib/analytics/track"
+import { toastManager } from "@/lib/toast"
 
 import {
   freshEntry,
@@ -1088,6 +1090,118 @@ describe("a row the roster holds", () => {
     expect(
       rowAfter(liveAssignment("preloaded"), "flipAssignmentLoad")
     ).toStrictEqual({ [KNOWN_AGENT]: liveAssignment("lazy") })
+  })
+})
+
+describe("the toast a change to the selection raises", () => {
+  const TESTER = "web-tester"
+  const TESTER_OFF = "web tester switched off: Tailwind CSS removed"
+  const HONO = "api-framework-hono"
+
+  const raised = vi.spyOn(toastManager, "add")
+  const said = () => raised.mock.calls.map(([toast]) => toast.title)
+
+  const testerCarryingTailwind = (load: "lazy" | "preloaded" = "lazy") =>
+    startingFrom({
+      skills: { [OTHER_CATEGORY_SKILL]: skillCarriedBy([TESTER], load) },
+    })
+
+  afterEach(() => {
+    useConfigStore.getState().reset()
+    raised.mockClear()
+  })
+
+  it("names the sub-agents a picked skill switched on", () => {
+    useConfigStore.getState().toggleSkill(KNOWN_SKILL)
+
+    expect(said()).toStrictEqual([
+      "web developer, web researcher, web tester and 2 more switched on: React added",
+    ])
+  })
+
+  it("names a sub-agent whose last skill was deselected, and why", () => {
+    testerCarryingTailwind()
+
+    useConfigStore.getState().toggleSkill(OTHER_CATEGORY_SKILL)
+
+    expect(said()).toStrictEqual([TESTER_OFF])
+  })
+
+  it("says the same when the roster takes the skill off the sub-agent", () => {
+    testerCarryingTailwind()
+
+    useConfigStore
+      .getState()
+      .toggleAssignmentEnabled(OTHER_CATEGORY_SKILL, TESTER)
+
+    expect(said()).toStrictEqual([TESTER_OFF])
+  })
+
+  it("says the same when the options panel empties the sub-agent's cell", () => {
+    testerCarryingTailwind("preloaded")
+
+    useConfigStore.getState().cycleAssignment(OTHER_CATEGORY_SKILL, TESTER)
+
+    expect(said()).toStrictEqual([TESTER_OFF])
+  })
+
+  it("says nothing when the roster switches the sub-agent's row back on", () => {
+    startingFrom({
+      skills: {
+        [OTHER_CATEGORY_SKILL]: skillEntry({
+          assignments: { [TESTER]: offAssignment() },
+        }),
+      },
+    })
+    expect(isAgentOn(held(), TESTER)).toBe(false)
+
+    useConfigStore
+      .getState()
+      .toggleAssignmentEnabled(OTHER_CATEGORY_SKILL, TESTER)
+
+    expect(isAgentOn(held(), TESTER)).toBe(true)
+    expect(said()).toStrictEqual([])
+  })
+
+  it("says nothing when the options panel fills the sub-agent's empty cell", () => {
+    startingFrom({ skills: { [OTHER_CATEGORY_SKILL]: skillEntry() } })
+    expect(isAgentOn(held(), TESTER)).toBe(false)
+
+    useConfigStore.getState().cycleAssignment(OTHER_CATEGORY_SKILL, TESTER)
+
+    expect(isAgentOn(held(), TESTER)).toBe(true)
+    expect(said()).toStrictEqual([])
+  })
+
+  it("says nothing when the sub-agent itself is clicked off", () => {
+    testerCarryingTailwind()
+
+    useConfigStore.getState().toggleAgentPin(TESTER)
+
+    expect(isAgentOn(held(), TESTER)).toBe(false)
+    expect(said()).toStrictEqual([])
+  })
+
+  it("keeps a stack's sub-agent on, saying nothing, when its last skill goes", () => {
+    useConfigStore.getState().applyStack(STACK_ID)
+    const carried = Object.entries(held().skills)
+      .filter(([, entry]) => entry.assignments[KNOWN_AGENT]?.enabled)
+      .map(([skillId]) => skillId)
+    expect(carried).not.toStrictEqual([])
+
+    for (const skillId of carried)
+      useConfigStore.getState().toggleAssignmentEnabled(skillId, KNOWN_AGENT)
+
+    expect(isAgentOn(held(), KNOWN_AGENT)).toBe(true)
+    expect(said()).toStrictEqual([])
+  })
+
+  it("says it once for a batch the composer applies", () => {
+    useConfigStore.getState().toggleSkills([KNOWN_SKILL, HONO])
+
+    expect(said()).toStrictEqual([
+      "web developer, web researcher, web tester and 5 more switched on: React and Hono added",
+    ])
   })
 })
 

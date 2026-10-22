@@ -103,6 +103,21 @@ test.describe("the roster panel", () => {
 
     expect(await audit(configure)).toStrictEqual([])
   })
+
+  // Held under the pointer, since an audit outlasts the toast's five seconds;
+  // the closing count shows the audit ran with it on screen.
+  test("with a toast naming the sub-agents a selection switched on", async ({
+    configure,
+  }) => {
+    await configure
+      .skillIn(DOMAINS.web, EXCLUSIVE_CATEGORY.name, EXCLUSIVE_CATEGORY.first)
+      .toggle()
+    await expect(configure.toasts.all).toHaveCount(1)
+    await configure.toasts.all.hover()
+
+    expect(await audit(configure)).toStrictEqual([])
+    await expect(configure.toasts.all).toHaveCount(1)
+  })
 })
 
 test.describe("the dialogs", () => {

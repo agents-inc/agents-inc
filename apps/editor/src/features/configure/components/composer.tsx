@@ -54,11 +54,11 @@ export function Composer() {
   const [draft, setDraft] = useState("")
   const [proposal, setProposal] = useState<Proposal | null>(null)
   const [pending, setPending] = useState(false)
-  // Kept beside the proposal: its rows carry display names, `toggleSkill` takes ids.
+  // Kept beside the proposal: its rows carry display names, `toggleSkills` takes ids.
   const [appliedIds, setAppliedIds] = useState<string[]>([])
   const skillById = useCatalogStore((state) => state.skillById)
   const selected = useConfigStore((state) => state.skills)
-  const toggleSkill = useConfigStore((state) => state.toggleSkill)
+  const toggleSkills = useConfigStore((state) => state.toggleSkills)
   const account = useAccountStore((state) => state.session)
   const fieldRef = useRef<HTMLTextAreaElement>(null)
   const hintId = useId()
@@ -144,9 +144,9 @@ export function Composer() {
     setProposal({ sentence, groups, reason: result.proposal.reason })
   }
 
-  // Through `toggleSkill`, so every rule a click runs applies here too.
+  // Through the same toggle a click runs, so every rule applies here too.
   const apply = () => {
-    for (const skillId of appliedIds) toggleSkill(skillId)
+    toggleSkills(appliedIds)
     setAppliedIds([])
     setProposal(null)
   }

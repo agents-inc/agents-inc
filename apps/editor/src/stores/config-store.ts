@@ -1,5 +1,5 @@
 import type { AssignmentTarget, StackExpansion } from "@workspace/matrix"
-import { create } from "zustand"
+import { create, type StoreApi } from "zustand"
 import {
   createJSONStorage,
   persist,
@@ -7,17 +7,35 @@ import {
 } from "zustand/middleware"
 
 import {
+  agentSwitchNotices,
+  agentSwitchOffNotices,
+} from "@/features/configure/lib/agent-switches"
+import {
   defaultAssignmentsFor,
   stackAgentPins,
 } from "@/features/configure/lib/default-assignments"
+import {
+  agentAsHeld,
+  agentOptionRefusal,
+  agentPinRefusal,
+  assignmentRefusal,
+  keepingHeld,
+  offHeldAgents,
+  skillAsHeld,
+  skillOptionRefusal,
+  skillToggleRefusal,
+  type HeldGlobal,
+} from "@/features/configure/lib/held-global"
 import { track } from "@/lib/analytics/track"
 import { reportIssue, reportableIssues } from "@/lib/observability/report"
+import { sayInToasts } from "@/lib/toast"
 import {
   activeCatalog,
   activeExternalSkill,
   activeSkillById,
   expandActiveStack,
 } from "./catalog-store"
+import { activeHeldGlobal } from "./held-global-store"
 import {
   DEFAULT_SKILL_OPTIONS,
   PERSIST_VERSION,
@@ -39,9 +57,12 @@ import {
 import { useUiStore } from "./ui-store"
 
 type ConfigActions = {
-  // Replaces the whole selection. `null` is "Start from scratch".
+  // Replaces the whole selection but what a project's link holds. `null` is
+  // "Start from scratch".
   applyStack: (stackId: string | null) => void
   toggleSkill: (skillId: string) => void
+  // One toast for the lot, as the composer applies a proposal.
+  toggleSkills: (skillIds: readonly string[]) => void
   setSkillOption: (skillId: string, patch: Partial<SkillOptions>) => void
   // empty → lazy → preloaded → empty, per the design's matrix cell. A row the
   // roster switched off counts as empty, so cycling it re-enables at lazy.
@@ -57,7 +78,7 @@ type ConfigActions = {
   moveRememberedPluginsToGlobal: () => void
   // A shared config replaces the selection wholesale.
   importConfig: (config: PersistedConfig) => void
-  // As `importConfig`, without counting a share-link arrival.
+  // As `applyStack`, for a saved stack.
   applySavedStack: (config: PersistedConfig) => void
   // Every door that seats a catalogue must call this.
   pruneToCatalog: () => void
@@ -234,24 +255,31 @@ export const freshEntry = (skillId: string): SkillEntry => ({
 })
 
 // A remembered skill restores exactly what it had.
-const select = (state: PersistedConfig, skillId: string) => {
+const select = (
+  state: PersistedConfig,
+  skillId: string,
+  held: HeldGlobal | null
+) => {
   const { skills, remembered } = clearExclusiveSiblings(state, skillId)
+  const entry = remembered[skillId] ?? freshEntry(skillId)
 
   return {
-    skills: {
-      ...skills,
-      [skillId]: remembered[skillId] ?? freshEntry(skillId),
-    },
+    skills: { ...skills, [skillId]: offHeldAgents(held, state, entry) },
     remembered: withoutKey(remembered, skillId),
   }
 }
 
 // A deselection or an eviction on Codex sets the entry aside at global.
-const toggled = (state: PersistedConfig, skillId: string, onCodex: boolean) => {
+const toggled = (
+  state: PersistedConfig,
+  skillId: string,
+  onCodex: boolean,
+  held: HeldGlobal | null
+) => {
   const current = state.skills[skillId]
   const next = current
     ? deselect(state, skillId, current)
-    : select(state, skillId)
+    : select(state, skillId, held)
 
   return onCodex
     ? { ...next, remembered: withProjectPluginsAtGlobal(next.remembered) }
@@ -272,6 +300,47 @@ const liveAgentIds = (entry: SkillEntry | undefined) =>
   Object.entries(entry?.assignments ?? {})
     .filter(([, assignment]) => assignment.enabled)
     .map(([agentId]) => agentId)
+
+// Says what a change switched, replacing what the last one said.
+const saying =
+  (noticesOf: typeof agentSwitchNotices) =>
+  (read: () => PersistedConfig, change: () => void) => {
+    const before = read()
+    change()
+    sayInToasts(noticesOf(before, read(), useUiStore.getState().provider))
+  }
+
+const sayingWhatItSwitches = saying(agentSwitchNotices)
+
+// A press on the sub-agent's own row or cell switches it on in plain sight.
+const sayingWhatItSwitchesOff = saying(agentSwitchOffNotices)
+
+const toggleOneSkill = (
+  set: StoreApi<ConfigState>["setState"],
+  get: () => ConfigState,
+  skillId: string
+) => {
+  const selecting = !(skillId in get().skills)
+
+  // Ahead of `set`, which writes whatever its updater returns.
+  if (selecting && !isKnownSkill(skillId)) return
+  const held = activeHeldGlobal()
+  if (skillToggleRefusal(held, get(), skillId)) return
+
+  const onCodex = useUiStore.getState().provider === "codex"
+  set((state) => toggled(state, skillId, onCodex, held))
+
+  // A deselect flashes nobody; a restored entry flashes what it restored.
+  const reached = selecting ? get().skills[skillId] : undefined
+  useUiStore.getState().flashAgents(liveAgentIds(reached))
+
+  track({
+    name: "skill_toggled",
+    skillId,
+    domainId: activeSkillById(skillId)?.domainId ?? "unknown",
+    selected: selecting,
+  })
+}
 
 const cycled = (assignments: Assignments, agentId: string): Assignments => {
   const current = assignments[agentId]
@@ -445,42 +514,25 @@ export const useConfigStore = create<ConfigState>()(
 
         track({ name: "stack_applied", stackId })
 
-        if (stackId === null) {
-          set({ ...EMPTY })
-          return
-        }
-
-        const applied = stackSelection(stackId)
-        if (applied) set(applied)
+        const applied = stackId === null ? EMPTY : stackSelection(stackId)
+        if (applied) set(keepingHeld(activeHeldGlobal(), get(), applied))
       },
 
-      toggleSkill: (skillId) => {
-        const selecting = !(skillId in get().skills)
+      toggleSkill: (skillId) => get().toggleSkills([skillId]),
 
-        // Ahead of `set`, which writes whatever its updater returns.
-        if (selecting && !isKnownSkill(skillId)) return
-
-        const onCodex = useUiStore.getState().provider === "codex"
-        set((state) => toggled(state, skillId, onCodex))
-
-        // A deselect flashes nobody; a restored entry flashes what it restored.
-        const reached = selecting ? get().skills[skillId] : undefined
-        useUiStore.getState().flashAgents(liveAgentIds(reached))
-
-        track({
-          name: "skill_toggled",
-          skillId,
-          domainId: activeSkillById(skillId)?.domainId ?? "unknown",
-          selected: selecting,
-        })
-      },
+      toggleSkills: (skillIds) =>
+        sayingWhatItSwitches(get, () => {
+          for (const skillId of skillIds) toggleOneSkill(set, get, skillId)
+        }),
 
       setSkillOption: (skillId, patch) => {
+        const held = activeHeldGlobal()
+        if (skillOptionRefusal(held, get(), skillId, patch)) return
+
         const allowed = withOfferedInstall(skillId, patch)
-        const configured = configure(get(), skillId, (entry) => ({
-          ...entry,
-          ...allowed,
-        }))
+        const configured = configure(get(), skillId, (entry) =>
+          skillAsHeld(held, skillId, { ...entry, ...allowed })
+        )
         if (configured) set(configured)
 
         for (const [field, value] of Object.entries(allowed)) {
@@ -494,26 +546,35 @@ export const useConfigStore = create<ConfigState>()(
       },
 
       cycleAssignment: (skillId, agentId) => {
+        if (assignmentRefusal(activeHeldGlobal(), get(), skillId, agentId))
+          return
+
         // No scope guard: a project skill on a global sub-agent is an error
         // `summarize` gates Install and Share on.
         const configured = configure(get(), skillId, (entry) => ({
           ...entry,
           assignments: cycled(entry.assignments, agentId),
         }))
-        if (configured) set(configured)
+        if (configured) sayingWhatItSwitchesOff(get, () => set(configured))
 
         track({ name: "assignment_cycled", skillId, agentId })
       },
 
       toggleAssignmentEnabled: (skillId, agentId) => {
+        if (assignmentRefusal(activeHeldGlobal(), get(), skillId, agentId))
+          return
+
         const patched = patchAssignment(get(), skillId, agentId, (current) => ({
           ...current,
           enabled: !current.enabled,
         }))
-        if (patched) set(patched)
+        if (patched) sayingWhatItSwitchesOff(get, () => set(patched))
       },
 
       flipAssignmentLoad: (skillId, agentId) => {
+        if (assignmentRefusal(activeHeldGlobal(), get(), skillId, agentId))
+          return
+
         const patched = patchAssignment(get(), skillId, agentId, (current) => ({
           ...current,
           load: current.load === "preloaded" ? "lazy" : "preloaded",
@@ -522,6 +583,8 @@ export const useConfigStore = create<ConfigState>()(
       },
 
       toggleAgentPin: (agentId) => {
+        if (agentPinRefusal(activeHeldGlobal(), get(), agentId)) return
+
         const on = !isAgentOn(get(), agentId)
 
         // Spread, so switching off keeps the agent's other choices.
@@ -540,9 +603,19 @@ export const useConfigStore = create<ConfigState>()(
         if (alreadyInEffect(resolveAgentOptions(get().agents, agentId), patch))
           return
 
-        set((state) => ({
-          agents: configureAgent(state.agents, agentId, patch),
-        }))
+        const held = activeHeldGlobal()
+        if (agentOptionRefusal(held, get(), agentId, patch)) return
+
+        set((state) =>
+          agentAsHeld(
+            held,
+            {
+              skills: state.skills,
+              agents: configureAgent(state.agents, agentId, patch),
+            },
+            agentId
+          )
+        )
 
         for (const [field, value] of Object.entries(patch)) {
           track({
@@ -573,7 +646,7 @@ export const useConfigStore = create<ConfigState>()(
       applySavedStack: (config) => {
         // Whatever was pulsing belonged to the selection being replaced.
         useUiStore.getState().clearFlash()
-        set({ ...EMPTY, ...config })
+        set(keepingHeld(activeHeldGlobal(), get(), { ...EMPTY, ...config }))
       },
 
       pruneToCatalog: () => {

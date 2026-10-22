@@ -22,7 +22,8 @@ const clearanceOf = (element: HTMLElement, edge: Edge) => {
 }
 
 // Keeps focused controls clear of pinned bars via `scroll-padding`; observed,
-// since the bars change height.
+// since the bars change height. Also published as `--scroll-clearance-<edge>`,
+// which the toasts sit clear of.
 export function useScrollClearance(
   ref: RefObject<HTMLElement | null>,
   edge: Edge
@@ -32,15 +33,17 @@ export function useScrollClearance(
     if (!element) return
 
     const page = document.documentElement
-    const property = `scroll-padding-${edge}`
+    const properties = [`scroll-padding-${edge}`, `--scroll-clearance-${edge}`]
     const observer = new ResizeObserver(() => {
-      page.style.setProperty(property, clearanceOf(element, edge))
+      const clearance = clearanceOf(element, edge)
+      for (const property of properties)
+        page.style.setProperty(property, clearance)
     })
     observer.observe(element)
 
     return () => {
       observer.disconnect()
-      page.style.removeProperty(property)
+      for (const property of properties) page.style.removeProperty(property)
     }
   }, [ref, edge])
 }

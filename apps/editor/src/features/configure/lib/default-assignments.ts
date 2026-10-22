@@ -31,10 +31,22 @@ export const defaultAssignmentsFor = (
   )
 }
 
-// Skill-less agents are pinned on: no assignment names them.
-export const stackAgentPins = ({
+const declaredAgentIds = ({
+  assignmentsBySkill,
   skillLessAgentIds,
-}: StackExpansion): Record<string, AgentEntry> =>
+}: StackExpansion) => {
+  const assignedAgentIds = Object.values(assignmentsBySkill)
+    .flat()
+    .map(({ agentId }) => agentId)
+
+  return [...new Set([...assignedAgentIds, ...skillLessAgentIds])]
+}
+
+// Every sub-agent the stack declares is pinned on, so one stays on, as a base
+// agent, once its last skill is removed.
+export const stackAgentPins = (
+  expansion: StackExpansion
+): Record<string, AgentEntry> =>
   Object.fromEntries(
-    skillLessAgentIds.map((agentId) => [agentId, { on: true }])
+    declaredAgentIds(expansion).map((agentId) => [agentId, { on: true }])
   )

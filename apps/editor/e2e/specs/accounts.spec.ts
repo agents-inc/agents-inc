@@ -107,6 +107,32 @@ const holdStackList = (page: TestPage, stacks: SavedStack[]) => {
   return { release }
 }
 
+const HELD_LOAD_PATH = "/held-load"
+
+// The page's `load` waiting on an image answered only on `release`, so
+// whatever opens on arrival is up before `goto()` returns from `page.goto`.
+const holdPageLoad = async (page: TestPage) => {
+  let release!: () => void
+  const released = new Promise<void>((resolve) => (release = resolve))
+
+  stubWith(page, [
+    http.get(`*${HELD_LOAD_PATH}`, async () => {
+      await released
+      return new HttpResponse(null, { status: 204 })
+    }),
+  ])
+  await page.addInitScript((path) => {
+    document.addEventListener("DOMContentLoaded", () => {
+      const image = document.createElement("img")
+      image.hidden = true
+      image.src = path
+      document.body.append(image)
+    })
+  }, HELD_LOAD_PATH)
+
+  return { release }
+}
+
 // Seeded after a first visit: `localStorage` belongs to the served origin.
 const arriveHolding = async (
   page: TestPage,
@@ -639,6 +665,25 @@ test.describe("an owed save whose name the account now lists", () => {
     await expect(dialog.nameInput).toHaveValue("Alpha")
     await expect(dialog.nameInput).toHaveAttribute("aria-invalid", "true")
     expect(created).toStrictEqual([])
+  })
+
+  // A modal hides the stacks from role queries, so the screen counts as
+  // reached though the dialog opened before `goto()` first looked for them.
+  test("reaches the screen with the dialog already open over the stacks", async ({
+    page,
+  }) => {
+    const { configure, dialog } = await owingThenListed(page, ["Alpha"])
+    await dialog.cancel()
+    await expect(dialog.root).toBeHidden()
+    const { release } = await holdPageLoad(page)
+
+    const arriving = configure.goto()
+    // A whole boot, so bounded by the test as `goto()`'s own waits are.
+    await dialog.root.waitFor()
+    release()
+    await arriving
+
+    await expect(dialog.nameInput).toHaveValue("Alpha")
   })
 
   test("asks about several one at a time, oldest first", async ({ page }) => {

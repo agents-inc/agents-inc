@@ -40,7 +40,7 @@ The editor wants a wide window. The page grid has a fixed minimum width and no l
 
 ## Stacks
 
-The grid's first cell is **Start from scratch**, which is the state a first visit opens in — nothing selected, every sub-agent off. After it come the catalogue's own stacks, each cell naming the stack and the first few skills in it. Clicking one applies it whole. See [Stacks](/docs/concepts/stacks) for what a stack is.
+The grid's first cell is **Start from scratch**, which is the state a first visit opens in — nothing selected, every sub-agent off. After it come the catalogue's own stacks, each cell naming the stack and the first few skills in it. Clicking one applies it whole, except on a link a bare `edit` minted inside a project, where what is installed globally stays as it is. See [Stacks](/docs/concepts/stacks) for what a stack is.
 
 **Switching between stacks with an untouched selection prompts nothing** — a stack's own expansion isn't something you chose, so there's nothing to lose. Once you've edited away from it, though — a changed install mode or scope, a changed assignment, any per-agent decision — switching asks first: _"Switch to `<name>`?"_, with **Keep my setup** and **Switch**, and a sentence counting the skills, options and assignments it would discard.
 
@@ -64,7 +64,7 @@ On Codex the model row offers Codex's own models instead.
 
 The right column groups every sub-agent under sticky bands. A **group by** pair in its header, `domain | scope`, switches between the two bandings: by domain, or by where each agent's file is written, global first. Clicking a band collapses it.
 
-**Every sub-agent is listed whether it's on or off.** An agent is on when it holds at least one enabled skill; clicking its name pins it to the opposite of whatever it works out to. So you can switch on an agent that carries nothing — it reads `no skills — base agent`, and installs as front-matter alone — or switch off one that carries plenty.
+**Every sub-agent is listed whether it's on or off.** An agent is on when it holds at least one enabled skill, or when the stack you picked names it, which keeps it on after its last skill goes; clicking its name pins it to the opposite of whatever it works out to. So you can switch on an agent that carries nothing — it reads `no skills — base agent`, and installs as front-matter alone — or switch off one that carries plenty.
 
 Under each agent sits one row per skill it carries, ending in a load word — `pre` or `lazy`, click to flip it for this agent alone. Hovering or focusing a row lists every switched-on sub-agent carrying that skill. Clicking a row itself switches that copy off without removing it; it stays listed, recessed.
 

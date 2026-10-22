@@ -2,6 +2,7 @@ import { MARKETPLACE_CATALOG, MARKETPLACE_REF } from "@workspace/api-mocks"
 import type { Provider } from "@workspace/compile"
 import {
   CATALOG,
+  MATRIX,
   STACKS,
   SUB_AGENT_GROUPS,
   expandStack,
@@ -71,6 +72,11 @@ const STACK = STACKS.find((candidate) => {
   return expansion && expansion.skillIds.length > 2
 })!
 const EXPANSION = expandStack(STACK.id)!
+
+// No record of it is the stack's own: the stack does not declare it.
+const UNDECLARED_AGENT = SUB_AGENT_GROUPS.flatMap((group) => group.agents)
+  .map((agent) => agent.id)
+  .find((agentId) => !(agentId in stackAgentPins(EXPANSION)))!
 
 const asApplied = (): ConfigSelection => ({
   stackId: STACK.id,
@@ -206,10 +212,25 @@ describe("isStackCustom", () => {
     expect(
       isStackCustom({
         ...applied,
-        agents: { ...applied.agents, "web-tester": choice },
+        agents: { ...applied.agents, [UNDECLARED_AGENT]: choice },
       })
     ).toBe(true)
-    expect(isStackCustom(scratch({}, { "web-tester": choice }))).toBe(true)
+    expect(isStackCustom(scratch({}, { [UNDECLARED_AGENT]: choice }))).toBe(
+      true
+    )
+  })
+
+  it("is true once a sub-agent it declares is pinned off", () => {
+    const applied = asApplied()
+    const [declared] = Object.keys(applied.agents)
+    if (!declared) throw new Error("the sampled stack declares no sub-agent")
+
+    expect(
+      isStackCustom({
+        ...applied,
+        agents: { ...applied.agents, [declared]: { on: false } },
+      })
+    ).toBe(true)
   })
 
   it("is true when the stack itself no longer exists", () => {
@@ -219,25 +240,37 @@ describe("isStackCustom", () => {
   })
 })
 
-// The stack sampled above pins a sub-agent; most vendored stacks pin none.
-describe("isStackCustom for a stack that pins no sub-agent", () => {
-  const unpinnedStackId = () => {
+// The stack sampled above declares a sub-agent with no skills; most vendored
+// stacks declare none.
+describe("isStackCustom for a stack whose every sub-agent carries a skill", () => {
+  const fullyStaffedStack = () => {
     const stack = STACKS.find(
       (candidate) => expandStack(candidate.id)?.skillLessAgentIds.length === 0
     )
-    if (!stack) throw new Error("every vendored stack pins a sub-agent")
-    return stack.id
+    if (!stack)
+      throw new Error("every vendored stack has a skill-less sub-agent")
+    return stack
   }
+
+  const declaredRoster = (stackId: string) =>
+    Object.keys(
+      MATRIX.suggestedStacks.find((stack) => stack.id === stackId)!.skills
+    )
 
   afterEach(() => {
     useConfigStore.getState().reset()
   })
 
-  it("is false straight after applying it, with no agent record to compare", () => {
-    useConfigStore.getState().applyStack(unpinnedStackId())
+  it("is false straight after applying it, with each declared sub-agent pinned on", () => {
+    const { id } = fullyStaffedStack()
+    useConfigStore.getState().applyStack(id)
     const { stackId, skills, agents } = useConfigStore.getState()
 
-    expect(agents).toStrictEqual({})
+    expect(agents).toStrictEqual(
+      Object.fromEntries(
+        declaredRoster(id).map((agentId) => [agentId, { on: true }])
+      )
+    )
     expect(isStackCustom({ stackId, skills, agents })).toBe(false)
   })
 })
@@ -1678,7 +1711,7 @@ describe("isStackCustom on a stack's pins and rows", () => {
 
 // The vendored stacks pin one skill-less sub-agent at most, so this seats a
 // marketplace stack that pins two.
-describe("isStackCustom on a stack that pins two sub-agents", () => {
+describe("isStackCustom on a stack that declares two sub-agents with no skills", () => {
   const HOUSE_STACK = MARKETPLACE_CATALOG.suggestedStacks[0]!
 
   const appliedTwoPinStack = (): ConfigSelection => {
@@ -1708,10 +1741,12 @@ describe("isStackCustom on a stack that pins two sub-agents", () => {
     useCatalogStore.getState().reset()
   })
 
-  it("is false for the stack exactly as applied, both pins on", () => {
+  it("is false for the stack exactly as applied, every declared sub-agent pinned on", () => {
     const applied = appliedTwoPinStack()
 
     expect(applied.agents).toStrictEqual({
+      "web-developer": { on: true },
+      "api-developer": { on: true },
       "cli-tester": { on: true },
       "web-tester": { on: true },
     })
