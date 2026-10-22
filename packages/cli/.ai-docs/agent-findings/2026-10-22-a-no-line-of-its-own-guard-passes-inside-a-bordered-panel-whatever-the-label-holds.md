@@ -53,7 +53,7 @@ Census of negative "no line of its own" guards over the same name or key:
 `grep -rn "Nothing removed" packages/cli/e2e packages/cli/src --include='*.ts' --include='*.tsx'`.
 Every other hit pairs its negative with a positive that holds the folded text:
 
-- `a-link-carrying-terminal-controls.test.ts` (`FORGED_ROW`, beside ` + House Nothing removed. Tool ⏏ `)
+- `a-link-carrying-terminal-controls.test.ts` (`FORGED_ROW`, beside `+ House Nothing removed. Tool ⏏`)
 - `e2e/interactive/edit-from.e2e.test.ts` (`not.toMatch(/^\s*Nothing removed\.\s*$/m)`, beside
   `panelRow(OVERWRITTEN_MARKER, "House Nothing removed. Tool")`)
 - `init-from-codex-model.e2e.test.ts` (stderr, outside any panel, beside the folded warning)

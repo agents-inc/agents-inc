@@ -32,7 +32,7 @@ Reproduction, through `dist/`, with a fake home:
 2. In a project, `init --from` a configuration naming E2E Zustand (project, `web-tester`) and E2E
    Pinia (global, `api-developer`). Both are in "Client State Management", which allows one. The
    project's `config.ts` records `{ id: '…-web-state-pinia', scope: 'global', origin: 'eject',
-   excluded: true }`, a mask, beside the project's Zustand.
+excluded: true }`, a mask, beside the project's Zustand.
 3. Run `edit --from` with the same id, without a terminal. It exits 1 with the no-terminal refusal.
    At a terminal it asks "Apply this configuration?" over a panel that marks nothing as changing.
    After a yes, "Changes:" prints `+ E2E Pinia [G]`.

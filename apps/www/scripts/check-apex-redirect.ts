@@ -33,7 +33,8 @@ type Failure = string
 type Rule = { from: string; to: string; status: string }
 
 function main(): never {
-  if (!existsSync(DIST)) refuse(`dist/ not found at ${DIST} — run \`astro build\` first`)
+  if (!existsSync(DIST))
+    refuse(`dist/ not found at ${DIST} — run \`astro build\` first`)
 
   const pages = builtPages()
   if (pages.length === 0) refuse("dist/ holds no HTML page")
@@ -53,7 +54,8 @@ function noPageAtTheApex(): Failure[] {
 
 function theApexRedirectsToTheEditor(rules: Rule[]): Failure[] {
   const apex = rules.find((rule) => rule.from === ROOT_PATH)
-  if (apex === undefined) return [`${REDIRECTS_LABEL} has no rule for ${ROOT_PATH}.`]
+  if (apex === undefined)
+    return [`${REDIRECTS_LABEL} has no rule for ${ROOT_PATH}.`]
 
   return [wrongDestination(apex), wrongStatus(apex)].filter(isFailure)
 }
@@ -73,7 +75,10 @@ function wrongStatus(apex: Rule): Failure | null {
 function pagesLinkingToTheApex(pages: string[]): Failure[] {
   return pages
     .filter(linksToTheApex)
-    .map((page) => `dist/${page} links to ${ROOT_PATH} rather than to where it redirects.`)
+    .map(
+      (page) =>
+        `dist/${page} links to ${ROOT_PATH} rather than to where it redirects.`
+    )
 }
 
 function linksToTheApex(page: string): boolean {
@@ -97,14 +102,15 @@ function isRuleLine(line: string): boolean {
 
 /** `source destination [status]`. */
 function ruleOf(line: string): Rule {
-  const [from = "", to = "", status = CLOUDFLARE_DEFAULT_STATUS] = line.split(RULE_FIELD_SEPARATOR)
+  const [from = "", to = "", status = CLOUDFLARE_DEFAULT_STATUS] =
+    line.split(RULE_FIELD_SEPARATOR)
 
   return { from, to, status }
 }
 
 function builtPages(): string[] {
-  return readdirSync(DIST, { recursive: true, encoding: "utf8" }).filter((entry) =>
-    entry.endsWith(".html")
+  return readdirSync(DIST, { recursive: true, encoding: "utf8" }).filter(
+    (entry) => entry.endsWith(".html")
   )
 }
 

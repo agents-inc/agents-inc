@@ -495,7 +495,10 @@ describe("the payload behind each of the account's stacks", () => {
   })
 
   it("is read once, however many stacks point at it and however often it is asked for", async () => {
-    accountHolding([savedStack("Weekday", STORED_ID), savedStack("Client work")])
+    accountHolding([
+      savedStack("Weekday", STORED_ID),
+      savedStack("Client work"),
+    ])
     const read = recordReads()
     await useAccountStore.getState().refresh()
 

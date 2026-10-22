@@ -160,9 +160,7 @@ describe("a link made in a project", () => {
   })
 
   it("leaves the field off a link made anywhere else", () => {
-    expect(seedPayloadSchema.parse(payload())).not.toHaveProperty(
-      "fromProject"
-    )
+    expect(seedPayloadSchema.parse(payload())).not.toHaveProperty("fromProject")
   })
 
   // Absent is the only other spelling, so one payload has one id.
@@ -473,9 +471,15 @@ describe("a carried skill's file paths", () => {
     ["the parent directory's child", ESCAPING_FILE],
     ["a path climbing out through a child", "reference/../../victim.md"],
     ["a Windows path to the parent's child", "..\\victim.md"],
-    ["a Windows path climbing out through a child", "reference\\..\\..\\victim.md"],
+    [
+      "a Windows path climbing out through a child",
+      "reference\\..\\..\\victim.md",
+    ],
     ["the parent directory", ".."],
-    ["a step through the parent that lands back inside", "reference/../SKILL.md"],
+    [
+      "a step through the parent that lands back inside",
+      "reference/../SKILL.md",
+    ],
     ["a null byte", "reference/api\0.md"],
   ])("refuses a file path naming %s", (_, key) => {
     expect(seedExternalSkillSchema.safeParse(carryingFile(key)).success).toBe(
@@ -486,11 +490,14 @@ describe("a carried skill's file paths", () => {
   it.each([
     ["dots inside a name", "notes..v2.md"],
     ["dots leading a name", "..hidden.md"],
-  ])("accepts a file path holding %s, which steps through no parent", (_, key) => {
-    expect(seedExternalSkillSchema.safeParse(carryingFile(key)).success).toBe(
-      true
-    )
-  })
+  ])(
+    "accepts a file path holding %s, which steps through no parent",
+    (_, key) => {
+      expect(seedExternalSkillSchema.safeParse(carryingFile(key)).success).toBe(
+        true
+      )
+    }
+  )
 
   // No repair makes such a tree a skill directory, so reading refuses it as minting does.
   it("is refused by the read schema too, not only when minting", () => {

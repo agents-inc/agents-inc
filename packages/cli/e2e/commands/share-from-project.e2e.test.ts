@@ -119,9 +119,7 @@ describe("minting an id in a project that inherits sub-agents from HOME", () => 
     const atHome = await runEditUi(store, { dir: origin.fakeHome, globalHome: origin.fakeHome });
 
     expect(inProject.exitCode, `edit --ui failed: ${inProject.output}`).toBe(EXIT_CODES.SUCCESS);
-    expect(atHome.exitCode, `edit --ui at HOME failed: ${atHome.output}`).toBe(
-      EXIT_CODES.SUCCESS,
-    );
+    expect(atHome.exitCode, `edit --ui at HOME failed: ${atHome.output}`).toBe(EXIT_CODES.SUCCESS);
     const [mintedInProject, mintedAtHome] = postedBodies(store);
     expect(mintedInProject).toHaveProperty("fromProject", true);
     expect(mintedAtHome).not.toHaveProperty("fromProject");
