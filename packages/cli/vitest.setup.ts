@@ -7,6 +7,7 @@ import chalk from "chalk";
 import { beforeAll, beforeEach, afterAll, afterEach, vi } from "vitest";
 import { initializeMatrix } from "./src/cli/lib/matrix/matrix-provider";
 import { guardAgainstDistReplacement } from "./src/cli/lib/testing/dist-staleness";
+import { SPEC_TERMINAL_COLUMNS, SPEC_TERMINAL_ROWS } from "./src/cli/lib/__tests__/test-constants";
 import { BUILT_IN_MATRIX } from "./src/cli/types/generated/matrix";
 
 const COLOR_DISABLED_CHALK_LEVEL = 0;
@@ -25,8 +26,17 @@ chalk.level = COLOR_DISABLED_CHALK_LEVEL;
 delete process.env.CI;
 delete process.env.GITHUB_ACTIONS;
 
+// A worker's stdout is a pipe, so Ink sizes it by the terminal around it: terminal-size reads these,
+// then /dev/tty, so a spec drew wider at a developer's terminal than headless. The stream stays
+// sizeless, as a pipe is; @oclif/table reads that.
+process.env.COLUMNS = String(SPEC_TERMINAL_COLUMNS);
+process.env.LINES = String(SPEC_TERMINAL_ROWS);
+
 // SEED_API_URL reads this once at module load, so it is set before any test file imports.
 process.env.AGENTS_INC_API_URL = WORKER_ORIGIN;
+
+// EDITOR_URL reads this once at module load; specs assert the live editor's address.
+delete process.env.AGENTS_INC_EDITOR_URL;
 
 // Otherwise oclif's update check spawns a detached child that hits npm and writes into test homes.
 process.env.AGENTS_INC_SKIP_NEW_VERSION_CHECK = "1";

@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
+import { type ComponentProps, useState } from "react"
 import { expect, screen, userEvent, waitFor } from "storybook/test"
 
 import { Button } from "@workspace/ui/components/button"
@@ -15,10 +16,12 @@ import {
   DialogPaneHeading,
   DialogPaneSplitter,
   DialogPanes,
+  DialogRule,
   DialogTrigger,
 } from "@workspace/ui/components/dialog"
 
 import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
+import { resolvedColor } from "../../.storybook/resolved-color"
 
 const TITLE = "Install"
 const TRIGGER = "open install"
@@ -131,14 +134,15 @@ export const CloseGlyphCloses: Story = {
   },
 }
 
-
 const FULLSCREEN = "Fullscreen"
 const SPLITTER = "Resize the file tree"
 
-export const SplitWithFullscreen: Story = {
-  args: { defaultOpen: true },
-  render: (args) => (
-    <Dialog {...args}>
+// Holds the tree's width as the editor does, so a drag comes back through `aria-valuenow`.
+function SplitPreview(props: ComponentProps<typeof Dialog>) {
+  const [treeWidth, setTreeWidth] = useState(250)
+
+  return (
+    <Dialog {...props}>
       <DialogContent className="w-[47.5rem]">
         <DialogHeader
           title="Output preview"
@@ -146,10 +150,10 @@ export const SplitWithFullscreen: Story = {
           onToggleFullscreen={() => {}}
         />
         <DialogPanes className="min-h-[16rem]">
-          <DialogPane side="tree">
+          <DialogPane side="tree" style={{ width: `${treeWidth / 16}rem` }}>
             <div className="text-11 text-ink-2">config.ts</div>
           </DialogPane>
-          <DialogPaneSplitter width={250} onWidth={() => {}} />
+          <DialogPaneSplitter width={treeWidth} onWidth={setTreeWidth} />
           <DialogPane side="content">
             <div className="font-mono text-11 text-ink-2">
               export const agents = []
@@ -161,7 +165,12 @@ export const SplitWithFullscreen: Story = {
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  ),
+  )
+}
+
+export const SplitWithFullscreen: Story = {
+  args: { defaultOpen: true },
+  render: (args) => <SplitPreview {...args} />,
 }
 
 // Inset on all four edges, so the footer's Close button stays on screen.
@@ -220,5 +229,65 @@ export const SplitterReportsItsWidth: Story = {
     await expect(
       screen.getByRole("separator", { name: SPLITTER })
     ).toHaveAttribute("aria-valuenow", "250")
+  },
+}
+
+// At the root's 110%, 44 CSS pixels are 40 design pixels.
+export const DraggingTheSplitterResizesTheTree: Story = {
+  ...SplitWithFullscreen,
+  play: async () => {
+    await screen.findByRole("dialog", { name: "Output preview" })
+    const splitter = screen.getByRole("separator", { name: SPLITTER })
+
+    await userEvent.pointer([
+      { keys: "[MouseLeft>]", target: splitter, coords: { clientX: 0 } },
+      { coords: { clientX: 44 } },
+      { keys: "[/MouseLeft]" },
+    ])
+
+    await expect(splitter).toHaveAttribute("aria-valuenow", "290")
+  },
+}
+
+export const ReleasingTheSplitterEndsTheDrag: Story = {
+  ...SplitWithFullscreen,
+  play: async () => {
+    await screen.findByRole("dialog", { name: "Output preview" })
+    const splitter = screen.getByRole("separator", { name: SPLITTER })
+
+    await userEvent.pointer([
+      { keys: "[MouseLeft>]", target: splitter, coords: { clientX: 0 } },
+      { coords: { clientX: 44 } },
+      { keys: "[/MouseLeft]" },
+      { coords: { clientX: 88 } },
+    ])
+
+    await expect(splitter).toHaveAttribute("aria-valuenow", "290")
+  },
+}
+
+// `strong` is the install dialog's divide between its panes and its steps.
+export const AStrongRuleTakesTheRuleColour: Story = {
+  args: { defaultOpen: true },
+  render: (args) => (
+    <Dialog {...args}>
+      <DialogContent wide>
+        <DialogHeader title={TITLE} subtitle="12 skills · 4 sub-agents" />
+        <DialogBody>
+          <div className="text-11 text-ink-2">react · typescript · vitest</div>
+        </DialogBody>
+        <DialogRule strong />
+        <DialogBody>
+          <CommandBlock copyable>{INSTALL_COMMAND}</CommandBlock>
+        </DialogBody>
+      </DialogContent>
+    </Dialog>
+  ),
+  play: async () => {
+    await screen.findByRole("dialog", { name: TITLE })
+
+    await expect(
+      getComputedStyle(screen.getByRole("separator")).borderTopColor
+    ).toBe(resolvedColor("--color-rule"))
   },
 }

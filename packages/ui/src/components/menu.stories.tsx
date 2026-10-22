@@ -97,7 +97,9 @@ export const TheActiveOptionIsNamedByItsLabelAlone: Story = {
   },
 }
 
-// The trigger shows the current value, so `scope ▾` proves the handler ran.
+// The trigger shows the current value, so `scope ▾` proves the handler ran. A story that closes the
+// menu ends once the popup unmounts: Base UI unmounts it a frame after closing, and axe, which runs
+// after `play`, flags the focus guards of a popup still closing.
 export const PickingReportsTheChoice: Story = {
   args: { defaultOpen: true },
   play: async () => {
@@ -108,6 +110,9 @@ export const PickingReportsTheChoice: Story = {
     await expect(
       screen.getByRole("button", { name: TRIGGER })
     ).toHaveTextContent("scope ▾")
+    await waitFor(async () => {
+      await expect(screen.queryByRole("menu")).toBeNull()
+    })
   },
 }
 
@@ -153,6 +158,10 @@ export const TheKeyboardCanPick: Story = {
       await expect(
         screen.getByRole("button", { name: TRIGGER })
       ).toHaveTextContent("scope ▾")
+    })
+    // Closing, so it ends as `PickingReportsTheChoice` does.
+    await waitFor(async () => {
+      await expect(screen.queryByRole("menu")).toBeNull()
     })
   },
 }
