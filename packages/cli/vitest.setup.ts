@@ -32,11 +32,9 @@ delete process.env.GITHUB_ACTIONS;
 process.env.COLUMNS = String(SPEC_TERMINAL_COLUMNS);
 process.env.LINES = String(SPEC_TERMINAL_ROWS);
 
-// SEED_API_URL reads this once at module load, so it is set before any test file imports.
+// SEED_API_URL reads this once at module load, so it is set before any test file imports. It is on
+// this machine, so every printed editor address is the local editor's.
 process.env.AGENTS_INC_API_URL = WORKER_ORIGIN;
-
-// EDITOR_URL reads this once at module load; specs assert the live editor's address.
-delete process.env.AGENTS_INC_EDITOR_URL;
 
 // Otherwise oclif's update check spawns a detached child that hits npm and writes into test homes.
 process.env.AGENTS_INC_SKIP_NEW_VERSION_CHECK = "1";

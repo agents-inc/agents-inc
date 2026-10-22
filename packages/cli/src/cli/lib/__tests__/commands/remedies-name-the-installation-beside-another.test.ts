@@ -2,10 +2,23 @@ import path from "path";
 import { readdir, rm } from "fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { storedConfigHandlerFor } from "@workspace/api-mocks";
+import { configMockServer } from "@workspace/api-mocks/node";
+
 import { runCliCommand } from "../helpers/cli-runner.js";
+import { useMockWorker } from "../helpers/mock-worker.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { writeRawTestConfig, writeTestTsConfig } from "../helpers/config-io.js";
-import { buildProjectConfig } from "../factories/config-factories.js";
+import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
+import { buildSkillConfigs } from "../helpers/skill-config-builders.js";
+import { buildSeedPayload, buildSeedSkill } from "../factories/seed-factories.js";
+import {
+  cleanupTestSource,
+  createTestSource,
+  inTestMarketplace,
+  testMarketplaceSkillId,
+} from "../fixtures/create-test-source";
+import { DEFAULT_TEST_SKILLS } from "../mock-data/mock-skills";
 import { renderUnparseableConfigTs } from "../factories/unloadable-config-factories.js";
 import { EXIT_CODES } from "../../exit-codes";
 
@@ -46,7 +59,7 @@ describe("a remedy handed out over a project holding two installations", () => {
 
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
       expect(stdout).toContain(
-        `  Tip: There is no automatic repair — recreate the configuration by running ${recreateRemedy(process.cwd(), " --provider claude")} with an id from https://agentsinc.sh/editor\n`,
+        `  Tip: There is no automatic repair — recreate the configuration by running ${recreateRemedy(process.cwd(), " --provider claude")} with an id from http://localhost:5173/editor\n`,
       );
     });
 
@@ -70,13 +83,82 @@ describe("a remedy handed out over a project holding two installations", () => {
       const { stdout } = await runCliCommand(["doctor"]);
 
       expect(stdout).toContain(
-        `  Tip: There is no automatic repair — recreate the configuration by running ${recreateRemedy(process.cwd(), "")} with an id from https://agentsinc.sh/editor\n`,
+        `  Tip: There is no automatic repair — recreate the configuration by running ${recreateRemedy(process.cwd(), "")} with an id from http://localhost:5173/editor\n`,
       );
+    });
+  });
+
+  /**
+   * Through `dist/`, a run's `--provider` outlives it in the module that holds it, so the spec that
+   * names one runs last; the specs before it name none.
+   */
+  describe("opening a shared id in the editor", () => {
+    const SHARED_ID = "Shared1";
+
+    beforeEach(async () => {
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({ name: "installation" }),
+        CLAUDE_FOLDER,
+      );
+    });
+
+    it("edit --ui --from names the choice of installation in the edit --from it hands out", async () => {
+      const { stdout, error } = await runCliCommand(["edit", "--ui", "--from", SHARED_ID]);
+
+      expect(error).toBeUndefined();
+      expect(stdout).toContain(
+        `To apply it here instead, run 'npx agents-inc edit --from ${SHARED_ID} --provider <claude|codex>'.\n`,
+      );
+    });
+
+    it("init --ui --from names the same choice", async () => {
+      const { stdout, error } = await runCliCommand(["init", "--ui", "--from", SHARED_ID]);
+
+      expect(error).toBeUndefined();
+      expect(stdout).toContain(
+        `To apply it here instead, run 'npx agents-inc edit --from ${SHARED_ID} --provider <claude|codex>'.\n`,
+      );
+    });
+
+    it("init --ui names the choice in the edit --from <id> it hands out", async () => {
+      const { stdout, error } = await runCliCommand(["init", "--ui"]);
+
+      expect(error).toBeUndefined();
+      expect(stdout).toContain(
+        "Then apply what it gives you with 'npx agents-inc edit --from <id> --provider <claude|codex>'.\n",
+      );
+    });
+
+    it("control: beside no other installation, edit --ui --from hands out the bare edit --from", async () => {
+      await rm(path.join(projectDir, CODEX_FOLDER), { recursive: true });
+
+      const { stdout } = await runCliCommand(["edit", "--ui", "--from", SHARED_ID]);
+
+      expect(stdout).toContain(
+        `To apply it here instead, run 'npx agents-inc edit --from ${SHARED_ID}'.\n`,
+      );
+    });
+    it("edit --ui --from echoes the installation the run named, and offers no choice", async () => {
+      const { stdout } = await runCliCommand([
+        "edit",
+        "--ui",
+        "--from",
+        SHARED_ID,
+        "--provider",
+        "codex",
+      ]);
+
+      expect(stdout).toContain(
+        `To apply it here instead, run 'npx agents-inc edit --from ${SHARED_ID} --provider codex'.\n`,
+      );
+      expect(stdout).not.toContain("<claude|codex>");
     });
   });
 
   describe("applying a shared configuration", () => {
     const SHARED_ID = "Shared1";
+    useMockWorker();
 
     beforeEach(async () => {
       await writeTestTsConfig(
@@ -106,12 +188,53 @@ describe("a remedy handed out over a project holding two installations", () => {
     });
 
     it("edit --from with no terminal names the installation the run named in both commands", async () => {
-      const { error } = await runCliCommand(["edit", "--from", SHARED_ID, "--provider", "claude"]);
+      const dirs = await createTestSource({ skills: inTestMarketplace(DEFAULT_TEST_SKILLS) });
+      try {
+        await writeTestTsConfig(
+          projectDir,
+          buildProjectConfig({
+            name: "installation",
+            marketplace: dirs.sourceDir,
+            skills: buildSkillConfigs([testMarketplaceSkillId("web-testing-vitest")], {
+              scope: "global",
+              origin: "eject",
+            }),
+            agents: buildAgentConfigs(["api-developer"], { scope: "global" }),
+          }),
+          CLAUDE_FOLDER,
+        );
+        configMockServer.use(
+          storedConfigHandlerFor(
+            SHARED_ID,
+            buildSeedPayload({
+              marketplace: dirs.sourceDir,
+              skills: {
+                [testMarketplaceSkillId("api-framework-hono")]: buildSeedSkill({
+                  install: "eject",
+                  scope: "global",
+                  assignments: { "api-developer": "lazy" },
+                }),
+              },
+              agents: { "api-developer": { scope: "global" } },
+            }),
+          ),
+        );
 
-      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
-      expect(error?.message).toContain(
-        `Run 'npx agents-inc edit --from ${SHARED_ID} --provider claude' from a terminal, or 'npx agents-inc init --from ${SHARED_ID} --provider claude' in a clean directory`,
-      );
+        const { error } = await runCliCommand([
+          "edit",
+          "--from",
+          SHARED_ID,
+          "--provider",
+          "claude",
+        ]);
+
+        expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+        expect(error?.message).toContain(
+          `Run 'npx agents-inc edit --from ${SHARED_ID} --provider claude' from a terminal, or 'npx agents-inc init --from ${SHARED_ID} --provider claude' in a clean directory`,
+        );
+      } finally {
+        await cleanupTestSource(dirs);
+      }
     });
 
     it("edit --from with nothing installed sends the run to install the installation it named", async () => {

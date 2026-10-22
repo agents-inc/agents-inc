@@ -9,7 +9,9 @@ import {
   cleanupTempDir,
   createTempDir,
   directoryExists,
+  NO_LIVE_SEED_API,
   readTreeSnapshot,
+  REMOTE_SEED_API,
   writeCorruptConfig,
 } from "../helpers/test-utils.js";
 import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
@@ -80,6 +82,29 @@ describe("init --ui", () => {
       expect(stdout).toContain(
         `Then install what it gives you with '${CLI_INVOKE_COMMAND} init --from <id>'.`,
       );
+    });
+  });
+
+  /** A worker on this machine means the editor beside it, which is the only one it lets in. */
+  describe.each([
+    ["on this machine", NO_LIVE_SEED_API, STEP_TEXT.EDITOR_URL],
+    ["elsewhere", REMOTE_SEED_API, STEP_TEXT.LIVE_EDITOR_URL],
+  ])("beside a worker %s", (_where, worker, editor) => {
+    it("builds and opens in the editor beside that worker", async () => {
+      const { projectDir, home } = await nothingInstalled();
+      const env = { HOME: home, ...worker };
+
+      const build = await CLI.run(["init", "--ui"], { dir: projectDir }, { env });
+      const open = await CLI.run(
+        ["init", "--ui", "--from", "se_ABC123"],
+        { dir: projectDir },
+        { env },
+      );
+
+      expect(build.exitCode, build.output).toBe(EXIT_CODES.SUCCESS);
+      expect(build.stdout).toContain(`Build it at ${editor}\n`);
+      expect(open.exitCode, open.output).toBe(EXIT_CODES.SUCCESS);
+      expect(open.stdout).toContain(`Open it at ${editor}/?fromId=se_ABC123\n`);
     });
   });
 

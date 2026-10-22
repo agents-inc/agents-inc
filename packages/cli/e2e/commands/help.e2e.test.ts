@@ -1,5 +1,11 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { createTempDir, cleanupTempDir, flattenCliOutput } from "../helpers/test-utils.js";
+import {
+  createTempDir,
+  cleanupTempDir,
+  flattenCliOutput,
+  NO_LIVE_SEED_API,
+  REMOTE_SEED_API,
+} from "../helpers/test-utils.js";
 import { CLI } from "../fixtures/cli.js";
 import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 
@@ -69,7 +75,7 @@ describe("help and version", () => {
 
   it("describes init as the way into the editor, and --from as the install", async () => {
     tempDir = await createTempDir();
-    const result = await CLI.run(["init", "--help"], { dir: tempDir });
+    const result = await CLI.run(["init", "--help"], { dir: tempDir }, { env: REMOTE_SEED_API });
     const help = flattenCliOutput(result.stdout);
 
     expect(result.exitCode).toBe(EXIT_CODES.SUCCESS);
@@ -187,7 +193,7 @@ describe("help and version", () => {
 
   it("describes edit as opening this installation in the editor, and --from as the apply", async () => {
     tempDir = await createTempDir();
-    const result = await CLI.run(["edit", "--help"], { dir: tempDir });
+    const result = await CLI.run(["edit", "--help"], { dir: tempDir }, { env: REMOTE_SEED_API });
     const help = flattenCliOutput(result.stdout);
 
     expect(result.exitCode).toBe(EXIT_CODES.SUCCESS);
@@ -201,6 +207,50 @@ describe("help and version", () => {
       "EXAMPLES Open this installation in the editor $ agents-inc edit Apply a configuration built in the editor, by its id $ agents-inc edit --from <id> Look at a shared configuration without applying it $ agents-inc edit --ui --from <id>",
     );
     expect(help, "there is no wizard left to describe").not.toMatch(/wizard/i);
+  });
+
+  /** A worker on this machine means the editor beside it, in the help text as in every link. */
+  describe.each([
+    ["on this machine", NO_LIVE_SEED_API, STEP_TEXT.EDITOR_ADDRESS, STEP_TEXT.LIVE_EDITOR_ADDRESS],
+    ["elsewhere", REMOTE_SEED_API, STEP_TEXT.LIVE_EDITOR_ADDRESS, STEP_TEXT.EDITOR_ADDRESS],
+  ])("beside a worker %s", (_where, worker, editor, otherEditor) => {
+    async function helpFor(command: string): Promise<string> {
+      tempDir = await createTempDir();
+      const result = await CLI.run([command, "--help"], { dir: tempDir }, { env: worker });
+
+      const help = flattenCliOutput(result.stdout);
+      expect(result.exitCode, result.output).toBe(EXIT_CODES.SUCCESS);
+      expect(help).not.toContain(otherEditor);
+      return help;
+    }
+
+    it("init's help names the editor beside that worker", async () => {
+      const help = await helpFor("init");
+
+      expect(help).toContain(
+        `Build a configuration in ${editor}, or install one by id with --from. Over an existing installation, shows its dashboard.`,
+      );
+      expect(help).toContain(
+        `--ui Open ${editor} on the id --from names, or on the catalogue — what a bare init does where nothing is installed`,
+      );
+    });
+
+    it("edit's help names the editor beside that worker", async () => {
+      const help = await helpFor("edit");
+
+      expect(help).toContain(
+        `Open this installation in ${editor}, or apply a configuration built there with --from`,
+      );
+      expect(help).toContain(
+        `--ui Open ${editor} on this installation, or on the id --from names without applying it — what a bare edit does`,
+      );
+    });
+
+    it("search's help names the editor beside that worker", async () => {
+      const help = await helpFor("search");
+
+      expect(help).toContain(`category. To install one, add it in ${editor}.`);
+    });
   });
 
   it("should display search help via 'help search' syntax", async () => {

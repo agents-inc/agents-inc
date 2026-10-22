@@ -42,7 +42,7 @@ const ES_MODULE_MARKER = "__esModule";
  * The default export, or the namespace when there is none; imported whole to tell the two apart.
  */
 function unwrapDefaultExport(namespace: unknown): unknown {
-  if (isRecord(namespace) && namespace.default !== undefined) return namespace.default;
+  if (isRecord(namespace) && "default" in namespace) return namespace.default;
   return namespace;
 }
 
@@ -53,7 +53,11 @@ function declaresNoDefaultExport(namespace: unknown): boolean {
 /** Why a reader that found the file rejects one `loadConfig` answers `null` for. */
 export const NO_VALID_DEFAULT_EXPORT = "the file has no valid default export";
 
-/** Nothing was exported: an empty file, `export {}`, or a default export with no keys. */
+export function configLoadFailure(configPath: string, reason: string): string {
+  return `Failed to load config from '${configPath}': ${reason}`;
+}
+
+/** Nothing was exported: an empty file, `export {}`, or a default of `undefined` or no keys. */
 function exportsNothing(value: unknown): boolean {
   return value == null || (typeof value === "object" && Object.keys(value).length === 0);
 }
@@ -100,8 +104,6 @@ async function importConfigModule(configPath: string): Promise<unknown> {
     });
     return await jiti.import(configPath);
   } catch (error) {
-    throw new Error(`Failed to load config from '${configPath}': ${getErrorMessage(error)}`, {
-      cause: error,
-    });
+    throw new Error(configLoadFailure(configPath, getErrorMessage(error)), { cause: error });
   }
 }

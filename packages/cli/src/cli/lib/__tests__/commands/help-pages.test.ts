@@ -5,7 +5,8 @@ import { setupIsolatedHome } from "../helpers/isolated-home.js";
 /**
  * A help page is the whole of what a user reads before running a command: its summary,
  * description, arguments, flags with their shorthands and defaults, and examples. Each page is
- * pinned whole, as printed at oclif's default width, so a changed word is a changed test.
+ * pinned whole, as printed at oclif's default width, so a changed word is a changed test. The
+ * unit setup's worker runs on this machine, so the pages name the local editor.
  */
 describe("each command's help page", () => {
   let cleanup: () => Promise<void>;
@@ -37,14 +38,14 @@ describe("each command's help page", () => {
             --from=<id>                Install a configuration shared from
                                        agentsinc.sh by its id
             --provider=<claude|codex>  Which provider's installation this run is about
-            --ui                       Open agentsinc.sh/editor on the id --from
+            --ui                       Open localhost:5173/editor on the id --from
                                        names, or on the catalogue — what a bare init
                                        does where nothing is installed
 
       DESCRIPTION
         Initialize Agents Inc. in this project
 
-        Build a configuration in agentsinc.sh/editor, or install one by id with
+        Build a configuration in localhost:5173/editor, or install one by id with
         --from. Over an existing installation, shows its dashboard.
 
       EXAMPLES
@@ -79,15 +80,15 @@ describe("each command's help page", () => {
                                    its id, removing whatever it leaves out — from a
                                    project, only the project's own entries
         --provider=<claude|codex>  Which provider's installation this run is about
-        --ui                       Open agentsinc.sh/editor on this installation, or
+        --ui                       Open localhost:5173/editor on this installation, or
                                    on the id --from names without applying it — what a
                                    bare edit does
 
       DESCRIPTION
         Open this installation in the editor, or apply a configuration with --from
 
-        Open this installation in agentsinc.sh/editor, or apply a configuration built
-        there with --from
+        Open this installation in localhost:5173/editor, or apply a configuration
+        built there with --from
 
       EXAMPLES
         Open this installation in the editor
@@ -256,7 +257,7 @@ describe("each command's help page", () => {
 
         Read-only catalog browse. Searches the marketplace this installation reads
         from, plus the local skills already on disk, by id, displayName, slug,
-        description, or category. To install one, add it in agentsinc.sh/editor.
+        description, or category. To install one, add it in localhost:5173/editor.
 
       EXAMPLES
         Search for React skills

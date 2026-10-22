@@ -55,6 +55,12 @@ const MIRRORS: Mirror[] = [
     product: { file: CONSTS, symbol: "MIN_TERMINAL_SIZE", path: ["ROWS"] },
   },
   {
+    name: "TERMINAL_SIZE.NARROWEST.cols",
+    kind: "value",
+    e2e: { file: E2E_CONSTANTS, symbol: "TERMINAL_SIZE", path: ["NARROWEST", "cols"] },
+    product: { file: CONSTS, symbol: "MIN_TERMINAL_SIZE", path: ["COLS"] },
+  },
+  {
     name: "SOURCE_PATHS.PLUGINS_DIST",
     kind: "value",
     e2e: { file: E2E_CONSTANTS, symbol: "SOURCE_PATHS", path: ["PLUGINS_DIST"] },
@@ -71,6 +77,12 @@ const MIRRORS: Mirror[] = [
     name: "STEP_TEXT.EDITOR_URL",
     kind: "value",
     e2e: { file: E2E_CONSTANTS, symbol: "STEP_TEXT", path: ["EDITOR_URL"] },
+    product: { file: CONSTS, symbol: "LOCAL_EDITOR_URL", path: [] },
+  },
+  {
+    name: "STEP_TEXT.LIVE_EDITOR_URL",
+    kind: "value",
+    e2e: { file: E2E_CONSTANTS, symbol: "STEP_TEXT", path: ["LIVE_EDITOR_URL"] },
     product: { file: CONSTS, symbol: "DEFAULT_EDITOR_URL", path: [] },
   },
   {

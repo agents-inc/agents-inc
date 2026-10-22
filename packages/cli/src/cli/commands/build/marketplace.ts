@@ -6,6 +6,7 @@ import { z } from "zod";
 import { BaseCommand } from "../../base-command";
 import { setVerbose, warn } from "../../utils/logger";
 import {
+  configUnreadableError,
   marketplaceHasNoVersion,
   marketplaceNameNotPublishable,
   marketplaceOwnerHasNoName,
@@ -14,6 +15,7 @@ import { readFile, writeFile } from "../../utils/fs";
 import { getErrorMessage } from "../../utils/errors";
 import { EXIT_CODES } from "../../lib/exit-codes";
 import { readSourceRepoConfig } from "../../lib/configuration/config";
+import { configLoadFailure, NO_VALID_DEFAULT_EXPORT } from "../../lib/configuration/config-loader";
 import { loadMarketplaceMatrix } from "../../lib/loading";
 import {
   generateMarketplace,
@@ -280,9 +282,19 @@ export default class BuildMarketplace extends BaseCommand {
   /** Unconditional: consumers must be able to read an absent catalogue as a broken marketplace. */
   private async readCatalog(projectRoot: string): Promise<MergedSkillsMatrix> {
     this.log(`Reading the skills for ${CATALOG_JSON}...`);
-    await warnOfAConfigDeclaringNothing(projectRoot);
+    await this.refuseAConfigDeclaringNothing(projectRoot);
     const matrix = await loadMarketplaceMatrix(projectRoot);
     return { ...matrix, generatedAt: GENERATED_AT_BUILD };
+  }
+
+  /** Every other reader takes such a file as absent; the build is where its author can fix it. */
+  private async refuseAConfigDeclaringNothing(projectRoot: string): Promise<void> {
+    const read = await readSourceRepoConfig(projectRoot);
+    if (read.kind !== "declares-nothing") return;
+
+    this.error(configUnreadableError(configLoadFailure(read.configPath, NO_VALID_DEFAULT_EXPORT)), {
+      exit: EXIT_CODES.ERROR,
+    });
   }
 
   private async writeManifest(outputPath: string, marketplace: Marketplace): Promise<void> {
@@ -333,21 +345,6 @@ type ParsedAuthor = {
   name: string;
   email?: string;
 };
-
-/** The loader reads such a file as absent, so without this the build would say nothing of it. */
-async function warnOfAConfigDeclaringNothing(projectRoot: string): Promise<void> {
-  const read = await readSourceRepoConfig(projectRoot);
-  if (read.kind === "declares-nothing") {
-    warn(configDeclaresNothing(path.relative(projectRoot, read.configPath)));
-  }
-}
-
-function configDeclaresNothing(configPath: string): string {
-  return (
-    `${configPath} is empty or exports nothing, so this build reads the marketplace with the ` +
-    `default layout. Give it a default export, or delete it.`
-  );
-}
 
 /** The marketplace schema requires at least one plugin, so an empty manifest is never written. */
 function noPluginsToPublish(pluginsDir: string, pluginsDirFlag: string): string {

@@ -1,20 +1,12 @@
 import path from "path";
 import { parse as parseYaml } from "yaml";
 import { getErrorMessage } from "../../utils/errors";
-import {
-  readFile,
-  writeFile,
-  ensureDir,
-  glob,
-  fileExists,
-  copy,
-  isPathWithin,
-  isDirectoryEmpty,
-  remove,
-} from "../../utils/fs";
+import { readFile, writeFile, ensureDir, glob, fileExists, copy, isPathWithin } from "../../utils/fs";
 import { log, verbose, warn } from "../../utils/logger";
 import {
+  clearEarlierBuild,
   generateSkillPluginManifest,
+  holdsContentNoBuildMade,
   writePluginManifest,
   getPluginManifestPath,
 } from "../plugins";
@@ -96,20 +88,6 @@ async function assertClearable(
       `${skill} would be built into ${pluginDir}, which holds no ${path.join(PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE)} and is not empty, so no earlier build made it and a rebuild would delete what it holds. Move its contents out, or build into another output directory. ${file}`,
     );
   }
-}
-
-/** A folder an earlier build made holds its plugin manifest. */
-async function isEarlierBuild(pluginDir: string): Promise<boolean> {
-  return fileExists(getPluginManifestPath(pluginDir));
-}
-
-async function holdsContentNoBuildMade(pluginDir: string): Promise<boolean> {
-  if (await isEarlierBuild(pluginDir)) return false;
-  return !(await isDirectoryEmpty(pluginDir));
-}
-
-async function clearEarlierBuild(pluginDir: string): Promise<void> {
-  if (await isEarlierBuild(pluginDir)) await remove(pluginDir);
 }
 
 /**

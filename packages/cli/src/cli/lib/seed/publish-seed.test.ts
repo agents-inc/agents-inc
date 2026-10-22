@@ -15,7 +15,8 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { publishSeedConfig } from "./publish-seed";
-import { SEED_API_URL, SEED_USER_AGENT } from "./fetch-seed";
+import { SEED_USER_AGENT } from "./fetch-seed";
+import { SEED_API_URL } from "../../consts.js";
 import { firstElement } from "../__tests__/helpers/element-at.js";
 import { useMockWorker } from "../__tests__/helpers/mock-worker.js";
 import { buildSeedPayload, buildSeedSkill } from "../__tests__/factories/seed-factories.js";

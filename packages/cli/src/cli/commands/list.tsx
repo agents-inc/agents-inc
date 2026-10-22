@@ -28,6 +28,18 @@ type ListViewProps = {
   agentConfigs: AgentScopeConfig[];
 };
 
+/** The label never shrinks: a value too long for the line wraps beside it instead. */
+const HeaderRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <Box flexDirection="row" columnGap={1}>
+    <Box flexShrink={0}>
+      <Text color={CLI_COLORS.WARNING} bold>
+        {label}
+      </Text>
+    </Box>
+    <Text color={CLI_COLORS.NEUTRAL}>{value}</Text>
+  </Box>
+);
+
 const ListView: React.FC<ListViewProps> = ({ mode, source, skillConfigs, agentConfigs }) => {
   const { exit } = useApp();
 
@@ -39,20 +51,8 @@ const ListView: React.FC<ListViewProps> = ({ mode, source, skillConfigs, agentCo
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
       <Box flexDirection="column" marginBottom={1}>
-        <Box flexDirection="row" columnGap={1}>
-          <Text color={CLI_COLORS.WARNING} bold>
-            Mode
-          </Text>
-          <Text color={CLI_COLORS.NEUTRAL}>{mode}</Text>
-        </Box>
-        {source && (
-          <Box flexDirection="row" columnGap={1}>
-            <Text color={CLI_COLORS.WARNING} bold>
-              Marketplace
-            </Text>
-            <Text color={CLI_COLORS.NEUTRAL}>{source}</Text>
-          </Box>
-        )}
+        <HeaderRow label="Mode" value={mode} />
+        {source && <HeaderRow label="Marketplace" value={source} />}
       </Box>
 
       {/* Installed and current are one configuration, so every row reads unchanged. */}

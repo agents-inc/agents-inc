@@ -19,7 +19,8 @@ import { buildProjectConfig } from "../factories/config-factories.js";
 const { default: Init } = await import("../../../commands/init.js");
 const { default: Edit } = await import("../../../commands/edit.js");
 
-const EDITOR = "https://agentsinc.sh/editor";
+/** The unit suite's worker runs on this machine, so every link opens the editor beside it. */
+const EDITOR = "http://localhost:5173/editor";
 const SHARED_ID = "Abc123";
 const OPENER_FAILURE = "Could not open your browser — 'xdg-open' exited 3.";
 

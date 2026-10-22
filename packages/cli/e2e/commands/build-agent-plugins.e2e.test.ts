@@ -21,6 +21,8 @@ const AGENT_NAMES = ["web-developer", "api-developer"] as const;
 const EXPECTED_AGENT_COUNT = 2;
 /** Mirrors `DEFAULT_VERSION` in src/cli/consts.ts. */
 const INITIAL_VERSION = "1.0.0";
+/** One major above `INITIAL_VERSION`, as a rebuild shipping other files takes. */
+const REBUILT_VERSION = "2.0.0";
 /** Mirrors the `agents` field `generateAgentPluginManifest` writes. */
 const AGENTS_MANIFEST_PATH = "./agents/";
 /** Mirrors the directory prefix `compileAgentPlugin` writes. */
@@ -147,6 +149,61 @@ describe("build agent plugins", () => {
       expect(builtPlugins.filter((entry) => entry.startsWith(AGENT_PLUGIN_PREFIX))).toStrictEqual(
         [],
       );
+    });
+  });
+
+  /** The version follows what the plugin ships, so a file only the earlier build left moves it. */
+  describe("rebuilding an agent plugin over its earlier build", () => {
+    let rebuildTempDir: string;
+
+    beforeEach(async () => {
+      rebuildTempDir = await createTempDir();
+    });
+
+    afterEach(async () => {
+      await cleanupTempDir(rebuildTempDir);
+    });
+
+    it("should drop a file the earlier build left behind and take a new version", async () => {
+      const rebuildSourceDir = path.join(rebuildTempDir, "source");
+      const rebuildAgentsDir = path.join(rebuildSourceDir, "compiled-agents");
+      await mkdir(rebuildAgentsDir, { recursive: true });
+      await mkdir(path.join(rebuildSourceDir, SOURCE_PATHS.SKILLS_DIR), { recursive: true });
+      await writeFile(
+        path.join(rebuildAgentsDir, "web-developer.md"),
+        renderAgentMd("web-developer", agentDescription("web-developer")),
+      );
+      const build = () =>
+        CLI.run(["build", "plugins", "--agents-dir", rebuildAgentsDir], { dir: rebuildSourceDir });
+      const pluginDir = path.join(
+        rebuildSourceDir,
+        SOURCE_PATHS.PLUGINS_DIST,
+        `${AGENT_PLUGIN_PREFIX}web-developer`,
+      );
+      const strayFile = path.join(pluginDir, DIRS.AGENTS, "stale-orphan.md");
+
+      const first = await build();
+      expect(first.exitCode, first.output).toBe(EXIT_CODES.SUCCESS);
+      await writeFile(strayFile, "# Left by an earlier build");
+
+      const rebuilt = await build();
+
+      expect(rebuilt.exitCode, rebuilt.output).toBe(EXIT_CODES.SUCCESS);
+      expect(rebuilt.stdout).toContain(`${AGENT_PLUGIN_PREFIX}web-developer (v${REBUILT_VERSION})`);
+      expect(await listFiles(path.join(pluginDir, DIRS.AGENTS))).toStrictEqual([
+        "web-developer.md",
+      ]);
+      const manifest: unknown = JSON.parse(
+        await readTestFile(
+          path.join(pluginDir, SOURCE_PATHS.PLUGIN_MANIFEST_DIR, FILES.PLUGIN_JSON),
+        ),
+      );
+      expect(manifest).toStrictEqual({
+        name: `${AGENT_PLUGIN_PREFIX}web-developer`,
+        version: REBUILT_VERSION,
+        agents: AGENTS_MANIFEST_PATH,
+        description: agentDescription("web-developer"),
+      });
     });
   });
 

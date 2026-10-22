@@ -1,10 +1,8 @@
 import { createApiClient } from "@workspace/api";
 import { seedPayloadSchema, type SeedPayload } from "@workspace/matrix/seed";
 
+import { SEED_API_URL } from "../../consts.js";
 import { truncateText } from "../../utils/string.js";
-
-/** Overridable so tests never touch the network. */
-export const SEED_API_URL = process.env.AGENTS_INC_API_URL ?? "https://api.agentsinc.sh";
 
 /** Lets the worker tell an install from someone opening a share link. */
 export const SEED_USER_AGENT = "agents-inc-cli";

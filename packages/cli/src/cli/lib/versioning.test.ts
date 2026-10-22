@@ -7,7 +7,6 @@ import {
   computeFileHash,
   computeSkillFolderHash,
   computeShippedHash,
-  determinePluginVersion,
   readEarlierBuild,
   versionAfterRebuild,
 } from "./versioning";
@@ -228,90 +227,6 @@ describe("computeSkillFolderHash, nested example files", () => {
   });
 });
 
-describe("determinePluginVersion", () => {
-  const consoleSpies = silenceConsole(["warn"]);
-  const NEW_HASH = "abc1234";
-  const OLD_HASH = "0123456";
-  let pluginDir: string;
-
-  beforeEach(async () => {
-    pluginDir = await createTempDir("versioning-plugin-");
-  });
-
-  afterEach(async () => {
-    await cleanupTempDir(pluginDir);
-  });
-
-  async function pluginOnDisk(manifest: string, contentHash?: string): Promise<string> {
-    const manifestPath = getPluginManifestPath(pluginDir);
-    await mkdir(path.dirname(manifestPath), { recursive: true });
-    await writeFile(manifestPath, manifest);
-    if (contentHash !== undefined) {
-      await writeFile(path.join(path.dirname(manifestPath), ".content-hash"), contentHash);
-    }
-    return manifestPath;
-  }
-
-  it("starts a plugin with no manifest at 1.0.0, warning about nothing", async () => {
-    expect(await determinePluginVersion(NEW_HASH, pluginDir, getPluginManifestPath)).toStrictEqual({
-      version: "1.0.0",
-      contentHash: NEW_HASH,
-    });
-    expect(consoleSpies.warn).not.toHaveBeenCalled();
-  });
-
-  it("keeps the version when the recorded hash matches, a trailing newline aside", async () => {
-    await pluginOnDisk(JSON.stringify({ name: "acme-react", version: "3.0.0" }), `${NEW_HASH}\n`);
-
-    expect(await determinePluginVersion(NEW_HASH, pluginDir, getPluginManifestPath)).toStrictEqual({
-      version: "3.0.0",
-      contentHash: NEW_HASH,
-    });
-  });
-
-  it("bumps the major and resets minor and patch when the recorded hash differs", async () => {
-    await pluginOnDisk(JSON.stringify({ name: "acme-react", version: "3.2.1" }), OLD_HASH);
-
-    expect(await determinePluginVersion(NEW_HASH, pluginDir, getPluginManifestPath)).toStrictEqual({
-      version: "4.0.0",
-      contentHash: NEW_HASH,
-    });
-  });
-
-  it("reads a major of more than one digit", async () => {
-    await pluginOnDisk(JSON.stringify({ name: "acme-react", version: "10.0.0" }), OLD_HASH);
-
-    expect((await determinePluginVersion(NEW_HASH, pluginDir, getPluginManifestPath)).version).toBe(
-      "11.0.0",
-    );
-  });
-
-  it.each(["latest", "v2.0.0"])(
-    "bumps %s, a version that does not open with its major, as though it were major 1",
-    async (version) => {
-      await pluginOnDisk(JSON.stringify({ name: "acme-react", version }), OLD_HASH);
-
-      expect(
-        (await determinePluginVersion(NEW_HASH, pluginDir, getPluginManifestPath)).version,
-      ).toBe("2.0.0");
-    },
-  );
-
-  it("starts over at 1.0.0 from a manifest it cannot read, and names it", async () => {
-    const manifestPath = await pluginOnDisk("{ not json");
-
-    expect(await determinePluginVersion(NEW_HASH, pluginDir, getPluginManifestPath)).toStrictEqual({
-      version: "1.0.0",
-      contentHash: NEW_HASH,
-    });
-    expect(consoleSpies.warn).toHaveBeenCalledExactlyOnceWith(
-      expect.stringMatching(
-        new RegExp(`^  Warning: Failed to read plugin manifest at '${manifestPath}': .+`),
-      ),
-    );
-  });
-});
-
 async function writePluginFile(
   pluginDir: string,
   relativePath: string,
@@ -443,4 +358,15 @@ describe("versionAfterRebuild", () => {
   it("bumps the major and resets minor and patch when the rebuild ships anything else", () => {
     expect(versionAfterRebuild(EARLIER, "abc1234")).toBe("4.0.0");
   });
+
+  it("reads a major of more than one digit", () => {
+    expect(versionAfterRebuild({ ...EARLIER, version: "10.0.0" }, "abc1234")).toBe("11.0.0");
+  });
+
+  it.each(["latest", "v2.0.0"])(
+    "bumps %s, a version that does not open with its major, as though it were major 1",
+    (version) => {
+      expect(versionAfterRebuild({ ...EARLIER, version }, "abc1234")).toBe("2.0.0");
+    },
+  );
 });

@@ -1,3 +1,4 @@
+import { isIPv4 } from "net";
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -60,10 +61,35 @@ export function cacheRoot(): string {
   return path.join(os.homedir(), ".cache", DEFAULT_PLUGIN_NAME);
 }
 
-// The `/editor` segment is required: the apex serves the landing page, which ignores `?fromId=`.
+/** Overridable so tests never touch the network. */
+export const SEED_API_URL = process.env.AGENTS_INC_API_URL ?? "https://api.agentsinc.sh";
+
 const DEFAULT_EDITOR_URL = "https://agentsinc.sh/editor";
 
-export const EDITOR_URL = process.env.AGENTS_INC_EDITOR_URL ?? DEFAULT_EDITOR_URL;
+/** The editor's dev server: a worker running here lets in no other editor (its `WEB_ORIGIN`). */
+const LOCAL_EDITOR_URL = "http://localhost:5173/editor";
+
+/** As the URL parser writes them: lowercased, and an IPv6 host in brackets. */
+const LOOPBACK_HOSTNAMES: readonly string[] = ["localhost", "[::1]"];
+
+/** `127.0.0.0/8`; the URL parser writes any IPv4 spelling in dotted decimal. */
+function isLoopbackIPv4(hostname: string): boolean {
+  return isIPv4(hostname) && hostname.startsWith("127.");
+}
+
+function runsOnThisMachine(address: string): boolean {
+  if (!URL.canParse(address)) return false;
+  const { hostname } = new URL(address);
+  return LOOPBACK_HOSTNAMES.includes(hostname) || isLoopbackIPv4(hostname);
+}
+
+/** An id minted against a worker on this machine opens only in the editor beside it. */
+export const EDITOR_URL = runsOnThisMachine(SEED_API_URL) ? LOCAL_EDITOR_URL : DEFAULT_EDITOR_URL;
+
+const URL_SCHEME = /^https?:\/\//;
+
+/** The editor as help text names it: `EDITOR_URL` without its scheme. */
+export const EDITOR_ADDRESS = EDITOR_URL.replace(URL_SCHEME, "");
 
 /** Same form as the editor's own Share button copies. */
 export function editorConfigUrl(id: string): string {
@@ -118,6 +144,8 @@ export const UI_SYMBOLS = {
   CROSS: "\u2717",
   REMOVED: "-",
   ADDED: "+",
+  CHANGED: "~",
+  OVERWRITTEN: "↻",
 } as const;
 
 export const GITHUB_SOURCE = {

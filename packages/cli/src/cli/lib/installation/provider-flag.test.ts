@@ -8,6 +8,7 @@ import {
   providerFlag,
   providerNamedBy,
   providerNeedsAConfigurationToInstall,
+  providersInPlay,
   refuseAnAmbiguousInstallation,
 } from "./provider-flag";
 import { forgetTheProviderChosenForThisRun, providerInUse } from "./install-layout";
@@ -65,7 +66,7 @@ describe("--provider", () => {
 
   it("explains that --provider needs a configuration to create an installation from", () => {
     expect(providerNeedsAConfigurationToInstall()).toBe(
-      "--provider names which installation to create and needs the configuration to create it from, so it is only meaningful beside --from. Build one at https://agentsinc.sh/editor, then run 'npx agents-inc init --from <id> --provider <provider>'.",
+      "--provider names which installation to create and needs the configuration to create it from, so it is only meaningful beside --from. Build one at http://localhost:5173/editor, then run 'npx agents-inc init --from <id> --provider <provider>'.",
     );
   });
 
@@ -100,6 +101,10 @@ describe("--provider", () => {
       );
     });
 
+    it("reads both as in play, in roster order, without refusing", async () => {
+      expect(await providersInPlay(project)).toStrictEqual(["claude", "codex"]);
+    });
+
     it("tells list which other installation the scope holds", async () => {
       expect(await otherInstallationsInThisScope(project, "claude")).toBe(
         `${project} holds 2 installations — claude and codex — and this is the claude one. Show another with --provider <claude|codex>.`,
@@ -124,6 +129,10 @@ describe("--provider", () => {
       expect(await ambiguityFinding(project)).toBeNull();
       expect(await otherInstallationsInThisScope(project, "claude")).toBeNull();
     });
+
+    it("reads that one as the only installation in play", async () => {
+      expect(await providersInPlay(project)).toStrictEqual(["claude"]);
+    });
   });
 
   it("judges a project with no installation by the global ones", async () => {
@@ -133,6 +142,13 @@ describe("--provider", () => {
     expect(await ambiguityFinding(bare)).toBe(
       `${await realpath(home.dir)} holds 2 installations — claude and codex — so every command that acts on one cannot tell which one you mean. Name it with --provider <claude|codex>. Nothing has been changed.`,
     );
+  });
+
+  it("reads a project with no installation as the global ones in play", async () => {
+    await scopeHolding(home.dir, [CLAUDE_FOLDER, CODEX_FOLDER]);
+    const bare = await scopeHolding(path.join(tempDir, "bare"), []);
+
+    expect(await providersInPlay(bare)).toStrictEqual(["claude", "codex"]);
   });
 
   it("judges a project by its own installation even when the global scope holds two", async () => {

@@ -6,7 +6,11 @@ import { loadConfig } from "../config-loader";
 import { createTempDir, cleanupTempDir } from "../../__tests__/test-fs-utils";
 import { STANDARD_FILES } from "../../../consts";
 import { renderConfigTs } from "../../__tests__/content-generators";
-import { renderUnparseableConfigTs } from "../../__tests__/factories/unloadable-config-factories";
+import {
+  renderConfigTsExportingUndefined,
+  renderConfigTsWithNamedExportOnly,
+  renderUnparseableConfigTs,
+} from "../../__tests__/factories/unloadable-config-factories";
 import { silenceConsole } from "../../__tests__/helpers/silence-console";
 import { setVerbose } from "../../../utils/logger";
 import { defaultStacks } from "../default-stacks";
@@ -111,6 +115,26 @@ describe("loadConfig", () => {
     await writeFile(configPath, "   \n\n  \n");
     const result = await loadConfig(configPath);
     expect(result).toBeNull();
+  });
+
+  it.each(["undefined", "void 0"] as const)(
+    "returns null for a default export of %s, which declares nothing",
+    async (spelling) => {
+      const configPath = path.join(tempDir, STANDARD_FILES.CONFIG_TS);
+      await writeFile(configPath, renderConfigTsExportingUndefined(spelling));
+
+      expect(await loadConfig(configPath, z.object({ name: z.string().optional() }))).toBeNull();
+    },
+  );
+
+  it("reads no named export as the config when the default export is undefined", async () => {
+    const configPath = path.join(tempDir, STANDARD_FILES.CONFIG_TS);
+    await writeFile(
+      configPath,
+      `${renderConfigTsWithNamedExportOnly({ name: "named" })}${renderConfigTsExportingUndefined("undefined")}`,
+    );
+
+    expect(await loadConfig(configPath)).toBeNull();
   });
 
   it("handles config that uses defineConfig identity function", async () => {

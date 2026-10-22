@@ -1,6 +1,8 @@
+import { renderToString } from "ink";
 import { render } from "ink-testing-library";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SkillAgentSummary, type SkillAgentSummaryProps } from "./skill-agent-summary";
+import { EJECT_SOURCE, MIN_TERMINAL_SIZE } from "../../consts";
 import { buildAgentConfigs } from "../../lib/__tests__/factories/config-factories";
 import { buildSkillConfigs } from "../../lib/__tests__/helpers/skill-config-builders";
 import { initializeMatrix } from "../../lib/matrix/matrix-provider";
@@ -64,6 +66,32 @@ describe("SkillAgentSummary component", () => {
       expect(output).toContain("~ React ⏏");
       expect(output).toContain("+ Zustand");
       expect(output).not.toContain("Zustand ⏏");
+    });
+
+    /**
+     * At 80 columns the right half starts and ends mid-column. The second skill is absent from
+     * the matrix, so it is drawn by its id, which is longer than the half.
+     */
+    it("keeps the border and every letter beside a name too long for the right half at 80 columns", () => {
+      const frame = renderToString(
+        <SkillAgentSummary
+          {...NOTHING_INSTALLED}
+          skillConfigs={buildSkillConfigs([
+            "web-framework-react",
+            "web-testing-react-testing-library",
+          ])}
+          agentConfigs={buildAgentConfigs(["web-developer"])}
+        />,
+        { columns: MIN_TERMINAL_SIZE.COLS },
+      );
+
+      expect(frame).toMatchInlineSnapshot(`
+        "Skills                                             │  Agents
+                                                           │
+         Project                                           │   Project
+        + React ⏏                 + web-testing-react-test │  + web-developer
+                                    ing-library ⏏          │"
+      `);
     });
 
     it("heads no Project scope in either column when every row is global", () => {
@@ -311,6 +339,42 @@ describe("SkillAgentSummary component", () => {
     });
   });
 
+  describe("entries that stay where they are and still change", () => {
+    const REACT_AND_WEB_DEVELOPER: Partial<SkillAgentSummaryProps> = {
+      skillConfigs: buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+      agentConfigs: buildAgentConfigs(["web-developer"], { scope: "project" }),
+      installedSkillConfigs: buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+      installedAgentConfigs: buildAgentConfigs(["web-developer"], { scope: "project" }),
+    };
+
+    it("marks a skill the run writes over with ↻ and a sub-agent that changes with ~", () => {
+      const { lastFrame, unmount } = renderSummary({
+        ...REACT_AND_WEB_DEVELOPER,
+        overwrittenSkillIds: new Set(["web-framework-react"]),
+        changedAgentNames: new Set(["web-developer"]),
+      });
+      cleanup = unmount;
+
+      expect(lastFrame()).toMatchInlineSnapshot(`
+        "Skills                                                           │  Agents
+                                                                         │
+         Project                                                         │   Project
+        ↻ React ⏏                                                        │  ~ web-developer"
+      `);
+    });
+
+    it("marks both unchanged when the run says nothing changes them", () => {
+      const { lastFrame, unmount } = renderSummary(REACT_AND_WEB_DEVELOPER);
+      cleanup = unmount;
+
+      const output = lastFrame()!;
+      expect(output).toContain("• React ⏏");
+      expect(output).toContain("• web-developer");
+      expect(output).not.toContain("↻");
+      expect(output).not.toContain("~");
+    });
+  });
+
   describe("an installation shown as it stands", () => {
     it("should mark every row unchanged when the installed configuration is the current one", () => {
       const skillConfigs = [
@@ -338,6 +402,37 @@ describe("SkillAgentSummary component", () => {
       expect(output).not.toContain("+ ");
       expect(output).not.toContain("- ");
       expect(output).not.toContain("~ ");
+    });
+  });
+
+  /** A run that loads no catalogue reads each copy's own name off its metadata.yaml. */
+  describe("names the run read off each copy", () => {
+    it("draws a skill by the name it is given, and one it is given no name for by the catalogue's", () => {
+      const { lastFrame, unmount } = renderSummary({
+        installedSkillConfigs: buildSkillConfigs(
+          ["web-framework-react", "web-testing-react-testing-library"],
+          { origin: EJECT_SOURCE },
+        ),
+        skillNames: new Map([["web-testing-react-testing-library", "Testing Library"]]),
+      });
+      cleanup = unmount;
+
+      const output = lastFrame()!;
+      expect(output).toContain("- Testing Library ⏏");
+      expect(output).toContain("- React ⏏");
+      expect(output).not.toContain("web-testing-react-testing-library");
+    });
+
+    it("draws a name it is given on one line, whatever its metadata.yaml held", () => {
+      const { lastFrame, unmount } = renderSummary({
+        installedSkillConfigs: buildSkillConfigs(["web-testing-react-testing-library"], {
+          origin: EJECT_SOURCE,
+        }),
+        skillNames: new Map([["web-testing-react-testing-library", "Testing\nLibrary"]]),
+      });
+      cleanup = unmount;
+
+      expect(lastFrame()).toContain("- Testing Library ⏏");
     });
   });
 });

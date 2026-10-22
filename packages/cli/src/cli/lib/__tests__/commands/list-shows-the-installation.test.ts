@@ -25,6 +25,10 @@ const CODEX_FOLDER = ".agents-inc/codex";
 
 const MARKETPLACE = "github:acme/skills";
 
+/** Longer than the line beside its label at the narrowest terminal the CLI draws at. */
+const LONG_MARKETPLACE_PATH =
+  "/home/alexandra-montgomery/projects/acme-corporation/internal-agent-skills-marketplace-v2";
+
 function runList(argv: string[] = []): ReturnType<typeof captureOutput> {
   return captureOutput(() => List.run(argv, { root: CLI_ROOT }));
 }
@@ -163,6 +167,39 @@ describe("what list shows", () => {
                                                            │
           Project                                          │   Project
          • React ⏏                                         │  • web-developer
+
+        "
+      `);
+    });
+
+    it("keeps every letter of a long name and the whole Marketplace label", async () => {
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "installation",
+          marketplace: LONG_MARKETPLACE_PATH,
+          skills: [
+            buildSkillConfig("acme-react-component-patterns"),
+            buildSkillConfig("acme-release-checklist"),
+          ],
+          agents: buildAgentConfigs(["web-developer"]),
+        }),
+        CLAUDE_FOLDER,
+      );
+
+      const { stdout } = await runCliCommand(["list"]);
+
+      expect(stdout).toMatchInlineSnapshot(`
+        "
+         Mode Eject
+         Marketplace /home/alexandra-montgomery/projects/acme-corporation/internal-agen
+                     t-skills-marketplace-v2
+
+         Skills                                            │  Agents
+                                                           │
+          Project                                          │   Project
+         • acme-react-component   • acme-release-checkli   │  • web-developer
+           -patterns ⏏              st ⏏                   │
 
         "
       `);

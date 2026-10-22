@@ -10,14 +10,30 @@ import type {
 } from "../../lib/configuration/scope-diff.js";
 import { getSkillDisplayName } from "../../lib/matrix/matrix-provider.js";
 import type { AgentScopeConfig, SkillConfig } from "../../types/config.js";
+import type { SkillId } from "../../types/skills.js";
+import { inertLine } from "../../utils/string.js";
 
 export type SkillAgentSummaryProps = Pick<
   ScopeDiffInput,
-  "installedSkillConfigs" | "installedAgentConfigs" | "isInitMode"
+  | "installedSkillConfigs"
+  | "installedAgentConfigs"
+  | "isInitMode"
+  | "overwrittenSkillIds"
+  | "changedAgentNames"
 > & {
   skillConfigs: SkillConfig[];
   agentConfigs: AgentScopeConfig[];
+  /** Read off each copy's metadata.yaml by a run that loads no marketplace to name them from. */
+  skillNames?: ReadonlyMap<SkillId, string>;
 };
+
+const NO_NAMES: ReadonlyMap<SkillId, string> = new Map();
+
+/** A name the run read stands over the catalogue's: it is what that copy says it is. */
+function skillNameOf(id: SkillId, names: ReadonlyMap<SkillId, string>): string {
+  const recorded = names.get(id);
+  return recorded === undefined ? getSkillDisplayName(id) : inertLine(recorded);
+}
 
 const TableHeader: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <Text bold color={CLI_COLORS.WARNING}>
@@ -35,7 +51,9 @@ const EjectIcon: React.FC = () => <Text color={CLI_COLORS.WARNING}> {UI_SYMBOLS.
 
 const DIFF_PREFIX: Record<DiffRowStatus, string> = {
   added: `${UI_SYMBOLS.ADDED} `,
-  "mode-changed": "~ ",
+  "mode-changed": `${UI_SYMBOLS.CHANGED} `,
+  overwritten: `${UI_SYMBOLS.OVERWRITTEN} `,
+  changed: `${UI_SYMBOLS.CHANGED} `,
   removed: `${UI_SYMBOLS.REMOVED} `,
   unchanged: `${UI_SYMBOLS.BULLET} `,
 };
@@ -43,17 +61,32 @@ const DIFF_PREFIX: Record<DiffRowStatus, string> = {
 const DIFF_COLOR: Record<DiffRowStatus, string> = {
   added: CLI_COLORS.SUCCESS,
   "mode-changed": CLI_COLORS.WARNING,
+  overwritten: CLI_COLORS.WARNING,
+  changed: CLI_COLORS.WARNING,
   removed: CLI_COLORS.ERROR,
   unchanged: CLI_COLORS.NEUTRAL,
 };
 
-const SkillRow: React.FC<{ row: SkillDiffRow }> = ({ row }) => (
-  <Box width="50%" flexDirection="row">
+/**
+ * Yoga widens a text to whole columns on both sides and Ink draws it from its rounded left, so a
+ * name in a half that starts or ends mid-column draws up to two columns past the half: over the
+ * next name, or over the table's border. The third column stays blank.
+ */
+const NAME_GUTTER_COLUMNS = 3;
+
+/**
+ * A long name wraps under itself, beside a prefix that never shrinks, and carries its mark in its
+ * own text: drawn beside the name, the mark covered its last letters.
+ */
+const SkillRow: React.FC<{ row: SkillDiffRow; name: string }> = ({ row, name }) => (
+  <Box width="50%" paddingRight={NAME_GUTTER_COLUMNS}>
+    <Box flexShrink={0}>
+      <Text color={DIFF_COLOR[row.status]}>{DIFF_PREFIX[row.status]}</Text>
+    </Box>
     <Text color={DIFF_COLOR[row.status]}>
-      {DIFF_PREFIX[row.status]}
-      {getSkillDisplayName(row.id)}
+      {name}
+      {row.source === EJECT_SOURCE && <EjectIcon />}
     </Text>
-    {row.source === EJECT_SOURCE && <EjectIcon />}
   </Box>
 );
 
@@ -73,16 +106,13 @@ const agentRowKey = (row: AgentDiffRow): string =>
 export const SkillAgentSummary: React.FC<SkillAgentSummaryProps> = ({
   skillConfigs,
   agentConfigs,
-  installedSkillConfigs,
-  installedAgentConfigs,
-  isInitMode,
+  skillNames = NO_NAMES,
+  ...baseline
 }) => {
   const diff = computeScopeDiff({
     currentSkills: skillConfigs,
     currentAgents: agentConfigs,
-    installedSkillConfigs,
-    installedAgentConfigs,
-    isInitMode,
+    ...baseline,
   });
 
   if (!diff.hasContent) return null;
@@ -107,7 +137,7 @@ export const SkillAgentSummary: React.FC<SkillAgentSummaryProps> = ({
             <ScopeLabel>Project</ScopeLabel>
             <Box flexWrap="wrap">
               {diff.projectSkillRows.map((row) => (
-                <SkillRow key={skillRowKey(row)} row={row} />
+                <SkillRow key={skillRowKey(row)} row={row} name={skillNameOf(row.id, skillNames)} />
               ))}
             </Box>
           </Box>
@@ -117,7 +147,7 @@ export const SkillAgentSummary: React.FC<SkillAgentSummaryProps> = ({
             <ScopeLabel>Global</ScopeLabel>
             <Box flexWrap="wrap">
               {diff.globalSkillRows.map((row) => (
-                <SkillRow key={skillRowKey(row)} row={row} />
+                <SkillRow key={skillRowKey(row)} row={row} name={skillNameOf(row.id, skillNames)} />
               ))}
             </Box>
           </Box>

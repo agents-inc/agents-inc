@@ -24,7 +24,6 @@ export type E2eRunner = (typeof E2E_RUNNER_DOORS)[number]["runner"];
 /** Held against the product's reads: a new read nobody clears must move this line before it ships. */
 export const NAMED_ENV_READS = [
   "AGENTS_INC_API_URL",
-  "AGENTS_INC_EDITOR_URL",
   "GIGET_AUTH",
   "XDG_CACHE_HOME",
 ] as const;

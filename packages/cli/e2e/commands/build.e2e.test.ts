@@ -32,6 +32,7 @@ import {
 import { E2E_MARKETPLACE_NAME, E2E_SKILL, E2E_SKILL_IDS } from "../fixtures/expected-values.js";
 import { entryAt, firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 import {
+  renderConfigTsExportingUndefined,
   renderConfigTsWithoutDefaultExport,
   renderUnparseableConfigTs,
 } from "../../src/cli/lib/__tests__/factories/unloadable-config-factories.js";
@@ -431,9 +432,6 @@ describe("build commands", () => {
     });
 
     describe("a marketplace repository whose own config declares nothing", () => {
-      /** Where the warning sends the reader; `loadConfig` reads this file as absent. */
-      const DECLARES_NOTHING = `${DIRS.SOURCE_ROOT}/${FILES.CONFIG_TS} is empty or exports nothing, so this build reads the marketplace with the default layout.`;
-
       async function buildOver(configContents: string) {
         tempDir = await createTempDir();
         await writeTestPackageJson(tempDir, { name: FIXTURE_MARKETPLACE_NAME });
@@ -446,25 +444,40 @@ describe("build commands", () => {
       it.each([
         ["empty", ""],
         ["without an export", renderConfigTsWithoutDefaultExport({ skillsDir: "src/skills" })],
-      ])("should warn about a config that is %s and still build", async (_shape, contents) => {
-        const { exitCode, output } = await buildOver(contents);
+        ["an empty default export", renderConfigTs({})],
+        ["a default export of undefined", renderConfigTsExportingUndefined("undefined")],
+        ["a default export of void 0", renderConfigTsExportingUndefined("void 0")],
+      ])(
+        "should refuse a config that is %s as the marketplace's own, and write nothing",
+        async (_shape, contents) => {
+          const { exitCode, output } = await buildOver(contents);
 
-        expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
-        expect(flattenCliOutput(output)).toContain(DECLARES_NOTHING);
-        expect(output).toContain(MARKETPLACE_GENERATED_LINE);
-        expect(await listFiles(path.join(tempDir, SOURCE_PATHS.PLUGIN_MANIFEST_DIR))).toStrictEqual(
-          [FILES.CATALOG_JSON, FILES.MARKETPLACE_JSON],
-        );
-      });
+          expect(exitCode, output).toBe(EXIT_CODES.ERROR);
+          expect(flattenCliOutput(output)).toContain(STEP_TEXT.NO_VALID_DEFAULT_EXPORT);
+          expect(flattenCliOutput(output)).toContain(STEP_TEXT.MARKETPLACE_OWN_CONFIG);
+          // Compacted: oclif breaks a long path mid-word.
+          expect(
+            compactCliOutput(output),
+            "the refusal names the marketplace's own config",
+          ).toContain(compactCliOutput(path.join(tempDir, DIRS.SOURCE_ROOT, FILES.CONFIG_TS)));
+          expect(output).not.toContain(MARKETPLACE_GENERATED_LINE);
+          expect(
+            await listFiles(path.join(tempDir, SOURCE_PATHS.PLUGIN_MANIFEST_DIR)),
+          ).toStrictEqual([]);
+        },
+      );
 
-      it("should say nothing of a config that declares the layout", async () => {
+      it("should build over a config that declares the layout", async () => {
         const { exitCode, output } = await buildOver(
           renderConfigTs({ skillsDir: SOURCE_PATHS.SKILLS_DIR }),
         );
 
         expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
         expect(output).toContain(MARKETPLACE_GENERATED_LINE);
-        expect(output).not.toContain("exports nothing");
+        expect(flattenCliOutput(output)).not.toContain(STEP_TEXT.NO_VALID_DEFAULT_EXPORT);
+        expect(await listFiles(path.join(tempDir, SOURCE_PATHS.PLUGIN_MANIFEST_DIR))).toStrictEqual(
+          [FILES.CATALOG_JSON, FILES.MARKETPLACE_JSON],
+        );
       });
     });
 

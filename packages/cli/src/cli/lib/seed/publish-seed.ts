@@ -3,7 +3,8 @@ import { STATUS_CODES } from "node:http";
 import { retryAfterSeconds } from "@workspace/api";
 import { z } from "zod";
 
-import { arrivedAsText, jsonBodyOrUndefined, SEED_API_URL, SEED_USER_AGENT } from "./fetch-seed.js";
+import { SEED_API_URL } from "../../consts.js";
+import { arrivedAsText, jsonBodyOrUndefined, SEED_USER_AGENT } from "./fetch-seed.js";
 import { CLI_INVOKE_COMMAND } from "../../consts.js";
 import { plural, truncateText } from "../../utils/string.js";
 

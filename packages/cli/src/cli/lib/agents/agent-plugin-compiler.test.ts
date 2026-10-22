@@ -6,6 +6,7 @@ import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../../consts";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { renderAgentMd } from "../__tests__/content-generators";
 import { firstElement } from "../__tests__/helpers/element-at.js";
+import { readInstallTree } from "../__tests__/helpers/golden-tree.js";
 import { silenceConsole } from "../__tests__/helpers/silence-console.js";
 import { setVerbose } from "../../utils/logger";
 
@@ -130,6 +131,109 @@ describe("agent-plugin-compiler", () => {
       expect(first?.manifest.version).toBe("1.0.0");
       expect(unchanged?.manifest.version).toBe("1.0.0");
       expect(changed?.manifest.version).toBe("2.0.0");
+    });
+  });
+
+  describe("rebuilding an agent plugin over its earlier build", () => {
+    const consoleSpies = silenceConsole(["log", "warn"]);
+
+    async function writeWebDeveloper(): Promise<string> {
+      const agentPath = path.join(agentsDir, "web-developer.md");
+      await writeFile(agentPath, renderAgentMd("web-developer", "Expert frontend developer"));
+      return agentPath;
+    }
+
+    async function compileWebDeveloper() {
+      return firstElement(await compileAllAgentPlugins(agentsDir, outputDir));
+    }
+
+    it.each([
+      [
+        "a file this build does not",
+        (pluginPath: string) => path.join(pluginPath, "agents", "stale-orphan.md"),
+      ],
+      [
+        "an agent file whose bytes this build does not reproduce",
+        (pluginPath: string) => path.join(pluginPath, "agents", "web-developer.md"),
+      ],
+    ])(
+      "takes a new version when its earlier build shipped %s, though the source is unchanged",
+      async (_, earlierBuildFile) => {
+        await writeWebDeveloper();
+        const first = await compileWebDeveloper();
+        const firstTree = await readInstallTree(first.pluginPath);
+        await writeFile(earlierBuildFile(first.pluginPath), "# Left by an earlier build");
+
+        const second = await compileWebDeveloper();
+
+        expect(second.manifest.version).toBe("2.0.0");
+        expect(await readInstallTree(second.pluginPath)).toStrictEqual({
+          files: {
+            ...firstTree.files,
+            ".claude-plugin/plugin.json": firstTree.files[".claude-plugin/plugin.json"]?.replace(
+              '"version": "1.0.0"',
+              '"version": "2.0.0"',
+            ),
+          },
+          emptyDirectories: [],
+        });
+      },
+    );
+
+    it("keeps the version it bumped to when the next rebuild ships the same files", async () => {
+      await writeWebDeveloper();
+      const first = await compileWebDeveloper();
+      await writeFile(path.join(first.pluginPath, "agents", "stale-orphan.md"), "# Stale");
+      const bumped = await compileWebDeveloper();
+      const bumpedTree = await readInstallTree(bumped.pluginPath);
+
+      const rebuilt = await compileWebDeveloper();
+
+      expect(rebuilt.manifest.version).toBe("2.0.0");
+      expect(await readInstallTree(rebuilt.pluginPath)).toStrictEqual(bumpedTree);
+    });
+
+    it("refuses, on every build, a folder holding files but no plugin manifest, and writes nothing", async () => {
+      const agentPath = await writeWebDeveloper();
+      const pluginDir = path.join(outputDir, "agent-web-developer");
+      await mkdir(pluginDir, { recursive: true });
+      await writeFile(path.join(pluginDir, "notes.md"), "# Not written by a build");
+      const refusal = `  Warning: Failed to compile agent from 'web-developer.md': Agent 'web-developer.md' would be built into ${pluginDir}, which holds no ${path.join(PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE)} and is not empty, so no earlier build made it and a rebuild would delete what it holds. Move its contents out, or build into another output directory. File: ${agentPath}`;
+
+      expect(await compileAllAgentPlugins(agentsDir, outputDir)).toStrictEqual([]);
+      expect(await compileAllAgentPlugins(agentsDir, outputDir)).toStrictEqual([]);
+
+      expect(consoleSpies.warn).toHaveBeenCalledTimes(2);
+      expect(consoleSpies.warn).toHaveBeenNthCalledWith(1, refusal);
+      expect(consoleSpies.warn).toHaveBeenNthCalledWith(2, refusal);
+      expect(await readInstallTree(outputDir)).toStrictEqual({
+        files: { "agent-web-developer/notes.md": "# Not written by a build" },
+        emptyDirectories: [],
+      });
+    });
+
+    it("builds into an empty folder no earlier build made", async () => {
+      await writeWebDeveloper();
+      await mkdir(path.join(outputDir, "agent-web-developer"));
+
+      const { manifest } = await compileWebDeveloper();
+
+      expect(manifest.version).toBe("1.0.0");
+      expect(consoleSpies.warn).not.toHaveBeenCalled();
+    });
+
+    it("refuses to build a plugin into the folder holding its own source, and writes nothing", async () => {
+      await writeWebDeveloper();
+      const { pluginPath } = await compileWebDeveloper();
+      const sourceInsidePlugin = path.join(pluginPath, "agents");
+      const outputBefore = await readInstallTree(outputDir);
+
+      expect(await compileAllAgentPlugins(sourceInsidePlugin, outputDir)).toStrictEqual([]);
+
+      expect(consoleSpies.warn).toHaveBeenCalledExactlyOnceWith(
+        `  Warning: Failed to compile agent from 'web-developer.md': Agent 'web-developer.md' would be built into ${pluginPath}, which holds its own source, so building it would overwrite that source. Build into an output directory outside the agents directory. File: ${path.join(sourceInsidePlugin, "web-developer.md")}`,
+      );
+      expect(await readInstallTree(outputDir)).toStrictEqual(outputBefore);
     });
   });
 

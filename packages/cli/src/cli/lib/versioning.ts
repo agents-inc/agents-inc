@@ -73,31 +73,6 @@ function bumpMajorVersion(version: string): string {
   return `${major + 1}.0.0`;
 }
 
-async function readExistingPluginManifest(
-  pluginDir: string,
-  getManifestPath: (dir: string) => string,
-): Promise<{ version: string; contentHash: string | undefined } | null> {
-  const manifestPath = getManifestPath(pluginDir);
-
-  if (!(await fileExists(manifestPath))) {
-    return null;
-  }
-
-  try {
-    const version = await readManifestVersion(manifestPath);
-
-    const hashFilePath = contentHashFileBeside(manifestPath);
-    const contentHash = (await fileExists(hashFilePath))
-      ? (await readFile(hashFilePath)).trim()
-      : undefined;
-
-    return { version, contentHash };
-  } catch (error) {
-    warn(`Failed to read plugin manifest at '${manifestPath}': ${getErrorMessage(error)}`);
-    return null;
-  }
-}
-
 async function readManifestVersion(manifestPath: string): Promise<string> {
   const content = await readFileSafe(manifestPath, MAX_PLUGIN_FILE_SIZE);
   return pluginManifestSchema.parse(JSON.parse(content)).version ?? DEFAULT_VERSION;
@@ -150,33 +125,6 @@ export async function readEarlierBuild(
 export function versionAfterRebuild(earlier: EarlierBuild | null, shippedHash: string): string {
   if (!earlier) return DEFAULT_VERSION;
   return earlier.shippedHash === shippedHash ? earlier.version : bumpMajorVersion(earlier.version);
-}
-
-export async function determinePluginVersion(
-  newHash: string,
-  pluginDir: string,
-  getManifestPath: (dir: string) => string,
-): Promise<{ version: string; contentHash: string }> {
-  const existing = await readExistingPluginManifest(pluginDir, getManifestPath);
-
-  if (!existing) {
-    return {
-      version: DEFAULT_VERSION,
-      contentHash: newHash,
-    };
-  }
-
-  if (existing.contentHash !== newHash) {
-    return {
-      version: bumpMajorVersion(existing.version),
-      contentHash: newHash,
-    };
-  }
-
-  return {
-    version: existing.version,
-    contentHash: newHash,
-  };
 }
 
 export async function writeContentHash(

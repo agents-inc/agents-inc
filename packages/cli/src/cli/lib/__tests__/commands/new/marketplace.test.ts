@@ -154,7 +154,7 @@ describe("new:marketplace command", () => {
           "  3. Replace src/skills/acme-example-skill/ with a skill of your own. Every skill id must begin with 'acme-'",
           "  4. npx agents-inc build plugins",
           "  5. npx agents-inc build marketplace",
-          "  6. Push it to GitHub, then add it from the Marketplace button at https://agentsinc.sh/editor",
+          "  6. Push it to GitHub, then add it from the Marketplace button at http://localhost:5173/editor",
           `  7. npx agents-inc init --from <id> --marketplace ${marketplaceDir}   (from a project — tests your local changes against a configuration built there)`,
           "",
           "",

@@ -90,6 +90,9 @@ export const NO_BACKGROUND_VERSION_CHECK = { AGENTS_INC_SKIP_NEW_VERSION_CHECK: 
 // Unset, the product falls back to the production API; loopback port 1 fails fast instead.
 export const NO_LIVE_SEED_API = { AGENTS_INC_API_URL: "http://127.0.0.1:1" };
 
+// A worker on another machine, so printed links open the live editor; `.invalid` never resolves.
+export const REMOTE_SEED_API = { AGENTS_INC_API_URL: "https://api.agentsinc.invalid" };
+
 const E2E_TEMP_PREFIX = "ai-e2e-";
 const AUTO_HOME_PREFIX = "ai-e2e-home-";
 
@@ -304,7 +307,6 @@ export async function runCLI(
         CC_MARKETPLACE: undefined,
         XDG_CACHE_HOME: undefined,
         GIGET_AUTH: undefined,
-        AGENTS_INC_EDITOR_URL: undefined,
         VITEST: undefined,
         ...options?.env,
         HOME: home,

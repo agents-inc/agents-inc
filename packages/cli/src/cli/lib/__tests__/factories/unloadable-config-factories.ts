@@ -20,6 +20,11 @@ export function renderConfigTsWithNamedExportOnly(config: Record<string, unknown
   return `export const config = ${JSON.stringify(config, null, 2)};\n`;
 }
 
+/** Has a default export, but its value is `undefined` however it is spelt, so it declares nothing. */
+export function renderConfigTsExportingUndefined(spelling: "undefined" | "void 0"): string {
+  return `export default ${spelling};\n`;
+}
+
 /** Loads and has a default export, but it is a string rather than a configuration object. */
 export function renderConfigTsExportingAString(): string {
   return 'export default "just a string";\n';

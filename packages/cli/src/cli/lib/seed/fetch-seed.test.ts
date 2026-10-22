@@ -12,7 +12,8 @@ import { configMockServer } from "@workspace/api-mocks/node";
 import { http, HttpResponse } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchSeedConfig, SEED_API_URL, SEED_USER_AGENT } from "./fetch-seed";
+import { fetchSeedConfig, SEED_USER_AGENT } from "./fetch-seed";
+import { SEED_API_URL } from "../../consts.js";
 import { firstElement } from "../__tests__/helpers/element-at.js";
 import { useMockWorker } from "../__tests__/helpers/mock-worker.js";
 
@@ -234,7 +235,7 @@ describe("the store fetchSeedConfig asks", () => {
     vi.stubEnv(STORE_ADDRESS_VARIABLE, undefined);
     vi.resetModules();
 
-    const { SEED_API_URL: storeAddress } = await import("./fetch-seed");
+    const { SEED_API_URL: storeAddress } = await import("../../consts.js");
 
     expect(storeAddress).toBe("https://api.agentsinc.sh");
   });

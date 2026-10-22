@@ -7,6 +7,8 @@ export {
 
 export { buildMarketplacePluginRef, parseMarketplacePluginRef } from "./plugin-ref";
 
+export { clearEarlierBuild, holdsContentNoBuildMade } from "./earlier-build";
+
 export {
   getUserPluginsDir,
   getProjectPluginsDir,

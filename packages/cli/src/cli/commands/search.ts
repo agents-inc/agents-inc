@@ -3,6 +3,7 @@ import { printTable } from "@oclif/table";
 import { sortBy } from "remeda";
 
 import { BaseCommand } from "../base-command.js";
+import { EDITOR_ADDRESS } from "../consts.js";
 import { loadSource } from "../lib/operations/index.js";
 import type { ResolvedSkill } from "../types/index.js";
 import { STATUS_MESSAGES } from "../utils/messages.js";
@@ -25,7 +26,7 @@ export default class Search extends BaseCommand {
   static description =
     "Read-only catalog browse. Searches the marketplace this installation reads from, " +
     "plus the local skills already on disk, by id, displayName, slug, description, or " +
-    "category. To install one, add it in agentsinc.sh/editor.";
+    `category. To install one, add it in ${EDITOR_ADDRESS}.`;
 
   static examples = [
     {

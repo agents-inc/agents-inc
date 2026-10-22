@@ -54,7 +54,7 @@ result.
 1. web-developer cleans up the implementation without changing behavior
 2. Re-run the suite - it must still pass, unedited
 3. A test that reddens on a behavior-preserving refactor was testing implementation; fix that test
-4. Run the project's typecheck, and fix every error it reports in a test file - a runner that strips
+4. Run the project's typecheck, and fix every error it reports in a test file — a runner that strips
    types runs a test file the compiler rejects
 
 **Hand Off to Developer:**
