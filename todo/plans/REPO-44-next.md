@@ -11,17 +11,17 @@ Card answers: [`outstanding.md`](../outstanding.md), verbatim in the session's
 
 ## 1. Phase A — card rework and fixes (CLI) — built, reviewed and fixed; Phase D reproduces each
 
-| Lane | Work |
-| --- | --- |
-| A1 editor selection | E1 toasts (on: first three names, then "and N more"; off: "X switched off: Y removed"); Q1 a stack's sub-agents stay on with no skills |
-| A2 editor links | E2 a project-made link shows its global items disabled (switch to project scope allowed); R1 also matches a signed-in account's saves |
-| A3 link text | FU1: codexModel warning and carried display names printed sanitised, line breaks folded (security) |
-| A4 doctor | F5a remove this round's skill-folder addition; F5b doctor never uses the saved marketplace copy; doctor's error on two healthy installations |
-| A5 install and load | F3d sub-agents install without a skill that fails to load (warning, no refusal); F9 a project keeps its own description; FU2 carried names over 30 characters |
-| A6 build and misc | P1 agent plugins version by shipped files and drop stale output; Q5 empty marketplace config refused at build; E3 local worker ⇒ local editor everywhere, `AGENTS_INC_EDITOR_URL` removed; `list` long names; FU6 |
-| A7 worker and e2e | FU4 worker refuses escaping ids and file keys; FU5 PostToolUse-only trust case, `completionGate` → `stopHook` |
-| A8 confirm screens (after A3) | Info panel at the question for init/edit/uninstall (`~` plus a line for changed sub-agents; F3c whole global install); F3b "recompiled"; FU3 remedies; no-terminal no-op; the home refusal's advice |
-| A9 www root (done: `/` 301 → `/editor` via `public/_redirects`; editor's About link → `/docs/why`, a call the owner may change) | agentsinc.sh/ goes straight to the editor; the landing page is removed; /docs stays; every link to / fixed |
+| Lane                                                                                                                            | Work                                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A1 editor selection                                                                                                             | E1 toasts (on: first three names, then "and N more"; off: "X switched off: Y removed"); Q1 a stack's sub-agents stay on with no skills                                                                            |
+| A2 editor links                                                                                                                 | E2 a project-made link shows its global items disabled (switch to project scope allowed); R1 also matches a signed-in account's saves                                                                             |
+| A3 link text                                                                                                                    | FU1: codexModel warning and carried display names printed sanitised, line breaks folded (security)                                                                                                                |
+| A4 doctor                                                                                                                       | F5a remove this round's skill-folder addition; F5b doctor never uses the saved marketplace copy; doctor's error on two healthy installations                                                                      |
+| A5 install and load                                                                                                             | F3d sub-agents install without a skill that fails to load (warning, no refusal); F9 a project keeps its own description; FU2 carried names over 30 characters                                                     |
+| A6 build and misc                                                                                                               | P1 agent plugins version by shipped files and drop stale output; Q5 empty marketplace config refused at build; E3 local worker ⇒ local editor everywhere, `AGENTS_INC_EDITOR_URL` removed; `list` long names; FU6 |
+| A7 worker and e2e                                                                                                               | FU4 worker refuses escaping ids and file keys; FU5 PostToolUse-only trust case, `completionGate` → `stopHook`                                                                                                     |
+| A8 confirm screens (after A3)                                                                                                   | Info panel at the question for init/edit/uninstall (`~` plus a line for changed sub-agents; F3c whole global install); F3b "recompiled"; FU3 remedies; no-terminal no-op; the home refusal's advice               |
+| A9 www root (done: `/` 301 → `/editor` via `public/_redirects`; editor's About link → `/docs/why`, a call the owner may change) | agentsinc.sh/ goes straight to the editor; the landing page is removed; /docs stays; every link to / fixed                                                                                                        |
 
 ## 2. Phase B gate and 2b pre-release verify — done
 
@@ -33,7 +33,7 @@ open-questions page); E2's marketplace switch drops a project link's held global
 preview's `resolveDescription` order; FU2 doctor's Codex block beside a Claude installation in one
 project (`discoverLocalSkills` ignores the provider).
 
-## 3. Commit round 1 — CLI 0.172.0 (committing now; owner, 2026-10-22: follow the commit protocol, then push)
+## 3. Commit round 1 — CLI 0.172.0 — committed and pushed (`388fe87b`..`4b090f89`); the owner publishes
 
 Once the gate is green and A9 has landed: commits by area (editor, link text, doctor, install and
 load, build and misc, worker and e2e, confirm screens, www root, findings, `todo/`), then

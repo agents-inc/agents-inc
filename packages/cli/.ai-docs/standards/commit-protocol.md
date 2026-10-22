@@ -1,5 +1,5 @@
 ---
-last_validated: 2026-10-15
+last_validated: 2026-10-22
 ---
 
 # Commit Protocol for AI Agents
@@ -38,6 +38,12 @@ When creating multiple commits in sequence:
 1. ✅ Run tests on the **first commit** only
 2. ✅ Run tests on the **last commit** only
 3. ❌ Skip tests for intermediate commits (use `--no-verify`)
+4. ✅ Before the **last commit**, run `bun run format` from the repository root and include every
+   file it changes in that commit
+
+`--no-verify` skips lint-staged, the only thing that writes formatting. CI's `check-web` runs
+`format:check` and skips the deploy when it fails, and `npm publish`'s `prepublishOnly` runs
+`packages/cli`'s `format:check`.
 
 ## Gates
 
@@ -86,6 +92,7 @@ Every release MUST complete all steps. No exceptions.
 - [ ] Run `bun run generate:compile` — the release commit carries `packages/compile/src/generated/corpus.ts`, which embeds the version, and `bun.lock` if `bun install` moved it
 - [ ] Create `changelogs/{version}.md` with full release notes
 - [ ] Prepend brief summary to `CHANGELOG.md` with link to detailed file
+- [ ] The release commit is the last commit, so run `bun run format` from the root, then from `packages/cli`, whose `format:check` covers every file type rather than TypeScript alone; the release commit carries every file either changes
 - [ ] Release commit title uses em-dash (`—`, not `-`) separator: `chore(release): {version} — {summary}`
 - [ ] Summary references every task ID shipped in the release (e.g. `CLI-823`, `EDITOR-52`)
 - [ ] Every ticket with a `### {ID}` subheading in the detailed `changelogs/{version}.md` MUST have at least one corresponding bullet in the `CHANGELOG.md` summary block for that release. Zero tolerance for "cleanup tickets" that get folded into prose without their own bullet — if a ticket earned a detailed subheading, it earned a summary bullet. Mechanically checkable: `grep -oE '^### [A-Z]+-[0-9]+'` in the detailed file against the IDs inside that release's `CHANGELOG.md` block, diff the sets. **`D-` is no longer the only family** — `CLI-`, `EDITOR-`, `SERVER-`, `REPO-`, `WWW-` and `SKILLS-` all exist, so a grep written for `D-` alone reports parity over an empty set. Runnable from `packages/cli`; empty output passes:
