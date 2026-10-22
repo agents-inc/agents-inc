@@ -1,11 +1,9 @@
 import path from "path";
 import { pruneStaleCompiledAgents } from "../../agents/list-compiled-agents.js";
-import type { AgentCodec } from "../../installation/install-layout.js";
+import { type AgentCodec, agentCodec } from "../../installation/install-layout.js";
 import { getErrorMessage } from "../../../utils/errors.js";
 import { remove, removeDirIfEmpty } from "../../../utils/fs.js";
 import type { AgentName } from "../../../types/index.js";
-
-const AGENT_FILE_EXTENSION = ".md";
 
 export type RemoveCompiledAgentsOptions = {
   agentsDir: string;
@@ -27,14 +25,16 @@ export type RemoveCompiledAgentsResult = {
 
 type RemovalOutcome = { name: AgentName; ok: true } | { name: AgentName; ok: false; error: string };
 
-/** Also removes `agentsDir` when nothing at all is left in it. */
+/**
+ * Also removes `agentsDir` when nothing at all is left in it; the `.claude/` above is uninstall's.
+ */
 export async function removeCompiledAgents(
   options: RemoveCompiledAgentsOptions,
 ): Promise<RemoveCompiledAgentsResult> {
   const outcomes = await Promise.all(
     options.agents.map((name) => removeCompiledAgentFile(options.agentsDir, name)),
   );
-  await tidyEmptiedAgentsDir(options.agentsDir);
+  await removeDirIfEmpty(options.agentsDir);
 
   return {
     removed: outcomes.flatMap((outcome) => (outcome.ok ? [outcome.name] : [])),
@@ -47,7 +47,7 @@ export async function removeCompiledAgents(
 /** Hand-authored agents survive; the directory goes only when nothing at all remains. */
 export async function pruneCompiledAgents(options: PruneCompiledAgentsOptions): Promise<void> {
   await pruneStaleCompiledAgents(options.agentsDir, options.keep, options.codec);
-  await tidyEmptiedAgentsDir(options.agentsDir);
+  await removeDirIfEmpty(options.agentsDir);
 }
 
 async function removeCompiledAgentFile(
@@ -55,14 +55,9 @@ async function removeCompiledAgentFile(
   name: AgentName,
 ): Promise<RemovalOutcome> {
   try {
-    await remove(path.join(agentsDir, `${name}${AGENT_FILE_EXTENSION}`));
+    await remove(path.join(agentsDir, `${name}${agentCodec("claude").extension}`));
     return { name, ok: true };
   } catch (error) {
     return { name, ok: false, error: getErrorMessage(error) };
   }
-}
-
-/** Filesystem emptiness, not roster emptiness; `.claude/` above it is uninstall's decision. */
-async function tidyEmptiedAgentsDir(agentsDir: string): Promise<void> {
-  await removeDirIfEmpty(agentsDir);
 }

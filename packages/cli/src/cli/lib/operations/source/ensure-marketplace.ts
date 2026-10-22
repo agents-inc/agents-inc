@@ -17,23 +17,13 @@ export async function ensureMarketplace(
   sourceResult: SourceLoadResult,
   host: PluginHost,
 ): Promise<MarketplaceResult> {
-  const source = sourceResult.sourceConfig.source;
+  const marketplace = await resolveMarketplaceName(sourceResult);
+  if (marketplace === null) return { marketplace: null, registered: false };
 
-  if (!sourceResult.marketplace) {
-    try {
-      const marketplaceResult = await fetchMarketplace(source);
-      sourceResult.marketplace = marketplaceResult.marketplace.name;
-    } catch (error) {
-      warn(`Could not resolve a marketplace from '${source}': ${getErrorMessage(error)}`);
-      return { marketplace: null, registered: false };
-    }
-  }
-
-  const marketplace = sourceResult.marketplace;
   const exists = await host.marketplaceExists(marketplace);
 
   if (!exists) {
-    const marketplaceSource = source.replace(/^github:/, "");
+    const marketplaceSource = sourceResult.sourceConfig.source.replace(/^github:/, "");
     await host.addMarketplace(marketplaceSource);
     return { marketplace, registered: true };
   }
@@ -45,4 +35,19 @@ export async function ensureMarketplace(
   }
 
   return { marketplace, registered: false };
+}
+
+/** Fetched, and recorded on `sourceResult`, when the load left it unresolved. */
+async function resolveMarketplaceName(sourceResult: SourceLoadResult): Promise<string | null> {
+  if (sourceResult.marketplace) return sourceResult.marketplace;
+
+  const source = sourceResult.sourceConfig.source;
+  try {
+    const marketplaceResult = await fetchMarketplace(source);
+    sourceResult.marketplace = marketplaceResult.marketplace.name;
+    return sourceResult.marketplace;
+  } catch (error) {
+    warn(`Could not resolve a marketplace from '${source}': ${getErrorMessage(error)}`);
+    return null;
+  }
 }

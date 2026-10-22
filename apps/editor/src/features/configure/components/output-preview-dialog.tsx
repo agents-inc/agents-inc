@@ -22,7 +22,10 @@ import type {
   OutputPreview,
   PreviewNode,
 } from "@/features/configure/lib/output-preview"
-import type { PreviewToken } from "@/features/configure/lib/render-tokens"
+import type {
+  PreviewLang,
+  PreviewToken,
+} from "@/features/configure/lib/render-tokens"
 import type { Provider } from "@workspace/compile"
 import type { SeedPayload } from "@workspace/matrix"
 import type { KeyboardEvent } from "react"
@@ -145,8 +148,7 @@ export function OutputPreviewDialog({ config }: { config: ConfigSelection }) {
   const seated = useCatalogStore((state) => state.matrix)
   const payload = useMemo(
     () => toSeedPayload(config),
-    // `seated` is unread but remints the payload when the catalogue swaps.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `seated` is unread but remints the payload when the catalogue swaps
     [config, seated]
   )
   const provider = useUiStore((state) => state.provider)
@@ -363,6 +365,15 @@ function Row({
 const uncoloured = (body: string): PreviewToken[][] =>
   body === "" ? [] : body.split("\n").map((line) => [{ content: line }])
 
+async function colouredLines(
+  body: string,
+  lang: PreviewLang
+): Promise<PreviewToken[][]> {
+  const { renderTokens } =
+    await import("@/features/configure/lib/render-tokens")
+  return renderTokens(body, lang)
+}
+
 // Plain text first, highlighted tokens when they arrive; if Shiki never loads
 // the text stays readable.
 function ContentPane({
@@ -386,9 +397,7 @@ function ContentPane({
     const attempt = new AbortController()
 
     void (async () => {
-      const { renderTokens } =
-        await import("@/features/configure/lib/render-tokens")
-      const lines = await renderTokens(body, lang)
+      const lines = await colouredLines(body, lang)
       if (!attempt.signal.aborted) {
         setColoured((read) => ({ ...read, [id]: lines }))
       }

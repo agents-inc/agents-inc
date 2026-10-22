@@ -67,6 +67,7 @@ export async function generateMarketplace(
   verbose(`Found ${manifestFiles.length} plugin manifests`);
 
   const plugins: MarketplacePlugin[] = [];
+  const rootWithoutDotSlash = options.pluginRoot.replace(/^\.\//, "");
 
   for (const manifestFile of manifestFiles) {
     const pluginDirName = pluginDirNameOf(manifestFile);
@@ -78,11 +79,7 @@ export async function generateMarketplace(
       continue;
     }
 
-    const plugin = convertManifestToMarketplacePlugin(
-      manifest,
-      options.pluginRoot.replace(/^\.\//, ""),
-      pluginDirName,
-    );
+    const plugin = convertManifestToMarketplacePlugin(manifest, rootWithoutDotSlash, pluginDirName);
     plugins.push(plugin);
     verbose(`  [OK] ${plugin.name}`);
   }

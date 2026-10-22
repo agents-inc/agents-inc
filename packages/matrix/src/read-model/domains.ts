@@ -53,6 +53,8 @@ const DOMAIN_POSITION = new Map(
   DOMAIN_ORDER.map((domain, index) => [domain, index])
 )
 
+const positionOf = (domain: Domain) =>
+  DOMAIN_POSITION.get(domain) ?? DOMAIN_ORDER.length
+
 export const compareDomains = (a: Domain, b: Domain) =>
-  (DOMAIN_POSITION.get(a) ?? DOMAIN_ORDER.length) -
-  (DOMAIN_POSITION.get(b) ?? DOMAIN_ORDER.length)
+  positionOf(a) - positionOf(b)

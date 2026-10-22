@@ -19,6 +19,7 @@ import {
   stacksConfigSchema,
 } from "../src/cli/lib/schemas.ts";
 import { CATEGORIES } from "../src/cli/types/generated/source-types.ts";
+import { isRecord } from "../src/cli/utils/type-guards.ts";
 
 import type { Options as PrettierOptions } from "prettier";
 
@@ -47,21 +48,20 @@ type SchemaEntry = {
  * superRefine (z.record(z.enum()) would make every key mandatory), which JSON Schema cannot express.
  */
 function injectSubcategoryPropertyNames(obj: unknown): void {
-  if (obj === null || typeof obj !== "object") return;
   if (Array.isArray(obj)) {
     for (const item of obj) injectSubcategoryPropertyNames(item);
     return;
   }
-  const record = obj as Record<string, unknown>;
+  if (!isRecord(obj)) return;
 
-  const propNames = record.propertyNames as Record<string, unknown> | undefined;
-  const additionalProps = record.additionalProperties as Record<string, unknown> | undefined;
+  const propNames = obj.propertyNames;
+  const additionalProps = obj.additionalProperties;
   if (
-    record.type === "object" &&
-    propNames &&
+    obj.type === "object" &&
+    isRecord(propNames) &&
     propNames.type === "string" &&
     !propNames.enum &&
-    additionalProps &&
+    isRecord(additionalProps) &&
     additionalProps.anyOf
   ) {
     // The skill id pattern is what identifies a stackAgentConfig.
@@ -71,7 +71,7 @@ function injectSubcategoryPropertyNames(obj: unknown): void {
     }
   }
 
-  for (const value of Object.values(record)) {
+  for (const value of Object.values(obj)) {
     injectSubcategoryPropertyNames(value);
   }
 }

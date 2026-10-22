@@ -46,6 +46,8 @@ const cloudflareOptionsFor = (env?: Env) =>
 // Built per request because its bindings exist only inside a fetch. Called
 // without `env` by `@better-auth/cli generate`.
 export const createAuth = (env?: Env) => {
+  const servedOverHttps = env?.WEB_ORIGIN.startsWith("https://") ?? false
+
   const options = {
     basePath: AUTH_BASE_PATH,
     ...(env ? { baseURL: env.AUTH_BASE_URL } : {}),
@@ -65,13 +67,10 @@ export const createAuth = (env?: Env) => {
         // Same registrable domain, so the cookie is same-site and needs only the
         // parent domain. `secure` follows the scheme: a secure cookie is dropped
         // over plain http.
-        crossSubDomainCookies: env?.WEB_ORIGIN.startsWith("https://")
+        crossSubDomainCookies: servedOverHttps
           ? { enabled: true, domain: ".agentsinc.sh" }
           : { enabled: false },
-        defaultCookieAttributes: {
-          sameSite: "lax",
-          secure: env?.WEB_ORIGIN.startsWith("https://") ?? false,
-        },
+        defaultCookieAttributes: { sameSite: "lax", secure: servedOverHttps },
       },
 
       rateLimit: {

@@ -17,7 +17,7 @@ import {
   UNOFFERED_PLACEMENT_ERROR,
   offersPlacement,
   patchForPress,
-  placementRefusal,
+  pressRefusal,
 } from "@/features/configure/lib/provider"
 import { track } from "@/lib/analytics/track"
 import { freshEntry, isEjectOnly, useConfigStore } from "@/stores/config-store"
@@ -79,6 +79,7 @@ export function SkillCell({
 
   const { skill, entry, selected, incompatible } = view
   const open = openPanelSkillId === skill.id
+  const inLastColumn = column === columns - 1
   const ejectOnly = isEjectOnly(skill.id)
   const cellRef = useRef<HTMLDivElement>(null)
 
@@ -107,12 +108,8 @@ export function SkillCell({
     if (!incompatible) togglePanel(skill.id)
   }
 
-  // Asked of the placement the press would produce.
   const refusalFor = (patch: Partial<SkillOptions>) =>
-    placementRefusal(provider, {
-      ...options,
-      ...patchForPress(provider, patch),
-    })
+    pressRefusal(provider, options, patch)
 
   const flip = (patch: Partial<SkillOptions>) => {
     if (incompatible || refusalFor(patch) !== undefined) return
@@ -194,7 +191,7 @@ export function SkillCell({
                 <InfoTip
                   label={UNOFFERED_PLACEMENT_ERROR.lead}
                   glyph="warning"
-                  flip={column === columns - 1}
+                  flip={inLastColumn}
                   className="pointer-events-auto cursor-help text-error-ink outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 >
                   <b className="font-medium text-error-ink">
@@ -284,7 +281,7 @@ export function SkillCell({
           skillId={skill.id}
           sourceUrl={skill.sourceUrl}
           entry={options}
-          flip={column === columns - 1}
+          flip={inLastColumn}
         />
       )}
     </LatticeCell>

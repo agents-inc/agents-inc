@@ -135,7 +135,7 @@ function auditEntryFor(skillId: SkillId): SkillAuditEntry | undefined {
   return Object.hasOwn(skillAudit, skillId) ? skillAudit[skillId] : undefined;
 }
 
-function fenceDescription(matrix: MergedSkillsMatrix, skill: ResolvedSkill): string {
+function fenceDescription(skill: ResolvedSkill): string {
   if (skill.requires.length > 0) return "it carries a 'requires' rule";
   return `its category '${skill.category}' is exclusive`;
 }
@@ -153,7 +153,7 @@ function checkAuditVerdictContradictions(matrix: MergedSkillsMatrix): MatrixHeal
     .map(([skillId, skill]) => ({
       severity: "error" as const,
       finding: "audit-verdict-contradiction",
-      details: `Skill '${skillId}' is audited 'universal' but ${fenceDescription(matrix, skill)}`,
+      details: `Skill '${skillId}' is audited 'universal' but ${fenceDescription(skill)}`,
     }));
 }
 

@@ -3,14 +3,14 @@ import { isShippedSkillId, skillById, type CatalogSkill } from "./catalog"
 import {
   PRELOAD_DEFAULTS,
   createLoadStateResolver,
+  isDomainlessRoleAgent,
   type LoadState,
   type PreloadDefaults,
   type RoleFlavor,
 } from "./preload-defaults"
 import { SUB_AGENT_GROUPS, type SubAgent } from "./sub-agents"
 
-// Which sub-agents a picked skill reaches and how each loads it; shared by the
-// editor and the CLI. Browser-safe: the editor bundles it.
+// Browser-safe: the editor bundles it.
 
 export type AssignmentTarget = {
   agentId: AgentName
@@ -28,13 +28,9 @@ const ROSTER: readonly SubAgent[] = SUB_AGENT_GROUPS.flatMap(
   (group) => group.agents
 )
 
-// `reviewer` and `pm`: grouped under meta for display, but cross-domain by role.
-const isCrossDomainRoleAgent = (agent: SubAgent) =>
-  agent.domainId === "meta" && agent.flavor !== "meta"
-
 const implementationDomainReach = (domainId: CatalogSkill["domainId"]) =>
   ROSTER.filter(
-    (agent) => agent.domainId === domainId || isCrossDomainRoleAgent(agent)
+    (agent) => agent.domainId === domainId || isDomainlessRoleAgent(agent.id)
   )
 
 // Categories a flavor reaches even without a row naming it. Targeting only:

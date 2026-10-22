@@ -2,7 +2,12 @@ import { Link } from "@tanstack/react-router"
 import { Glyph } from "@workspace/ui/components/glyph"
 import { useEffect, useState } from "react"
 
-import { signIn, signOut, type AuthRefusal } from "@/lib/api/auth"
+import {
+  signIn,
+  signOut,
+  type AuthRefusal,
+  type AuthResult,
+} from "@/lib/api/auth"
 import { useTheme } from "@/lib/theme"
 import { CONFIGURE_SEARCH_DEFAULTS } from "@/routes/search"
 import { useAccountStore } from "@/stores/account-store"
@@ -90,6 +95,9 @@ function ThemeToggle() {
 type AuthAction = "sign-in" | "sign-out"
 
 type Attempt = { action: AuthAction; refusal: AuthRefusal }
+
+const attemptOf = (action: AuthAction, result: AuthResult): Attempt | null =>
+  result.ok ? null : { action, refusal: result.refusal }
 
 const REFUSAL_COPY: Record<AuthAction, Record<AuthRefusal, string>> = {
   "sign-in": {
@@ -212,17 +220,13 @@ function SignIn({
 }: {
   onAttempt: (attempt: Attempt | null) => void
 }) {
+  const enter = async () => onAttempt(attemptOf("sign-in", await signIn()))
+
   return (
     <button
       type="button"
-      onClick={() =>
-        void signIn().then((result) =>
-          onAttempt(
-            result.ok ? null : { action: "sign-in", refusal: result.refusal }
-          )
-        )
-      }
-      className="group flex cursor-pointer items-center gap-[0.4375rem] outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      onClick={() => void enter()}
+      className={`${RAIL_CONTROL_CLASS} group flex items-center gap-[0.4375rem]`}
     >
       <span
         aria-hidden
@@ -247,19 +251,17 @@ function SignedIn({
   onAttempt: (attempt: Attempt | null) => void
   onRefresh: () => Promise<void>
 }) {
+  const leave = async () => {
+    onAttempt(attemptOf("sign-out", await signOut()))
+    await onRefresh()
+  }
+
   return (
     <button
       type="button"
       aria-label="Sign out"
-      onClick={() =>
-        void signOut().then((result) => {
-          onAttempt(
-            result.ok ? null : { action: "sign-out", refusal: result.refusal }
-          )
-          return onRefresh()
-        })
-      }
-      className="group flex max-w-full min-w-0 cursor-pointer items-center gap-[0.4375rem] outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      onClick={() => void leave()}
+      className={`${RAIL_CONTROL_CLASS} ${BOUNDED_CLASS} group flex items-center gap-[0.4375rem]`}
     >
       <span
         aria-hidden
@@ -292,7 +294,7 @@ function AccountRow({
   return (
     <>
       {attempt && <RefusalLine attempt={attempt} />}
-      <div className="relative max-w-full min-w-0">
+      <div className={`relative ${BOUNDED_CLASS}`}>
         {name === null ? (
           <SignIn onAttempt={onAttempt} />
         ) : (

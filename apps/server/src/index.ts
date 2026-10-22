@@ -26,6 +26,7 @@ import {
 } from "./stacks"
 
 import type { RouteHandler, RouteHook } from "@hono/zod-openapi"
+import type { SeedPayload } from "@workspace/matrix/seed"
 import type { Context } from "hono"
 
 type WorkerEnv = { Bindings: Env }
@@ -44,16 +45,18 @@ const CONFIG_WRITE_WINDOW_SECONDS = 60
 
 const RETRY_AFTER_HEADER = "retry-after"
 
+const base64UrlOf = (bytes: ArrayBuffer) =>
+  btoa(String.fromCharCode(...new Uint8Array(bytes)))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+
 // The id is the payload's hash, so a stored payload never changes under its id.
 const contentAddress = async (body: string) => {
   const digest = await crypto.subtle.digest(
     "SHA-256",
     new TextEncoder().encode(body)
   )
-  return btoa(String.fromCharCode(...new Uint8Array(digest)))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .slice(0, ID_LENGTH)
+  return base64UrlOf(digest).slice(0, ID_LENGTH)
 }
 
 const configIdSchema = z
@@ -189,6 +192,19 @@ const logKvFailure = (operation: string, error: unknown) =>
 const logCorruptPayload = (id: string, error: unknown) =>
   console.error({ event: "corrupt_payload", id, message: messageOf(error) })
 
+type StoredPayload =
+  { success: true; data: SeedPayload } | { success: false; error: unknown }
+
+// Bytes that are not JSON and JSON that is not a payload keep their own
+// complaints, so an operator can tell them apart.
+const parseStoredPayload = (stored: string): StoredPayload => {
+  try {
+    return seedPayloadSchema.safeParse(JSON.parse(stored))
+  } catch (error) {
+    return { success: false, error }
+  }
+}
+
 // `v` is a literal, so any wrong or missing version is one issue on this path.
 const namesAnotherSeedVersion = (error: z.ZodError) =>
   error.issues.some((issue) => issue.path.length === 1 && issue.path[0] === "v")
@@ -249,15 +265,7 @@ const getConfig: RouteHandler<typeof getConfigRoute, WorkerEnv> = async (c) => {
 
   // No write of ours stores an invalid payload, so one here is an integrity
   // failure: 500.
-  let payload: unknown
-  try {
-    payload = JSON.parse(stored)
-  } catch (error) {
-    logCorruptPayload(id, error)
-    return c.text("Stored config is unreadable", 500)
-  }
-
-  const parsed = seedPayloadSchema.safeParse(payload)
+  const parsed = parseStoredPayload(stored)
   if (!parsed.success) {
     logCorruptPayload(id, parsed.error)
     return c.text("Stored config is unreadable", 500)
@@ -308,37 +316,53 @@ const tunnelRoute = createRoute({
   },
 })
 
+type EnvelopeAddress =
+  { addressed: true; dsn: URL } | { addressed: false; refusal: string }
+
+const UNREADABLE_ENVELOPE = "Not a readable envelope"
+
+// The header is the envelope's first line.
+const addressOf = (envelope: string): EnvelopeAddress => {
+  const headerEnd = envelope.indexOf("\n")
+  if (headerEnd === -1) {
+    return { addressed: false, refusal: UNREADABLE_ENVELOPE }
+  }
+
+  try {
+    // Untrusted JSON; `dsn` is checked on the next line.
+    const header = JSON.parse(envelope.slice(0, headerEnd)) as { dsn?: string }
+    if (!header.dsn) {
+      return { addressed: false, refusal: "Envelope carries no DSN" }
+    }
+    return { addressed: true, dsn: new URL(header.dsn) }
+  } catch {
+    return { addressed: false, refusal: UNREADABLE_ENVELOPE }
+  }
+}
+
+// The DSN's path is `/<projectId>`.
+const isThisProject = (dsn: URL, env: Env) =>
+  dsn.hostname === env.SENTRY_INGEST_HOST &&
+  dsn.pathname.slice(1) === env.SENTRY_PROJECT_ID
+
+const relayToSentry = (envelope: string, env: Env) =>
+  fetch(
+    `https://${env.SENTRY_INGEST_HOST}/api/${env.SENTRY_PROJECT_ID}/envelope/`,
+    { method: "POST", body: envelope }
+  )
+
 const tunnelEnvelope: RouteHandler<typeof tunnelRoute, WorkerEnv> = async (
   c
 ) => {
   const envelope = await c.req.text()
 
-  const headerEnd = envelope.indexOf("\n")
-  if (headerEnd === -1) return c.text("Not a readable envelope", 400)
-
-  let dsn: URL
-  try {
-    // Untrusted JSON; `dsn` is checked on the next line.
-    const header = JSON.parse(envelope.slice(0, headerEnd)) as { dsn?: string }
-    if (!header.dsn) return c.text("Envelope carries no DSN", 400)
-    dsn = new URL(header.dsn)
-  } catch {
-    return c.text("Not a readable envelope", 400)
-  }
-
-  // The DSN's path is `/<projectId>`.
-  const projectId = dsn.pathname.slice(1)
-  if (
-    dsn.hostname !== c.env.SENTRY_INGEST_HOST ||
-    projectId !== c.env.SENTRY_PROJECT_ID
-  ) {
+  const address = addressOf(envelope)
+  if (!address.addressed) return c.text(address.refusal, 400)
+  if (!isThisProject(address.dsn, c.env)) {
     return c.text("Envelope is addressed to another project", 403)
   }
 
-  const upstream = await fetch(
-    `https://${c.env.SENTRY_INGEST_HOST}/api/${projectId}/envelope/`,
-    { method: "POST", body: envelope }
-  )
+  const upstream = await relayToSentry(envelope, c.env)
 
   // Sentry's body is withheld so the route cannot be used to probe.
   return new Response(null, { status: upstream.status })

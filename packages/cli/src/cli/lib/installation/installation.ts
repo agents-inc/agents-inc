@@ -2,7 +2,7 @@ import os from "os";
 import path from "path";
 import { fileExists } from "../../utils/fs";
 import { ConfigLoadError, loadProjectConfigFromDir } from "../configuration/project-config";
-import { CLAUDE_DIR, PLUGINS_SUBDIR, EJECT_SOURCE } from "../../consts";
+import { CLAUDE_DIR, PLUGINS_SUBDIR, EJECT_SOURCE, STANDARD_DIRS } from "../../consts";
 import { getProjectConfigPath } from "./install-base-dir";
 import { agentsDir, providerInUse } from "./install-layout";
 import type { ProjectConfig, SkillConfig, SkillScope } from "../../types/config";
@@ -76,7 +76,11 @@ async function detectInstallationInDir(
     configPath,
     agentsDir: agentsDir(provider, scope, dir),
     // Mixed mode uses the local skills dir, as eject does.
-    skillsDir: path.join(dir, CLAUDE_DIR, mode === "plugin" ? PLUGINS_SUBDIR : "skills"),
+    skillsDir: path.join(
+      dir,
+      CLAUDE_DIR,
+      mode === "plugin" ? PLUGINS_SUBDIR : STANDARD_DIRS.SKILLS,
+    ),
     projectDir: dir,
   };
 }

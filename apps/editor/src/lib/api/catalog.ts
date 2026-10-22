@@ -1,6 +1,6 @@
 import { matrixSchema, type Matrix } from "@workspace/matrix/matrix-schema"
 
-import { reportIssue } from "@/lib/observability/report"
+import { reportIssue, reportableIssues } from "@/lib/observability/report"
 
 // A marketplace's catalogue, fetched from GitHub directly so an org's catalogue
 // and token never pass through our worker. A failure carries a kind, because
@@ -81,10 +81,7 @@ export type CatalogResult =
 // The statuses a token can change.
 const TOKEN_MIGHT_FIX = new Set([401, 403, 404])
 
-// Paths and codes, never values: a private marketplace's skill names are the
-// org's own.
 const wholePath = (path: PropertyKey[]) => path.join(".") || "(root)"
-const firstSegment = (path: PropertyKey[]) => String(path[0] ?? "(root)")
 
 /**
  * `shown` keeps the whole path, for the visitor's own dialog. `reported` keeps
@@ -96,9 +93,7 @@ const issuesOf = (error: {
   issues: { path: PropertyKey[]; code: string }[]
 }): CatalogIssues => ({
   shown: error.issues.map((issue) => `${wholePath(issue.path)}: ${issue.code}`),
-  reported: error.issues.map(
-    (issue) => `${firstSegment(issue.path)}: ${issue.code}`
-  ),
+  reported: reportableIssues(error),
 })
 
 const authHeaders = (token: string | undefined) =>

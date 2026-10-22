@@ -3,7 +3,7 @@ import { persist } from "zustand/middleware"
 import { z } from "zod"
 
 import { canonicalMarketplaceRef } from "@/lib/api/catalog"
-import { reportIssue } from "@/lib/observability/report"
+import { reportIssue, reportableIssues } from "@/lib/observability/report"
 
 // Saved marketplaces keyed by ref, each with the token that reached it, and the
 // chosen one. Keyed so a token is only ever spent on the repository it is filed
@@ -12,8 +12,7 @@ import { reportIssue } from "@/lib/observability/report"
 
 const STORAGE_KEY = "agents-inc:marketplace:v1"
 
-// The shape's version, not the slot's (`v1` in the key). v2 canonicalised the
-// keys.
+// The shape's version, not the slot's (`v1` in the key).
 const PERSIST_VERSION = 2
 
 // Empty means absent, so "never set" and "cleared" need no third state.
@@ -68,9 +67,7 @@ export const readSavedMarketplaces = (
       persistVersion: PERSIST_VERSION,
       // Field names only: a path under `saved` is a repository the visitor
       // named.
-      issues: parsed.error.issues.map(
-        (issue) => `${String(issue.path[0] ?? "(root)")}: ${issue.code}`
-      ),
+      issues: reportableIssues(parsed.error),
     })
     return EMPTY
   }
@@ -150,6 +147,5 @@ export const useMarketplaceStore = create<MarketplaceState>()(
   )
 )
 
-/** The token for one marketplace, `""` when none is held. */
 export const tokenFor = (marketplace: string) =>
   useMarketplaceStore.getState().saved[marketplace] ?? ""

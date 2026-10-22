@@ -12,10 +12,14 @@ import {
   providerNamedBy,
 } from "../lib/installation/provider-flag.js";
 import { getInstallationInfo, formatInstallationDisplay } from "../lib/plugins/index.js";
-import { detectInstallation, INSTALL_MODE_LABELS } from "../lib/installation/installation.js";
+import {
+  detectInstallation,
+  INSTALL_MODE_LABELS,
+  type Installation,
+} from "../lib/installation/installation.js";
 import { loadProjectConfig } from "../lib/configuration/project-config.js";
 import { SkillAgentSummary } from "../components/common/skill-agent-summary.js";
-import type { AgentScopeConfig, SkillConfig } from "../types/config.js";
+import type { AgentScopeConfig, ProjectConfig, SkillConfig } from "../types/config.js";
 
 type ListViewProps = {
   mode: string;
@@ -96,40 +100,39 @@ export default class List extends BaseCommand {
     await this.ensureConfigReadable(process.cwd());
 
     const installation = await detectInstallation();
-
-    if (!installation) {
-      this.log("No installation found.");
-      this.log(`Run '${CLI_INVOKE_COMMAND} init' to create one.`);
-      return;
-    }
+    if (!installation) return this.reportNoInstallation();
 
     const loaded = await loadProjectConfig(installation.projectDir);
+    if (!loaded?.config || !process.stdin.isTTY) return this.printInstallationInfo();
 
-    if (!loaded?.config || !process.stdin.isTTY) {
-      const info = await getInstallationInfo();
-      if (info) {
-        this.log("");
-        this.log(formatInstallationDisplay(info));
-        this.log("");
-      }
-      return;
-    }
-
-    const { config } = loaded;
-    const modeLabel = INSTALL_MODE_LABELS[installation.mode];
-    const activeSkills = config.skills.filter((s) => !s.excluded);
-    const activeAgents = config.agents.filter((a) => !a.excluded);
-
-    const { waitUntilExit, clear } = render(
-      <ListView
-        mode={modeLabel}
-        source={config.marketplace}
-        skillConfigs={activeSkills}
-        agentConfigs={activeAgents}
-      />,
-    );
-
-    await waitUntilExit();
-    clear();
+    await showListView(installation, loaded.config);
   }
+
+  private reportNoInstallation(): void {
+    this.log("No installation found.");
+    this.log(`Run '${CLI_INVOKE_COMMAND} init' to create one.`);
+  }
+
+  private async printInstallationInfo(): Promise<void> {
+    const info = await getInstallationInfo();
+    if (!info) return;
+
+    this.log("");
+    this.log(formatInstallationDisplay(info));
+    this.log("");
+  }
+}
+
+async function showListView(installation: Installation, config: ProjectConfig): Promise<void> {
+  const { waitUntilExit, clear } = render(
+    <ListView
+      mode={INSTALL_MODE_LABELS[installation.mode]}
+      source={config.marketplace}
+      skillConfigs={config.skills.filter((skill) => !skill.excluded)}
+      agentConfigs={config.agents.filter((agent) => !agent.excluded)}
+    />,
+  );
+
+  await waitUntilExit();
+  clear();
 }

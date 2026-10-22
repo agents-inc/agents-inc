@@ -155,9 +155,7 @@ export function Composer() {
   const discard = () => {
     setProposal(null)
     setAppliedIds([])
-    const field = fieldRef.current
-    if (!field) return
-    field.focus()
+    fieldRef.current?.focus()
   }
 
   return (

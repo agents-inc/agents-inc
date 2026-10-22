@@ -1,8 +1,7 @@
-import type { ComponentProps, KeyboardEvent } from "react"
+import type { ComponentProps } from "react"
 
+import { activateOnEnterOrSpace } from "@workspace/ui/lib/button-role"
 import { cn } from "@workspace/ui/lib/utils"
-
-const ACTIVATION_KEYS = ["Enter", " "]
 
 // The `$` is a CSS `::before`, so it is outside the accessibility tree, selection and
 // `textContent`.
@@ -38,15 +37,6 @@ function CommandBlock({
       <code className="font-mono">{children}</code>
     </div>
   )
-}
-
-// A real click, as a native button does, so pointer and keyboard share one handler.
-function activateOnEnterOrSpace(event: KeyboardEvent<HTMLDivElement>) {
-  if (!ACTIVATION_KEYS.includes(event.key)) return
-
-  // Space would scroll the dialog otherwise.
-  event.preventDefault()
-  event.currentTarget.click()
 }
 
 export { CommandBlock }

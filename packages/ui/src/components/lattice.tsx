@@ -1,9 +1,8 @@
 import { cva, type VariantProps } from "class-variance-authority"
-import type { ComponentProps, KeyboardEvent } from "react"
+import type { ComponentProps } from "react"
 
+import { activateOnEnterOrSpace } from "@workspace/ui/lib/button-role"
 import { cn } from "@workspace/ui/lib/utils"
-
-const ACTIVATION_KEYS = ["Enter", " "]
 
 // Padding equals each card's line inset, so edge cards carry the same white as inner ones.
 const latticeVariants = cva("grid p-lattice", {
@@ -157,15 +156,6 @@ function LatticeRow({
       {...props}
     />
   )
-}
-
-// A real click, so pointer and keyboard share one handler.
-function activateOnEnterOrSpace(event: KeyboardEvent<HTMLDivElement>) {
-  if (!ACTIVATION_KEYS.includes(event.key)) return
-
-  // Space would scroll the dialog otherwise.
-  event.preventDefault()
-  event.currentTarget.click()
 }
 
 export {

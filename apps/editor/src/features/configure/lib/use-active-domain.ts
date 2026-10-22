@@ -34,10 +34,13 @@ export const stopsUnder = (
   )
 }
 
+const firstTabDomain = (strip: Element) =>
+  strip.querySelector(`[${DOMAIN_TAB}]`)?.getAttribute(DOMAIN_TAB) ?? ""
+
 const domainsDrawn = (anchors: readonly HTMLElement[], strip: Element) =>
   anchors.length > 0
     ? anchors.map((anchor) => anchor.getAttribute(DOMAIN_ANCHOR) ?? "")
-    : [strip.querySelector(`[${DOMAIN_TAB}]`)?.getAttribute(DOMAIN_TAB) ?? ""]
+    : [firstTabDomain(strip)]
 
 const tabBox = (strip: Element, domainId: string): TabBox => {
   const tab = strip.querySelector(`[${DOMAIN_TAB}="${domainId}"]`)

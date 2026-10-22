@@ -10,6 +10,7 @@ import {
   PLUGINS_SUBDIR,
   PLUGIN_MANIFEST_DIR,
   PLUGIN_MANIFEST_FILE,
+  STANDARD_DIRS,
 } from "../../consts";
 import type { PluginManifest } from "../../types";
 import { pluginManifestSchema } from "../schemas";
@@ -24,7 +25,7 @@ export function getProjectPluginsDir(projectDir?: string): string {
 }
 
 export function getPluginAgentsDir(pluginDir: string): string {
-  return path.join(pluginDir, "agents");
+  return path.join(pluginDir, STANDARD_DIRS.AGENTS);
 }
 
 export function getPluginManifestPath(pluginDir: string): string {

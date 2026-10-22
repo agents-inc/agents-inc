@@ -46,6 +46,38 @@ const trustedIds = (skillIds: string[]) => [
   ...new Set(skillIds.filter((id) => id in CATALOG.skillsById)),
 ]
 
+const anthropicFor = (env: Env) =>
+  new Anthropic({
+    apiKey: env.ANTHROPIC_API_KEY,
+    // The AI Gateway is optional; the key is this worker's either way.
+    ...(env.AI_GATEWAY_URL ? { baseURL: env.AI_GATEWAY_URL } : {}),
+  })
+
+// `null` when the reply holds no proposal.
+const proposeSkills = async (client: Anthropic, sentence: string) => {
+  const response = await client.messages.parse({
+    model: "claude-opus-5",
+    max_tokens: 2048,
+    // The catalogue is the cached prefix; only the sentence varies.
+    system: [
+      {
+        type: "text",
+        text: SYSTEM_PROMPT,
+        cache_control: { type: "ephemeral" },
+      },
+    ],
+    messages: [{ role: "user", content: sentence }],
+    // A constrained selection from a list, not a reasoning problem.
+    thinking: { type: "adaptive" },
+    output_config: {
+      effort: "low",
+      format: zodOutputFormat(proposalSchema),
+    },
+  })
+
+  return response.parsed_output
+}
+
 const composeRequestSchema = z.object({ sentence: z.string() })
 
 const composeResponseSchema = proposalSchema.openapi("Proposal")
@@ -100,38 +132,14 @@ export const compose: RouteHandler<typeof composeRoute, WorkerEnv> =
     })
     if (!success) return c.json({ error: "too many requests" }, 429)
 
-    const client = new Anthropic({
-      apiKey: c.env.ANTHROPIC_API_KEY,
-      // The AI Gateway is optional; the key is this worker's either way.
-      ...(c.env.AI_GATEWAY_URL ? { baseURL: c.env.AI_GATEWAY_URL } : {}),
-    })
+    const client = anthropicFor(c.env)
 
     try {
-      const response = await client.messages.parse({
-        model: "claude-opus-5",
-        max_tokens: 2048,
-        // The catalogue is the cached prefix; only the sentence varies.
-        system: [
-          {
-            type: "text",
-            text: SYSTEM_PROMPT,
-            cache_control: { type: "ephemeral" },
-          },
-        ],
-        messages: [{ role: "user", content: sentence }],
-        // A constrained selection from a list, not a reasoning problem.
-        thinking: { type: "adaptive" },
-        output_config: {
-          effort: "low",
-          format: zodOutputFormat(proposalSchema),
-        },
-      })
-
-      const parsed = response.parsed_output
-      if (!parsed) return c.json({ error: "unparseable" }, 502)
+      const proposal = await proposeSkills(client, sentence)
+      if (!proposal) return c.json({ error: "unparseable" }, 502)
 
       return c.json(
-        { skillIds: trustedIds(parsed.skillIds), reason: parsed.reason },
+        { skillIds: trustedIds(proposal.skillIds), reason: proposal.reason },
         200
       )
     } catch (error) {

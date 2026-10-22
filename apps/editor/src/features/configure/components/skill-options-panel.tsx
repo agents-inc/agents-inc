@@ -20,10 +20,7 @@ import {
   type MatrixGroup,
   type RoleColumn,
 } from "@/features/configure/lib/agent-placement"
-import {
-  patchForPress,
-  placementRefusal,
-} from "@/features/configure/lib/provider"
+import { patchForPress, pressRefusal } from "@/features/configure/lib/provider"
 import { usePanelRoom } from "@/features/configure/lib/use-panel-room"
 import { isEjectOnly, useConfigStore } from "@/stores/config-store"
 import {
@@ -39,7 +36,6 @@ import { InfoTip } from "./info-tip"
 const SCOPE_TIP =
   "Determines where the skill is installed to. Project-level skills inherit global, but not vice versa."
 
-// Reads as the word it is: nothing, `lazy`, or `pre`.
 const loadWord = (state: LoadState | null) =>
   state === "preloaded" ? "pre" : (state ?? "")
 
@@ -135,7 +131,7 @@ export function SkillOptionsPanel({
 
   // The second door onto the cell's pairs, so it asks the same rule.
   const refusalFor = (patch: Partial<SkillOptions>) =>
-    placementRefusal(provider, { ...entry, ...patchForPress(provider, patch) })
+    pressRefusal(provider, entry, patch)
 
   const pick = (patch: Partial<SkillOptions>) => {
     if (refusalFor(patch) !== undefined) return

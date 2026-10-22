@@ -1,6 +1,10 @@
 import { groupBy } from "remeda"
 
-import type { CompileCatalog, CatalogSkill } from "./catalog.js"
+import type {
+  CatalogRequirement,
+  CatalogSkill,
+  CompileCatalog,
+} from "./catalog.js"
 import { LOCAL_PSEUDO_CATEGORY } from "./paths.js"
 import type { SelectionValidation, SkillId, ValidationError } from "./types.js"
 
@@ -24,22 +28,30 @@ function validateConflicts(
     const skillA = catalog.skills[skillAId]
     if (!skillA) return []
 
-    return selections.slice(index + 1).flatMap((skillBId) => {
-      const conflict = (skillA.conflictsWith ?? []).find(
-        (c) => c.skillId === skillBId
-      )
-      if (!conflict) return []
-
-      return [
-        {
-          type: "conflict" as const,
-          message: `${skillA.displayName} conflicts with ${labelOf(catalog, skillBId)}: ${conflict.reason}`,
-          // Boundary cast: the id came out of the catalogue's own relationship table.
-          skills: [skillA.id as SkillId, skillBId],
-        },
-      ]
-    })
+    return selections
+      .slice(index + 1)
+      .flatMap((skillBId) => declaredConflict(catalog, skillA, skillBId))
   })
+}
+
+function declaredConflict(
+  catalog: CompileCatalog,
+  skillA: CatalogSkill,
+  skillBId: SkillId
+): ValidationError[] {
+  const conflict = (skillA.conflictsWith ?? []).find(
+    (c) => c.skillId === skillBId
+  )
+  if (!conflict) return []
+
+  return [
+    {
+      type: "conflict",
+      message: `${skillA.displayName} conflicts with ${labelOf(catalog, skillBId)}: ${conflict.reason}`,
+      // Boundary cast: the id came out of the catalogue's own relationship table.
+      skills: [skillA.id as SkillId, skillBId],
+    },
+  ]
 }
 
 function validateRequirements(
@@ -51,36 +63,46 @@ function validateRequirements(
     const skill = catalog.skills[skillId]
     if (!skill) return []
 
-    return (skill.requires ?? []).flatMap((requirement): ValidationError[] => {
-      // Boundary cast: requirement ids come out of the catalogue's own tables.
-      const requiredIds = requirement.skillIds as readonly SkillId[]
-
-      if (requirement.needsAny) {
-        if (requiredIds.some((reqId) => selectedSet.has(reqId))) return []
-        return [
-          {
-            type: "missingRequirement",
-            message: `${skill.displayName} requires one of: ${requiredIds
-              .map((id) => labelOf(catalog, id))
-              .join(", ")}`,
-            skills: [skillId, ...requiredIds],
-          },
-        ]
-      }
-
-      const missingIds = requiredIds.filter((reqId) => !selectedSet.has(reqId))
-      if (missingIds.length === 0) return []
-      return [
-        {
-          type: "missingRequirement",
-          message: `${skill.displayName} requires: ${missingIds
-            .map((id) => labelOf(catalog, id))
-            .join(", ")}`,
-          skills: [skillId, ...missingIds],
-        },
-      ]
-    })
+    return (skill.requires ?? []).flatMap((requirement) =>
+      unmetRequirement(catalog, skillId, skill, requirement, selectedSet)
+    )
   })
+}
+
+function unmetRequirement(
+  catalog: CompileCatalog,
+  skillId: SkillId,
+  skill: CatalogSkill,
+  requirement: CatalogRequirement,
+  selectedSet: ReadonlySet<SkillId>
+): ValidationError[] {
+  // Boundary cast: requirement ids come out of the catalogue's own tables.
+  const requiredIds = requirement.skillIds as readonly SkillId[]
+
+  if (requirement.needsAny) {
+    if (requiredIds.some((reqId) => selectedSet.has(reqId))) return []
+    return [
+      {
+        type: "missingRequirement",
+        message: `${skill.displayName} requires one of: ${labelsOf(catalog, requiredIds)}`,
+        skills: [skillId, ...requiredIds],
+      },
+    ]
+  }
+
+  const missingIds = requiredIds.filter((reqId) => !selectedSet.has(reqId))
+  if (missingIds.length === 0) return []
+  return [
+    {
+      type: "missingRequirement",
+      message: `${skill.displayName} requires: ${labelsOf(catalog, missingIds)}`,
+      skills: [skillId, ...missingIds],
+    },
+  ]
+}
+
+function labelsOf(catalog: CompileCatalog, ids: readonly SkillId[]): string {
+  return ids.map((id) => labelOf(catalog, id)).join(", ")
 }
 
 function validateExclusivity(
@@ -96,25 +118,34 @@ function validateExclusivity(
 
   return Object.entries(
     groupBy(resolved, (entry) => entry.skill.category)
-  ).flatMap(([categoryId, entries]) => {
-    if (entries.length <= 1) return []
-    // "local" is a pseudo-category without exclusivity rules
-    if (categoryId === LOCAL_PSEUDO_CATEGORY) return []
+  ).flatMap(([categoryId, entries]) =>
+    exclusivityBreach(
+      catalog,
+      categoryId,
+      entries.map((e) => e.skillId)
+    )
+  )
+}
 
-    const category = catalog.categories[categoryId]
-    if (category?.exclusive !== true) return []
+function exclusivityBreach(
+  catalog: CompileCatalog,
+  categoryId: string,
+  skillIds: SkillId[]
+): ValidationError[] {
+  if (skillIds.length <= 1) return []
+  // "local" is a pseudo-category without exclusivity rules
+  if (categoryId === LOCAL_PSEUDO_CATEGORY) return []
 
-    const skillIds = entries.map((e) => e.skillId)
-    return [
-      {
-        type: "categoryExclusive" as const,
-        message: `Category "${category.displayName}" only allows one selection, but multiple selected: ${skillIds
-          .map((id) => labelOf(catalog, id))
-          .join(", ")}`,
-        skills: skillIds,
-      },
-    ]
-  })
+  const category = catalog.categories[categoryId]
+  if (category?.exclusive !== true) return []
+
+  return [
+    {
+      type: "categoryExclusive",
+      message: `Category "${category.displayName}" only allows one selection, but multiple selected: ${labelsOf(catalog, skillIds)}`,
+      skills: skillIds,
+    },
+  ]
 }
 
 /** `valid` is derived from `errors`, never asserted alongside them. */

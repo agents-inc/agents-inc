@@ -145,9 +145,7 @@ function ScopeGroup({
             <InventoryName skill={skill} />
             <span
               className={`ml-auto shrink-0 font-mono text-8 font-medium tracking-[.06em] uppercase ${
-                skill.install === "eject"
-                  ? "text-brand-ink"
-                  : "text-muted-foreground"
+                isEjected(skill) ? "text-brand-ink" : "text-muted-foreground"
               }`}
             >
               {skill.install}

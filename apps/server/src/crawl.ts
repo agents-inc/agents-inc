@@ -3,11 +3,9 @@ import { z } from "zod"
 
 import type { SkillIndex, SkillIndexEntry } from "@workspace/matrix/skill-index"
 
-// Crawls an allowlist of external skills repositories for the editor's
-// add-skills dialog. Runs in a scheduled GitHub Action (a Worker's subrequest
-// budget is too small); the worker only reads what it published. A skill is
-// indexed only if its SKILL.md was fetched and its frontmatter parses.
-// `agents-inc/skills` must stay absent: the editor's grid is already that catalog.
+// Runs in a scheduled GitHub Action (a Worker's subrequest budget is too
+// small); the worker only reads what it published. `agents-inc/skills` must
+// stay absent: the editor's grid is already that catalog.
 export const INDEXED_REPOS = [
   "obra/superpowers",
   "anthropics/skills",
@@ -192,17 +190,8 @@ const readSkill = async (
   facts: RepoFacts,
   directory: SkillDirectory
 ): Promise<SkillIndexEntry | null> => {
-  const url = `${RAW_CONTENT}/${repo}/${facts.defaultBranch}/${directory.path}${SKILL_FILE_SUFFIX}`
-
-  let content: string
-  try {
-    const response = await fetch(url, { headers: BASE_HEADERS })
-    if (!response.ok) return null
-    content = await response.text()
-  } catch {
-    // A repository nothing could be read from fails in `crawlRepo`.
-    return null
-  }
+  const content = await fetchManifest(repo, facts.defaultBranch, directory)
+  if (content === null) return null
 
   const described = describeSkill(content, directory.path)
   if (described === null) return null
@@ -213,6 +202,22 @@ const readSkill = async (
     path: directory.path,
     stars: facts.stars,
     bytes: directory.bytes,
+  }
+}
+
+// A repository nothing could be read from fails in `crawlRepo`.
+const fetchManifest = async (
+  repo: string,
+  branch: string,
+  directory: SkillDirectory
+): Promise<string | null> => {
+  const url = `${RAW_CONTENT}/${repo}/${branch}/${directory.path}${SKILL_FILE_SUFFIX}`
+
+  try {
+    const response = await fetch(url, { headers: BASE_HEADERS })
+    return response.ok ? await response.text() : null
+  } catch {
+    return null
   }
 }
 

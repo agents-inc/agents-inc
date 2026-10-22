@@ -9,6 +9,7 @@ import {
   loadAgentDefs,
   type AgentDefs,
   compileAgents,
+  type CompilationResult,
   discoverInstalledSkills,
   type DiscoveredSkills,
 } from "../lib/operations";
@@ -244,8 +245,8 @@ export default class Compile extends BaseCommand {
     const loaded = await loadInstalledConfig(projectDir);
     if (!loaded) return;
 
-    const globalAgentCount = loaded.config.agents.filter(
-      (agent) => !agent.excluded && agent.scope === "global",
+    const globalAgentCount = loaded.config.agents.filter((agent) =>
+      isActiveAt(agent, "global"),
     ).length;
     if (globalAgentCount === 0) return;
 
@@ -322,79 +323,100 @@ export default class Compile extends BaseCommand {
     this.reportFanOut(report);
   }
 
-  private async runCompilePass(params: CompilePass, cwd: string): Promise<boolean> {
-    const { label, projectDir, installation, sourcePath, scopeFilter } = params;
+  private async runCompilePass(pass: CompilePass, cwd: string): Promise<boolean> {
+    const { projectDir } = pass;
+    this.announcePass(pass);
 
+    const seatedMatrix = await this.seatMatrixForPass(projectDir);
+    const { allSkills, totalSkillCount } = await this.discoverAllSkills(projectDir);
+    const compiles = await this.announceWhetherPassCompiles(pass, totalSkillCount);
+    // A skipped pass is a refused run, which writes nothing, config-types.ts included.
+    if (!compiles) return false;
+
+    await this.warnUnresolvedStackSkills(projectDir, allSkills);
+    await this.warnScopeDroppedStackPairs(projectDir);
+    await this.recompilePassAgents(pass, allSkills);
+    await this.refreshConfigTypes(pass, cwd, seatedMatrix);
+
+    this.log("");
+    this.logSuccess(`${pass.label} compile complete!`);
+    this.log("");
+    return true;
+  }
+
+  private announcePass({ label, projectDir, installation }: CompilePass): void {
     this.log("");
     this.log(`Compiling ${label.toLowerCase()} agents...`);
     this.log("");
 
     verbose(`  Project: ${projectDir}`);
     verbose(`  Agents: ${installation.agentsDir}`);
+  }
 
-    const seatedMatrix = await this.seatMatrixForPass(projectDir);
+  /** A pass with no skills still compiles when its config declares base agents only. */
+  private async announceWhetherPassCompiles(
+    pass: CompilePass,
+    totalSkillCount: number,
+  ): Promise<boolean> {
+    if (totalSkillCount > 0) return true;
 
-    const { allSkills, totalSkillCount } = await this.discoverAllSkills(projectDir);
-    const compilesBaseAgents = totalSkillCount === 0 && (await declaresOnlyBaseAgents(params));
-
-    if (compilesBaseAgents) {
-      this.log(`No skills configured for ${label.toLowerCase()} pass, compiling base agents`);
-    } else if (totalSkillCount === 0) {
-      // A skipped pass is a refused run, which writes nothing, config-types.ts included.
-      this.log(`No skills found for ${label.toLowerCase()} pass, skipping`);
-      return false;
+    const passName = pass.label.toLowerCase();
+    if (await declaresOnlyBaseAgents(pass)) {
+      this.log(`No skills configured for ${passName} pass, compiling base agents`);
+      return true;
     }
 
-    await this.warnUnresolvedStackSkills(projectDir, allSkills);
-    await this.warnScopeDroppedStackPairs(projectDir);
+    this.log(`No skills found for ${passName} pass, skipping`);
+    return false;
+  }
+
+  private async recompilePassAgents(pass: CompilePass, skills: SkillDefinitionMap): Promise<void> {
+    const { projectDir, installation, sourcePath, scopeFilter } = pass;
 
     this.log(STATUS_MESSAGES.RECOMPILING_AGENTS);
     try {
       const recompileResult = await compileAgents({
         projectDir,
         sourcePath,
-        skills: allSkills,
+        skills,
         pluginDir: projectDir,
         outputDir: installation.agentsDir,
         ...(scopeFilter !== undefined && { scopeFilter }),
       });
-
-      const { compiled, rewritten, failed, warnings } = recompileResult;
-      const summary = recompileSummary(
-        rewritten.length,
-        compiled.length - rewritten.length,
-        `${label.toLowerCase()} agent`,
-      );
-
-      if (failed.length > 0) {
-        this.log(`${summary} (${failed.length} failed)`);
-        for (const warning of warnings) {
-          this.warn(warning);
-        }
-      } else if (compiled.length > 0) {
-        this.log(summary);
-      } else {
-        this.log(INFO_MESSAGES.NO_AGENTS_TO_RECOMPILE);
-        if (label === "Project") {
-          await this.hintGlobalScopedAgents(projectDir);
-        }
-      }
-
-      if (compiled.length > 0) {
-        verbose(`  Compiled: ${compiled.join(", ")}`);
-      }
+      await this.reportRecompile(recompileResult, pass);
     } catch (error) {
       this.log(ERROR_MESSAGES.FAILED_COMPILE_AGENTS);
       this.handleError(error);
     }
+  }
 
-    await this.refreshConfigTypes(params, cwd, seatedMatrix);
+  private async reportRecompile(
+    { compiled, rewritten, failed, warnings }: CompilationResult,
+    { label, projectDir }: CompilePass,
+  ): Promise<void> {
+    const summary = recompileSummary(
+      rewritten.length,
+      compiled.length - rewritten.length,
+      `${label.toLowerCase()} agent`,
+    );
 
-    this.log("");
-    this.logSuccess(`${label} compile complete!`);
-    this.log("");
+    if (failed.length > 0) {
+      this.log(`${summary} (${failed.length} failed)`);
+      for (const warning of warnings) {
+        this.warn(warning);
+      }
+    } else if (compiled.length > 0) {
+      this.log(summary);
+    } else {
+      this.log(INFO_MESSAGES.NO_AGENTS_TO_RECOMPILE);
+      if (label === "Project") {
+        await this.hintGlobalScopedAgents(projectDir);
+      }
+    }
 
-    return true;
+    if (compiled.length > 0) {
+      verbose(`  Compiled: ${compiled.join(", ")}`);
+    }
   }
 }
 

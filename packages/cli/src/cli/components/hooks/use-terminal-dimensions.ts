@@ -9,20 +9,21 @@ export type TerminalDimensions = {
   rows: number;
 };
 
+function dimensionsOf(stdout: NodeJS.WriteStream): TerminalDimensions {
+  return {
+    columns: stdout.columns || DEFAULT_COLUMNS,
+    rows: stdout.rows || DEFAULT_ROWS,
+  };
+}
+
 export function useTerminalDimensions(): TerminalDimensions {
   const { stdout } = useStdout();
 
-  const [dimensions, setDimensions] = useState<TerminalDimensions>(() => ({
-    columns: stdout.columns || DEFAULT_COLUMNS,
-    rows: stdout.rows || DEFAULT_ROWS,
-  }));
+  const [dimensions, setDimensions] = useState<TerminalDimensions>(() => dimensionsOf(stdout));
 
   useEffect(() => {
     const handleResize = () => {
-      setDimensions({
-        columns: stdout.columns || DEFAULT_COLUMNS,
-        rows: stdout.rows || DEFAULT_ROWS,
-      });
+      setDimensions(dimensionsOf(stdout));
     };
 
     stdout.on("resize", handleResize);

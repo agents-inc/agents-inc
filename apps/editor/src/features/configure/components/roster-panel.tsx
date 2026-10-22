@@ -21,8 +21,7 @@ import {
   type RosterSkillRow,
 } from "@/features/configure/lib/derive"
 import {
-  compilesAgent,
-  leftOutOfCodexReason,
+  agentRefusal,
   unofferedPlacementLabel,
 } from "@/features/configure/lib/provider"
 import { useShareLink } from "@/features/configure/lib/use-share-link"
@@ -268,9 +267,7 @@ function AgentBlock({
   const { agent, on, skills } = row
 
   // Shown and inert rather than hidden, so the roster and the install agree.
-  const leftOut = compilesAgent(provider, agent.id)
-    ? undefined
-    : leftOutOfCodexReason()
+  const leftOut = agentRefusal(provider, agent.id)
   const installed = on && leftOut === undefined
 
   return (

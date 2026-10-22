@@ -107,10 +107,12 @@ function escapeBackslashes(text: string): string {
   return text.replace(EVERY_BACKSLASH, "\\\\")
 }
 
+function escapeQuotes(text: string): string {
+  return text.replace(EVERY_QUOTE, '\\"')
+}
+
 function escapeClosingDelimiters(text: string): string {
-  return text.replace(A_CLOSING_DELIMITER, (quotes) =>
-    quotes.replace(EVERY_QUOTE, '\\"')
-  )
+  return text.replace(A_CLOSING_DELIMITER, (quotes) => escapeQuotes(quotes))
 }
 
 function escapeControlCharacters(text: string): string {
@@ -126,7 +128,7 @@ function escapedWhereTomlRefusesItRaw(character: string): string {
 
 function basicString(value: string): string {
   const literalBackslashes = escapeBackslashes(value)
-  const literalQuotes = literalBackslashes.replace(EVERY_QUOTE, '\\"')
+  const literalQuotes = escapeQuotes(literalBackslashes)
   const onOneLine = literalQuotes.replace(/\n/g, "\\n").replace(/\t/g, "\\t")
 
   return `"${escapeControlCharacters(onOneLine)}"`

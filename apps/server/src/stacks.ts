@@ -100,6 +100,10 @@ const withoutOwner = ({
   ...stack
 }: typeof savedStacks.$inferSelect) => stack
 
+// Scoping the mutation itself makes another person's id un-actionable.
+const ownedStack = (id: string, userId: string) =>
+  and(eq(savedStacks.id, id), eq(savedStacks.userId, userId))
+
 export const listStacks: RouteHandler<typeof listStacksRoute, WorkerEnv> =
   authenticated(async (c, session) => {
     const rows = await dbOf(c)
@@ -135,7 +139,6 @@ export const createStack: RouteHandler<typeof createStackRoute, WorkerEnv> =
     return c.json(stack, 201)
   })
 
-// Scoping the mutation itself makes another person's id un-actionable.
 export const renameStack: RouteHandler<typeof renameStackRoute, WorkerEnv> =
   authenticated(async (c, session) => {
     const { id } = c.req.valid("param")
@@ -144,9 +147,7 @@ export const renameStack: RouteHandler<typeof renameStackRoute, WorkerEnv> =
     const [row] = await dbOf(c)
       .update(savedStacks)
       .set({ name, updatedAt: new Date().toISOString() })
-      .where(
-        and(eq(savedStacks.id, id), eq(savedStacks.userId, session.user.id))
-      )
+      .where(ownedStack(id, session.user.id))
       .returning()
 
     // 404, not 403: don't confirm another person's stack exists.
@@ -159,12 +160,7 @@ export const deleteStack: RouteHandler<typeof deleteStackRoute, WorkerEnv> =
   authenticated(async (c, session) => {
     await dbOf(c)
       .delete(savedStacks)
-      .where(
-        and(
-          eq(savedStacks.id, c.req.valid("param").id),
-          eq(savedStacks.userId, session.user.id)
-        )
-      )
+      .where(ownedStack(c.req.valid("param").id, session.user.id))
 
     // 204 either way: the request is "make this not exist".
     return c.body(null, 204)

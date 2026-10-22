@@ -10,7 +10,7 @@ import {
 import { useEffect, useState } from "react"
 
 import { switchConsequence } from "@/features/configure/lib/marketplace-switch"
-import { fetchCatalog } from "@/lib/api/catalog"
+import { fetchCatalog, type CatalogResult } from "@/lib/api/catalog"
 import { useCatalogStore } from "@/stores/catalog-store"
 import { useConfigStore } from "@/stores/config-store"
 import { tokenFor, useMarketplaceStore } from "@/stores/marketplace-store"
@@ -29,6 +29,11 @@ type TargetState =
 
 const READING: TargetState = { status: "reading" }
 
+const toTargetState = (result: CatalogResult): TargetState =>
+  result.ok
+    ? { status: "read", matrix: result.matrix }
+    : { status: "refused", error: result.error }
+
 // No reset to "reading": the caller keys on the marketplace. The cleanup drops
 // a late answer about a marketplace no longer asked about.
 const useTargetCatalog = (marketplace: string) => {
@@ -40,12 +45,7 @@ const useTargetCatalog = (marketplace: string) => {
     void fetchCatalog(marketplace, tokenFor(marketplace) || undefined).then(
       (result) => {
         if (!asked) return
-
-        setState(
-          result.ok
-            ? { status: "read", matrix: result.matrix }
-            : { status: "refused", error: result.error }
-        )
+        setState(toTargetState(result))
       }
     )
 

@@ -1,5 +1,7 @@
+import { partition } from "remeda";
 import type { AgentScopeConfig, SkillConfig, SkillScope } from "../../types/config";
 import type { AgentName, SkillId } from "../../types/index";
+import { isActiveAt, isGlobalTombstone, type ScopedEntry } from "./scope-predicates";
 
 export type ScopeDiffInput = {
   currentSkills: SkillConfig[];
@@ -30,6 +32,11 @@ export type ScopeDiff = {
   hasContent: boolean;
 };
 
+/** One scope's share of a roster's diff: the entries listed with a status, then the removals. */
+type ScopeEntries<Entry> = { listed: Entry[]; removed: Entry[] };
+
+type RosterDiff<Entry> = Record<SkillScope, ScopeEntries<Entry>>;
+
 /**
  * A tombstone occupies its (id, scope) slot without filling it: it silences a global install at
  * project scope. Slot checks count tombstones; removal and `~` read the active baseline only.
@@ -38,137 +45,122 @@ export function computeScopeDiff(input: ScopeDiffInput): ScopeDiff {
   const { currentSkills, currentAgents, installedSkillConfigs, installedAgentConfigs, isInitMode } =
     input;
 
-  const projectSkills = currentSkills.filter((s) => s.scope === "project" && !s.excluded);
-  const globalSkills = currentSkills.filter((s) => s.scope === "global" && !s.excluded);
-  const projectAgents = currentAgents.filter((a) => a.scope === "project" && !a.excluded);
-  const globalAgents = currentAgents.filter((a) => a.scope === "global" && !a.excluded);
-  const excludedGlobalSkills = currentSkills.filter((s) => s.scope === "global" && !!s.excluded);
-  const excludedGlobalAgents = currentAgents.filter((a) => a.scope === "global" && !!a.excluded);
-
-  const prevSkillKeySet = installedSkillConfigs
-    ? new Set(installedSkillConfigs.map((s) => skillSlotKey(s.id, s.scope)))
-    : null;
-  const prevSourceMap = installedSkillConfigs
-    ? new Map(
-        installedSkillConfigs
-          .filter((s) => !s.excluded)
-          .map((s) => [skillSlotKey(s.id, s.scope), s.origin]),
-      )
-    : null;
-  const prevAgentKeySet = installedAgentConfigs
-    ? new Set(installedAgentConfigs.map((a) => agentSlotKey(a.name, a.scope)))
-    : null;
-
-  // The installs the baseline actually records; tombstones are not installs.
-  const activeSkillBaseline = installedSkillConfigs
-    ? installedSkillConfigs.filter((s) => !s.excluded)
-    : [];
-  const activeAgentBaseline = installedAgentConfigs
-    ? installedAgentConfigs.filter((a) => !a.excluded)
-    : [];
-  const inheritedGlobalSkills = activeSkillBaseline.filter(
-    (s) =>
-      s.scope === "global" &&
-      !globalSkills.some((g) => g.id === s.id) &&
-      !excludedGlobalSkills.some((e) => e.id === s.id) &&
-      projectSkills.some((p) => p.id === s.id),
+  const skills = diffRoster(currentSkills, installedSkillConfigs, (skill) => skill.id, isInitMode);
+  const agents = diffRoster(
+    currentAgents,
+    installedAgentConfigs,
+    (agent) => agent.name,
+    isInitMode,
   );
-  const inheritedGlobalAgents = activeAgentBaseline.filter(
-    (a) =>
-      a.scope === "global" &&
-      !globalAgents.some((g) => g.name === a.name) &&
-      !excludedGlobalAgents.some((e) => e.name === a.name) &&
-      projectAgents.some((p) => p.name === a.name),
-  );
+  const skillRow = skillRowClassifier(installedSkillConfigs);
+  const agentRow = agentRowClassifier(installedAgentConfigs);
 
-  // Removed only if nothing, active or tombstone, occupies the slot in current. A baseline
-  // tombstone is never a removal: it masks an install rather than being one.
-  const removedSkills = activeSkillBaseline.filter(
-    (s) => !currentSkills.some((c) => c.id === s.id && c.scope === s.scope),
-  );
-  const removedAgents = activeAgentBaseline.filter(
-    (a) => !currentAgents.some((c) => c.name === a.name && c.scope === a.scope),
-  );
+  const projectSkillRows = rowsOf(skills.project, skillRow, toRemovedSkillRow);
+  const globalSkillRows = rowsOf(skills.global, skillRow, toRemovedSkillRow);
+  const projectAgentRows = rowsOf(agents.project, agentRow, toRemovedAgentRow);
+  const globalAgentRows = rowsOf(agents.global, agentRow, toRemovedAgentRow);
 
-  // Deduped against the inherited set: an inherited global claimed without a tombstone would
-  // otherwise land under Global twice.
-  const inheritedSkillIdSet = new Set(inheritedGlobalSkills.map((s) => s.id));
-  const uniqueExcludedGlobalSkills = excludedGlobalSkills.filter(
-    (s) => !inheritedSkillIdSet.has(s.id),
+  const hasContent = [projectSkillRows, globalSkillRows, projectAgentRows, globalAgentRows].some(
+    (rows) => rows.length > 0,
   );
-  const allGlobalSkills = [
-    ...globalSkills,
-    ...inheritedGlobalSkills,
-    ...uniqueExcludedGlobalSkills,
-  ];
-  const inheritedAgentNameSet = new Set(inheritedGlobalAgents.map((a) => a.name));
-  const uniqueExcludedGlobalAgents = excludedGlobalAgents.filter(
-    (a) => !inheritedAgentNameSet.has(a.name),
-  );
-  const allGlobalAgents = [
-    ...globalAgents,
-    ...inheritedGlobalAgents,
-    ...uniqueExcludedGlobalAgents,
-  ];
-
-  const removedGlobalSkills = isInitMode
-    ? []
-    : removedSkills.filter((s) => s.scope === "global" && !inheritedSkillIdSet.has(s.id));
-  const removedProjectSkills = removedSkills.filter((s) => s.scope === "project");
-  const removedGlobalAgents = isInitMode
-    ? []
-    : removedAgents.filter((a) => a.scope === "global" && !inheritedAgentNameSet.has(a.name));
-  const removedProjectAgents = removedAgents.filter((a) => a.scope === "project");
-
-  const projectSkillRows = [
-    ...projectSkills.map((s) => classifyDiffRow(s, prevSkillKeySet, prevSourceMap)),
-    ...removedProjectSkills.map(toRemovedSkillRow),
-  ];
-  const globalSkillRows = [
-    ...allGlobalSkills.map((s) => classifyDiffRow(s, prevSkillKeySet, prevSourceMap)),
-    ...removedGlobalSkills.map(toRemovedSkillRow),
-  ];
-  const projectAgentRows = [
-    ...projectAgents.map((a) => classifyAgentDiffRow(a, prevAgentKeySet)),
-    ...removedProjectAgents.map(toRemovedAgentRow),
-  ];
-  const globalAgentRows = [
-    ...allGlobalAgents.map((a) => classifyAgentDiffRow(a, prevAgentKeySet)),
-    ...removedGlobalAgents.map(toRemovedAgentRow),
-  ];
-
-  const hasContent =
-    projectSkillRows.length > 0 ||
-    globalSkillRows.length > 0 ||
-    projectAgentRows.length > 0 ||
-    globalAgentRows.length > 0;
 
   return { projectSkillRows, globalSkillRows, projectAgentRows, globalAgentRows, hasContent };
 }
 
-/** The `(id, scope)` SLOT key this module diffs on, rather than the id alone. */
-function skillSlotKey(id: SkillId, scope: SkillScope | undefined): string {
-  return `${id}:${scope}`;
+function diffRoster<Entry extends ScopedEntry>(
+  current: Entry[],
+  installed: Entry[] | null,
+  identityOf: (entry: Entry) => string,
+  isInitMode: boolean,
+): RosterDiff<Entry> {
+  // The installs the baseline actually records; tombstones are not installs.
+  const activeBaseline = (installed ?? []).filter((entry) => !entry.excluded);
+  const vacated = vacatedInstalls(activeBaseline, current, identityOf);
+  const projectEntries = current.filter((entry) => isActiveAt(entry, "project"));
+  const claimedByProject = new Set(projectEntries.map(identityOf));
+  // A vacated global the project claims is inherited: listed once under Global, never removed.
+  const [inheritedGlobals, removedGlobals] = partition(
+    vacated.filter((entry) => entry.scope === "global"),
+    (entry) => claimedByProject.has(identityOf(entry)),
+  );
+
+  return {
+    project: {
+      listed: projectEntries,
+      removed: vacated.filter((entry) => entry.scope === "project"),
+    },
+    global: {
+      listed: [
+        ...current.filter((entry) => isActiveAt(entry, "global")),
+        ...inheritedGlobals,
+        ...current.filter(isGlobalTombstone),
+      ],
+      removed: isInitMode ? [] : removedGlobals,
+    },
+  };
 }
 
-function agentSlotKey(name: AgentName, scope: SkillScope | undefined): string {
-  return `${name}:${scope}`;
+/** Baseline installs whose slot nothing in current, active or tombstone, occupies. */
+function vacatedInstalls<Entry extends ScopedEntry>(
+  activeBaseline: Entry[],
+  current: Entry[],
+  identityOf: (entry: Entry) => string,
+): Entry[] {
+  const slotOf = (entry: Entry) => slotKey(identityOf(entry), entry.scope);
+  const occupiedSlots = new Set(current.map(slotOf));
+  return activeBaseline.filter((install) => !occupiedSlots.has(slotOf(install)));
+}
+
+function rowsOf<Entry, Row>(
+  entries: ScopeEntries<Entry>,
+  toRow: (entry: Entry) => Row,
+  toRemovedRow: (entry: Entry) => Row,
+): Row[] {
+  return [...entries.listed.map(toRow), ...entries.removed.map(toRemovedRow)];
+}
+
+/** The `(id, scope)` SLOT key this module diffs on, rather than the id alone. */
+function slotKey(identity: string, scope: SkillScope | undefined): string {
+  return `${identity}:${scope}`;
 }
 
 export function formatScopeTag(scope: SkillScope): "[G]" | "[P]" {
   return scope === "global" ? "[G]" : "[P]";
 }
 
+function skillRowClassifier(installed: SkillConfig[] | null): (skill: SkillConfig) => SkillDiffRow {
+  const installedSlots = installed
+    ? new Set(installed.map((skill) => slotKey(skill.id, skill.scope)))
+    : null;
+  const installedOriginBySlot = installed
+    ? new Map(
+        installed
+          .filter((skill) => !skill.excluded)
+          .map((skill) => [slotKey(skill.id, skill.scope), skill.origin]),
+      )
+    : null;
+  return (skill) => classifySkillDiffRow(skill, installedSlots, installedOriginBySlot);
+}
+
+function agentRowClassifier(
+  installed: AgentScopeConfig[] | null,
+): (agent: AgentScopeConfig) => AgentDiffRow {
+  const installedSlots = installed
+    ? new Set(installed.map((agent) => slotKey(agent.name, agent.scope)))
+    : null;
+  return (agent) => classifyAgentDiffRow(agent, installedSlots);
+}
+
 /** Compares `origin`, which is where a skill's install mode is recorded. */
-function classifyDiffRow(
+function classifySkillDiffRow(
   skill: SkillConfig,
-  prevKeySet: Set<string> | null,
-  prevSourceMap: Map<string, string> | null,
+  installedSlots: Set<string> | null,
+  installedOriginBySlot: Map<string, string> | null,
 ): SkillDiffRow {
-  const key = skillSlotKey(skill.id, skill.scope);
-  const isNew = prevKeySet === null || !prevKeySet.has(key);
-  const prevSource = prevSourceMap?.get(key);
-  const modeChanged = !isNew && prevSource != null && prevSource !== skill.origin;
+  const slot = slotKey(skill.id, skill.scope);
+  const isNew = installedSlots === null || !installedSlots.has(slot);
+  const installedOrigin = installedOriginBySlot?.get(slot);
+  const modeChanged = !isNew && installedOrigin != null && installedOrigin !== skill.origin;
   if (modeChanged) {
     return { id: skill.id, source: skill.origin, status: "mode-changed" };
   }
@@ -177,9 +169,9 @@ function classifyDiffRow(
 
 function classifyAgentDiffRow(
   agent: AgentScopeConfig,
-  prevKeySet: Set<string> | null,
+  installedSlots: Set<string> | null,
 ): AgentDiffRow {
-  const isNew = prevKeySet === null || !prevKeySet.has(agentSlotKey(agent.name, agent.scope));
+  const isNew = installedSlots === null || !installedSlots.has(slotKey(agent.name, agent.scope));
   return { name: agent.name, status: isNew ? "added" : "unchanged" };
 }
 

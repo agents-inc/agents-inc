@@ -56,16 +56,18 @@ export const useApplyStackRequest = () => {
     )
   }
 
+  const adoptRemote = async (configId: string) => {
+    const result = await fetchSharedConfig(configId)
+    if (result.ok) await adopt(result.payload)
+  }
+
   return (request: StackRequest) => {
     if (request.kind === "stack") {
       if (request.stackId === null) releaseSelectedOnly()
       return applyStack(request.stackId)
     }
 
-    if (request.kind === "remote")
-      return void fetchSharedConfig(request.configId).then((result) => {
-        if (result.ok) void adopt(result.payload)
-      })
+    if (request.kind === "remote") return void adoptRemote(request.configId)
 
     const saved = localSaveById(request.saveId)
     if (saved) void adopt(saved.payload)

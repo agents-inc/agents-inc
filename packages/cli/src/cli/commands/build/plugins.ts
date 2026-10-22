@@ -110,19 +110,29 @@ export default class BuildPlugins extends BaseCommand {
     outputDir: string,
   ): Promise<Set<string> | null> {
     if (skillFlag) {
-      const skillPath = path.resolve(skillsDir, skillFlag);
-      this.log(`Compiling skill at ${skillPath}...`);
-
-      const result = await compileSkillPlugin({
-        skillPath,
-        outputDir,
-      });
-
-      this.log(`Compiled ${result.skillName}`);
-      this.log(`  Plugin path: ${result.pluginPath}`);
+      await this.compileOneSkill(path.resolve(skillsDir, skillFlag), outputDir);
       return null;
     }
 
+    return this.compileEverySkill(skillsDir, outputDir);
+  }
+
+  private async compileOneSkill(skillPath: string, outputDir: string): Promise<void> {
+    this.log(`Compiling skill at ${skillPath}...`);
+
+    const result = await compileSkillPlugin({
+      skillPath,
+      outputDir,
+    });
+
+    this.log(`Compiled ${result.skillName}`);
+    this.log(`  Plugin path: ${result.pluginPath}`);
+  }
+
+  private async compileEverySkill(
+    skillsDir: string,
+    outputDir: string,
+  ): Promise<Set<string> | null> {
     this.log("Finding and compiling all skills...");
 
     const { compiled, failed } = await compileAllSkillPlugins(skillsDir, outputDir);

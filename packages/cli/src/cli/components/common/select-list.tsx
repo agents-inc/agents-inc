@@ -44,19 +44,12 @@ export function SelectList<T>({
       {items.map((item, index) => {
         const isFocused = index === focusedIndex;
         const marker = isFocused ? UI_SYMBOLS.CHEVRON : UI_SYMBOLS.CHEVRON_SPACER;
+        const focusStyle = { bold: isFocused, ...(isFocused && { color: CLI_COLORS.PRIMARY }) };
 
         return (
           <Box key={index}>
-            <Text bold={isFocused} {...(isFocused && { color: CLI_COLORS.PRIMARY })}>
-              {marker}{" "}
-            </Text>
-            {renderItem ? (
-              renderItem(item, isFocused)
-            ) : (
-              <Text bold={isFocused} {...(isFocused && { color: CLI_COLORS.PRIMARY })}>
-                {item.label}
-              </Text>
-            )}
+            <Text {...focusStyle}>{marker} </Text>
+            {renderItem ? renderItem(item, isFocused) : <Text {...focusStyle}>{item.label}</Text>}
           </Box>
         );
       })}

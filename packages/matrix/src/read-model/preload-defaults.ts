@@ -8,8 +8,7 @@ import {
 import { CATALOG } from "./catalog"
 import { agentDomainOf } from "./domains"
 
-// Whether a skill arrives preloaded on an agent; shared by the editor and the
-// CLI. Browser-safe: the editor bundles it.
+// Browser-safe: the editor bundles it.
 
 export type LoadState = "lazy" | "preloaded"
 
@@ -40,7 +39,7 @@ export type ResolveLoadStateInput = {
 /**
  * A row names the roles that reach for the skill in most sessions; occasional
  * skills stay lazy. `reviewer` gets only frameworks and the review process,
- * `planning` only frameworks and state. One skill per line, hence prettier-ignore.
+ * `planning` only frameworks and state.
  */
 // prettier-ignore
 export const PRELOAD_DEFAULTS: PreloadDefaults = {
@@ -236,7 +235,7 @@ const domainOfSkill = (skillId: SkillId): Domain => {
 }
 
 // `reviewer` and `pm`: grouped under meta for display, but serve every domain.
-const isDomainlessRoleAgent = (agentId: AgentName): boolean =>
+export const isDomainlessRoleAgent = (agentId: AgentName): boolean =>
   agentDomainOf(agentId) === "meta" &&
   AGENT_DEFINITIONS[agentId].flavor !== "meta"
 

@@ -537,6 +537,36 @@ describe("skill-resolution — what a merge says and carries", () => {
     ]);
   });
 
+  it("keeps an either-or requirement either-or", () => {
+    const merged = mergeMatrixWithSkills(
+      EMPTY_MATRIX_CONFIG.categories,
+      {
+        ...NO_RELATIONSHIPS,
+        requires: [
+          {
+            skill: "zustand",
+            needs: ["react", "vue-composition-api"],
+            needsAny: true,
+            reason: "either",
+          },
+        ],
+      },
+      [
+        createMockExtractedSkill("web-state-zustand"),
+        createMockExtractedSkill("web-framework-react"),
+        createMockExtractedSkill("web-framework-vue-composition-api"),
+      ],
+    );
+
+    expect(merged.skills["web-state-zustand"]?.requires).toStrictEqual([
+      {
+        skillIds: ["web-framework-react", "web-framework-vue-composition-api"],
+        needsAny: true,
+        reason: "either",
+      },
+    ]);
+  });
+
   it("carries usage guidance and the custom flag only where the metadata declares them", () => {
     const merged = mergeMatrixWithSkills(EMPTY_MATRIX_CONFIG.categories, NO_RELATIONSHIPS, [
       createMockExtractedSkill("web-framework-react", {

@@ -2,6 +2,7 @@ import { Lattice, LatticeCell } from "@workspace/ui/components/lattice"
 import { useMemo } from "react"
 
 import {
+  displayNameOf,
   isStackCustom,
   type ConfigSelection,
 } from "@/features/configure/lib/derive"
@@ -9,11 +10,7 @@ import { useLocalSavesOnGrid } from "@/features/configure/lib/save-stack"
 import { matchesSavedStack } from "@/features/configure/lib/seed"
 import { useApplyStackRequest } from "@/features/configure/lib/use-apply-stack-request"
 import { useLatticeColumns } from "@/features/configure/lib/use-lattice-columns"
-import {
-  activeSkillById,
-  expandActiveStack,
-  useCatalogStore,
-} from "@/stores/catalog-store"
+import { expandActiveStack, useCatalogStore } from "@/stores/catalog-store"
 import { useConfigStore } from "@/stores/config-store"
 import {
   useAccountStore,
@@ -37,7 +34,7 @@ const MEMBER_LIMIT = 5
 
 const membersLine = (skillIds: readonly string[]) => {
   const names = skillIds
-    .map((skillId) => activeSkillById(skillId)?.displayName ?? skillId)
+    .map(displayNameOf)
     .slice(0, MEMBER_LIMIT)
     .map((name) => name.toLowerCase())
 

@@ -1,5 +1,4 @@
-// Selection semantics shared by the editor and the CLI. Ids are `string`
-// because the CLI judges merged matrices with local skills. Browser-safe.
+// Ids are `string` because the CLI judges merged matrices with local skills. Browser-safe.
 
 import type { Matrix } from "../matrix-schema"
 import { MATRIX } from "./source"
@@ -63,6 +62,12 @@ export type SelectionSemantics = (
 const isAmbiguous = (requirement: SkillRequirementFacts) =>
   requirement.needsAny && requirement.skillIds.length > 1
 
+const reasonDiscouraging = (
+  declarer: SelectionSkillFacts | undefined,
+  otherId: string
+) =>
+  declarer?.discourages.find((relation) => relation.skillId === otherId)?.reason
+
 type JudgingSets = {
   reached: ReadonlySet<string>
   outOfReach: ReadonlySet<string>
@@ -73,7 +78,6 @@ export const createSelectionSemantics = (
 ): SelectionSemantics => {
   const skillsById = new Map(catalog.skills.map((skill) => [skill.id, skill]))
 
-  // Conflicts may be declared on either side; index both directions.
   const conflictIdsBySkill = new Map<string, Set<string>>()
   const noteConflict = (skillId: string, otherId: string) => {
     const held = conflictIdsBySkill.get(skillId)
@@ -192,15 +196,10 @@ export const createSelectionSemantics = (
     for (const reachedId of sets.reached) {
       if (reachedId === skill.id) continue
 
-      const declared = skillsById
-        .get(reachedId)
-        ?.discourages.find((relation) => relation.skillId === skill.id)
-      if (declared) return declared.reason
-
-      const declaredBack = skill.discourages.find(
-        (relation) => relation.skillId === reachedId
-      )
-      if (declaredBack) return declaredBack.reason
+      const reason =
+        reasonDiscouraging(skillsById.get(reachedId), skill.id) ??
+        reasonDiscouraging(skill, reachedId)
+      if (reason !== undefined) return reason
     }
     return undefined
   }

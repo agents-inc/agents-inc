@@ -65,22 +65,7 @@ export async function loadConfig<T>(configPath: string, schema?: z.ZodType<T>): 
     return null;
   }
 
-  let namespace: unknown;
-  try {
-    // A fresh engine and no module cache: one run writes a config and reads it back several times.
-    const jiti = createJiti(import.meta.url, {
-      moduleCache: false,
-      interopDefault: true,
-      alias: { "agents-inc/config": CONFIG_EXPORTS_PATH },
-    });
-
-    namespace = await jiti.import(configPath);
-  } catch (error) {
-    throw new Error(`Failed to load config from '${configPath}': ${getErrorMessage(error)}`, {
-      cause: error,
-    });
-  }
-
+  const namespace = await importConfigModule(configPath);
   const raw = unwrapDefaultExport(namespace);
 
   // An empty file reads as missing, asked before the export question since it declares no exports.
@@ -103,4 +88,20 @@ export async function loadConfig<T>(configPath: string, schema?: z.ZodType<T>): 
 
   // Boundary cast: jiti returns unknown, caller provides expected type
   return raw as T;
+}
+
+/** A fresh engine and no module cache: one run writes a config and reads it back several times. */
+async function importConfigModule(configPath: string): Promise<unknown> {
+  try {
+    const jiti = createJiti(import.meta.url, {
+      moduleCache: false,
+      interopDefault: true,
+      alias: { "agents-inc/config": CONFIG_EXPORTS_PATH },
+    });
+    return await jiti.import(configPath);
+  } catch (error) {
+    throw new Error(`Failed to load config from '${configPath}': ${getErrorMessage(error)}`, {
+      cause: error,
+    });
+  }
 }

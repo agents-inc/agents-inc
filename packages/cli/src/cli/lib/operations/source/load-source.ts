@@ -23,32 +23,28 @@ export type LoadedSource = {
 
 export async function loadSource(options: LoadSourceOptions): Promise<LoadedSource> {
   const { caller, sourceFlag, projectDir, captureStartupMessages } = options;
-
-  if (captureStartupMessages) {
-    enableBuffering();
-  }
-
-  let sourceResult: SourceLoadResult;
-  try {
-    sourceResult = await loadSkillsMatrixFromSource({
+  const load = () =>
+    loadSkillsMatrixFromSource({
       ...(caller !== undefined && { caller }),
       ...(sourceFlag !== undefined && { sourceFlag }),
       projectDir,
     });
-  } catch (error) {
-    if (captureStartupMessages) {
-      disableBuffering();
-    }
-    throw error;
-  }
 
-  let startupMessages: StartupMessage[] = [];
-  if (captureStartupMessages) {
-    startupMessages = drainBuffer();
+  if (!captureStartupMessages) return { sourceResult: await load(), startupMessages: [] };
+  return capturingStartupMessages(load);
+}
+
+/** Buffering ends with the load, whether it lands or throws. */
+async function capturingStartupMessages(
+  load: () => Promise<SourceLoadResult>,
+): Promise<LoadedSource> {
+  enableBuffering();
+  try {
+    const sourceResult = await load();
+    return { sourceResult, startupMessages: drainBuffer() };
+  } finally {
     disableBuffering();
   }
-
-  return { sourceResult, startupMessages };
 }
 
 export function sayCapturedWarnings(messages: readonly StartupMessage[]): void {

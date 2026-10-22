@@ -10,6 +10,7 @@ import {
   type Domain,
   type IncompatibilityCause,
   type SelectionJudgement,
+  type StackExpansion,
   type SubAgent,
 } from "@workspace/matrix"
 
@@ -46,7 +47,7 @@ export type ConfigSelection = Pick<
 >
 
 // `added` is provenance for the tag, never a branch in a derivation.
-export type GridSkill = {
+type GridSkill = {
   id: string
   displayName: string
   description: string
@@ -66,7 +67,7 @@ export type SkillCellView = {
   discouragedReason?: string
 }
 
-export type CategoryView = {
+type CategoryView = {
   id: string
   displayName: string
   exclusive: boolean
@@ -85,13 +86,21 @@ export type DomainTab = {
   skillCount: number
 }
 
+const WORD_SEPARATORS = /[\s.+&_-]+/
+
+const MONOGRAM_LETTERS = 2
+
+const initialsOf = (words: readonly string[]) =>
+  words.map((word) => word.charAt(0)).join("")
+
 export const monogramOf = (displayName: string) => {
-  const words = displayName.split(/[\s.+&_-]+/).filter(Boolean)
-  return (
+  const words = displayName.split(WORD_SEPARATORS).filter(Boolean)
+  const letters =
     words.length > 1
-      ? `${words[0]?.charAt(0) ?? ""}${words[1]?.charAt(0) ?? ""}`
-      : displayName.slice(0, 2)
-  ).toUpperCase()
+      ? initialsOf(words.slice(0, MONOGRAM_LETTERS))
+      : displayName.slice(0, MONOGRAM_LETTERS)
+
+  return letters.toUpperCase()
 }
 
 // `HEAD` resolves to the repository's default branch.
@@ -156,16 +165,16 @@ const judgeSelectedSkills = (selectedIds: Iterable<string>) =>
 export const selectReachability = (selectedIds: Set<string>): Reachability =>
   judgeSelectedSkills(selectedIds)
 
-const nameOf = (skillId: string) =>
+export const displayNameOf = (skillId: string) =>
   activeSkillById(skillId)?.displayName ?? skillId
 
 const listNames = (skillIds: readonly string[], joiner: string) =>
-  skillIds.map(nameOf).join(joiner)
+  skillIds.map(displayNameOf).join(joiner)
 
 const incompatibleReasonOf = (cause: IncompatibilityCause): string => {
   switch (cause.kind) {
     case "conflict":
-      return `Conflicts with ${nameOf(cause.skillId)}`
+      return `Conflicts with ${displayNameOf(cause.skillId)}`
     case "unreachableRequirement": {
       const { requirement } = cause
       return requirement.needsAny && requirement.skillIds.length > 1
@@ -332,9 +341,6 @@ export type RosterGroup = {
   agents: RosterAgentRow[]
 }
 
-const displayNameOf = (skillId: string) =>
-  activeSkillById(skillId)?.displayName ?? skillId
-
 const allAgents = () => SUB_AGENT_GROUPS.flatMap((group) => group.agents)
 
 const byDisplayName = (
@@ -351,14 +357,18 @@ const catalogPositions = () =>
       .map((skill, index) => [skill.id, index])
   )
 
-const byCatalogPosition =
-  (positions: Map<string, number>) =>
-  (
+const byCatalogPosition = (positions: Map<string, number>) => {
+  const positionOf = (skillId: string) => positions.get(skillId) ?? Infinity
+
+  return (
     a: { id: string; displayName: string },
     b: { id: string; displayName: string }
-  ) =>
-    (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity) ||
-    a.displayName.localeCompare(b.displayName)
+  ) => positionOf(a.id) - positionOf(b.id) || byDisplayName(a, b)
+}
+
+const appendTo = <K, V>(groups: Map<K, V[]>, key: K, value: V) => {
+  groups.set(key, [...(groups.get(key) ?? []), value])
+}
 
 type AgentSkill = Omit<RosterSkillRow, "usedBy">
 
@@ -367,8 +377,7 @@ const skillsByAgent = (config: ConfigSelection) => {
 
   for (const [skillId, entry] of Object.entries(config.skills)) {
     for (const [agentId, assignment] of Object.entries(entry.assignments)) {
-      const bucket = byAgent.get(agentId) ?? []
-      bucket.push({
+      appendTo(byAgent, agentId, {
         id: skillId,
         displayName: displayNameOf(skillId),
         load: assignment.load,
@@ -377,7 +386,6 @@ const skillsByAgent = (config: ConfigSelection) => {
           scopeError: SCOPE_ERROR,
         }),
       })
-      byAgent.set(agentId, bucket)
     }
   }
 
@@ -392,9 +400,7 @@ const liveUsesBySkill = (config: ConfigSelection) => {
 
     for (const [skillId, entry] of Object.entries(config.skills)) {
       if (!entry.assignments[agent.id]?.enabled) continue
-      const bucket = uses.get(skillId) ?? []
-      bucket.push(agent)
-      uses.set(skillId, bucket)
+      appendTo(uses, skillId, agent)
     }
   }
 
@@ -492,14 +498,17 @@ const unscopedAgentIds = (
   onIds: ReadonlySet<string>
 ) => [...onIds].filter((agentId) => holdsAScopeError(config, agentId))
 
-export const summarize = (config: ConfigSelection): ConfigSummary => {
-  const entries = Object.values(config.skills)
-  const onIds = new Set(
+const onAgentIds = (config: ConfigSelection) =>
+  new Set(
     allAgents()
       // Widened so the set accepts any agent id.
       .map((agent) => agent.id as string)
       .filter((agentId) => isAgentOn(config, agentId))
   )
+
+export const summarize = (config: ConfigSelection): ConfigSummary => {
+  const entries = Object.values(config.skills)
+  const onIds = onAgentIds(config)
   const live = entries
     .flatMap(enabledAssignments)
     .filter(([agentId]) => onIds.has(agentId))
@@ -522,9 +531,8 @@ export const selectUnofferedPlacements = (
 ): string[] =>
   Object.entries(config.skills)
     .filter(([, entry]) => !offersPlacement(provider, entry))
-    .map(([skillId]) => ({ displayName: displayNameOf(skillId) }))
-    .sort(byDisplayName)
-    .map((skill) => skill.displayName)
+    .map(([skillId]) => displayNameOf(skillId))
+    .sort((a, b) => a.localeCompare(b))
 
 // Filters the answer, never the selection.
 export const selectInstalledAgents = (
@@ -580,26 +588,32 @@ const inScope =
   (scope: ScopedInventorySkill["scope"]) => (skill: ScopedInventorySkill) =>
     skill.scope === scope
 
+const holdsSkills = (config: ConfigSelection, agentId: string) =>
+  Object.values(config.skills).some(
+    (entry) => entry.assignments[agentId]?.enabled
+  )
+
+const toInventoryAgent =
+  (config: ConfigSelection) =>
+  (agent: SubAgent): InventoryAgent => ({
+    agent,
+    baseOnly: !holdsSkills(config, agent.id),
+    scope: resolveAgentOptions(config.agents, agent.id).scope,
+  })
+
 export const selectInstallInventory = (
   config: ConfigSelection,
   provider: Provider
 ): InstallInventory => {
   const skills = toInventorySkills(config)
 
-  const holdsSkills = (agentId: string) =>
-    Object.values(config.skills).some(
-      (entry) => entry.assignments[agentId]?.enabled
-    )
-
   return {
     project: skills.filter(inScope("project")),
     global: skills.filter(inScope("global")),
     // The same selector the Install count reads, so the two agree.
-    agents: selectInstalledAgents(config, provider).map((agent) => ({
-      agent,
-      baseOnly: !holdsSkills(agent.id),
-      scope: resolveAgentOptions(config.agents, agent.id).scope,
-    })),
+    agents: selectInstalledAgents(config, provider).map(
+      toInventoryAgent(config)
+    ),
     leftOut: selectAgentsLeftOut(config, provider),
   }
 }
@@ -687,28 +701,24 @@ const sameAgentRecords = (
     sameAgentEntry(agents[agentId], entry)
   )
 
+const holdsAnything = (config: ConfigSelection) =>
+  Object.keys(config.agents).length > 0 || Object.keys(config.skills).length > 0
+
+const editsAStackSkill = (config: ConfigSelection, expansion: StackExpansion) =>
+  Object.entries(config.skills).some(([skillId, entry]) =>
+    isSkillEdited(entry, expansion.assignmentsBySkill[skillId] ?? [])
+  )
+
 // Any edit counts: options, assignments and agent records, not just selection.
 export const isStackCustom = (config: ConfigSelection): boolean => {
-  if (config.stackId === null) {
-    return (
-      Object.keys(config.agents).length > 0 ||
-      Object.keys(config.skills).length > 0
-    )
-  }
+  if (config.stackId === null) return holdsAnything(config)
 
   const expansion = expandActiveStack(config.stackId)
   if (!expansion) return true
 
   // `applyStack` writes only its pins, so any other agent record is an edit.
   if (!sameAgentRecords(config.agents, stackAgentPins(expansion))) return true
+  if (!sameSet(Object.keys(config.skills), expansion.skillIds)) return true
 
-  const selectedIds = Object.keys(config.skills)
-  if (!sameSet(selectedIds, expansion.skillIds)) return true
-
-  return selectedIds.some((skillId) => {
-    const entry = config.skills[skillId]
-    if (!entry) return true
-
-    return isSkillEdited(entry, expansion.assignmentsBySkill[skillId] ?? [])
-  })
+  return editsAStackSkill(config, expansion)
 }

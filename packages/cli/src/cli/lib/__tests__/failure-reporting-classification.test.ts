@@ -34,14 +34,6 @@ type AdvisoryWarn = {
 
 const EDIT_ADVISORY_WARNS = [
   {
-    line: "if (skippedSkillIds.length > 0) this.warn(skippedUnknownSkills(skippedSkillIds));",
-    why: "A fact about the PAYLOAD, not a failure of this run. The ids reach `reconcileSharedConfig` as `unplaceable`, so the entries stay installed and the confirm discloses them through `unplaceableKept`. Nothing was attempted and nothing was lost.",
-  },
-  {
-    line: "if (skippedAgentNames.length > 0) this.warn(skippedUnknownAgents(skippedAgentNames));",
-    why: "The sub-agent half of the same fact. A name this catalogue carries no definition for describes no work that could have been done.",
-  },
-  {
     line:
       "this.warn(`Could not tell which skills were written here: " + "${getErrorMessage(error)}`);",
     why: "A degraded READ, and one that only ever protects: an unanswered question makes the entry the CLI's own, which is what every other command already assumes. Its consequence is a removal the user is then shown and asked to approve.",
@@ -68,11 +60,7 @@ const EDIT_ADVISORY_WARNS = [
   },
   {
     line: "this.warn(`Failed to uninstall plugin ${item.id}: ${item.error}`);",
-    why: "The same collapsed half, where the uninstall itself failed — the reason the site beside `applyPluginChanges` gives below, one removal earlier in the run.",
-  },
-  {
-    line: "this.warn(`Failed to uninstall plugin ${item.id}: ${item.error}`);",
-    why: 'CLAUDE.md: "Uninstall failures are diagnostic-only." The skill is gone from the config and from disk; a stale registration in a registry this run could not reach is not work this run failed to do.',
+    why: 'CLAUDE.md: "Uninstall failures are diagnostic-only." `uninstallPluginSkillsReported` serves both removals — a deselected plugin skill, and the project half of a collapsed `[P][G]` pair. The config no longer names either, so a stale registration in a registry this run could not reach is not work this run failed to do.',
   },
   {
     line: "this.warn(warning);",
@@ -87,14 +75,6 @@ const INIT_ADVISORY_WARNS = [
     why: "The browser is the convenience, not the work. `init --ui` prints the editor's address BEFORE it tries to open one, precisely because there is no browser to be anybody's over a pipe, in CI, or on a machine with no desktop session — so a failed launch leaves the link on screen and nothing this run promised is missing. The same site and the same reason as `edit --ui`'s.",
   },
   {
-    line: "if (skippedSkillIds.length > 0) this.warn(skippedUnknownSkills(skippedSkillIds));",
-    why: "A fact about the PAYLOAD, not a failure of this run — the same line `edit --from` carries, worded once in `messages.ts`. An id no catalogue seats describes no work that could have been attempted.",
-  },
-  {
-    line: "if (skippedAgentNames.length > 0) this.warn(skippedUnknownAgents(skippedAgentNames));",
-    why: "The sub-agent half of the same fact.",
-  },
-  {
     line: "this.warn(warning);",
     why: "The compiler's own reason per failed sub-agent, printed where it is explicable. The FAILURE is recorded one statement below off `failed`, for the reason `edit` records off `failed`: `warnings` also carries entries that are not failures.",
   },
@@ -107,6 +87,10 @@ const EJECT_ADVISORY_WARNS = [
     why: "`ejectAgentPartials` declined: either the CLI carries no partials to copy, or the destination already holds them and `--force` was not passed. A refusal to overwrite is the command doing what it was asked, so the exit code stays at 0 and the reason names the flag that changes the answer.",
   },
   {
+    line: "this.warn(subAgentsAlreadyThere(result.destDir, result.skippedSubAgents));",
+    why: "Some sub-agent directories already in the destination, without `--force`: those are left as they were and named, and the rest ARE written. Nothing of the user's was overwritten and nothing was attempted that failed, and the warning names the flag that would replace them.",
+  },
+  {
     line: "this.warn(",
     why: "Agent templates already on disk during a full `agent-partials` eject. The partials around them ARE written, so this is a partial eject by design — existing templates are preserved deliberately, and `--force` is the way to replace them.",
   },
@@ -114,17 +98,17 @@ const EJECT_ADVISORY_WARNS = [
     line: "this.warn(result.skipReason);",
     why: "The skills half of the same decline: a populated destination without `--force`, or a marketplace carrying no non-local skill to eject.",
   },
+  {
+    line: "this.warn(skillsAlreadyThere(destinationDir, result.skippedSkillCount));",
+    why: "The skills half of the partial skip: an occupied destination without `--force`, so the skills already there are left as they were and counted, not named, while the rest are copied. Nothing of the user's was overwritten, and the remedy is the flag the warning names.",
+  },
 ] as const satisfies readonly AdvisoryWarn[];
 
-/** Shared by four commands, so none adopts one's policy; rostered so the exclusion is visible. */
+/** Shared across commands, so none adopts one's policy; rostered so the exclusion is visible. */
 const BASE_COMMAND_ADVISORY_WARNS = [
   {
-    line: "this.warn(message);",
-    why: "`logWarning` — the generic passthrough, which says nothing about what it is reporting.",
-  },
-  {
-    line: "this.warn(error.message);",
-    why: "`reportValidationErrors`. Advisory by construction: the selection installs either way, and the docblock states that neither command's exit code turns on them.",
+    line: "this.warn(stripTerminalControls(error.message));",
+    why: "`reportValidationErrors`. Advisory by construction: the selection installs either way, and the docblock states that neither command's exit code turns on them. Stripped because a message can quote ids off the wire.",
   },
   {
     line: "this.warn(`Failed to install plugin ${item.id}: ${item.error}`);",
@@ -155,6 +139,14 @@ const BASE_COMMAND_ADVISORY_WARNS = [
     why: "The reason behind the line above, and advisory for the same reason.",
   },
   {
+    line: "if (skippedSkillIds.length > 0) this.warn(skippedUnknownSkills(skippedSkillIds, skippedWith));",
+    why: "`warnOfSkippedEntries`, which `init --from` and `edit --from` share. A fact about the PAYLOAD, not a failure of this run: an id no catalogue seats describes no work that could have been attempted. From `edit --from` the ids reach `reconcileSharedConfig` as `unplaceable`, so the entries stay installed and the confirm discloses them through `unplaceableKept`.",
+  },
+  {
+    line: "if (skippedAgentNames.length > 0) this.warn(skippedUnknownAgents(skippedAgentNames));",
+    why: "The sub-agent half of the same fact. A name this catalogue carries no definition for describes no work that could have been done.",
+  },
+  {
     line: "this.warn(what);",
     why: "`reportIncompleteWork` itself: the warn half of the call every failure site makes. It is the only warn-only line in these files that is not a decision about a failure — it IS the recording route, and it moved here when a second and third command needed it.",
   },
@@ -171,8 +163,8 @@ type FailureSite = {
 
 const EDIT_FAILURE_SITES = [
   { recovery: "INSPECT_INSTALLATION", forWhat: "a plugin scope migration that did not install" },
-  { recovery: "RECOMPILE", forWhat: "the sub-agents a recompile pass refused to write" },
   { recovery: "RECOMPILE", forWhat: "a recompile pass that threw before reporting on any" },
+  { recovery: "RECOMPILE", forWhat: "the sub-agents a recompile pass refused to write" },
   { recovery: "DELETE_AGENT_FILE", forWhat: "a stale compiled sub-agent that would not delete" },
 ] as const satisfies readonly FailureSite[];
 

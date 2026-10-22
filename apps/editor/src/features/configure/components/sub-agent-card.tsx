@@ -1,4 +1,3 @@
-import type { Provider } from "@workspace/compile"
 import type { SubAgent } from "@workspace/matrix"
 import {
   ButtonGroup,
@@ -13,10 +12,7 @@ import {
 import { moveToAdjacentRadio } from "@workspace/ui/lib/radio-row"
 import { cn } from "@workspace/ui/lib/utils"
 
-import {
-  compilesAgent,
-  leftOutOfCodexReason,
-} from "@/features/configure/lib/provider"
+import { agentRefusal } from "@/features/configure/lib/provider"
 import { useConfigStore } from "@/stores/config-store"
 import {
   AGENT_EFFORTS,
@@ -36,9 +32,6 @@ import { useUiStore } from "@/stores/ui-store"
 export type AgentSelection = Pick<PersistedConfig, "skills" | "agents">
 
 type SegmentTone = "plain" | "recede"
-
-const pressRefusal = (provider: Provider, agentId: string) =>
-  compilesAgent(provider, agentId) ? undefined : leftOutOfCodexReason()
 
 const barTone = (filled: boolean, installed: boolean) => {
   if (!filled) return "bg-hairline group-hover/track:bg-rule"
@@ -189,7 +182,7 @@ export function SubAgentCard({
   const setAgentOption = useConfigStore((state) => state.setAgentOption)
   const provider = useUiStore((state) => state.provider)
 
-  const refusal = pressRefusal(provider, agent.id)
+  const refusal = agentRefusal(provider, agent.id)
   const pressable = refusal === undefined
   const installed = pressable && isAgentOn(config, agent.id)
   const options = resolveAgentOptions(config.agents, agent.id)

@@ -1,4 +1,5 @@
 import os from "os";
+import { unique } from "remeda";
 
 import { isHomeDirectory } from "../installation/is-home-directory";
 import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE } from "../../consts";
@@ -147,37 +148,33 @@ function markInstalledAsPlugin(
 }
 
 async function collectPluginSkillIds(projectDir: string): Promise<SkillId[]> {
-  const pluginSkills = await discoverAllPluginSkills(projectDir);
-  const skillIds = typedKeys<SkillId>(pluginSkills);
+  const projectSkillIds = await pluginSkillIdsIn(projectDir);
+  const globalSkillIds = isHomeDirectory(projectDir) ? [] : await pluginSkillIdsIn(os.homedir());
 
-  // From a project, also the home directory's plugins.
-  const homeDir = os.homedir();
-  if (!isHomeDirectory(projectDir)) {
-    const globalPluginSkills = await discoverAllPluginSkills(homeDir);
-    const globalSkillIds = typedKeys<SkillId>(globalPluginSkills);
-    if (globalSkillIds.length > 0) {
-      verbose(`Found ${globalSkillIds.length} global plugin skill(s)`);
-      const merged = new Set([...skillIds, ...globalSkillIds]);
-      return [...merged];
-    }
+  if (globalSkillIds.length > 0) {
+    verbose(`Found ${globalSkillIds.length} global plugin skill(s)`);
+    return unique([...projectSkillIds, ...globalSkillIds]);
   }
 
-  if (skillIds.length === 0) {
+  if (projectSkillIds.length === 0) {
     verbose("No plugin skills discovered from settings.json");
   }
 
-  return skillIds;
+  return projectSkillIds;
 }
 
-/** Prefers installed source; falls back to first available */
+async function pluginSkillIdsIn(dir: string): Promise<SkillId[]> {
+  return typedKeys<SkillId>(await discoverAllPluginSkills(dir));
+}
+
 function setActiveSources(matrix: MergedSkillsMatrix): void {
   for (const [, skill] of typedEntries(matrix.skills)) {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
     if (!skill) continue;
-    if (!skill.availableSources || skill.availableSources.length === 0) continue;
 
-    const [firstSource] = skill.availableSources;
+    const sources = skill.availableSources ?? [];
+    const [firstSource] = sources;
     if (!firstSource) continue;
-    skill.activeSource = skill.availableSources.find((s) => s.installed) ?? firstSource;
+    skill.activeSource = sources.find((s) => s.installed) ?? firstSource;
   }
 }

@@ -23,6 +23,7 @@ import {
   fetchSkillIndex,
   formatStars,
   type IndexFreshness,
+  type SkillIndexResult,
 } from "@/lib/api/skill-index"
 import {
   activeCatalog,
@@ -91,6 +92,9 @@ function Note({
 const skillCoordinate = (entry: SkillIndexEntry) =>
   `${entry.repo}/${entry.path}`
 
+const sameSkill = (a: SkillIndexEntry, b: SkillIndexEntry) =>
+  skillCoordinate(a) === skillCoordinate(b)
+
 // An early refusal from the index's snapshot; `skill-contents.ts` stays the
 // authority.
 const isTooLargeToAdd = (entry: SkillIndexEntry) =>
@@ -128,9 +132,7 @@ const holderOf = (
   if (seated) return seated.displayName
 
   const twin = staged.find(
-    (other) =>
-      skillCoordinate(other.entry) !== skillCoordinate(staging.entry) &&
-      stagedId(other) === id
+    (other) => !sameSkill(other.entry, staging.entry) && stagedId(other) === id
   )
   return twin?.entry.name
 }
@@ -184,6 +186,15 @@ type IndexState =
   | { status: "ready"; skills: SkillIndexEntry[]; freshness: IndexFreshness }
   | { status: "failed"; error: string }
 
+const toIndexState = (result: SkillIndexResult): IndexState =>
+  result.ok
+    ? {
+        status: "ready",
+        skills: result.index.skills,
+        freshness: result.freshness,
+      }
+    : { status: "failed", error: result.error }
+
 type CommitState =
   | { status: "idle" }
   | { status: "resolving" }
@@ -221,15 +232,7 @@ export function AddSkillDialog() {
 
     void fetchSkillIndex().then((result) => {
       if (!live) return
-      setIndex(
-        result.ok
-          ? {
-              status: "ready",
-              skills: result.index.skills,
-              freshness: result.freshness,
-            }
-          : { status: "failed", error: result.error }
-      )
+      setIndex(toIndexState(result))
     })
 
     // Ignored, not aborted: finishing warms the cache for the next open.
@@ -262,15 +265,11 @@ export function AddSkillDialog() {
   }
 
   const isStaged = (entry: SkillIndexEntry) =>
-    staged.some(
-      (item) => skillCoordinate(item.entry) === skillCoordinate(entry)
-    )
+    staged.some((item) => sameSkill(item.entry, entry))
 
   const unstage = (entry: SkillIndexEntry) =>
     setStaged((current) =>
-      current.filter(
-        (item) => skillCoordinate(item.entry) !== skillCoordinate(entry)
-      )
+      current.filter((item) => !sameSkill(item.entry, entry))
     )
 
   const toggleStage = (entry: SkillIndexEntry) => {
@@ -285,9 +284,7 @@ export function AddSkillDialog() {
   const categorise = (entry: SkillIndexEntry, categoryId: string) =>
     setStaged((current) =>
       current.map((item) =>
-        skillCoordinate(item.entry) === skillCoordinate(entry)
-          ? { ...item, categoryId }
-          : item
+        sameSkill(item.entry, entry) ? { ...item, categoryId } : item
       )
     )
 

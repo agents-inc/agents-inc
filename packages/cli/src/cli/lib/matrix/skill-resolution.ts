@@ -80,7 +80,6 @@ function buildSlugMap(skills: ExtractedSkillMetadata[]): SkillSlugMap {
 /** Warns on duplicate ids (first wins), which would otherwise resolve in glob order. */
 function buildResolvedSkillMap(
   skills: ExtractedSkillMetadata[],
-  categories: CategoryMap,
   relationships: RelationshipDefinitions,
   slugMap: SkillSlugMap,
 ): Partial<Record<SkillId, ResolvedSkill>> {
@@ -95,7 +94,7 @@ function buildResolvedSkillMap(
       continue;
     }
 
-    resolvedSkills[skill.id] = buildResolvedSkill(skill, categories, relationships, slugMap);
+    resolvedSkills[skill.id] = buildResolvedSkill(skill, relationships, slugMap);
   }
 
   return resolvedSkills;
@@ -200,8 +199,28 @@ export function mergeMatrixWithSkills(
   skills: ExtractedSkillMetadata[],
 ): MergedSkillsMatrix {
   const slugMap = buildSlugMap(skills);
-  const resolvedSkills = buildResolvedSkillMap(skills, categories, relationships, slugMap);
+  const resolvedSkills = buildResolvedSkillMap(skills, relationships, slugMap);
+  const synthesizedCategories = withUndeclaredCategoriesSynthesized(categories, skills);
+  const unresolvedSlugs = collectUnresolvedSlugs(relationships, slugMap.slugToId);
 
+  const merged: MergedSkillsMatrix = {
+    version: DEFAULT_VERSION,
+    categories: synthesizedCategories,
+    skills: resolvedSkills,
+    suggestedStacks: [],
+    slugMap,
+    ...(unresolvedSlugs.length > 0 && { unresolvedSlugs }),
+    generatedAt: new Date().toISOString(),
+  };
+
+  return merged;
+}
+
+/** A placeholder for each category a skill names that no definition declares. */
+function withUndeclaredCategoriesSynthesized(
+  categories: CategoryMap,
+  skills: ExtractedSkillMetadata[],
+): CategoryMap {
   const synthesizedCategories = { ...categories };
   const synthesizedFrom = new Map<string, ExtractedSkillMetadata>();
   for (const skill of skills) {
@@ -222,19 +241,7 @@ export function mergeMatrixWithSkills(
     warnOnDomainDisagreement(skill, already);
   }
 
-  const unresolvedSlugs = collectUnresolvedSlugs(relationships, slugMap.slugToId);
-
-  const merged: MergedSkillsMatrix = {
-    version: DEFAULT_VERSION,
-    categories: synthesizedCategories,
-    skills: resolvedSkills,
-    suggestedStacks: [],
-    slugMap,
-    ...(unresolvedSlugs.length > 0 && { unresolvedSlugs }),
-    generatedAt: new Date().toISOString(),
-  };
-
-  return merged;
+  return synthesizedCategories;
 }
 
 type ResolvedRelationships = {
@@ -278,40 +285,10 @@ function resolveRelationships(
   relationships: RelationshipDefinitions,
   resolve: ResolveId,
 ): ResolvedRelationships {
-  const conflictsWith: SkillRelation[] = collectSymmetricGroupMembers(
-    relationships.conflicts,
-    skillId,
-    resolve,
-    "conflicts",
-  ).map(({ memberId, rule }) => ({ skillId: memberId, reason: rule.reason }));
-
-  const discourages: SkillRelation[] = collectSymmetricGroupMembers(
-    relationships.discourages,
-    skillId,
-    resolve,
-    "discourages",
-  ).map(({ memberId, rule }) => ({ skillId: memberId, reason: rule.reason }));
-
-  const alternatives: SkillAlternative[] = collectSymmetricGroupMembers(
-    relationships.alternatives,
-    skillId,
-    resolve,
-    "alternatives",
-  ).map(({ memberId, rule }) => ({ skillId: memberId, purpose: rule.purpose }));
-
-  // Requirements — directional, skill field identifies the dependent
-  const requires: SkillRequirement[] = [];
-  for (const rule of relationships.requires) {
-    const ruleSkillId = resolve(rule.skill, "requires.skill");
-    if (ruleSkillId !== skillId) continue;
-    const resolvedNeeds = resolveEveryNeed(rule.needs, resolve);
-    if (!resolvedNeeds) continue;
-    requires.push({
-      skillIds: resolvedNeeds,
-      needsAny: rule.needsAny ?? false,
-      reason: rule.reason,
-    });
-  }
+  const conflictsWith = relationsWithin(relationships.conflicts, skillId, resolve, "conflicts");
+  const discourages = relationsWithin(relationships.discourages, skillId, resolve, "discourages");
+  const alternatives = alternativesWithin(relationships.alternatives, skillId, resolve);
+  const requires = requirementsOf(skillId, relationships.requires, resolve);
 
   return {
     conflictsWith,
@@ -321,22 +298,56 @@ function resolveRelationships(
   };
 }
 
+function relationsWithin(
+  rules: RelationshipDefinitions["conflicts" | "discourages"],
+  skillId: SkillId,
+  resolve: ResolveId,
+  context: string,
+): SkillRelation[] {
+  return collectSymmetricGroupMembers(rules, skillId, resolve, context).map(
+    ({ memberId, rule }) => ({ skillId: memberId, reason: rule.reason }),
+  );
+}
+
+function alternativesWithin(
+  rules: RelationshipDefinitions["alternatives"],
+  skillId: SkillId,
+  resolve: ResolveId,
+): SkillAlternative[] {
+  return collectSymmetricGroupMembers(rules, skillId, resolve, "alternatives").map(
+    ({ memberId, rule }) => ({ skillId: memberId, purpose: rule.purpose }),
+  );
+}
+
+/** Directional: a rule's `skill` field names the dependent. */
+function requirementsOf(
+  skillId: SkillId,
+  rules: RequireRule[],
+  resolve: ResolveId,
+): SkillRequirement[] {
+  return rules.flatMap((rule) => {
+    if (resolve(rule.skill, "requires.skill") !== skillId) return [];
+
+    const resolvedNeeds = resolveEveryNeed(rule.needs, resolve);
+    if (!resolvedNeeds) return [];
+
+    return [{ skillIds: resolvedNeeds, needsAny: rule.needsAny ?? false, reason: rule.reason }];
+  });
+}
+
 function buildResolvedSkill(
   skill: ExtractedSkillMetadata,
-  _categories: CategoryMap,
   relationships: RelationshipDefinitions,
   slugMap: SkillSlugMap,
 ): ResolvedSkill {
   const resolve: ResolveId = (slug, context) =>
     resolveToCanonicalId(slug, slugMap.slugToId, context ? `${skill.id} ${context}` : undefined);
 
-  const slug = skill.slug;
-
   const resolved = resolveRelationships(skill.id, relationships, resolve);
 
   return {
     id: skill.id,
-    slug,
+    slug: skill.slug,
     displayName: skill.displayName,
     description: skill.description,
     ...(skill.activationDescription !== undefined && {

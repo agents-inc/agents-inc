@@ -34,7 +34,7 @@ const treeSchema = z.object({
 type Blob = { path: string; size: number }
 
 /** `not-text`: a non-UTF-8 file would be corrupted on someone's disk. */
-export type SkillContentsFailureKind =
+type SkillContentsFailureKind =
   "unreadable" | "too-large" | "not-text" | "unreachable"
 
 export type SkillContentsResult =
@@ -83,6 +83,16 @@ const notText = (where: string): SkillContentsResult => ({
 type ListResult =
   { ok: true; blobs: Blob[] } | { ok: false; failure: SkillContentsResult }
 
+// `undefined` when the request never landed. Not reported: an offline browser
+// is not our fault.
+const reach = async (url: string): Promise<Response | undefined> => {
+  try {
+    return await fetch(url)
+  } catch {
+    return undefined
+  }
+}
+
 // With the separator, so `skills/docx` does not collect `skills/docx-legacy`.
 const blobsUnder = (tree: z.infer<typeof treeSchema>["tree"], path: string) =>
   tree
@@ -95,11 +105,8 @@ const listSkillTree = async (
   repo: string,
   path: string
 ): Promise<ListResult> => {
-  let response: Response
-  try {
-    response = await fetch(treeUrl(repo))
-  } catch {
-    // Not reported: an offline browser is not our fault.
+  const response = await reach(treeUrl(repo))
+  if (!response) {
     return { ok: false, failure: unreachable(`${repo} is unreachable`) }
   }
 
@@ -156,10 +163,8 @@ const fetchFile = async (
   // Relative to the skill directory, which is what the CLI writes.
   const relative = blob.path.slice(path.length + 1)
 
-  let response: Response
-  try {
-    response = await fetch(rawUrl(repo, blob.path))
-  } catch {
+  const response = await reach(rawUrl(repo, blob.path))
+  if (!response) {
     return { ok: false, failure: unreachable(`${relative} is unreachable`) }
   }
 
@@ -181,6 +186,21 @@ const fetchFile = async (
 const treeBytes = (blobs: Blob[]) =>
   blobs.reduce((total, blob) => total + blob.size, 0)
 
+type AssembledFiles =
+  | { ok: true; files: SeedSkillTree }
+  | { ok: false; failure: SkillContentsResult }
+
+// All or nothing: half a skill installs and then cannot do what it says.
+const assembleFiles = (fetched: readonly FileResult[]): AssembledFiles => {
+  const files: Record<string, string> = {}
+  for (const file of fetched) {
+    if (!file.ok) return file
+    files[file.relative] = file.text
+  }
+
+  return { ok: true, files }
+}
+
 /**
  * The whole directory, not SKILL.md alone: references and examples are part of
  * the skill.
@@ -200,16 +220,12 @@ export const fetchSkillContents = async (
     listed.blobs.map((blob) => fetchFile(repo, blob, path))
   )
 
-  // All or nothing: half a skill installs and then cannot do what it says.
-  const files: Record<string, string> = {}
-  for (const file of fetched) {
-    if (!file.ok) return file.failure
-    files[file.relative] = file.text
-  }
+  const assembled = assembleFiles(fetched)
+  if (!assembled.ok) return assembled.failure
 
-  if (!(SKILL_MANIFEST in files)) {
+  if (!(SKILL_MANIFEST in assembled.files)) {
     return unreadable(`${repo}/${path} has no ${SKILL_MANIFEST}`)
   }
 
-  return { ok: true, files }
+  return assembled
 }

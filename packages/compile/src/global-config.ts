@@ -105,16 +105,15 @@ export function mergeGlobalConfigs(
   existing: ProjectConfig,
   incoming: ProjectConfig
 ): { config: ProjectConfig; changed: boolean } {
-  const existingSkillIds = new Set(existing.skills.map((s) => s.id))
-  const existingAgentNames = new Set(existing.agents.map((a) => a.name))
-
-  const incomingActiveSkills = incoming.skills.filter((s) => !s.excluded)
-  const incomingActiveAgents = incoming.agents.filter((a) => !a.excluded)
-  const newSkills = incomingActiveSkills.filter(
-    (s) => !existingSkillIds.has(s.id)
+  const newSkills = activeEntriesNotIn(
+    incoming.skills,
+    existing.skills,
+    (s) => s.id
   )
-  const newAgents = incomingActiveAgents.filter(
-    (a) => !existingAgentNames.has(a.name)
+  const newAgents = activeEntriesNotIn(
+    incoming.agents,
+    existing.agents,
+    (a) => a.name
   )
 
   const mergedSkills = [...existing.skills, ...newSkills]
@@ -154,6 +153,15 @@ export function mergeGlobalConfigs(
     },
     changed,
   }
+}
+
+function activeEntriesNotIn<Entry extends { excluded?: boolean }>(
+  incoming: Entry[],
+  existing: Entry[],
+  keyOf: (entry: Entry) => string
+): Entry[] {
+  const held = new Set(existing.map(keyOf))
+  return incoming.filter((entry) => !entry.excluded && !held.has(keyOf(entry)))
 }
 
 /**

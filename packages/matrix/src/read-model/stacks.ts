@@ -68,21 +68,26 @@ const toLoadByAgent = (skillId: string): Map<string, LoadState> =>
     resolveAssignment(skillId).map(({ agentId, load }) => [agentId, load])
   )
 
+const toAssignmentTargets = (
+  skillId: string,
+  agentIds: AgentName[]
+): AssignmentTarget[] => {
+  const loadByAgent = toLoadByAgent(skillId)
+
+  return agentIds.map((agentId) => ({
+    agentId,
+    load: loadByAgent.get(agentId) ?? "lazy",
+  }))
+}
+
 const toAssignmentsBySkill = (
   stack: MatrixStack
 ): Record<string, AssignmentTarget[]> =>
   Object.fromEntries(
-    Object.entries(toAgentsBySkill(stack)).map(([skillId, agentIds]) => {
-      const loadByAgent = toLoadByAgent(skillId)
-
-      return [
-        skillId,
-        agentIds.map((agentId) => ({
-          agentId,
-          load: loadByAgent.get(agentId) ?? "lazy",
-        })),
-      ]
-    })
+    Object.entries(toAgentsBySkill(stack)).map(([skillId, agentIds]) => [
+      skillId,
+      toAssignmentTargets(skillId, agentIds),
+    ])
   )
 
 /** Expand a stack against the catalogue it came from. */

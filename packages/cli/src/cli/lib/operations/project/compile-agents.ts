@@ -25,18 +25,16 @@ export type CompilationResult = {
 };
 
 export async function compileAgents(options: CompileAgentsOptions): Promise<CompilationResult> {
-  const { agents: resolvedAgents, agentScopeMap: resolvedAgentScopeMap } = options.scopeFilter
-    ? await rosterForScope(options, options.scopeFilter)
-    : { agents: options.agents, agentScopeMap: options.agentScopeMap };
+  const roster = await rosterForPass(options);
 
   const recompileResult = await recompileAgents({
     pluginDir: options.pluginDir ?? options.projectDir,
     sourcePath: options.sourcePath,
-    ...(resolvedAgents !== undefined && { agents: resolvedAgents }),
+    ...(roster.agents !== undefined && { agents: roster.agents }),
     ...(options.skills !== undefined && { skills: options.skills }),
     projectDir: options.projectDir,
     ...(options.outputDir !== undefined && { outputDir: options.outputDir }),
-    ...(resolvedAgentScopeMap !== undefined && { agentScopeMap: resolvedAgentScopeMap }),
+    ...(roster.agentScopeMap !== undefined && { agentScopeMap: roster.agentScopeMap }),
   });
 
   await pruneStaleAgentsForPass(options, recompileResult);
@@ -49,13 +47,20 @@ export async function compileAgents(options: CompileAgentsOptions): Promise<Comp
   };
 }
 
+type PassRoster = {
+  agents: AgentName[] | undefined;
+  agentScopeMap: Map<AgentName, SkillScope> | undefined;
+};
+
+async function rosterForPass(options: CompileAgentsOptions): Promise<PassRoster> {
+  if (!options.scopeFilter) return { agents: options.agents, agentScopeMap: options.agentScopeMap };
+  return rosterForScope(options, options.scopeFilter);
+}
+
 async function rosterForScope(
   options: CompileAgentsOptions,
   scope: SkillScope,
-): Promise<{
-  agents: AgentName[] | undefined;
-  agentScopeMap: Map<AgentName, SkillScope> | undefined;
-}> {
+): Promise<PassRoster> {
   const config = (await loadInstalledConfig(options.projectDir))?.config;
   const activeAtScope = config?.agents
     .filter((agent) => !agent.excluded && agent.scope === scope)
