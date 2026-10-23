@@ -7,6 +7,20 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.173.0] - 2026-10-23
+
+**`doctor` downloads each marketplace on every run, the editor keeps a saved configuration per marketplace and its stack-switch question waits for the stack, and a sub-agent goes off with its last skill**
+
+- REPO-44:
+  - The editor keeps a saved configuration per marketplace: loading another opens its own and leaves the one on screen saved with its marketplace, and a saved stack built on another marketplace loads that marketplace first.
+  - The question before an account's saved stack replaces changes waits for the stack and offers Retry when it cannot load. A sub-agent whose last skill goes switches off with the toast on a link the CLI minted.
+  - `doctor` passes a project holding a Claude and a Codex installation, and `doctor` and `uninstall` use the project's own provider's global where a home holds both. A marketplace skill with no `displayName` is skipped with a warning and the rest of the marketplace loads.
+- CLI-925: `doctor` downloads each marketplace on every run, fails its row when only giget's saved tarball came back, and says when it replaced a saved copy that differed.
+- CLI-915: the editor's preview shows a link's own description over its stack's, as the install does.
+- CLI-865: the panel and terminal-poll specs wait for their settled result instead of sampling once after a fixed delay.
+
+See [changelogs/0.173.0.md](./changelogs/0.173.0.md) for full details.
+
 ## [0.172.0] - 2026-10-22
 
 **`init --from`, `edit --from` and `uninstall` show the summary panel at the question, the editor names the sub-agents a skill switches and holds a project link's global entries, links are version 7, and agentsinc.sh/ opens the editor**
