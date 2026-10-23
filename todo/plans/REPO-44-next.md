@@ -1,61 +1,52 @@
 # REPO-44 — what runs next (2026-10-22)
 
-Owner, 2026-10-22: the card rework before the refactors; both repositories; eight sub-agents at a
-time. **Every commit round is a release** (version bump, changelogs) that the owner publishes to npm.
-One workflow carries the CLI work (`wf_c865fc69-672`, continued as `wf_ccc62c7e-16b` from the
-session's `r44/wf-next-cont.js`); this file is its tracker. Rows are deleted as they land (one line
+Owner, 2026-10-22: **every commit round is a release** (version bump, changelogs) that the owner
+publishes to npm. Rows are deleted as they land (one line
 to [`archive.md`](../archive.md)); the run log is [`REPO-44-progress.md`](./REPO-44-progress.md).
 Card answers: [`outstanding.md`](../outstanding.md), verbatim in the session's
 `r44/cards2/answers-round*.json`. Commit rounds: one planner, minutes, about 10–20 commits, no tests
 (root CLAUDE.md); the owner commits, pushes and publishes.
 
-## 1. Phase A — card rework and fixes (CLI) — built, reviewed and fixed; Phase D reproduces each
+## Resume here (2026-10-23 evening, after the account switch)
 
-| Lane                                                                                                                            | Work                                                                                                                                                                                                              |
-| ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A1 editor selection                                                                                                             | E1 toasts (on: first three names, then "and N more"; off: "X switched off: Y removed"); Q1 a stack's sub-agents stay on with no skills                                                                            |
-| A2 editor links                                                                                                                 | E2 a project-made link shows its global items disabled (switch to project scope allowed); R1 also matches a signed-in account's saves                                                                             |
-| A3 link text                                                                                                                    | FU1: codexModel warning and carried display names printed sanitised, line breaks folded (security)                                                                                                                |
-| A4 doctor                                                                                                                       | F5a remove this round's skill-folder addition; F5b doctor never uses the saved marketplace copy; doctor's error on two healthy installations                                                                      |
-| A5 install and load                                                                                                             | F3d sub-agents install without a skill that fails to load (warning, no refusal); F9 a project keeps its own description; FU2 carried names over 30 characters                                                     |
-| A6 build and misc                                                                                                               | P1 agent plugins version by shipped files and drop stale output; Q5 empty marketplace config refused at build; E3 local worker ⇒ local editor everywhere, `AGENTS_INC_EDITOR_URL` removed; `list` long names; FU6 |
-| A7 worker and e2e                                                                                                               | FU4 worker refuses escaping ids and file keys; FU5 PostToolUse-only trust case, `completionGate` → `stopHook`                                                                                                     |
-| A8 confirm screens (after A3)                                                                                                   | Info panel at the question for init/edit/uninstall (`~` plus a line for changed sub-agents; F3c whole global install); F3b "recompiled"; FU3 remedies; no-terminal no-op; the home refusal's advice               |
-| A9 www root (done: `/` 301 → `/editor` via `public/_redirects`; editor's About link → `/docs/why`, a call the owner may change) | agentsinc.sh/ goes straight to the editor; the landing page is removed; /docs stays; every link to / fixed                                                                                                        |
+Running: lint-rules lanes LA (guards and standards: the CLAUDE.md never-default line, `default: throw` house rule,
+collect-time throws, hand-split guard, parallel-load timeouts, status.md's stale "uncommitted" cells) and LB (narrow
+mutation runs); reports land in the session's `r44/lint-followups/LA-report.md` and `LB-report.md`. If interrupted,
+re-dispatch from those briefs' items (outstanding.md's lint-rules row); a lane with no report file has not finished.
+Next for lint-rules: the own-lint clean-up (s-lint-rules-own-lint-gate, size L) after LA, then a reviewer and a gate.
+The board moved to https://claude.ai/artifact/4GpMMzy64wzXqSPZaghWTJ (all 396 records restored). The old lint
+answers page (https://claude.ai/artifact/52mc1h8u4wtpFYTR5pRLAp) holds nothing new: all 193 answers match the
+2026-10-17 export already acted on.
 
-## 2. Phase B gate and 2b pre-release verify — done
+- **CLI commit round 2 → 0.173.0:** everything uncommitted is built, reviewed and gated (run `wf_d904175e-f2b`:
+  build, static, CLI unit headless, wide through turbo and directly at 120 columns, CLI e2e, other units, editor
+  e2e 930, server e2e). The plan is drafted, read-only: session `r44/commits/plan-cli-0.173.0.md` (13 commits + the
+  release; every one of the 148 paths placed). It runs on the owner's go ("commit, push" or invoking the commit-plan
+  skill); npm publish needs `npm login` on this machine (`npm whoami` fails) or the owner publishes.
+- **lint-rules 0.2.0:** committed and pushed (`66284c0`..`35a334d`, pushed 16:47 by `wf_25ad1b74-882`). Not
+  publishable yet (package private; first-publish checklist open).
+- **Owner answers:** queued after the round, each with a tracker row and a board item: CLI-931 (no notice for old
+  `.claude-src/` folders), CLI-946 (refused version check stops init and edit), CLI-947 (delete the summary panel's
+  scroll code), CLI-948 to CLI-952, SKILLS-17, REPO-45, and outstanding.md's lint-rules row. Follow-ups: release.md's bun.lock step is false; `setSkillOption` has no
+  already-in-effect guard (held-skill lane's outsideLane note).
+- **Open on the board:** the 72 rule-candidate cards and 3 bulk cards (the owner pastes answers in chat), card
+  q-stack-load-fails-no-dialog, q-lint-own-calls, the stale-doc verdicts; the owner's notes on
+  q-cli-retired-folder-notice and q-commit-plan-skill-tracking were read as stated in the session's
+  `r44/openq/answers-board-2026-10-23b.json` (confirm).
+- **Workboard backup:** the board's page and every record (396 files) are saved in the session's `r44/workboard-export-2026-10-23/`. The new subscription could not open the old board, so it was rebuilt from there on 2026-10-23 (https://claude.ai/artifact/4GpMMzy64wzXqSPZaghWTJ).
+- **Gate commands:** call the repo's turbo (`npx turbo`), never a bare `turbo` (an old global 2.4.4 that hangs under
+  `script`).
 
-`wf_9905899c-6ab` reproduced A1–A9 against the owner's answers, fixed and re-checked; the
-pre-release gate is green (unit headless and at 120 columns with `--force`, all e2e, coverage
-floor). Still failing on recheck, moved to Phase D: E1-d on a link the CLI minted (owner question,
-open-questions page); E2's marketplace switch drops a project link's held global skills
-(`pruneToCatalog`); F5b giget's saved tarball read after one failed download; F9 the editor
-preview's `resolveDescription` order; FU2 doctor's Codex block beside a Claude installation in one
-project (`discoverLocalSkills` ignores the provider).
+## Commit round 2 — CLI 0.173.0
 
-## 3. Commit round 1 — CLI 0.172.0 — committed and pushed (`388fe87b`..`4b090f89`); the owner publishes
-
-Once the gate is green and A9 has landed: commits by area (editor, link text, doctor, install and
-load, build and misc, worker and e2e, confirm screens, www root, findings, `todo/`), then
-`chore(release): 0.172.0` (minor: the card rework changes what users see). The owner commits,
-pushes and publishes; then the run resumes at Phase C.
-
-## 4. Phase C — expressive-ts round 3, then its gate
-
-Patterns 5, 6, 8 and the red flags; eight lanes at once, each reviewed and fixed.
-
-## 5. Phase D — verify and finish
-
-Fix the five items §2 lists (E1-d only once the owner rules); reproduce every Phase A item against
-the owner's answers word for word; the full gate; up to three rounds; docs where false; recompile
-`.claude/agents`.
-
-## 6. Commit round 2 — CLI 0.172.1
-
-Round 3's refactors, the verify fixes, docs, the recompiled agents; `chore(release): 0.172.1`
-(patch; 0.173.0 if the verify fixes change behaviour). The owner commits, pushes and publishes.
+Phase F's fixes, round 3's refactors, the Marketplace lanes (E2-market, E2b, E2c with the owner's answers), F5c with
+its set-aside fix and the repaired-copy line, the held-skill fix, the verify fixes, findings and docs;
+`chore(release): 0.173.0` (minor: doctor and the editor's saved configurations behave differently). Git ignores the
+commit-plan skill and the recompiled agents, so neither is in it. `packages/compile/src/config-source.ts` (now
+exports `EXTRACTED_FIELDS`) and `packages/cli/src/cli/lib/config-gate/classify.ts` (imports it) land in the same
+commit.
 
 ## Later (owner)
 
 Candidate lint rules; running lint-rules against the repositories (then REPO-44 step 5's rules); the
-`CLAUDE.md` and `.ai-docs` slim (REPO-44 step 3). Open questions: https://claude.ai/artifact/BT8ZY5tazeBkXzgG6ZE8zp.
+`CLAUDE.md` and `.ai-docs` slim (REPO-44 step 3). Open questions: https://claude.ai/artifact/4GpMMzy64wzXqSPZaghWTJ.

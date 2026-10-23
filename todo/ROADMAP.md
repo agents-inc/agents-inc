@@ -13,18 +13,14 @@ started. See the root `CLAUDE.md`.
 
 ---
 
-## Waiting on the owner — the wizard removal's loose ends (2026-10-15)
-
-0.169.0 (CLI-923/924), 0.170.0 (CLI-926 to CLI-929) and 0.170.1 are pushed, and npm is at 0.170.1. 0.170.2 (mutation
-testing, REPO-44 step 8's first run) is committed but not pushed.
-CLI-925's findings and the lane questions are cards on the decisions page linked from
-`plans/2026-10-14-session-queue.md`; EDITOR-97 (the `stackId: null` ruling) waits on its R1.
-
 ## Next — REPO-44: tech debt and lint rules
 
 Steps 1 (lint-rules measurement) and 2 (CLI-923) landed 2026-10-15, step 8's first Stryker run in 0.170.2;
-steps 4-8 landed 2026-10-21 (step 3 removed by the owner; step 5's measured rules wait for the lint-rules package run;
-whole-repo expressive-ts rounds queued, CLI and lint-rules).
+steps 4-8 landed 2026-10-21 (step 3 removed by the owner; step 5's measured rules wait for the lint-rules package run);
+the whole-repo expressive-ts rounds landed (lint-rules 2026-10-21; CLI rounds 1–2 in 0.171.0, round 3 2026-10-22).
+The wizard removal's loose ends were ruled on the decision cards and shipped in 0.172.0, now on npm; what was still
+short has landed since, uncommitted, with the owner's 2026-10-23 answers (gate green 2026-10-23). Next: commit
+round 2 as CLI 0.173.0 on the owner's go (lint-rules 0.2.0 is pushed); `plans/REPO-44-next.md`.
 Order: `plans/REPO-44-tech-debt-and-lint.md`. Open and queued, both repositories: [`outstanding.md`](./outstanding.md).
 
 ## 2026-10-04: the post-CLI-902 audit, rounds 1–6 landed
@@ -37,9 +33,9 @@ fix it, and repeat. Six rounds have landed (0.166.0).
 
 **Open, filed 2026-10-04:**
 
-- **CLI:** CLI-910 to CLI-912, CLI-915 to CLI-917, and CLI-921 (the doubled cancel message). CLI-913 landed
-  2026-10-04 (`.claude-src/` support dropped).
-- **CLI, deferred by owner:** CLI-908 and CLI-909 (`edit --from` shows the info table), CLI-914 (`CLAUDE_CONFIG_DIR`).
+- **CLI:** CLI-910 to CLI-912, CLI-916, CLI-917 and CLI-921 (the doubled cancel message). CLI-913 landed
+  2026-10-04 (`.claude-src/` support dropped); CLI-908, CLI-909 and CLI-915 in 0.172.0.
+- **CLI, deferred by owner:** CLI-914 (`CLAUDE_CONFIG_DIR`).
 - **CLI, parked with Codex:** CLI-920.
 - **Owner rulings owed:** CLI-918 and CLI-919.
 - **Editor, logged but not fixed by owner ruling:** EDITOR-80 to EDITOR-89, plus EDITOR-91 and EDITOR-92.
@@ -443,8 +439,7 @@ corrections ledger are in
 and was deleted when the second pass finished.
 **All eight ready rows landed 2026-09-02** — CLI-854, CLI-855, CLI-856, CLI-867, CLI-870 (was
 CLI-857), EDITOR-66, EDITOR-67 and EDITOR-69, each with an `archive.md` entry. A verification pass
-proved seven of them real by mutation and un-landed none. **What remains open** is CLI-865
-(`Investigate` — its filed cause was falsified and the real one is unknown), CLI-869,
+proved seven of them real by mutation and un-landed none. **What remains open** is CLI-869,
 EDITOR-70, EDITOR-71, EDITOR-72 and REPO-42, all filed by those lanes; plus the docs and test-gap
 follow-ups the verification pass named.
 

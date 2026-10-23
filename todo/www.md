@@ -30,6 +30,7 @@ blocks a commit. What blocks a _deploy_ is in [`repo.md`](./repo.md), not here.
 | WWW-02 (was editor-todo item 9)  | Landing page: the free-and-open-source block does not do its job, and two a11y defects      | Ready for Dev    | feature | easy       |
 | WWW-03 (was editor-todo item 10) | Apex path split — **the repository half has landed; what is left is the dashboard cutover** | Needs Assistance | feature | complex    |
 | WWW-06 (was editor-todo item 14) | The landing page's video slot is empty; you supply the recording                            | Needs Assistance | feature | easy       |
+| WWW-17 (new, 2026-10-23, round-3 lane X6)  | Nothing checks that a built `target="_blank"` link keeps `rel="noopener noreferrer"`: add a `scripts/check-*.ts` over `dist/**/*.html` to `test` | Ready for Dev | test | easy |
 
 ---
 

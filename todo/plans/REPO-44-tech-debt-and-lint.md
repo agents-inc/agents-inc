@@ -16,7 +16,8 @@ Owner 2026-10-15. Order matters: nothing is polished, linted or mutation-tested 
    2026-10-20: the measured rules wait for the lint-rules package run against this repo (owner: not yet); the
    deps:dead sweep, the matcher-cast rule and the `fast-glob` import ban landed 2026-10-21.
 6. **expressive-ts, one pass**, on source files over 800 lines: done 2026-10-21. Then (owner, 2026-10-21, after a pause): several
-   rounds over the whole repo and lint-rules, a different focus each, queued behind the running work.
+   rounds over the whole repo and lint-rules, a different focus each: lint-rules done 2026-10-21; CLI rounds 1–2 in
+   0.171.0, round 3 done 2026-10-22 (uncommitted).
 7. **Test prune.** Tests that pin implementation rather than behaviour (the "tests survive refactor" ruling). Split
    the test files that mix source-reading tests with others, so the rest rejoin mutation runs, then shrink
    `READS_SOURCE_TEXT` in `packages/cli/vitest.mutation.config.ts`. Done 2026-10-21.

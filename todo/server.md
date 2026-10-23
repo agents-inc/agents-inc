@@ -22,6 +22,9 @@ are.
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ------- | ---------- |
 | SERVER-01 (was editor-todo item 3)                    | **Re-read against SERVER-04 before starting: the owner ruled 2026-08-28 that sign-in keeps the GitHub access token, and the unauthenticated 10 req/min ceiling this row exists for is exactly what a token removes.** v1 LANDED 2026-08-08 (index over 3 popular repos + dialog swap). Remaining: registry adapters (skills.sh etc.) — deferred; each lands only with hand-verification against the live registry (owner ruling) | Deferred                     | feature | complex    |
 | SERVER-03 (was cli-integration "Phase 3 attribution") | Count `GET /configs/:id` split by caller; the CLI already sends its user-agent, the route is not written. Owner 2026-08-09: nice idea, DO IT — in a separate session.                                                                                                                                                                                                                                                            | Ready for Dev — next session | feature | easy       |
+| SERVER-07 (new, 2026-10-23) | Each CORS pair in `index.ts` (`/x` and `/x/*`) runs twice on `/x`, so served routes answer `vary: Origin, Origin`. Harmless on the wire; a tidy. | Ready for Dev | fix | trivial |
+| SERVER-08 (new, 2026-10-23) | `FIRST_HEADING_PATTERN` in `crawl.ts` has never been run under Stryker since 3bde4989 replaced the pattern. | Ready for Dev | test | trivial |
+| SERVER-09 (new, 2026-10-23) | `dev.e2e.test.ts`'s "asks GitHub for nothing" can catch wrangler's agent request only when the user's wrangler cache is stale; give the spec a stale `XDG_CONFIG_HOME` of its own. | Ready for Dev | test | small |
 
 ---
 
@@ -71,3 +74,16 @@ schema accepts `v: SEED_VERSION` and nothing else — pre-release policy is disc
 fails to decode loudly rather than being guessed at.
 
 ---
+
+
+#### SERVER-07: CORS runs twice on a bare path
+
+Found by the 2026-10-20 reasons recheck: POST `/configs` from the editor's origin answers 201 with `vary: Origin, Origin`. `allowOnlyWebOrigin` is mounted on both `/configs` and `/configs/*`, on `/skills` and `/skills/*`, and on `/stacks` and `/stacks/*`, and both mounts of a pair run on the bare path. Dropping one mount of each pair runs CORS once. A spec asserting a single `Vary` token goes red first. `index.test.ts` "grants the web origin nothing on a path it serves nothing at" pins the mount scope and stays green.
+
+#### SERVER-08: mutation-test the crawl's heading pattern
+
+The survival reasons recorded for the old `/^#\s+(.+)$/m` no longer describe the code (2026-10-20 reasons recheck: "not settled"). The `/^#[ \t]+(\S.*)$/m` that replaced it has six specs in `crawl.test.ts` but no measured mutants. From the root, run `bun run mutation stryker.server.config.mjs --mutate apps/server/src/crawl.ts:<the FIRST_HEADING_PATTERN line>` (see `docs/architecture.md`, "Mutation testing"). Kill each survivor with a spec, or record why it is equivalent.
+
+#### SERVER-09: the dev spec's no-request check depends on the user's wrangler cache
+
+Wrangler asks GitHub for cloudflare/skills when its agent detector fires and its cache is over a day old. `devEnvironment` (`e2e/helpers/local-dev.ts`) withholds the detector's variables but passes on the caller's `XDG_CONFIG_HOME`. On a machine with a fresh cache, "keeps an index younger than three days, and asks GitHub for nothing" therefore stays green whether or not a variable leaks. A 2026-10-20 run showed the check goes red under a scratch `XDG_CONFIG_HOME` aged 25 h with an agent variable let through. A stale scratch `XDG_CONFIG_HOME` of the spec's own makes the check the same on every machine. Show it red with a variable let through first. `local-dev.e2e.test.ts` (the `devEnvironment` rows) already covers today's variable list without wrangler.
