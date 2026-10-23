@@ -17,6 +17,7 @@ import {
 import { captureCreateConfig, stubGetConfig } from "../support/sharing"
 
 import type { ConfigurePage } from "../pages/configure-page"
+import type { Page } from "@playwright/test"
 
 // A bare `edit` run inside a project mints a link holding the global install's
 // entries as well as the project's own. A run in that project cannot switch the
@@ -24,6 +25,7 @@ import type { ConfigurePage } from "../pages/configure-page"
 // one to project gives the project a copy of its own and leaves the global one.
 
 const LINK_ID = "ProjMnt1"
+const API_LINK_ID = "ProjApi1"
 const STACK_LINK_ID = "ProjStk1"
 const HOME_LINK_ID = "HomeMnt1"
 const SHARED_LINK_ID = "EdShare1"
@@ -55,11 +57,33 @@ const projectLink = () =>
     [API_DEV]
   )
 
+// Hono global too, so the link holds the API developer as well.
+const linkHoldingApiDeveloper = () =>
+  projectMintedPayload({
+    [REACT_ID]: freshlyPickedSkill(REACT_ID),
+    [HONO_ID]: freshlyPickedSkill(HONO_ID),
+  })
+
 const react = (configure: ConfigurePage) =>
   configure.skillIn(web, FRAMEWORK, REACT)
 
 // Playwright waits out `aria-disabled`; the claim is what the press changes.
 const REFUSED_PRESS = { force: true }
+
+const reactOnApiDeveloper = (configure: ConfigurePage) =>
+  configure.roster.skillRow(REACT, API_DEV)
+
+const giveReactToApiDeveloper = async (
+  configure: ConfigurePage,
+  page: Page
+) => {
+  const held = react(configure)
+  await held.openOptions()
+  await held.options.cycleAssignment("API", "dev")
+  await page.keyboard.press("Escape")
+  await expect(held.options.root).toBeHidden()
+  await expect(reactOnApiDeveloper(configure)).toHaveCount(1)
+}
 
 test.describe("a link a bare edit minted inside a project", () => {
   // Share copies the link.
@@ -141,6 +165,35 @@ test.describe("a link a bare edit minted inside a project", () => {
       "title",
       CHANGE_REFUSED
     )
+  })
+
+  // The control: only the rows on sub-agents the link holds go back.
+  test("keeps the row it gave the project's own sub-agent once its scope returns to global", async ({
+    configure,
+    page,
+  }) => {
+    const held = react(configure)
+    await held.setScope("project")
+    await giveReactToApiDeveloper(configure, page)
+
+    await held.setScope("global")
+
+    await expect(held.scopeCell("global")).toHaveAttribute(
+      "aria-checked",
+      "true"
+    )
+    await expect(reactOnApiDeveloper(configure)).toHaveCount(1)
+  })
+
+  test("keeps the row it gave the project's own sub-agent when global is pressed again", async ({
+    configure,
+    page,
+  }) => {
+    await giveReactToApiDeveloper(configure, page)
+
+    await react(configure).setScope("global")
+
+    await expect(reactOnApiDeveloper(configure)).toHaveCount(1)
   })
 
   test("keeps the global skill on even once its copy is the project's", async ({
@@ -301,6 +354,31 @@ test.describe("a link a bare edit minted inside a project", () => {
     await tailwind.toggle()
 
     await expect(tailwind.root).toHaveAttribute("aria-pressed", "false")
+  })
+})
+
+test.describe("a project's link holding the API developer globally", () => {
+  test.beforeEach(async ({ configure, page }) => {
+    stubGetConfig(page, API_LINK_ID, linkHoldingApiDeveloper())
+    await page.goto(`/?fromId=${API_LINK_ID}`)
+    await expect(react(configure).root).toHaveAttribute("aria-pressed", "true")
+  })
+
+  // Held is where it rests now: moved to project, its rows are the project's.
+  test("keeps the row the global skill gave it at project when global is pressed", async ({
+    configure,
+    page,
+  }) => {
+    await configure.subAgents.setScope(API_DEV, "project")
+    await giveReactToApiDeveloper(configure, page)
+
+    await react(configure).setScope("global")
+
+    await expect(configure.subAgents.card("API", "Developer")).toHaveAttribute(
+      "title",
+      SWITCH_OFF_REFUSED
+    )
+    await expect(reactOnApiDeveloper(configure)).toHaveCount(1)
   })
 })
 

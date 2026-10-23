@@ -12,6 +12,7 @@ import {
 } from "@/features/configure/lib/agent-switches"
 import {
   defaultAssignmentsFor,
+  stackAgentIds,
   stackAgentPins,
 } from "@/features/configure/lib/default-assignments"
 import {
@@ -32,10 +33,11 @@ import { sayInToasts } from "@/lib/toast"
 import {
   activeCatalog,
   activeExternalSkill,
+  activeMarketplace,
   activeSkillById,
   expandActiveStack,
 } from "./catalog-store"
-import { activeHeldGlobal } from "./held-global-store"
+import { activeHeldGlobal, useHeldGlobalStore } from "./held-global-store"
 import {
   DEFAULT_SKILL_OPTIONS,
   PERSIST_VERSION,
@@ -80,7 +82,8 @@ type ConfigActions = {
   importConfig: (config: PersistedConfig) => void
   // As `applyStack`, for a saved stack.
   applySavedStack: (config: PersistedConfig) => void
-  // Every door that seats a catalogue must call this.
+  // Every door that seats a catalogue must call this, or read that
+  // marketplace's own saved configuration.
   pruneToCatalog: () => void
   reset: () => void
 }
@@ -295,6 +298,59 @@ const withOfferedInstall = (
     ? { ...patch, install: "eject" }
     : patch
 
+const holdsLiveSkill = (config: PersistedConfig, agentId: string) =>
+  Object.values(config.skills).some(
+    (entry) => entry.assignments[agentId]?.enabled
+  )
+
+const lostItsLastSkill = (
+  before: PersistedConfig,
+  after: PersistedConfig,
+  agentId: string
+) => holdsLiveSkill(before, agentId) && !holdsLiveSkill(after, agentId)
+
+// Whoever pinned it on, a link or a click. A stack's stay on, and a project's
+// link can't switch off one it holds.
+const emptiedPins = (
+  before: PersistedConfig,
+  after: PersistedConfig,
+  held: HeldGlobal | null
+) => {
+  const declared = stackAgentIds(after.stackId)
+  const keepsItsPin = (agentId: string) =>
+    declared.includes(agentId) ||
+    agentPinRefusal(held, after, agentId) !== undefined
+
+  return Object.entries(after.agents).filter(
+    ([agentId, entry]) =>
+      entry.on === true &&
+      lostItsLastSkill(before, after, agentId) &&
+      !keepsItsPin(agentId)
+  )
+}
+
+// Unpinned rather than pinned off, so the skill coming back brings it back.
+const unpinning = (
+  agents: AgentMap,
+  [agentId, { on: _pin, ...choices }]: [string, AgentEntry]
+): AgentMap =>
+  Object.keys(choices).length === 0
+    ? withoutKey(agents, agentId)
+    : { ...agents, [agentId]: choices }
+
+/** A sub-agent the change leaves without a live skill goes off with it. */
+const offOnceEmptied = (
+  before: PersistedConfig,
+  change: Partial<PersistedConfig>,
+  held: HeldGlobal | null
+): Partial<PersistedConfig> => {
+  const after = { ...before, ...change }
+  const emptied = emptiedPins(before, after, held)
+  if (emptied.length === 0) return change
+
+  return { ...change, agents: emptied.reduce(unpinning, after.agents) }
+}
+
 // The agents an entry reaches; a switched-off row does not pulse.
 const liveAgentIds = (entry: SkillEntry | undefined) =>
   Object.entries(entry?.assignments ?? {})
@@ -328,7 +384,9 @@ const toggleOneSkill = (
   if (skillToggleRefusal(held, get(), skillId)) return
 
   const onCodex = useUiStore.getState().provider === "codex"
-  set((state) => toggled(state, skillId, onCodex, held))
+  set((state) =>
+    offOnceEmptied(state, toggled(state, skillId, onCodex, held), held)
+  )
 
   // A deselect flashes nobody; a restored entry flashes what it restored.
   const reached = selecting ? get().skills[skillId] : undefined
@@ -493,6 +551,13 @@ const onlyPersistableSkills = (skills: SkillMap) =>
 // `undefined` where there is no localStorage.
 const OWN_SLOT = createJSONStorage(() => window.localStorage)
 
+const PUBLIC_SLOT_NAME = "agents-inc:config:v1"
+
+// One saved configuration per marketplace, so loading another leaves this one
+// where it was saved. The public catalogue's keeps the original name.
+const slotNameFor = (marketplace: string) =>
+  marketplace === "" ? PUBLIC_SLOT_NAME : `${PUBLIC_SLOT_NAME}@${marketplace}`
+
 // The same slot, read and never written: what a shared configuration runs on.
 export const withoutWrites = <T>(
   storage: PersistStorage<T>
@@ -502,6 +567,10 @@ export const withoutWrites = <T>(
   // `clearStorage` reaches this door rather than `setItem`.
   removeItem: () => undefined,
 })
+
+// Until a slot is read, so a pick on the catalogue drawn meanwhile lands in
+// none.
+const UNWRITTEN_SLOT = OWN_SLOT && withoutWrites(OWN_SLOT)
 
 export const useConfigStore = create<ConfigState>()(
   persist(
@@ -531,7 +600,7 @@ export const useConfigStore = create<ConfigState>()(
 
         const allowed = withOfferedInstall(skillId, patch)
         const configured = configure(get(), skillId, (entry) =>
-          skillAsHeld(held, skillId, { ...entry, ...allowed })
+          skillAsHeld(held, get(), skillId, { ...entry, ...allowed })
         )
         if (configured) set(configured)
 
@@ -546,8 +615,8 @@ export const useConfigStore = create<ConfigState>()(
       },
 
       cycleAssignment: (skillId, agentId) => {
-        if (assignmentRefusal(activeHeldGlobal(), get(), skillId, agentId))
-          return
+        const held = activeHeldGlobal()
+        if (assignmentRefusal(held, get(), skillId, agentId)) return
 
         // No scope guard: a project skill on a global sub-agent is an error
         // `summarize` gates Install and Share on.
@@ -555,20 +624,26 @@ export const useConfigStore = create<ConfigState>()(
           ...entry,
           assignments: cycled(entry.assignments, agentId),
         }))
-        if (configured) sayingWhatItSwitchesOff(get, () => set(configured))
+        if (configured)
+          sayingWhatItSwitchesOff(get, () =>
+            set(offOnceEmptied(get(), configured, held))
+          )
 
         track({ name: "assignment_cycled", skillId, agentId })
       },
 
       toggleAssignmentEnabled: (skillId, agentId) => {
-        if (assignmentRefusal(activeHeldGlobal(), get(), skillId, agentId))
-          return
+        const held = activeHeldGlobal()
+        if (assignmentRefusal(held, get(), skillId, agentId)) return
 
         const patched = patchAssignment(get(), skillId, agentId, (current) => ({
           ...current,
           enabled: !current.enabled,
         }))
-        if (patched) sayingWhatItSwitchesOff(get, () => set(patched))
+        if (patched)
+          sayingWhatItSwitchesOff(get, () =>
+            set(offOnceEmptied(get(), patched, held))
+          )
       },
 
       flipAssignmentLoad: (skillId, agentId) => {
@@ -653,8 +728,7 @@ export const useConfigStore = create<ConfigState>()(
         useUiStore.getState().clearFlash()
 
         const pruned = pruneUnknownIds(get())
-        // `set` writes, and this is reachable before the saved configuration
-        // has been read: an equal copy would overwrite it with an empty store.
+        // `set` writes, so a prune that drops nothing must not reach it.
         if (!droppedAnything(get(), pruned)) return
 
         set(pruned)
@@ -666,10 +740,10 @@ export const useConfigStore = create<ConfigState>()(
       },
     }),
     {
-      name: "agents-inc:config:v1",
+      name: PUBLIC_SLOT_NAME,
       version: PERSIST_VERSION,
       migrate: migrateConfig,
-      storage: OWN_SLOT,
+      storage: UNWRITTEN_SLOT,
       // `merge` prunes against the loaded catalogue, so storage is read only
       // once `readSavedConfig` knows it settled.
       skipHydration: true,
@@ -714,37 +788,58 @@ export const activeDescription = () => useConfigStore.getState().description
 // Whether the slot is held open for a configuration that is not this browser's.
 let heldOpen = false
 
-// Holds this browser's saved configuration while a shared address is open;
-// `readSavedConfig` hands it back.
+// The marketplace whose saved configuration is in memory; `null` before the
+// first read and while a shared one is open.
+let openSlot: string | null = null
+
+/** Whether a shared configuration is on screen in place of this browser's own. */
+export const isSharedConfigurationOpen = () => heldOpen
+
+/** The marketplace whose saved configuration is on screen; `null` when none is. */
+export const savedConfigurationOnScreen = () => openSlot
+
+// Holds this browser's saved configurations while a shared address is open;
+// `readSavedConfig` hands one back.
 export const detachSavedConfig = () => {
   if (heldOpen) return
-  if (!OWN_SLOT) return
+  if (!UNWRITTEN_SLOT) return
 
   heldOpen = true
-  useConfigStore.persist.setOptions({ storage: withoutWrites(OWN_SLOT) })
+  openSlot = null
+  useConfigStore.persist.setOptions({ storage: UNWRITTEN_SLOT })
 }
 
-// The slot back, answering whether it had been held.
-const reattachSavedConfig = () => {
-  if (!heldOpen) return false
-
-  // What is in memory is somebody else's, and `merge` keeps it on an empty
-  // slot. Cleared while writes are still off.
+// What is in memory belongs to another configuration, and `merge` keeps it on
+// an empty slot. Cleared while writes are off, so no slot takes it.
+const clearBeforeReading = (unwritten: PersistStorage<unknown>) => {
+  useConfigStore.persist.setOptions({ storage: unwritten })
   useConfigStore.getState().reset()
+  useHeldGlobalStore.getState().release()
+}
 
+// Reads and writes go to that marketplace's slot from here on.
+const openTheSlotOf = (marketplace: string, slot: PersistStorage<unknown>) => {
   heldOpen = false
-  useConfigStore.persist.setOptions({ storage: OWN_SLOT })
-  return true
+  openSlot = marketplace
+  useConfigStore.persist.setOptions({
+    name: slotNameFor(marketplace),
+    storage: slot,
+  })
 }
 
 /**
- * Reads the saved configuration once its catalogue is seated, once per session
- * except on the way back from a shared address. Answers with the ids it could
- * not place.
+ * Reads the seated marketplace's saved configuration, once its catalogue is
+ * seated. Each marketplace keeps its own, so whatever was on screen stays
+ * where it was saved, and a link's held entries go with it. Read once while
+ * it stays open. Answers with the ids it could not place.
  */
 export const readSavedConfig = async (): Promise<string[]> => {
-  const wasHeldOpen = reattachSavedConfig()
-  if (!wasHeldOpen && useConfigStore.persist.hasHydrated()) return []
+  const marketplace = activeMarketplace() ?? ""
+  if (openSlot === marketplace) return []
+  if (!OWN_SLOT || !UNWRITTEN_SLOT) return []
+
+  clearBeforeReading(UNWRITTEN_SLOT)
+  openTheSlotOf(marketplace, OWN_SLOT)
 
   // Emptied first, so the answer describes this read.
   unknownOnLastRead = []

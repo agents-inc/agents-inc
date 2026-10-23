@@ -1,4 +1,13 @@
-import { STACKS } from "@workspace/matrix"
+import {
+  MARKETPLACE_CANONICAL_REF,
+  MARKETPLACE_CATALOG,
+  cliMintedPayload,
+  cliMintedStackPayload,
+  freshlyPickedSkill,
+  projectMintedPayload,
+  projectOwnSkill,
+} from "@workspace/api-mocks/fixtures"
+import { STACKS, type SeedPayload } from "@workspace/matrix"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
@@ -14,6 +23,8 @@ import {
   houseSkill,
 } from "@/__tests__/factories/external-skill-factories"
 import { summarize } from "@/features/configure/lib/derive"
+import { heldGlobalOf } from "@/features/configure/lib/held-global"
+import { adoptSeedPayload, recogniseStack } from "@/features/configure/lib/seed"
 import { setAnalyticsSink } from "@/lib/analytics/track"
 import { toastManager } from "@/lib/toast"
 
@@ -26,6 +37,7 @@ import {
   withoutWrites,
 } from "./config-store"
 import { useCatalogStore } from "./catalog-store"
+import { useHeldGlobalStore } from "./held-global-store"
 
 import type { ReportingSink } from "@/lib/observability/report"
 import type { PersistStorage, StorageValue } from "zustand/middleware"
@@ -140,7 +152,10 @@ const storeOnAWatchedSlot = async () => {
   })
 
   vi.resetModules()
-  const { useConfigStore: store } = await import("./config-store")
+  const { readSavedConfig, useConfigStore: store } =
+    await import("./config-store")
+  // Nothing is written to a slot before it has been read.
+  await readSavedConfig()
 
   return { store, writes }
 }
@@ -488,8 +503,7 @@ describe("setAgentOption", () => {
   })
 })
 
-// A prune that drops nothing must not reach `set`: it is reachable before the
-// saved configuration has been read, and would write an empty store over it.
+// A prune that drops nothing must not reach `set`, which writes.
 describe("pruneToCatalog", () => {
   it("leaves the state untouched when the catalogue can place everything", () => {
     const before = useConfigStore.getState()
@@ -992,6 +1006,7 @@ describe("the description a configuration carries", () => {
 
   it("is kept in this browser's slot and read back", async () => {
     const first = await readingASlot(null)
+    await first.readSavedConfig()
     first.useConfigStore.getState().applySavedStack(described())
 
     const second = await readingASlot(first.writes.at(-1)!)
@@ -1202,6 +1217,186 @@ describe("the toast a change to the selection raises", () => {
     expect(said()).toStrictEqual([
       "web developer, web researcher, web tester and 5 more switched on: React and Hono added",
     ])
+  })
+
+  // Whoever switched it on, a link or a click.
+  describe("for a sub-agent whose last skill goes", () => {
+    const API_DEV = "api-developer"
+    const HONO_OFF =
+      "api developer, api researcher, api tester and 2 more switched off: Hono removed"
+    const API_DEV_OFF = "api developer switched off: Hono removed"
+
+    // As the editor opens a link: adopted, recognised, its global entries held.
+    const opening = (payload: SeedPayload) => {
+      const opened = recogniseStack(payload, adoptSeedPayload(payload))
+      useConfigStore.getState().importConfig(opened)
+      useHeldGlobalStore.getState().hold(heldGlobalOf(payload, opened))
+      raised.mockClear()
+    }
+
+    // `share` run inside a project: its own sub-agents, and no mark.
+    const sharedFromAProject = () => {
+      const { fromProject: _unmarked, ...shared } = projectMintedPayload(
+        { [HONO]: projectOwnSkill([API_DEV]) },
+        [API_DEV]
+      )
+      return shared
+    }
+
+    const madeInAProject = () =>
+      projectMintedPayload(
+        {
+          [KNOWN_SKILL]: freshlyPickedSkill(KNOWN_SKILL),
+          [HONO]: projectOwnSkill([API_DEV]),
+        },
+        [API_DEV]
+      )
+
+    afterEach(() => {
+      useHeldGlobalStore.getState().release()
+    })
+
+    it("goes off with the toast on a link the CLI minted from a global install", () => {
+      opening(cliMintedPayload({ [HONO]: freshlyPickedSkill(HONO) }))
+      expect(isAgentOn(held(), API_DEV)).toBe(true)
+
+      useConfigStore.getState().toggleSkill(HONO)
+
+      expect(isAgentOn(held(), API_DEV)).toBe(false)
+      expect(said()).toStrictEqual([HONO_OFF])
+    })
+
+    it("goes off with the toast on a link shared from a project", () => {
+      opening(sharedFromAProject())
+      expect(isAgentOn(held(), API_DEV)).toBe(true)
+
+      useConfigStore.getState().toggleSkill(HONO)
+
+      expect(isAgentOn(held(), API_DEV)).toBe(false)
+      expect(said()).toStrictEqual([API_DEV_OFF])
+    })
+
+    it("comes back with its skill, keeping its other choices", () => {
+      opening(sharedFromAProject())
+      useConfigStore.getState().toggleSkill(HONO)
+
+      expect(held().agents[API_DEV]).toStrictEqual({ scope: "project" })
+
+      useConfigStore.getState().toggleSkill(HONO)
+
+      expect(isAgentOn(held(), API_DEV)).toBe(true)
+    })
+
+    it("goes off with the toast on a link a bare edit made inside a project", () => {
+      opening(madeInAProject())
+      expect(isAgentOn(held(), API_DEV)).toBe(true)
+
+      useConfigStore.getState().toggleSkill(HONO)
+
+      expect(isAgentOn(held(), API_DEV)).toBe(false)
+      expect(said()).toStrictEqual([API_DEV_OFF])
+    })
+
+    // Moved to project, its rows change; the global install still holds it.
+    it("stays on, saying nothing, where the project's link holds it", () => {
+      opening(madeInAProject())
+      useConfigStore
+        .getState()
+        .setAgentOption(KNOWN_AGENT, { scope: "project" })
+
+      useConfigStore
+        .getState()
+        .toggleAssignmentEnabled(KNOWN_SKILL, KNOWN_AGENT)
+
+      expect(
+        held().skills[KNOWN_SKILL]?.assignments[KNOWN_AGENT]?.enabled
+      ).toBe(false)
+      expect(isAgentOn(held(), KNOWN_AGENT)).toBe(true)
+      expect(said()).toStrictEqual([])
+    })
+
+    it("goes off with the toast when the roster takes it off a link the CLI minted", () => {
+      opening(
+        cliMintedPayload({
+          [OTHER_CATEGORY_SKILL]: freshlyPickedSkill(OTHER_CATEGORY_SKILL),
+        })
+      )
+
+      useConfigStore
+        .getState()
+        .toggleAssignmentEnabled(OTHER_CATEGORY_SKILL, TESTER)
+
+      expect(isAgentOn(held(), TESTER)).toBe(false)
+      expect(said()).toStrictEqual([TESTER_OFF])
+    })
+
+    it("goes off with the toast when the options panel empties its cell on a link the CLI minted", () => {
+      opening(
+        cliMintedPayload({ [KNOWN_SKILL]: freshlyPickedSkill(KNOWN_SKILL) })
+      )
+      expect(
+        held().skills[KNOWN_SKILL]?.assignments[KNOWN_AGENT]
+      ).toStrictEqual(liveAssignment("preloaded"))
+
+      useConfigStore.getState().cycleAssignment(KNOWN_SKILL, KNOWN_AGENT)
+
+      expect(isAgentOn(held(), KNOWN_AGENT)).toBe(false)
+      expect(said()).toStrictEqual([
+        "web developer switched off: React removed",
+      ])
+    })
+
+    it("goes off with the toast when it was clicked on", () => {
+      useConfigStore.getState().toggleAgentPin(TESTER)
+      useConfigStore.getState().toggleSkill(OTHER_CATEGORY_SKILL)
+      raised.mockClear()
+
+      useConfigStore.getState().toggleSkill(OTHER_CATEGORY_SKILL)
+
+      expect(isAgentOn(held(), TESTER)).toBe(false)
+      expect(said()).toStrictEqual([
+        "web developer, web researcher, web tester and 2 more switched off: Tailwind CSS removed",
+      ])
+    })
+
+    it("stays off, saying nothing, when it was clicked off and its last skill goes and comes back", () => {
+      testerCarryingTailwind()
+      useConfigStore.getState().toggleAgentPin(TESTER)
+      useConfigStore.getState().toggleSkill(OTHER_CATEGORY_SKILL)
+      raised.mockClear()
+
+      useConfigStore.getState().toggleSkill(OTHER_CATEGORY_SKILL)
+
+      expect(held().agents[TESTER]).toStrictEqual({ on: false })
+      expect(isAgentOn(held(), TESTER)).toBe(false)
+      expect(said()).toStrictEqual([])
+    })
+
+    it("stays on when it was clicked on and never held a skill", () => {
+      useConfigStore.getState().toggleAgentPin(TESTER)
+      useConfigStore.getState().toggleSkill(HONO)
+      raised.mockClear()
+
+      useConfigStore.getState().toggleSkill(HONO)
+
+      expect(isAgentOn(held(), TESTER)).toBe(true)
+      expect(said()).toStrictEqual([HONO_OFF])
+    })
+
+    it("stays on, saying nothing, on a link that is a built-in stack", () => {
+      opening(cliMintedStackPayload(STACK_ID))
+      expect(held().stackId).toBe(STACK_ID)
+      const carried = Object.entries(held().skills)
+        .filter(([, entry]) => entry.assignments[KNOWN_AGENT]?.enabled)
+        .map(([skillId]) => skillId)
+      expect(carried).not.toStrictEqual([])
+
+      for (const skillId of carried)
+        useConfigStore.getState().toggleAssignmentEnabled(skillId, KNOWN_AGENT)
+
+      expect(isAgentOn(held(), KNOWN_AGENT)).toBe(true)
+      expect(said()).toStrictEqual([])
+    })
   })
 })
 
@@ -1503,7 +1698,13 @@ describe("what the saved slot holds", () => {
     (JSON.parse(writes.at(-1)!) as { state: PersistedConfig }).state
 
   it("holds the catalogue's skills, never an added one or one it cannot place", async () => {
-    const { useConfigStore: store, catalog, writes } = await readingASlot(null)
+    const {
+      useConfigStore: store,
+      catalog,
+      readSavedConfig,
+      writes,
+    } = await readingASlot(null)
+    await readSavedConfig()
     catalog.getState().addExternal([houseSkill()])
     store.getState().importConfig(
       persistedConfig({
@@ -1604,5 +1805,216 @@ describe("holding the slot for a shared configuration", () => {
     await readSavedConfig()
 
     expect(store.getState().skills).toStrictEqual({})
+  })
+})
+
+// Each marketplace keeps its own saved configuration, so loading another
+// leaves the one on screen where it was saved.
+describe("a saved configuration per marketplace", () => {
+  // Mirrored, not imported: the slot's name is what is under test.
+  const ACME_SLOT = `${SLOT}@${MARKETPLACE_CANONICAL_REF}`
+  const SAVED_ACME = savedConfigBlob(
+    persistedConfig({ skills: { [PRIVATE_CATALOG_SKILL]: skillEntry() } })
+  )
+
+  const everything = () =>
+    persistedConfig({
+      stackId: STACK_ID,
+      skills: { [KNOWN_SKILL]: skillEntry() },
+      remembered: { [OTHER_CATEGORY_SKILL]: skillEntry({ scope: "project" }) },
+      agents: { [KNOWN_AGENT]: { on: true } },
+      description: "The house web app, as installed.",
+    })
+
+  const holding = (slots: Record<string, string>) => async () => {
+    const opened = await readingASlot(slots[SLOT] ?? null)
+    for (const [key, blob] of Object.entries(slots)) opened.slot.set(key, blob)
+
+    const seatAcme = () =>
+      opened.catalog
+        .getState()
+        .load(MARKETPLACE_CATALOG, MARKETPLACE_CANONICAL_REF)
+    const seatPublic = () => opened.catalog.getState().reset()
+
+    return { ...opened, seatAcme, seatPublic }
+  }
+
+  const skillIds = (state: PersistedConfig) => Object.keys(state.skills)
+
+  it("reads the seated marketplace's own slot", async () => {
+    const {
+      useConfigStore: store,
+      readSavedConfig,
+      seatAcme,
+    } = await holding({ [SLOT]: SAVED_REACT, [ACME_SLOT]: SAVED_ACME })()
+
+    seatAcme()
+    await readSavedConfig()
+
+    expect(skillIds(store.getState())).toStrictEqual([PRIVATE_CATALOG_SKILL])
+  })
+
+  it("opens a marketplace with nothing saved as a new configuration", async () => {
+    const {
+      useConfigStore: store,
+      readSavedConfig,
+      seatAcme,
+    } = await holding({ [SLOT]: savedConfigBlob(everything()) })()
+    await readSavedConfig()
+
+    seatAcme()
+    await readSavedConfig()
+
+    const { stackId, skills, remembered, agents, description } =
+      store.getState()
+    expect({ stackId, skills, remembered, agents, description }).toStrictEqual({
+      ...persistedConfig(),
+      description: undefined,
+    })
+  })
+
+  it("leaves the last marketplace's configuration where it was saved", async () => {
+    const { readSavedConfig, seatAcme, slot } = await holding({
+      [SLOT]: SAVED_REACT,
+    })()
+    await readSavedConfig()
+
+    seatAcme()
+    await readSavedConfig()
+
+    expect(slot.get(SLOT)).toBe(SAVED_REACT)
+  })
+
+  it("writes the new marketplace's selection to its own slot", async () => {
+    const {
+      useConfigStore: store,
+      readSavedConfig,
+      seatAcme,
+      slot,
+    } = await holding({ [SLOT]: SAVED_REACT })()
+    await readSavedConfig()
+    seatAcme()
+    await readSavedConfig()
+
+    store.getState().toggleSkill(PRIVATE_CATALOG_SKILL)
+
+    expect(slot.get(SLOT)).toBe(SAVED_REACT)
+    expect(slot.get(ACME_SLOT)).toContain(PRIVATE_CATALOG_SKILL)
+  })
+
+  it("reopens a marketplace's configuration untouched", async () => {
+    const {
+      useConfigStore: store,
+      readSavedConfig,
+      seatAcme,
+      seatPublic,
+    } = await holding({ [SLOT]: SAVED_REACT })()
+    await readSavedConfig()
+    seatAcme()
+    await readSavedConfig()
+    store.getState().toggleSkill(PRIVATE_CATALOG_SKILL)
+
+    seatPublic()
+    await readSavedConfig()
+    expect(skillIds(store.getState())).toStrictEqual([KNOWN_SKILL])
+
+    seatAcme()
+    await readSavedConfig()
+    expect(skillIds(store.getState())).toStrictEqual([PRIVATE_CATALOG_SKILL])
+  })
+
+  // A toggle on the catalogue drawn while a saved one waits unread must not
+  // land in any slot.
+  it("writes nothing before a slot has been read", async () => {
+    const { useConfigStore: store, writes } = await readingASlot(SAVED_REACT)
+
+    store.getState().toggleSkill(OTHER_CATEGORY_SKILL)
+
+    expect(writes).toStrictEqual([])
+  })
+
+  // The control is "hands this browser's saved configuration back on the way
+  // home", in "holding the slot for a shared configuration".
+  it("leaves the visitor's own untouched when a shared one gives way to another marketplace", async () => {
+    const {
+      useConfigStore: store,
+      detachSavedConfig,
+      readSavedConfig,
+      seatAcme,
+      slot,
+    } = await holding({ [SLOT]: SAVED_REACT })()
+    await readSavedConfig()
+    detachSavedConfig()
+    store.getState().importConfig(everything())
+
+    seatAcme()
+    await readSavedConfig()
+    store.getState().toggleSkill(PRIVATE_CATALOG_SKILL)
+
+    expect(slot.get(SLOT)).toBe(SAVED_REACT)
+    expect(skillIds(store.getState())).toStrictEqual([PRIVATE_CATALOG_SKILL])
+  })
+
+  it("leaves no shared configuration open", async () => {
+    const {
+      detachSavedConfig,
+      isSharedConfigurationOpen,
+      readSavedConfig,
+      seatAcme,
+    } = await holding({})()
+    detachSavedConfig()
+    expect(isSharedConfigurationOpen()).toBe(true)
+
+    seatAcme()
+    await readSavedConfig()
+
+    expect(isSharedConfigurationOpen()).toBe(false)
+  })
+
+  describe("after a link a bare edit made inside a project", () => {
+    const madeInAProject = () =>
+      projectMintedPayload({
+        [KNOWN_SKILL]: freshlyPickedSkill(KNOWN_SKILL),
+      })
+
+    // As the editor opens a link: adopted, recognised, its global entries held.
+    const opening = (
+      configStore: typeof useConfigStore,
+      heldGlobal: typeof useHeldGlobalStore,
+      payload: SeedPayload
+    ) => {
+      const opened = recogniseStack(payload, adoptSeedPayload(payload))
+      configStore.getState().importConfig(opened)
+      heldGlobal.getState().hold(heldGlobalOf(payload, opened))
+    }
+
+    afterEach(() => {
+      useHeldGlobalStore.getState().release()
+      useConfigStore.getState().reset()
+    })
+
+    // The control: Start from scratch keeps what the link holds.
+    it("keeps the global skill through Start from scratch", () => {
+      opening(useConfigStore, useHeldGlobalStore, madeInAProject())
+
+      useConfigStore.getState().applyStack(null)
+
+      expect(Object.keys(held().skills)).toStrictEqual([KNOWN_SKILL])
+    })
+
+    it("lets go of the held entries once this browser's own is read", async () => {
+      const opened = await holding({})()
+      const { useHeldGlobalStore: heldGlobal } =
+        await import("./held-global-store")
+      opened.detachSavedConfig()
+      opening(opened.useConfigStore, heldGlobal, madeInAProject())
+      expect(heldGlobal.getState().held).not.toBeNull()
+
+      opened.seatAcme()
+      await opened.readSavedConfig()
+
+      expect(heldGlobal.getState().held).toBeNull()
+      expect(skillIds(opened.useConfigStore.getState())).toStrictEqual([])
+    })
   })
 })

@@ -56,6 +56,25 @@ const projectLink = () =>
     [API_DEV]
   )
 
+// Hono global too, so the link holds the API developer as well.
+const linkHoldingApiDev = () =>
+  projectMintedPayload({
+    [REACT]: freshlyPickedSkill(REACT),
+    [HONO]: freshlyPickedSkill(HONO),
+  })
+
+// React as it arrived, plus the row a first press gives the project's sub-agent.
+const withRowOnApiDev = (arrived: PersistedConfig) => {
+  const react = arrived.skills[REACT]
+  return {
+    ...react,
+    assignments: {
+      ...react?.assignments,
+      [API_DEV]: { load: "lazy", enabled: true },
+    },
+  }
+}
+
 // As the editor opens a shared address: the selection, then what it holds.
 const open = (payload: SeedPayload): PersistedConfig => {
   const arrived = fromSeedPayload(payload)
@@ -175,6 +194,44 @@ describe("a global skill a project's link holds", () => {
     store().setSkillOption(REACT, { scope: "global" })
 
     expect(store().skills[REACT]).toStrictEqual(arrived.skills[REACT])
+  })
+
+  // The control: only the rows on sub-agents the link holds go back.
+  it("keeps a row the project gave its own sub-agent once switched back to global", () => {
+    const arrived = open(projectLink())
+
+    store().setSkillOption(REACT, { scope: "project" })
+    store().cycleAssignment(REACT, WEB_DEV)
+    store().cycleAssignment(REACT, API_DEV)
+    store().setSkillOption(REACT, { scope: "global" })
+
+    expect(store().skills[REACT]).toStrictEqual(withRowOnApiDev(arrived))
+  })
+
+  it("keeps a row the project gave its own sub-agent when global is pressed again", () => {
+    const arrived = open(projectLink())
+
+    store().cycleAssignment(REACT, API_DEV)
+    store().setSkillOption(REACT, { scope: "global" })
+
+    expect(store().skills[REACT]).toStrictEqual(withRowOnApiDev(arrived))
+  })
+
+  // Held is where it rests now: moved to project, its rows are the project's.
+  it("keeps a row given to a sub-agent the link holds once moved to project, when global is pressed", () => {
+    const arrived = open(linkHoldingApiDev())
+
+    store().setAgentOption(API_DEV, { scope: "project" })
+    store().cycleAssignment(REACT, API_DEV)
+    store().setSkillOption(REACT, { scope: "global" })
+
+    expect({
+      apiDevSwitchOff: agentPinRefusal(held(), store(), API_DEV),
+      react: store().skills[REACT],
+    }).toStrictEqual({
+      apiDevSwitchOff: SWITCH_OFF_REFUSED,
+      react: withRowOnApiDev(arrived),
+    })
   })
 
   it("keeps its place on a global sub-agent the link holds", () => {

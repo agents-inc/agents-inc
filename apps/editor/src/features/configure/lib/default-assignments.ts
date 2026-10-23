@@ -1,6 +1,6 @@
 import { resolveAssignment, type StackExpansion } from "@workspace/matrix"
 
-import { activeSkillById } from "@/stores/catalog-store"
+import { activeSkillById, expandActiveStack } from "@/stores/catalog-store"
 
 import type { AgentEntry, Assignment } from "@/stores/persisted-schema"
 
@@ -50,3 +50,11 @@ export const stackAgentPins = (
   Object.fromEntries(
     declaredAgentIds(expansion).map((agentId) => [agentId, { on: true }])
   )
+
+/** The sub-agents the stack declares. */
+export const stackAgentIds = (stackId: string | null): string[] => {
+  if (stackId === null) return []
+
+  const expansion = expandActiveStack(stackId)
+  return expansion === undefined ? [] : declaredAgentIds(expansion)
+}

@@ -287,14 +287,35 @@ export const agentOptionRefusal = (
     ? agentChangeRefusal(held, config, agentId)
     : undefined
 
-/** A held skill back at global drops the project's copy, so it is as it arrived. */
+const rowsOnHeldAgents = (
+  held: HeldGlobal | null,
+  config: Selection,
+  entry: SkillEntry
+) =>
+  entriesWhere(entry.assignments, (agentId) =>
+    isHeldAgent(held, config, agentId)
+  )
+
+/**
+ * A held skill back at global drops the project's copy, so it is as it arrived
+ * on the sub-agents the link holds. Its row on any other is the project's own.
+ */
 export const skillAsHeld = (
   held: HeldGlobal | null,
+  config: Selection,
   skillId: string,
   entry: SkillEntry
 ): SkillEntry => {
   const arrived = held?.skills[skillId]
-  return arrived !== undefined && entry.scope === "global" ? arrived : entry
+  if (arrived === undefined || entry.scope !== "global") return entry
+
+  return {
+    ...arrived,
+    assignments: {
+      ...rowsOnHeldAgents(held, config, arrived),
+      ...offHeldAgents(held, config, entry).assignments,
+    },
+  }
 }
 
 const withArrivedRow = (
