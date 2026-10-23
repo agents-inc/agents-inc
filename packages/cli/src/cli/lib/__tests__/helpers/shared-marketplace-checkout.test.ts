@@ -1,6 +1,7 @@
 import { lstat, mkdir, readFile, readdir, realpath, rm, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
+import { downloadTemplate } from "giget";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_PLUGIN_NAME } from "../../../consts.js";
@@ -11,6 +12,7 @@ import {
   ensureRecordedCheckout,
   fingerprintSharedCheckout,
   linkSharedCache,
+  serveDefaultMarketplaceHere,
   SHARED_CHECKOUT_ETAG,
 } from "./shared-marketplace-checkout.js";
 
@@ -216,5 +218,66 @@ describe("fingerprintSharedCheckout", () => {
     await expect(lstat(tempDir)).rejects.toThrow();
     const entries = await readdir(expectedCheckoutDir(SHARED_CACHE_DIR));
     expect(entries.length).toBeGreaterThan(0);
+  });
+});
+
+// Mirrored rather than imported, so the assertions can fail if the stand-in changes.
+const STAND_IN_FILE = "README.md";
+const STAND_IN_ETAG = 'W/"stand-in"';
+
+describe("serveDefaultMarketplaceHere", () => {
+  const GITHUB_URL = "GIGET_GITHUB_URL";
+  let tempDir: string;
+  let previousXdgCacheHome: string | undefined;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir("cc-stand-in-spec-");
+    previousXdgCacheHome = process.env.XDG_CACHE_HOME;
+    process.env.XDG_CACHE_HOME = path.join(tempDir, "xdg");
+    return async () => {
+      if (previousXdgCacheHome === undefined) delete process.env.XDG_CACHE_HOME;
+      else process.env.XDG_CACHE_HOME = previousXdgCacheHome;
+      await cleanupTempDir(tempDir);
+    };
+  });
+
+  it("is what giget downloads for the default marketplace while it serves", async () => {
+    const stopServing = await serveDefaultMarketplaceHere();
+    const dir = path.join(tempDir, "downloaded");
+
+    try {
+      const result = await downloadTemplate(DEFAULT_SOURCE, { dir, force: true, offline: false });
+
+      expect(await readdir(dir)).toStrictEqual([STAND_IN_FILE]);
+      expect(result.tar).toMatch(new RegExp(`^${process.env[GITHUB_URL]}/`));
+    } finally {
+      await stopServing();
+    }
+  });
+
+  it("answers with the same ETag every time, so the stand-in has one version", async () => {
+    const stopServing = await serveDefaultMarketplaceHere();
+
+    try {
+      const first = await fetch(`${process.env[GITHUB_URL]}/any`);
+      const second = await fetch(`${process.env[GITHUB_URL]}/any`, { method: "HEAD" });
+
+      expect(first.headers.get("etag")).toBe(STAND_IN_ETAG);
+      expect(second.headers.get("etag")).toBe(STAND_IN_ETAG);
+      expect((await first.arrayBuffer()).byteLength).toBeGreaterThan(0);
+    } finally {
+      await stopServing();
+    }
+  });
+
+  it("puts giget's GitHub back where it was, and stops answering, once stopped", async () => {
+    const before = process.env[GITHUB_URL];
+    const stopServing = await serveDefaultMarketplaceHere();
+    const served = `${process.env[GITHUB_URL]}/any`;
+
+    await stopServing();
+
+    expect(process.env[GITHUB_URL]).toBe(before);
+    await expect(fetch(served)).rejects.toThrow();
   });
 });

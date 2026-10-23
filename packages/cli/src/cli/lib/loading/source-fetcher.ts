@@ -1,11 +1,13 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "crypto";
-import { rename } from "fs/promises";
+import { readFileSync } from "fs";
+import { rename, stat } from "fs/promises";
 import { isRecord } from "../../utils/type-guards.js";
-import { downloadTemplate, type DownloadTemplateResult } from "giget";
+import { downloadTemplate, type DownloadTemplateOptions, type DownloadTemplateResult } from "giget";
 import os from "os";
 import path from "path";
-import type { z } from "zod";
+import { isDeepEqual } from "remeda";
+import { z } from "zod";
 
 import {
   cacheRoot,
@@ -22,6 +24,7 @@ import {
   ensureDir,
   directoryExists,
   fileExists,
+  glob,
   readFileOptional,
   readFileSafe,
   remove,
@@ -87,19 +90,25 @@ class TarballWithheldError extends Error {
   }
 }
 
-const marketplaceMustAnswer = new AsyncLocalStorage<true>();
+/** The marketplaces whose saved copy a download in the scope found differing, and replaced. */
+const marketplaceMustAnswer = new AsyncLocalStorage<Set<string>>();
 
 /**
- * Loads in `body` ask each remote marketplace itself: one that does not answer, or answers without
- * its content, is refused rather than stood in for by its saved copy, which stays on disk for every
- * other load. A copy is read only when the marketplace answers with the ETag it was saved under.
+ * Loads in `body` download each remote marketplace once, whatever ETag it answers with: one that does
+ * not answer, answers without its content, or whose download fails, is refused rather than stood in
+ * for by a saved copy. A saved copy, the CLI's or giget's tarball, is replaced only once that
+ * download succeeds, and stays on disk for every other load. `body` is handed the sources whose saved
+ * copy differed from that download.
  */
-export function askingEachMarketplaceItself<T>(body: () => T): T {
-  return marketplaceMustAnswer.run(true, body);
+export function askingEachMarketplaceItself<T>(
+  body: (differingCopiesReplaced: ReadonlySet<string>) => T,
+): T {
+  const differingCopiesReplaced = new Set<string>();
+  return marketplaceMustAnswer.run(differingCopiesReplaced, () => body(differingCopiesReplaced));
 }
 
 function mustAnswer(): boolean {
-  return marketplaceMustAnswer.getStore() === true;
+  return marketplaceMustAnswer.getStore() !== undefined;
 }
 
 export function sanitizeSourceForCache(source: string): string {
@@ -177,11 +186,14 @@ export function getGigetCacheDir(source: string): string | undefined {
   // Replicate giget's template.name sanitization
   const templateName = uriMatch.groups.repo.replace("/", "-").replace(/[^\da-z-]/gi, "-");
 
-  const gigetCacheRoot = process.env.XDG_CACHE_HOME
+  return path.join(gigetCacheRoot(), providerName, templateName);
+}
+
+/** Replicates giget's `cacheDirectory()`. */
+function gigetCacheRoot(): string {
+  return process.env.XDG_CACHE_HOME
     ? path.resolve(process.env.XDG_CACHE_HOME, "giget")
     : path.resolve(os.homedir(), ".cache", "giget");
-
-  return path.join(gigetCacheRoot, providerName, templateName);
 }
 
 /** Clears giget's tarball/ETag cache so downloadTemplate() fetches fresh. */
@@ -218,8 +230,9 @@ async function fetchFromRemoteSource(source: string, subdir?: string): Promise<F
     if (!mustAnswer()) await discardCachedCopy(cacheDir, source);
   }
 
-  return mustAnswer()
-    ? downloadAnsweredFor(cacheDir, source, fullSource)
+  const differingCopiesReplaced = marketplaceMustAnswer.getStore();
+  return differingCopiesReplaced
+    ? downloadAnsweredFor(cacheDir, source, fullSource, differingCopiesReplaced)
     : downloadFreshCopy(cacheDir, source, fullSource);
 }
 
@@ -236,14 +249,14 @@ async function downloadFreshCopy(
   await ensureDir(path.dirname(cacheDir));
 
   try {
-    const result = await downloadTemplate(fullSource, {
+    const { result, savedTarball } = await gigetDownload(source, fullSource, {
       dir: cacheDir,
       force: true, // Always force when downloading to avoid "already exists" error
       offline: false,
     });
 
     verbose(`Downloaded to: ${result.dir}`);
-    await recordFetchedCopy(cacheDir, result);
+    await recordFetchedCopy(cacheDir, result, savedTarball);
     markCopyCurrentForThisRun(cacheDir);
 
     return {
@@ -260,27 +273,39 @@ async function downloadFreshCopy(
 /** Beside the cache directory, as its fetch record is. */
 const STAGED_DOWNLOAD_SUFFIX = ".download";
 
+/** Doctor prints it under "Could not reach <source>". */
+const ONLY_A_SAVED_COPY_CAME_BACK = "the download failed and only a saved copy came back";
+
+/** Beside giget's tarball and its record, which its glob for tarballs matches neither of. */
+const SET_ASIDE_SUFFIX = ".set-aside";
+
 /**
- * giget extracts its own saved tarball when a download fails or is refused, so only the answer
- * after it shows the marketplace served one. Staged, so a refusal leaves the copy and its record.
+ * Staged, so a refusal leaves the copy, its record and giget's tarball. The marketplace is asked
+ * after the download, which keeps only what it fetched, never a tarball giget saved.
  */
 async function downloadAnsweredFor(
   cacheDir: string,
   source: string,
   fullSource: string,
+  differingCopiesReplaced: Set<string>,
 ): Promise<FetchResult> {
   const staged = `${cacheDir}${STAGED_DOWNLOAD_SUFFIX}`;
-  await ensureDir(path.dirname(cacheDir));
-
-  try {
-    const result = await downloadTemplate(fullSource, {
+  const downloadStaged = () =>
+    gigetDownload(source, fullSource, {
       dir: staged,
       force: true,
       forceClean: true,
       offline: false,
     });
+  await ensureDir(path.dirname(cacheDir));
+
+  try {
+    const { result, savedTarball } = await downloadStaged();
     const record = await askAfterTheDownload(result, source);
+    if (savedTarball) await downloadPast(savedTarball, record, downloadStaged, source);
+    const differed = await savedCopyDiffers(cacheDir, staged);
     await replaceCopy(cacheDir, staged, record);
+    if (differed) differingCopiesReplaced.add(source);
     markCopyCurrentForThisRun(cacheDir);
 
     return { path: cacheDir, fromCache: false, unreachable: false, source: fullSource };
@@ -290,6 +315,85 @@ async function downloadAnsweredFor(
   } finally {
     await remove(staged);
   }
+}
+
+/**
+ * giget extracts the tarball it saved, saying nothing, when its download fails and when the
+ * marketplace answers with the ETag that tarball was saved under. Under any other ETag the download
+ * failed; under that one giget never fetched, so it is made to.
+ */
+async function downloadPast(
+  savedTarball: SavedTarball,
+  record: SourceRevalidation,
+  download: () => Promise<GigetDownload>,
+  source: string,
+): Promise<void> {
+  if (!savedUnder(savedTarball, record)) {
+    throw new MarketplaceUnreachableError(source, ONLY_A_SAVED_COPY_CAME_BACK);
+  }
+
+  await withTarballSetAside(savedTarball.path, download);
+}
+
+/**
+ * giget extracts a tarball without fetching while its record names the ETag the marketplace answers
+ * with, and writes that record only once a download completes. So the record is first aside and last
+ * back: a download interrupted at any point leaves a tarball no record vouches for, and the next one
+ * fetches over it. Both return if the download fails.
+ */
+async function withTarballSetAside(
+  tarball: string,
+  download: () => Promise<GigetDownload>,
+): Promise<void> {
+  const record = gigetRecordOf(tarball);
+  await rename(record, setAsideOf(record));
+  await rename(tarball, setAsideOf(tarball));
+  try {
+    await download();
+  } catch (error) {
+    await rename(setAsideOf(tarball), tarball);
+    await rename(setAsideOf(record), record);
+    throw error;
+  }
+  await Promise.all([remove(setAsideOf(tarball)), remove(setAsideOf(record))]);
+}
+
+function setAsideOf(file: string): string {
+  return `${file}${SET_ASIDE_SUFFIX}`;
+}
+
+/** No saved copy differs from nothing; one that cannot be read is damaged, so it differs. */
+async function savedCopyDiffers(cacheDir: string, downloaded: string): Promise<boolean> {
+  if (!(await directoryExists(cacheDir))) return false;
+  try {
+    return !(await holdSameFiles(cacheDir, downloaded));
+  } catch (error) {
+    verbose(`Could not read the saved copy at ${cacheDir}: ${getErrorMessage(error)}`);
+    return true;
+  }
+}
+
+/** By path and bytes. */
+async function holdSameFiles(left: string, right: string): Promise<boolean> {
+  const [leftFiles, rightFiles] = await Promise.all([everyFileIn(left), everyFileIn(right)]);
+  return (
+    isDeepEqual(leftFiles, rightFiles) && leftFiles.every((file) => sameBytesAt(file, left, right))
+  );
+}
+
+const EVERY_FILE = "**/*";
+
+/** Dot files too: a marketplace's manifest is under `.claude-plugin/`. */
+function everyFileIn(dir: string): Promise<string[]> {
+  return glob(EVERY_FILE, dir, { dot: true });
+}
+
+/**
+ * Synchronous: a marketplace holds thousands of small files, and an asynchronous read costs each
+ * one a round trip that takes ten times the read itself.
+ */
+function sameBytesAt(file: string, left: string, right: string): boolean {
+  return readFileSync(path.join(left, file)).equals(readFileSync(path.join(right, file)));
 }
 
 async function replaceCopy(
@@ -302,11 +406,90 @@ async function replaceCopy(
   await writeFile(fetchRecordPath(cacheDir), JSON.stringify(record));
 }
 
+/** Present when giget extracted the tarball it saved on an earlier run, rather than one it fetched. */
+type SavedTarball = { path: string; etag: string | undefined };
+
+type GigetDownload = { result: DownloadTemplateResult; savedTarball?: SavedTarball };
+
+/**
+ * giget saves a tarball as `{provider}/{name}/{version || name}.tar.gz`. A git provider's version is
+ * the ref, which may hold a slash: `#feature/x` is saved a folder deeper, as `feature/x.tar.gz`.
+ */
+const GIGET_TARBALLS = "**/*.tar.gz";
+
+/** giget's record of the ETag it saved a tarball under, beside it as `{tarball}.json`. */
+const gigetTarballRecordSchema = z.object({ etag: z.string().min(1).optional() });
+
+/**
+ * giget answers a failed download with the tarball it saved earlier, and its own ETag match the
+ * same way: it extracts the saved tarball, writes nothing to its cache and says nothing. So a
+ * tarball this download did not write is the saved one, carrying the ETag giget saved it under.
+ */
+async function gigetDownload(
+  source: string,
+  fullSource: string,
+  options: DownloadTemplateOptions,
+): Promise<GigetDownload> {
+  const providerDir = gigetProviderDir(source);
+  const timesBefore = await tarballTimes(providerDir);
+  const result = await downloadTemplate(fullSource, options);
+
+  const tarball = path.join(providerDir, gigetTarballOf(result));
+  const writtenByThisDownload = timesBefore.get(tarball) !== (await modifiedAt(tarball));
+  if (writtenByThisDownload) return { result };
+
+  verbose(`giget extracted the tarball it saved earlier, not a download: ${tarball}`);
+  return { result, savedTarball: { path: tarball, etag: await etagSavedWith(tarball) } };
+}
+
+/** Every remote source names its provider: `validateSourceFormat` refuses one that does not. */
+function gigetProviderDir(source: string): string {
+  const provider = SOURCE_PROTO_RE.exec(source)?.[1];
+  if (provider === undefined) throw new Error(`No provider named in '${source}'`);
+  return path.join(gigetCacheRoot(), provider);
+}
+
+/** Keyed by path, as `gigetTarballOf` locates the one a download extracted. */
+async function tarballTimes(providerDir: string): Promise<ReadonlyMap<string, number | undefined>> {
+  const tarballs = await glob(GIGET_TARBALLS, providerDir);
+  const paths = tarballs.map((tarball) => path.join(providerDir, tarball));
+  return new Map(await Promise.all(paths.map(async (at) => [at, await modifiedAt(at)] as const)));
+}
+
+async function modifiedAt(file: string): Promise<number | undefined> {
+  return (await fileExists(file)) ? (await stat(file)).mtimeMs : undefined;
+}
+
+/** Narrowed from giget's untyped result, as `downloadTemplate` names the tarball it extracts. */
+function gigetTarballOf(result: DownloadTemplateResult): string {
+  const name: unknown = result.name;
+  const version: unknown = result.version;
+  if (typeof name !== "string") throw new Error("the download named no template");
+
+  const stem = typeof version === "string" && version !== "" ? version : name;
+  return path.join(name, `${stem}.tar.gz`);
+}
+
+function gigetRecordOf(tarball: string): string {
+  return `${tarball}.json`;
+}
+
+async function etagSavedWith(tarballPath: string): Promise<string | undefined> {
+  const raw = await readFileOptional(gigetRecordOf(tarballPath));
+  const parsed = gigetTarballRecordSchema.safeParse(parseJsonOrUndefined(raw));
+  return parsed.success ? parsed.data.etag : undefined;
+}
+
+/** The marketplace answered with the ETag giget saved its tarball under: that version's content. */
+function savedUnder(savedTarball: SavedTarball, record: SourceRevalidation): boolean {
+  return savedTarball.etag !== undefined && savedTarball.etag === record.etag;
+}
+
 /**
  * `unrecorded`: no fetch record beside the cache, so it is re-fetched once, quietly.
- * `unconfirmed`: a load that must reach the marketplace had no ETag pair to hold the copy to.
+ * `answered`: a load that must reach the marketplace downloads it whatever ETag it answered with.
  */
-type CacheVerdict = "current" | "superseded" | "unrecorded" | "unconfirmed" | "unreachable";
+type CacheVerdict = "current" | "superseded" | "unrecorded" | "answered" | "unreachable";
 
 type SourceRevalidation = z.infer<typeof sourceRevalidationSchema>;
 
@@ -326,7 +509,7 @@ function verdictsThisRun(): Map<string, Promise<CacheVerdict>> {
   return mustAnswer() ? askedItselfThisRun : askedThisRun;
 }
 
-/** Silent for `unrecorded` and `unconfirmed`, which are housekeeping rather than news. */
+/** Silent for `unrecorded` and `answered`, which are housekeeping rather than news. */
 function announceRefetch(verdict: Exclude<CacheVerdict, "current" | "unreachable">): void {
   if (verdict === "superseded") {
     log(STATUS_MESSAGES.MARKETPLACE_HAS_NEWER_CONTENT);
@@ -344,7 +527,8 @@ function revalidateCachedCopy(cacheDir: string, source: string): Promise<CacheVe
 }
 
 /**
- * A copy this run just downloaded is current by construction, so later loads do not re-fetch it.
+ * A copy this run just downloaded is current by construction, so later loads do not re-fetch it: a
+ * load that must reach the marketplace downloads it once a run.
  */
 function markCopyCurrentForThisRun(cacheDir: string): void {
   verdictsThisRun().set(cacheDir, Promise.resolve("current"));
@@ -364,14 +548,7 @@ async function classifyCachedCopy(cacheDir: string, source: string): Promise<Cac
   }
 
   try {
-    const live = await fetchEtag(record.tar);
-    if (live !== undefined && record.etag !== undefined) {
-      return live === record.etag ? "current" : "superseded";
-    }
-    if (mustAnswer()) return "unconfirmed";
-
-    verbose(`${record.tar} answered without an ETag — keeping the cached copy`);
-    return "current";
+    return judgeAnswer(record, await fetchEtag(record.tar));
   } catch (error) {
     if (error instanceof TarballWithheldError) throw createDetailedFetchError(error, source);
     verbose(`Could not revalidate ${record.tar}: ${getErrorMessage(error)}`);
@@ -379,6 +556,22 @@ async function classifyCachedCopy(cacheDir: string, source: string): Promise<Cac
     warn(sourceUnreachableUsingCache(source));
     return "unreachable";
   }
+}
+
+/** A load that must reach the marketplace downloads it whatever else it answers; others keep it. */
+function judgeAnswer(record: SourceRevalidation, live: string | undefined): CacheVerdict {
+  if (movedOn(record, live)) return "superseded";
+  if (mustAnswer()) return "answered";
+
+  if (live === undefined) {
+    verbose(`${record.tar} answered without an ETag — keeping the cached copy`);
+  }
+  return "current";
+}
+
+/** Both sides named a version, and not the same one. */
+function movedOn(record: SourceRevalidation, live: string | undefined): boolean {
+  return live !== undefined && record.etag !== undefined && live !== record.etag;
 }
 
 /**
@@ -416,15 +609,22 @@ async function readFetchRecord(cacheDir: string): Promise<SourceRevalidation | u
   return parsed.data;
 }
 
-/** The tarball URL is narrowed from giget's untyped result; without one, nothing is recorded. */
-async function recordFetchedCopy(cacheDir: string, result: DownloadTemplateResult): Promise<void> {
+/**
+ * The tarball URL is narrowed from giget's untyped result; without one, nothing is recorded. A
+ * tarball giget saved earlier is recorded under the ETag it was saved with, never the live one.
+ */
+async function recordFetchedCopy(
+  cacheDir: string,
+  result: DownloadTemplateResult,
+  savedTarball: SavedTarball | undefined,
+): Promise<void> {
   const tar = tarballOf(result);
   if (tar === undefined) {
     verbose("No tarball URL came back from the download — the copy cannot be revalidated");
     return;
   }
 
-  const etag = await etagIfAnswered(tar);
+  const etag = savedTarball ? savedTarball.etag : await etagIfAnswered(tar);
   await writeFile(fetchRecordPath(cacheDir), JSON.stringify(fetchRecord(tar, etag)));
 }
 

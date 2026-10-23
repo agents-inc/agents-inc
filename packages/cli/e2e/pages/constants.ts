@@ -24,6 +24,10 @@ export const DIRS = {
   CLAUDE_BACKUPS: "backups",
   /** Mirrors `cacheRoot()` under HOME: the CLI's saved copies, not giget's tarballs beside them. */
   SOURCE_CACHE: ".cache/agents-inc",
+  /** One saved copy per marketplace, named by `sanitizeSourceForCache`. */
+  SOURCE_CACHE_COPIES: ".cache/agents-inc/sources",
+  /** Mirrors giget's `cacheDirectory()` under HOME: the tarballs it saved. */
+  GIGET_CACHE: ".cache/giget",
 } as const;
 
 export const FILES = {
@@ -105,6 +109,8 @@ export const STEP_TEXT = {
   SOURCE_UNREACHABLE_CACHED: "using the cached copy, which may be out of date",
   // `extractAllSkills`.
   MARKETPLACE_METADATA_UNPARSEABLE: "unparseable metadata.yaml",
+  MARKETPLACE_METADATA_NO_DISPLAY_NAME:
+    "invalid metadata.yaml — missing required field: displayName",
   RESERVED_NAME_MANIFEST_WAY_OUT: "rename the marketplace",
   RECORDED_MARKETPLACE_NAME_FIELD: "marketplaceName",
   // `skippedUnknownSkills`.
@@ -223,6 +229,9 @@ export const STEP_TEXT = {
   DOCTOR_ONE_MARKETPLACE_VALIDATED: "1 marketplace validated",
   DOCTOR_MARKETPLACE_LOAD_FAILED: "Failed to load marketplace",
   DOCTOR_SKILLS_SKIPPED_UNREACHABLE: "Skipped (marketplace unreachable)",
+  // `ONLY_A_SAVED_COPY_CAME_BACK` in lib/loading/source-fetcher.ts.
+  DOCTOR_DOWNLOAD_FAILED_SAVED_COPY: "the download failed and only a saved copy came back",
+  DOCTOR_SAVED_COPY_REPLACED: "The saved copy differed from the marketplace and has been replaced",
   // `consumedMarketplaceMessage` in lib/source-validator.ts.
   DOCTOR_FOREIGN_MARKETPLACE_DEFECT: "Nothing to fix here",
   DOCTOR_CONFIG_UNREADABLE: "exists but could not be loaded",

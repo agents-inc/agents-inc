@@ -46,6 +46,7 @@ import {
 } from "../lib/doctor/installation-reads";
 import { judgeOwnership, type Ownership } from "../lib/doctor/ownership";
 import {
+  INFO_MESSAGES,
   layoutIsCurrent,
   providerArgument,
   recreateConfigFrom,
@@ -515,7 +516,10 @@ function howItWasReached(source: string, isLocal: boolean): string {
 }
 
 /** Counts the marketplace's own skills, not the loaded matrix, which also holds local ones. */
-function reachedMarketplace(result: SourceLoadResult): CheckResult {
+function reachedMarketplace(
+  result: SourceLoadResult,
+  differingCopiesReplaced: ReadonlySet<string>,
+): CheckResult {
   const { source, sourceOrigin } = result.sourceConfig;
   return {
     kind: "source",
@@ -524,19 +528,26 @@ function reachedMarketplace(result: SourceLoadResult): CheckResult {
     details: [
       `${plural(result.marketplaceSkillIds.size, "skill")} available`,
       `${howItWasReached(source, result.isLocal)} — ${MARKETPLACE_CHOSEN_BY[sourceOrigin]}`,
+      ...savedCopyLines(source, differingCopiesReplaced),
     ],
   };
 }
 
-/** Asks the marketplace itself: a saved copy is read only once it answers with that copy's ETag. */
+/** Said only when this run's download replaced a saved copy that differed from it. */
+function savedCopyLines(source: string, differingCopiesReplaced: ReadonlySet<string>): string[] {
+  return differingCopiesReplaced.has(source) ? [INFO_MESSAGES.SAVED_COPY_REPLACED] : [];
+}
+
+/** Downloads the marketplace on every run, so no saved copy is ever read in its place. */
 async function checkSourceReachable({
   projectDir,
   hosts,
 }: CheckedInstallation): Promise<CheckResult> {
   try {
-    return reachedMarketplace(
-      await askingEachMarketplaceItself(() =>
-        loadSkillsMatrixFromSource({ projectDir, provider: hosts.project }),
+    return await askingEachMarketplaceItself(async (differingCopiesReplaced) =>
+      reachedMarketplace(
+        await loadSkillsMatrixFromSource({ projectDir, provider: hosts.project }),
+        differingCopiesReplaced,
       ),
     );
   } catch (error) {
@@ -1023,7 +1034,7 @@ export default class Doctor extends BaseCommand {
     projectDir: string,
     failedContent: ReadonlySet<CheckKind>,
   ): Promise<CheckResult[]> {
-    const installation = { projectDir, hosts: hostsOnDisk(projectDir) };
+    const installation = { projectDir, hosts: await hostsOnDisk(projectDir) };
     const configState = await resolveConfigState(installation);
 
     if (configState.kind === "absent") {

@@ -33,6 +33,10 @@ import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-con
 /** `checkSourceReachable` counts what the E2E source carries. */
 const SOURCE_SKILL_COUNT_LINE = `${E2E_SKILL_IDS.length} ${STEP_TEXT.DOCTOR_SKILLS_AVAILABLE}`;
 
+const SKILLS_SKIPPED = new RegExp(
+  `${STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED}\\s+${STEP_TEXT.DOCTOR_STATUS_SKIP}\\s+${STEP_TEXT.DOCTOR_SKILLS_SKIPPED_UNREACHABLE.replace(/[()]/g, "\\$&")}\n`,
+);
+
 /** A `string`: a hand-written config is unvalidated input. */
 const UNKNOWN_SKILL_ID = "web-framework-nonexistent";
 
@@ -245,9 +249,7 @@ describe("doctor diagnostics", () => {
           `${STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE}\\s+${STEP_TEXT.DOCTOR_STATUS_FAIL}\\s`,
         ),
       );
-      expect(unreached.stdout).toMatch(
-        /Skills Resolved\s+–\s+Skipped \(marketplace unreachable\)\n/,
-      );
+      expect(unreached.stdout).toMatch(SKILLS_SKIPPED);
       expect(unreached.output, "the saved copy never stands in for doctor").not.toContain(
         STEP_TEXT.SOURCE_UNREACHABLE_CACHED,
       );
@@ -327,7 +329,7 @@ describe("doctor diagnostics", () => {
           ),
         );
         expect(stdout).toContain(refusal(server.url));
-        expect(stdout).toMatch(/Skills Resolved\s+–\s+Skipped \(marketplace unreachable\)\n/);
+        expect(stdout).toMatch(SKILLS_SKIPPED);
         expect(stdout, "a refusal is not a connection").not.toContain("Connected to remote");
       });
 
@@ -343,10 +345,11 @@ describe("doctor diagnostics", () => {
   );
 
   /**
-   * A refused load reads giget's saved tarball and records it with no ETag; the marketplace then
-   * withdraws a skill. Doctor downloads rather than read a copy no fingerprint vouches for.
+   * A refused load reads giget's saved tarball and records it under the ETag giget saved it with;
+   * the marketplace then withdraws a skill. Doctor downloads rather than read a copy that ETag no
+   * longer vouches for.
    */
-  describe("a remote marketplace whose saved copy no fingerprint vouches for", () => {
+  describe("a remote marketplace whose saved copy a refused load left", () => {
     const UNAVAILABLE = 503;
     let withdrawn: E2ESource;
     let server: TarballSourceServer;

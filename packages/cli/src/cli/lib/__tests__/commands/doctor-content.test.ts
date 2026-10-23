@@ -17,6 +17,7 @@ import {
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import {
   fingerprintSharedCheckout,
+  serveDefaultMarketplaceHere,
   SHARED_CHECKOUT_ETAG,
 } from "../helpers/shared-marketplace-checkout.js";
 import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
@@ -116,16 +117,21 @@ const MARKETPLACE_MANIFEST_FILE = path.join(PLUGIN_MANIFEST_DIR, MARKETPLACE_JSO
 
 const MANIFEST_DEFECTS = ["absent", "unparseable", "refused by the schema"] as const;
 
-// Doctor asks the marketplace itself, which here confirms the shared checkout current.
-beforeEach(() => {
+let stopServing: () => Promise<void>;
+
+// Doctor asks the marketplace itself, which here answers with the saved copy's ETag, then
+// downloads it from the stand-in served here.
+beforeEach(async () => {
+  stopServing = await serveDefaultMarketplaceHere();
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => new Response(null, { headers: { etag: SHARED_CHECKOUT_ETAG } })),
   );
 });
 
-afterEach(() => {
+afterEach(async () => {
   vi.unstubAllGlobals();
+  await stopServing();
 });
 
 async function breakMarketplaceManifest(
@@ -2063,6 +2069,35 @@ describe("the doctor report, line by line", () => {
         ].join("\n"),
       ),
     ).toBe(true);
+  });
+
+  it("says the saved copy differed from the marketplace when the download replaced it", async () => {
+    // The saved copy is the shared checkout; the marketplace serves a one-file stand-in.
+    await writeTestTsConfig(
+      projectDir,
+      buildProjectConfig({
+        name: "test-project",
+        skills: [],
+        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
+      }),
+    );
+    await writeValidInstalledAgent(
+      path.join(projectDir, INSTALLED_AGENTS_SUBDIR),
+      CONFIGURED_AGENT_NAME,
+    );
+
+    const { stdout, error } = await runCliCommand(["doctor"]);
+
+    expect(error, stdout).toBeUndefined();
+    expect(stdout).toContain("    Marketplace Reachable   ✓  Connected to remote: ");
+    expect(stdout).toContain(
+      [
+        "Reached github:agents-inc/skills over the network — nothing here names one, so this is the default",
+        "                               The saved copy differed from the marketplace and has been replaced",
+        "",
+        "  Summary:",
+      ].join("\n"),
+    );
   });
 
   it("fails the marketplace row when the marketplace does not answer, reading no saved copy", async () => {

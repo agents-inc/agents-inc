@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, utimes, writeFile } from "fs/promises";
 import {
   createTempDir,
   cleanupTempDir,
@@ -37,6 +37,13 @@ const TARBALL = "https://api.github.com/repos/org/repo/tarball/main";
 const CACHED_ETAG = 'W/"cached"';
 const PUBLISHED_ETAG = 'W/"published"';
 const GIGET_TOKEN = "ghp_test_token";
+
+/** What giget's github provider names `github:org/repo`, and the tarball it saves under it. */
+const GIGET_TEMPLATE = "org-repo";
+const GIGET_VERSION = "main";
+const GIGET_TARBALL = `${GIGET_VERSION}.tar.gz`;
+
+const EARLIER_RUN = new Date("2026-01-01T00:00:00Z");
 
 /** Reached by whatever hands the fetcher a source, a config read included. */
 const PRIVATE_SOURCE = "http://127.0.0.1:8080/source.tar.gz";
@@ -92,6 +99,7 @@ describe("source-fetcher download", () => {
   let cacheDir: string;
   let recordPath: string;
   let gigetDir: string;
+  let gigetCacheHeldAtDownload: boolean | undefined;
 
   beforeEach(async () => {
     tempDir = await createTempDir("cc-fetcher-download-");
@@ -99,7 +107,8 @@ describe("source-fetcher download", () => {
     cacheDir = path.join(mockCacheDir, "sources", sanitizeSourceForCache(SOURCE));
     recordPath = fetchRecordPath(cacheDir);
     process.env.XDG_CACHE_HOME = path.join(tempDir, "xdg");
-    gigetDir = path.join(tempDir, "xdg", "giget", "github", "org-repo");
+    gigetDir = path.join(tempDir, "xdg", "giget", "github", GIGET_TEMPLATE);
+    gigetCacheHeldAtDownload = undefined;
     delete process.env.GIGET_AUTH;
     vi.clearAllMocks();
   });
@@ -113,12 +122,20 @@ describe("source-fetcher download", () => {
     await cleanupTempDir(tempDir);
   });
 
-  /** `withoutTarball` stands for a provider giget resolves no tarball URL for. */
+  /**
+   * A download, as giget's: it saves the tarball it fetched, then extracts it. Notes whether giget's
+   * cache held anything when it ran. `withoutTarball` stands for a provider giget resolves no
+   * tarball URL for.
+   */
   function stubDownload({ withoutTarball = false } = {}): void {
     mockDownloadTemplate.mockImplementation(async (source, options) => {
+      gigetCacheHeldAtDownload = await directoryExists(gigetDir);
+      await mkdir(gigetDir, { recursive: true });
+      await writeFile(path.join(gigetDir, GIGET_TARBALL), "tarball this download fetched");
       const dir = options?.dir ?? cacheDir;
       await mkdir(dir, { recursive: true });
-      return withoutTarball ? { source, dir } : { source, dir, tar: TARBALL };
+      const template = { source, dir, name: GIGET_TEMPLATE, version: GIGET_VERSION };
+      return withoutTarball ? template : { ...template, tar: TARBALL };
     });
   }
 
@@ -127,9 +144,12 @@ describe("source-fetcher download", () => {
     await writeFile(recordPath, record);
   }
 
+  /** Saved by an earlier run, so older than anything a download in this test writes. */
   async function seedGigetCache(): Promise<void> {
     await mkdir(gigetDir, { recursive: true });
-    await writeFile(path.join(gigetDir, "main.tar.gz"), "tarball");
+    const tarball = path.join(gigetDir, GIGET_TARBALL);
+    await writeFile(tarball, "tarball");
+    await utimes(tarball, EARLIER_RUN, EARLIER_RUN);
   }
 
   it("downloads into the cache directory, forcing over a partial copy and never offline", async () => {
@@ -296,7 +316,7 @@ describe("source-fetcher download", () => {
 
     await fetchFromSource(SOURCE);
 
-    expect(await directoryExists(gigetDir)).toBe(false);
+    expect(gigetCacheHeldAtDownload, "giget had nothing saved to fall back on").toBe(false);
     expect(verbose).toHaveBeenCalledWith(`Clearing giget cache: ${gigetDir}`);
   });
 
@@ -350,7 +370,7 @@ describe("source-fetcher download", () => {
 
     await fetchFromSource(SOURCE);
 
-    expect(await directoryExists(gigetDir)).toBe(true);
+    expect(gigetCacheHeldAtDownload).toBe(true);
   });
 
   it.each([

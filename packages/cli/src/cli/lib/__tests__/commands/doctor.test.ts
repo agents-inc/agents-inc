@@ -5,6 +5,7 @@ import { missingArgsRefusal, runCliCommand } from "../helpers/cli-runner.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import {
   fingerprintSharedCheckout,
+  serveDefaultMarketplaceHere,
   SHARED_CHECKOUT_ETAG,
 } from "../helpers/shared-marketplace-checkout.js";
 import { EXIT_CODES } from "../../exit-codes";
@@ -45,11 +46,14 @@ describe("doctor command", () => {
   let projectDir: string;
   let fakeHome: string;
   let cleanup: () => Promise<void>;
+  let stopServing: () => Promise<void>;
 
   beforeEach(async () => {
     ({ projectDir, fakeHome, cleanup } = await setupIsolatedHome("doctor-test-home-"));
-    // Doctor asks the marketplace itself, which here confirms the shared checkout current.
+    // Doctor asks the marketplace itself, which here answers with the saved copy's ETag, then
+    // downloads it from the stand-in served here.
     await fingerprintSharedCheckout(fakeHome);
+    stopServing = await serveDefaultMarketplaceHere();
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response(null, { headers: { etag: SHARED_CHECKOUT_ETAG } })),
@@ -58,6 +62,7 @@ describe("doctor command", () => {
 
   afterEach(async () => {
     vi.unstubAllGlobals();
+    await stopServing();
     await cleanup();
   });
 

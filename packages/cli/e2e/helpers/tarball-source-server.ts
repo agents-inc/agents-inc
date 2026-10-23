@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { createServer } from "node:http";
+import { createServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "path";
 
@@ -17,10 +17,26 @@ export type TarballSourceServer = {
    * gone or private; `publish` serves again.
    */
   refuse: (status: number) => void;
+  /**
+   * Lets `passing` requests of `method` through, then answers the next one with `status`, no ETag
+   * and no body; every request after it is served as before.
+   */
+  failOnce: (method: RequestMethod, status: number, passing?: number) => void;
+  /**
+   * Lets `passing` GETs through, then sends the next one half its body and holds it open, as a
+   * download stands when its process is interrupted; every request after it is served as before.
+   */
+  stallOnce: (passing?: number) => void;
   /** In order, as `"<METHOD> <status>"`. */
   requests: string[];
   close: () => Promise<void>;
 };
+
+type RequestMethod = "GET" | "HEAD";
+
+const STALL = "stall";
+
+type OneOff = { method: RequestMethod; answer: number | typeof STALL; passing: number };
 
 // Must not end in `.json`: giget reads those as template info.
 const TARBALL_NAME = "source.tar.gz";
@@ -29,12 +45,33 @@ export async function startTarballSourceServer(sourceDir: string): Promise<Tarba
   let body = await packDirectory(sourceDir);
   let etag = etagFor(body);
   let refusing: number | undefined;
+  let oneOff: OneOff | undefined;
+  const held = new Set<ServerResponse>();
   const requests: string[] = [];
 
+  /** How this request is answered, if it is the one `failOnce` or `stallOnce` named. */
+  function oneOffFor(method: string | undefined): OneOff["answer"] | undefined {
+    if (oneOff === undefined || oneOff.method !== method) return undefined;
+    if (oneOff.passing > 0) {
+      oneOff = { ...oneOff, passing: oneOff.passing - 1 };
+      return undefined;
+    }
+    const { answer } = oneOff;
+    oneOff = undefined;
+    return answer;
+  }
+
+  function holdHalfway(response: ServerResponse): void {
+    response.write(body.subarray(0, Math.floor(body.byteLength / 2)));
+    held.add(response);
+    response.on("close", () => held.delete(response));
+  }
+
   const server = createServer((request, response) => {
-    if (refusing !== undefined) {
-      requests.push(`${request.method ?? "?"} ${refusing}`);
-      response.writeHead(refusing, { "content-length": "0" });
+    const answer = refusing ?? oneOffFor(request.method);
+    if (typeof answer === "number") {
+      requests.push(`${request.method ?? "?"} ${answer}`);
+      response.writeHead(answer, { "content-length": "0" });
       response.end();
       return;
     }
@@ -46,6 +83,10 @@ export async function startTarballSourceServer(sourceDir: string): Promise<Tarba
     response.setHeader("content-type", "application/gzip");
     response.setHeader("content-length", String(body.byteLength));
     response.writeHead(status);
+    if (answer === STALL) {
+      holdHalfway(response);
+      return;
+    }
     response.end(status === 200 && request.method === "GET" ? body : undefined);
   });
 
@@ -63,8 +104,15 @@ export async function startTarballSourceServer(sourceDir: string): Promise<Tarba
     refuse: (status: number) => {
       refusing = status;
     },
+    failOnce: (method: RequestMethod, status: number, passing = 0) => {
+      oneOff = { method, answer: status, passing };
+    },
+    stallOnce: (passing = 0) => {
+      oneOff = { method: "GET", answer: STALL, passing };
+    },
     close: () =>
       new Promise<void>((resolve) => {
+        for (const response of held) response.destroy();
         server.close(() => resolve());
       }),
   };

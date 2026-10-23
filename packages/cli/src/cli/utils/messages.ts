@@ -97,6 +97,8 @@ export const INFO_MESSAGES = {
   CONFIG_TYPES_REFRESHED: `Refreshed ${STANDARD_FILES.CONFIG_TYPES_TS}`,
   EJECTED_SKILLS_USER_OWNED: `Ejected skills are yours to own — '${CLI_INVOKE_COMMAND} update' does not change them.`,
   NO_PLUGIN_MARKETPLACES: "No plugin marketplaces are configured — nothing to refresh.",
+  /** Under doctor's marketplace row, when its download replaced a saved copy whose files differed. */
+  SAVED_COPY_REPLACED: "The saved copy differed from the marketplace and has been replaced",
   /** Printed under the destination already named, so it names files only. */
   AGENT_PARTIALS_CUSTOMIZABLE: `Each sub-agent directory there holds ${AGENT_PARTIAL_FILES.join(", ")} — edit those to customize that sub-agent.`,
 } as const;
