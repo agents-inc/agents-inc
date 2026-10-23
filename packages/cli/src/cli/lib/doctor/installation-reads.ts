@@ -10,7 +10,10 @@ import os from "os";
 import { ConfigLoadError, loadProjectConfigFromDir } from "../configuration/project-config.js";
 import { scopeRootsInPlay } from "../installation/source-scopes.js";
 import { declaresNoContent } from "../installation/installation.js";
-import { detectInstallations } from "../installation/detect-installations.js";
+import {
+  detectInstallations,
+  type DetectedInstallation,
+} from "../installation/detect-installations.js";
 import { isHomeDirectory } from "../installation/is-home-directory.js";
 import { providerInUse } from "../installation/install-layout.js";
 import { hostFor } from "../hosts/host-for.js";
@@ -34,8 +37,31 @@ export type Hosts = Record<SkillScope, Provider>;
 /** One installation's rows: the directory they are about and the hosts its paths resolve with. */
 export type CheckedInstallation = { projectDir: string; hosts: Hosts };
 
-export function hostsOnDisk(projectDir: string): Hosts {
-  return { project: providerInUse(projectDir), global: providerInUse(os.homedir()) };
+/**
+ * Each scope's provider off its own folder. A project holding no installation is checked as the
+ * global one it inherits, whose provider it takes: its own folder would answer a new one's.
+ */
+export async function hostsOnDisk(projectDir: string): Promise<Hosts> {
+  const found = await detectInstallations(projectDir);
+  if (inheritsTheGlobalInstallation(found)) return hostsOf(providerInUse(os.homedir()));
+
+  const project = providerInUse(projectDir);
+  return { project, global: globalBeside(project, found) };
+}
+
+function inheritsTheGlobalInstallation(found: readonly DetectedInstallation[]): boolean {
+  return found.length > 0 && found.every((installation) => installation.scope === "global");
+}
+
+/**
+ * A project inherits only its own provider's global, which a home holding both would otherwise
+ * answer by roster order.
+ */
+function globalBeside(project: Provider, found: readonly DetectedInstallation[]): Provider {
+  const inherited = found.some(
+    (installation) => installation.scope === "global" && installation.provider === project,
+  );
+  return inherited ? project : providerInUse(os.homedir());
 }
 
 export function hostsOf(provider: Provider): Hosts {

@@ -397,17 +397,20 @@ export default class Uninstall extends BaseCommand {
     await this.removeLocalFilesOrFail(plan, target);
 
     if (!isGlobalUninstall) {
-      await this.deregisterProject(projectDir);
+      await this.deregisterProject(projectDir, target.provider);
       return;
     }
     if (propagation) await this.updateRegisteredProjects(propagation);
   }
 
   /** Degrades: a missing or corrupt global config must never fail the uninstall. */
-  private async deregisterProject(projectDir: string): Promise<void> {
+  private async deregisterProject(projectDir: string, provider: Provider): Promise<void> {
     try {
       // Lazy deps: deregistering inlines nothing, so the uninstall stays offline.
-      await mutateGlobal({ kind: "deregister-project", projectDir }, lazyGateDeps(projectDir));
+      await mutateGlobal(
+        { kind: "deregister-project", projectDir, provider },
+        lazyGateDeps(projectDir),
+      );
     } catch (error) {
       this.warn(`Could not update the global project registry: ${getErrorMessage(error)}`);
     }
@@ -506,23 +509,28 @@ export default class Uninstall extends BaseCommand {
     this.reportDirCleanup(CLAUDE_DIR, cleanup.claudeDir);
   }
 
-  private reportSourceFolderCleanup(folder: SourceFolderCleanup): void {
-    if (folder.dirRemoved) {
-      this.logSuccess(`Removed ${folder.relName}/`);
-    } else if (folder.manifestRemoved) {
-      this.logSuccess(`Removed CLI config from ${folder.relName}/`);
-    } else if (folder.kept) {
-      this.log(`Kept ${folder.relName}/ (contains user content)`);
+  private reportSourceFolderCleanup({ relName, outcome }: SourceFolderCleanup): void {
+    if (outcome === "config-removed") {
+      this.logSuccess(`Removed CLI config from ${relName}/`);
+      return;
     }
+    this.reportDirCleanup(relName, outcome);
   }
 
   private reportDirCleanup(relName: string, cleanup: DirCleanup): void {
-    if (cleanup.removed) {
-      this.logSuccess(`Removed ${relName}/`);
-      return;
-    }
-    if (cleanup.kept) {
-      this.log(`Kept ${relName}/ (contains user content)`);
+    switch (cleanup) {
+      case "removed":
+        this.logSuccess(`Removed ${relName}/`);
+        return;
+      case "kept":
+        this.log(`Kept ${relName}/ (contains user content)`);
+        return;
+      case "untouched":
+        return;
+      default: {
+        const _exhaustive: never = cleanup;
+        return _exhaustive;
+      }
     }
   }
 
@@ -582,6 +590,8 @@ type CliSkill = { dirName: string; skillId: SkillId; displayName: string | undef
 type UninstallTarget = {
   /** Home is the global scope, so a run there removes global entries. */
   scope: SkillScope;
+  /** Read before removal, which deletes the folder that says which. */
+  provider: Provider;
   hasPlugins: boolean;
   /** Only those this CLI installed, matched against config skills. */
   cliPluginNames: string[];
@@ -629,15 +639,11 @@ type PluginRemovalReporter = {
   onLeftRegistered?: (pluginName: string, provider: Provider) => void;
 };
 
-type SourceFolderCleanup = {
-  relName: string;
-  manifestRemoved: boolean;
-  dirRemoved: boolean;
-  /** Still there because of content this CLI never wrote. */
-  kept: boolean;
-};
+/** `kept`: still there because of content this CLI never wrote. */
+type DirCleanup = "removed" | "kept" | "untouched";
 
-type DirCleanup = { removed: boolean; kept: boolean };
+/** `config-removed`: the manifest went, and the folder stayed for what else it holds. */
+type SourceFolderCleanup = { relName: string; outcome: DirCleanup | "config-removed" };
 
 type CleanupResult = {
   sourceFolder: SourceFolderCleanup;
@@ -754,6 +760,7 @@ async function detectUninstallTarget(
 
   return {
     scope: isHomeDirectory(projectDir) ? "global" : "project",
+    provider,
     hasPlugins: cliPluginNames.length > 0,
     cliPluginNames,
     cliSkills,
@@ -949,16 +956,14 @@ function nothingWasObserved(): PluginRemovalOutcome {
   return "absent";
 }
 
-async function removeConfigManifest(
-  entry: ConfigManifestRemoval | undefined,
-): Promise<{ manifestRemoved: boolean; dirRemoved: boolean }> {
-  if (!entry) return { manifestRemoved: false, dirRemoved: false };
+/** Whether there was a manifest to remove. */
+async function removeConfigManifest(entry: ConfigManifestRemoval | undefined): Promise<boolean> {
+  if (!entry) return false;
 
   await Promise.all(
     entry.fileNames.map((fileName) => remove(path.join(entry.sourceDir, fileName))),
   );
-
-  return { manifestRemoved: true, dirRemoved: await removeDirIfEmpty(entry.sourceDir) };
+  return true;
 }
 
 /** Directories are not plan entries: each goes only once nothing of the user's is left in it. */
@@ -977,25 +982,21 @@ async function cleanupEmptyDirs(
     target.sourceFolder,
     manifestEntries.find((entry) => entry.sourceDir === target.sourceFolder.dir),
   );
-  const sourceRoot = await cleanupSourceRoot(target.sourceRoot, sourceFolder.dirRemoved);
+  const sourceRoot = await cleanupSourceRoot(target.sourceRoot, sourceFolder.outcome === "removed");
   const claudeDir = await cleanupClaudeDir(target);
 
   return { sourceFolder, sourceRoot, claudeDir };
 }
 
+/** `entry` names this folder: the plan's manifest removal for it, if it holds one. */
 async function cleanupSourceFolder(
   folder: ScopeSourceFolder,
   entry: ConfigManifestRemoval | undefined,
 ): Promise<SourceFolderCleanup> {
-  const manifest = await removeConfigManifest(entry);
-  const dirRemoved = manifest.dirRemoved || (await removeDirIfEmpty(folder.dir));
-  const kept = !dirRemoved && (await directoryExists(folder.dir));
-  return {
-    relName: folder.relName,
-    manifestRemoved: manifest.manifestRemoved,
-    dirRemoved,
-    kept,
-  };
+  const manifestRemoved = await removeConfigManifest(entry);
+  const dir = await removeDirUnlessUserContent(folder.dir);
+  const outcome = manifestRemoved && dir !== "removed" ? "config-removed" : dir;
+  return { relName: folder.relName, outcome };
 }
 
 /**
@@ -1006,21 +1007,21 @@ async function cleanupSourceRoot(
   sourceRoot: SourceRoot,
   providerDirRemoved: boolean,
 ): Promise<DirCleanup> {
-  if (!providerDirRemoved) return { removed: false, kept: false };
+  if (!providerDirRemoved) return "untouched";
   return removeDirUnlessUserContent(sourceRoot.dir);
 }
 
 async function cleanupClaudeDir(
   target: Pick<UninstallTarget, "hasClaudeDir" | "claudeDir">,
 ): Promise<DirCleanup> {
-  if (!target.hasClaudeDir) return { removed: false, kept: false };
+  if (!target.hasClaudeDir) return "untouched";
   return removeDirUnlessUserContent(target.claudeDir);
 }
 
 /** `kept` when it is still there: something of the user's is in it. */
 async function removeDirUnlessUserContent(dir: string): Promise<DirCleanup> {
-  const removed = await removeDirIfEmpty(dir);
-  return { removed, kept: !removed && (await directoryExists(dir)) };
+  if (await removeDirIfEmpty(dir)) return "removed";
+  return (await directoryExists(dir)) ? "kept" : "untouched";
 }
 
 async function listAgentFiles(agentsDir: string, codec: AgentCodec): Promise<string[]> {

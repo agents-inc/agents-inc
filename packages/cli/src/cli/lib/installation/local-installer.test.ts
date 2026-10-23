@@ -79,7 +79,7 @@ const DEPS_A_DEREGISTRATION_MUST_NOT_NEED: GateDeps = {
 
 function deregisterProjectPath(projectDir: string): Promise<GateReport> {
   return mutateGlobal(
-    { kind: "deregister-project", projectDir },
+    { kind: "deregister-project", projectDir, provider: "claude" },
     DEPS_A_DEREGISTRATION_MUST_NOT_NEED,
   );
 }

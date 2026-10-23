@@ -44,11 +44,14 @@ import {
   DEFAULT_PUBLIC_SOURCE_NAME,
   EJECT_SOURCE,
   MARKETPLACE_JSON,
+  PROVIDERS,
   SKILL_RULES_PATH,
   STANDARD_DIRS,
   STANDARD_FILES,
   marketplaceManifestPath,
+  type Provider,
 } from "../../consts";
+import { CODEX_HOME_VAR, skillsDir, sourceFolderInUse } from "../installation/install-layout";
 import {
   createTestSource,
   cleanupTestSource,
@@ -69,10 +72,11 @@ import type {
   ResolvedSkill,
   ResolvedStack,
   SkillId,
+  SkillScope,
   SkillSlug,
   Stack,
 } from "../../types";
-import { renderConfigTs, renderSkillMd } from "../__tests__/content-generators";
+import { renderConfigTs, renderMetadataYaml, renderSkillMd } from "../__tests__/content-generators";
 import { getErrorMessage } from "../../utils/errors";
 import { disableBuffering, drainBuffer, enableBuffering } from "../../utils/logger";
 import { defaultCategories } from "../configuration/default-categories";
@@ -975,6 +979,77 @@ describe("source-loader local skills integration", () => {
     );
     expect(overriddenSkill.description).not.toBe(existingSkill.description);
   });
+});
+
+/** Each installation copies its skills into its own provider's folders, at both scopes. */
+describe("source-loader: a load asked for one of the two installations a scope holds", () => {
+  let projectDir: string;
+
+  const COPIED_IN = {
+    claude: { project: "claude-project-copy", global: "claude-global-copy" },
+    codex: { project: "codex-project-copy", global: "codex-global-copy" },
+  } as const satisfies Record<Provider, Record<SkillScope, string>>;
+
+  async function installWithACopiedInSkill(
+    provider: Provider,
+    scope: SkillScope,
+    root: string,
+  ): Promise<void> {
+    await writeTestTsConfig(
+      root,
+      buildProjectConfig({ skills: [] }),
+      sourceFolderInUse(root, provider).relName,
+    );
+    const id = COPIED_IN[provider][scope];
+    const skillDir = path.join(skillsDir(provider, scope, root), id);
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(
+      path.join(skillDir, STANDARD_FILES.METADATA_YAML),
+      renderMetadataYaml({
+        contentHash: "abc123",
+        category: "web-framework",
+        displayName: "Copied Skill",
+        slug: id,
+      }),
+    );
+    await writeFile(
+      path.join(skillDir, STANDARD_FILES.SKILL_MD),
+      renderSkillMd(id, `Copied in by ${provider}`),
+    );
+  }
+
+  beforeEach(async () => {
+    vi.stubEnv(CODEX_HOME_VAR, undefined);
+    projectDir = await createTempDir("cc-two-installations-");
+    for (const provider of PROVIDERS) {
+      await installWithACopiedInSkill(provider, "project", projectDir);
+      await installWithACopiedInSkill(provider, "global", fakeHome);
+    }
+  });
+
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    await cleanupTempDir(projectDir);
+  });
+
+  it.each(PROVIDERS)(
+    "carries the %s installation's copied-in skills at both scopes, and no other's",
+    async (provider) => {
+      const { matrix } = await loadSkillsMatrixFromSource({
+        sourceFlag: fixtureDirs.sourceDir,
+        projectDir,
+        provider,
+        skipExtraSources: true,
+      });
+
+      const copiedIn = typedValues(matrix.skills)
+        .filter((skill) => skill.local === true)
+        .map((skill) => skill.id);
+      expect(copiedIn.toSorted()).toStrictEqual(
+        [COPIED_IN[provider].global, COPIED_IN[provider].project].toSorted(),
+      );
+    },
+  );
 });
 
 describe("source-loader local skill slugs", () => {

@@ -84,7 +84,7 @@ type SourceLoadOptions = {
   caller?: SourceCaller;
   sourceFlag?: string;
   projectDir?: string;
-  /** Whose config names the marketplace, where a scope holds two installations. */
+  /** Whose config and copied-in skills are read, where a scope holds two installations. */
   provider?: Provider;
   devMode?: boolean;
   skipExtraSources?: boolean;
@@ -141,7 +141,7 @@ async function loadCatalogue(options: SourceLoadOptions): Promise<SourceLoadResu
     marketplaceSkillIds: new Set(typedKeys<SkillId>(catalogue.matrix.skills)),
   };
 
-  result.matrix = await mergeLocalSkills(result.matrix, resolvedProjectDir);
+  result.matrix = await mergeLocalSkills(result.matrix, resolvedProjectDir, provider);
   await seatGlobalInstallationSkills(result.matrix, source, purpose);
 
   if (!options.skipExtraSources) {
@@ -411,15 +411,19 @@ function configuredLabel(sourceConfig: ResolvedConfig): MarketplaceLabels {
   return sourceConfig.marketplace === undefined ? {} : { marketplace: sourceConfig.marketplace };
 }
 
-/** Global local skills first, then the project's, so the project's win on conflict. */
+/**
+ * Global local skills first, then the project's, so the project's win on conflict. Both are read
+ * off `provider`'s installation, as a project inherits the global installation of its own provider.
+ */
 async function mergeLocalSkills(
   matrix: MergedSkillsMatrix,
   projectDir: string,
+  provider: Provider | undefined,
 ): Promise<MergedSkillsMatrix> {
   const withGlobal = isHomeDirectory(projectDir)
     ? matrix
-    : await mergeDiscoveredLocalSkills(matrix, os.homedir(), "global");
-  return mergeDiscoveredLocalSkills(withGlobal, projectDir, "project");
+    : await mergeDiscoveredLocalSkills(matrix, os.homedir(), "global", provider);
+  return mergeDiscoveredLocalSkills(withGlobal, projectDir, "project", provider);
 }
 
 /** Merges any discovered local skills for `dir` into the matrix, logging the find. */
@@ -427,8 +431,9 @@ async function mergeDiscoveredLocalSkills(
   matrix: MergedSkillsMatrix,
   dir: string,
   label: SkillScope,
+  provider: Provider | undefined,
 ): Promise<MergedSkillsMatrix> {
-  const discovered = await discoverLocalSkills(dir);
+  const discovered = await discoverLocalSkills(dir, provider);
   if (!discovered || discovered.skills.length === 0) return matrix;
   verbose(
     `Found ${discovered.skills.length} ${label} local skill(s) in ${discovered.localSkillsPath}`,

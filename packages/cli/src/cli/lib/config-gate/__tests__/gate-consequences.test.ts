@@ -489,7 +489,11 @@ describe("the config gate's entry points", () => {
       await installGlobal({});
 
       const report = await mutateGlobal(
-        { kind: "deregister-project", projectDir: path.join(tempDir, "never-existed") },
+        {
+          kind: "deregister-project",
+          projectDir: path.join(tempDir, "never-existed"),
+          provider: "claude",
+        },
         lazyDeps(),
       );
 

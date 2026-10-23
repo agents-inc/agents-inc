@@ -30,8 +30,10 @@ import {
   STANDARD_FILES,
   STANDARD_DIRS,
   CLAUDE_DIR,
+  PROVIDERS,
 } from "../../../consts";
 import { sourceFolderInUse } from "../../installation/install-layout.js";
+import { loadProjectConfigFromDir } from "../../configuration/project-config.js";
 import type { AgentScopeConfig, BrandingConfig, SkillId } from "../../../types";
 import { hostAt } from "../../hosts/host-for.js";
 import { stampProvenanceMarker } from "../../agents/agent-provenance.js";
@@ -1443,6 +1445,51 @@ describe("what uninstall says", () => {
       }
     },
   );
+
+  /**
+   * A project is registered with its own provider's global only. Claude is the control, being also
+   * the provider a home holding both would otherwise be read as.
+   */
+  describe("a project uninstall under a home holding a Claude and a Codex global installation", () => {
+    it.each(PROVIDERS)(
+      "takes the %s project off its own provider's global and leaves the other global alone",
+      async (provider) => {
+        const project = fs.realpathSync(projectDir);
+        await mkdir(path.join(tempDir, "neighbour"), { recursive: true });
+        const neighbour = fs.realpathSync(path.join(tempDir, "neighbour"));
+        const projectConfigPath = await writeTestTsConfig(
+          projectDir,
+          buildProjectConfig({ name: "registered" }),
+          sourceFolderInUse(projectDir, provider).relName,
+        );
+        for (const atHome of PROVIDERS) {
+          await writeTestTsConfig(
+            fakeHome,
+            buildProjectConfig({
+              name: `${atHome}-global`,
+              skills: [],
+              agents: [],
+              projects: atHome === provider ? [project, neighbour] : [neighbour],
+            }),
+            sourceFolderInUse(fakeHome, atHome).relName,
+          );
+        }
+
+        const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+        expect(error, stderr).toBeUndefined();
+        expect(stdout).toContain("✓ Uninstall complete!\n");
+        expect(await fileExists(projectConfigPath)).toBe(false);
+        for (const atHome of PROVIDERS) {
+          const loaded = await loadProjectConfigFromDir(fakeHome, atHome);
+          expect(
+            loaded?.config.projects,
+            `the ${atHome} global's registered projects`,
+          ).toStrictEqual([neighbour]);
+        }
+      },
+    );
+  });
 
   describe("a global uninstall with projects registered against it", () => {
     it("updates each registered project it can reach, and names each it cannot", async () => {

@@ -6,8 +6,10 @@ import {
   CLAUDE_DIR,
   LOCAL_PSEUDO_CATEGORY,
   LOCAL_SKILLS_PATH,
+  PROVIDERS,
   STANDARD_DIRS,
   STANDARD_FILES,
+  type Provider,
 } from "../../consts";
 import { METADATA_KEYS } from "../metadata-keys";
 import { skillsDir, skillsPathPrefix, sourceDir } from "../installation/install-layout";
@@ -381,6 +383,46 @@ describe("local-skill-loader", () => {
         },
       ]);
     });
+  });
+
+  describe("in a folder holding a Claude and a Codex installation", () => {
+    const COPIED_IN_BY = {
+      claude: "claude-copied-skill",
+      codex: "codex-copied-skill",
+    } as const satisfies Record<Provider, string>;
+
+    beforeEach(async () => {
+      for (const provider of PROVIDERS) {
+        await mkdir(sourceDir(tempDir, provider), { recursive: true });
+        await writeFile(path.join(sourceDir(tempDir, provider), STANDARD_FILES.CONFIG_TS), "");
+
+        const skillDir = path.join(skillsDir(provider, "project", tempDir), COPIED_IN_BY[provider]);
+        await mkdir(skillDir, { recursive: true });
+        await writeFile(
+          path.join(skillDir, STANDARD_FILES.METADATA_YAML),
+          renderMetadataYaml({
+            contentHash: "abc123",
+            category: "web-framework",
+            displayName: "Copied Skill",
+            slug: "copied-skill",
+          }),
+        );
+        await writeFile(
+          path.join(skillDir, STANDARD_FILES.SKILL_MD),
+          renderSkillMd(COPIED_IN_BY[provider], `Copied in by ${provider}`),
+        );
+      }
+    });
+
+    it.each(PROVIDERS)(
+      "reads only the skills the %s installation copied in, when asked for it",
+      async (provider) => {
+        const result = await discoverLocalSkills(tempDir, provider);
+
+        expect(result?.localSkillsPath).toBe(skillsDir(provider, "project", tempDir));
+        expect(result?.skills.map(({ id }) => id)).toStrictEqual([COPIED_IN_BY[provider]]);
+      },
+    );
   });
 
   describe("what discovery says and carries", () => {

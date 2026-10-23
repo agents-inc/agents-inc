@@ -2,7 +2,7 @@ import path from "path";
 import { directoryExists, listDirectories, fileExists, readFile } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
 import { plural } from "../../utils/string";
-import { LOCAL_PSEUDO_CATEGORY, STANDARD_FILES } from "../../consts";
+import { LOCAL_PSEUDO_CATEGORY, STANDARD_FILES, type Provider } from "../../consts";
 import { namesPlaceholderCategory, parseFrontmatter, readSkillMetadata } from "../loading";
 import { isHomeDirectory } from "../installation/is-home-directory";
 import { providerInUse, skillsDir, skillsPathPrefix } from "../installation/install-layout";
@@ -33,10 +33,9 @@ export type LocalSkillDiscoveryResult = {
 
 type CopiedInSkills = { dir: string; pathPrefix: string };
 
-/** Where the provider installed at `root` copies skills in; home is the global installation. */
-function copiedInSkillsAt(root: string): CopiedInSkills {
+/** Where `provider`'s installation at `root` copies skills in; home is the global installation. */
+function copiedInSkillsAt(root: string, provider: Provider): CopiedInSkills {
   const scope: SkillScope = isHomeDirectory(root) ? "global" : "project";
-  const provider = providerInUse(root);
 
   return {
     dir: skillsDir(provider, scope, root),
@@ -44,8 +43,12 @@ function copiedInSkillsAt(root: string): CopiedInSkills {
   };
 }
 
-export async function discoverLocalSkills(root: string): Promise<LocalSkillDiscoveryResult | null> {
-  const { dir: localSkillsPath, pathPrefix } = copiedInSkillsAt(root);
+/** `provider` names the installation where `root` holds two; the default is the one in use. */
+export async function discoverLocalSkills(
+  root: string,
+  provider: Provider = providerInUse(root),
+): Promise<LocalSkillDiscoveryResult | null> {
+  const { dir: localSkillsPath, pathPrefix } = copiedInSkillsAt(root, provider);
 
   if (!(await directoryExists(localSkillsPath))) {
     verbose(`Local skills directory not found: ${localSkillsPath}`);

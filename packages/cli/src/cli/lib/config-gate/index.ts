@@ -381,7 +381,12 @@ export async function reconcileTypesFromDisk(
 
 /** Closed, so no caller-authored transform runs inside the only code allowed to write the pair. */
 export type GlobalMutation =
-  | { kind: "deregister-project"; projectDir: string }
+  | {
+      kind: "deregister-project";
+      projectDir: string;
+      /** The project's: of the two globals a home may hold, it is registered with its own. */
+      provider: Provider;
+    }
   | { kind: "set-source"; source: string; fallbackName: string };
 
 /** The config on disk with required fields filled, so a scalar mutation cannot empty an install. */
@@ -420,6 +425,11 @@ function applyMutation(
   }
 }
 
+/** A `set-source` runs at home, whose installation is the global it mutates. */
+function globalProviderFor(mutation: GlobalMutation, homeDir: string): Provider {
+  return mutation.kind === "deregister-project" ? mutation.provider : providerInUse(homeDir);
+}
+
 /** The name a mutation invents when the global config has none yet. */
 function fallbackNameFor(mutation: GlobalMutation): string | undefined {
   return mutation.kind === "set-source" ? mutation.fallbackName : undefined;
@@ -429,8 +439,8 @@ function fallbackNameFor(mutation: GlobalMutation): string | undefined {
 export async function mutateGlobal(mutation: GlobalMutation, deps: GateDeps): Promise<GateReport> {
   return withGateToken(async () => {
     const homeDir = os.homedir();
+    const provider = globalProviderFor(mutation, homeDir);
     // The full loader normalizes the stack; re-emitting bare values drops exclusive categories.
-    const provider = providerInUse(homeDir);
     const loadedGlobal = await loadProjectConfigFromDir(homeDir, provider);
     if (!loadedGlobal) return report(false, NO_CHANGES);
 

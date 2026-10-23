@@ -22,7 +22,7 @@ import { createMockPluginHost } from "../__tests__/helpers/mock-plugin-host.js";
 import { useFakeHome } from "../__tests__/helpers/isolated-home.js";
 import { cleanupTempDir, createTempDir } from "../__tests__/test-fs-utils.js";
 import type { PluginHost } from "../hosts/plugin-host.js";
-import type { Provider } from "../../consts.js";
+import { PROVIDERS, type Provider } from "../../consts.js";
 
 // The real door by default; one spec at a time hands back a host whose listing it controls.
 vi.mock("../hosts/host-for.js", async (importOriginal) => {
@@ -65,8 +65,26 @@ describe("installation-reads", () => {
       await writeTestTsConfig(projectDir, buildProjectConfig(), folderOf("codex"));
       await writeTestTsConfig(home.dir, buildProjectConfig(), folderOf("claude"));
 
-      expect(hostsOnDisk(projectDir)).toStrictEqual({ project: "codex", global: "claude" });
+      expect(await hostsOnDisk(projectDir)).toStrictEqual({ project: "codex", global: "claude" });
     });
+
+    it("checks a project holding no installation as the global one it inherits", async () => {
+      await writeTestTsConfig(home.dir, buildProjectConfig(), folderOf("codex"));
+
+      expect(await hostsOnDisk(projectDir)).toStrictEqual({ project: "codex", global: "codex" });
+    });
+
+    it.each(PROVIDERS)(
+      "reads a home holding both installations as the %s project's own provider's global",
+      async (provider) => {
+        await writeTestTsConfig(projectDir, buildProjectConfig(), folderOf(provider));
+        for (const atHome of PROVIDERS) {
+          await writeTestTsConfig(home.dir, buildProjectConfig(), folderOf(atHome));
+        }
+
+        expect(await hostsOnDisk(projectDir)).toStrictEqual(hostsOf(provider));
+      },
+    );
   });
 
   describe("providersInPlay", () => {
