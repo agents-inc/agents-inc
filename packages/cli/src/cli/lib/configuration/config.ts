@@ -382,6 +382,8 @@ const REMOTE_PROTOCOLS = [
   "http://",
 ] as const;
 
+type RemoteProtocol = (typeof REMOTE_PROTOCOLS)[number];
+
 const MIN_REMOTE_PATH_LENGTH = 3;
 const MAX_SOURCE_LENGTH = 512;
 
@@ -523,7 +525,11 @@ export function validateSourceFormat(source: string, carrier: MarketplaceCarrier
   }
 }
 
-function validateRemoteSource(source: string, protocol: string, carrier: MarketplaceCarrier): void {
+function validateRemoteSource(
+  source: string,
+  protocol: RemoteProtocol,
+  carrier: MarketplaceCarrier,
+): void {
   const isHttp = protocol === "https://" || protocol === "http://";
 
   // First: every refusal below echoes the URL, and this one must not.

@@ -181,19 +181,28 @@ function typeReference(name: string): AliasRhs {
 /** Laid out the way prettier lays a union out. */
 function renderAlias(name: string, rhs: AliasRhs): string {
   const head = `export type ${name} =`
-  if (rhs.kind === "sectioned") {
-    return `${head}\n${renderSectionedUnion(rhs.custom, rhs.marketplace)}`
+  switch (rhs.kind) {
+    case "plain":
+      return renderPlainAlias(head, rhs.members)
+    case "sectioned":
+      return `${head}\n${renderSectionedUnion(rhs.custom, rhs.marketplace)}`
+    default: {
+      const _exhaustive: never = rhs
+      return _exhaustive
+    }
   }
+}
 
-  const layout = unionLayout(rhs.members, {
+function renderPlainAlias(head: string, members: readonly string[]): string {
+  const layout = unionLayout(members, {
     headWidth: head.length + " ".length,
     tailWidth: 0,
     bodyIndent: INDENT_STEP,
   })
 
   return layout === "inline"
-    ? `${head} ${flatUnion(rhs.members)}`
-    : `${head}\n${renderUnionBody(rhs.members, layout, INDENT_STEP)}`
+    ? `${head} ${flatUnion(members)}`
+    : `${head}\n${renderUnionBody(members, layout, INDENT_STEP)}`
 }
 
 /**

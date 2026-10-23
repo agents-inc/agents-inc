@@ -46,6 +46,15 @@ function isEjectType(value: string): value is EjectType {
   return (EJECT_TYPES as readonly string[]).includes(value);
 }
 
+/** Skills come from the marketplace this installation reads, so only their ejects load it. */
+type EjectPlan =
+  | { type: "agent-partials" | "templates" }
+  | { type: "skills" | "all"; sourceResult: SourceLoadResult };
+
+function loadedSourceOf(plan: EjectPlan): SourceLoadResult | undefined {
+  return "sourceResult" in plan ? plan.sourceResult : undefined;
+}
+
 export default class Eject extends BaseCommand {
   static summary = "Eject skills, agent partials, or templates for local customization";
   static description =
@@ -122,9 +131,9 @@ export default class Eject extends BaseCommand {
       flags.output ? outputBase : undefined,
     );
 
-    const sourceResult = await this.loadSourceIfNeeded(ejectType, projectDir);
-    await this.executeEject(ejectType, outputBase, flags, projectDir, sourceResult);
-    await this.ensureConfig(projectDir, sourceResult);
+    const plan = await this.planEject(ejectType, projectDir);
+    await this.executeEject(plan, outputBase, flags, projectDir);
+    await this.ensureConfig(projectDir, loadedSourceOf(plan));
 
     this.reportEnding();
   }
@@ -193,27 +202,22 @@ export default class Eject extends BaseCommand {
     }
   }
 
-  private async loadSourceIfNeeded(
-    ejectType: EjectType,
-    projectDir: string,
-  ): Promise<SourceLoadResult | undefined> {
-    if (ejectType === "skills" || ejectType === "all") {
-      const loaded = await loadSource({ projectDir });
-      return loaded.sourceResult;
-    }
-    return undefined;
+  private async planEject(type: EjectType, projectDir: string): Promise<EjectPlan> {
+    if (type === "agent-partials" || type === "templates") return { type };
+
+    const { sourceResult } = await loadSource({ projectDir });
+    return { type, sourceResult };
   }
 
   private async executeEject(
-    ejectType: EjectType,
+    plan: EjectPlan,
     outputBase: string,
     flags: { force: boolean; output: string | undefined },
     projectDir: string,
-    sourceResult: SourceLoadResult | undefined,
   ): Promise<void> {
     const directOutput = !!flags.output;
 
-    switch (ejectType) {
+    switch (plan.type) {
       case "agent-partials":
         await this.handleAgentPartials(outputBase, flags.force, directOutput, false);
         break;
@@ -221,30 +225,24 @@ export default class Eject extends BaseCommand {
         await this.handleAgentPartials(outputBase, flags.force, directOutput, true);
         break;
       case "skills":
-        if (!sourceResult) {
-          throw new Error("The marketplace must be loaded for skills eject");
-        }
         await this.handleSkills(
           skillsDestination(projectDir, directOutput, outputBase),
           flags.force,
-          sourceResult,
+          plan.sourceResult,
         );
         break;
       case "all": {
-        if (!sourceResult) {
-          throw new Error("The marketplace must be loaded for full eject");
-        }
         // The partials carry the templates as one unit, so they arrive once and obey --force.
         await this.handleAgentPartials(outputBase, flags.force, directOutput, false);
         await this.handleSkills(
           skillsDestination(projectDir, directOutput, outputBase),
           flags.force,
-          sourceResult,
+          plan.sourceResult,
         );
         break;
       }
       default: {
-        const _exhaustive: never = ejectType;
+        const _exhaustive: never = plan;
         return _exhaustive;
       }
     }

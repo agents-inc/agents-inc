@@ -46,6 +46,7 @@ import {
   savedStack,
 } from "./fixtures"
 
+import type { ServedSkillTree } from "./fixtures"
 import type { JsonBodyType, PathParams } from "msw"
 
 // `/monitoring` is absent: only Sentry's SDK calls it.
@@ -224,12 +225,15 @@ export const catalogUnreachableHandler = http.get(CATALOG_URL, () =>
 const TREE_URL = `${GITHUB_API_ORIGIN}/repos/:owner/:repo/git/trees/:ref`
 const RAW_URL = `${GITHUB_RAW_ORIGIN}/:owner/:repo/:ref/*`
 
-const SKILL_TREES = [EXTERNAL_SKILL, OTHER_EXTERNAL_SKILL]
+const SKILL_TREES: readonly ServedSkillTree[] = [
+  EXTERNAL_SKILL,
+  OTHER_EXTERNAL_SKILL,
+]
 
 const servedSkillIn = (repo: string) =>
   SKILL_TREES.find((candidate) => candidate.repo === repo)
 
-const blobsOf = (skill: { path: string; files: Record<string, string> }) =>
+const blobsOf = (skill: ServedSkillTree) =>
   Object.entries(skill.files).map(([relative, text]) => ({
     path: `${skill.path}/${relative}`,
     mode: "100644",
@@ -272,7 +276,7 @@ const textOf = (repo: string, fullPath: string) => {
   if (!skill) return undefined
 
   const relative = fullPath.slice(skill.path.length + 1)
-  return (skill.files as Record<string, string>)[relative]
+  return skill.files[relative]
 }
 
 // The part past `/:owner/:repo/:ref/`. msw's `*` lands in `params[0]`; the URL is the honest

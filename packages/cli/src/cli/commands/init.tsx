@@ -383,8 +383,18 @@ export default class Init extends BaseCommand {
 
   private async showDashboardOrOpenEditor(projectDir: string): Promise<void> {
     const dashboard = await runDashboardFlow(projectDir, this.config, (msg) => this.log(msg));
-    if (dashboard === "cancelled") this.error("Cancelled", { exit: EXIT_CODES.CANCELLED });
-    if (dashboard === "not-installed") await this.openEditor(projectDir, undefined);
+    switch (dashboard) {
+      case "cancelled":
+        return this.error("Cancelled", { exit: EXIT_CODES.CANCELLED });
+      case "not-installed":
+        return this.openEditor(projectDir, undefined);
+      case "shown":
+        return;
+      default: {
+        const _exhaustive: never = dashboard;
+        return _exhaustive;
+      }
+    }
   }
 
   /** Refused as the install route refuses it, since the line echoes the ref it was given. */

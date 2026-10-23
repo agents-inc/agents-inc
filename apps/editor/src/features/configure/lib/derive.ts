@@ -10,6 +10,7 @@ import {
   type Domain,
   type IncompatibilityCause,
   type SelectionJudgement,
+  type SelectionVerdict,
   type StackExpansion,
   type SubAgent,
 } from "@workspace/matrix"
@@ -233,23 +234,33 @@ const survivesSelectionFilter = (
   search: ConfigureSearch
 ) => !search.sel || cell.selected
 
+const unselectedCell = (
+  skill: GridSkill,
+  verdict: SelectionVerdict
+): SkillCellView => {
+  switch (verdict.status) {
+    case "normal":
+      return toCell(skill, undefined)
+    case "discouraged":
+      return toCell(skill, undefined, undefined, verdict.reason)
+    case "incompatible":
+      return toCell(skill, undefined, incompatibleReasonOf(verdict.cause))
+    default: {
+      const _exhaustive: never = verdict
+      return _exhaustive
+    }
+  }
+}
+
 // A selected skill is never disabled: clicking it off is the way out.
 const toGridCell = (
   skill: GridSkill,
   { config, judgement }: GridContext
 ): SkillCellView => {
   const entry = config.skills[skill.id]
-
   if (entry) return toCell(skill, entry)
 
-  const verdict = judgement.verdictOf(skill.id)
-  if (verdict.status === "incompatible") {
-    return toCell(skill, entry, incompatibleReasonOf(verdict.cause))
-  }
-  if (verdict.status === "discouraged") {
-    return toCell(skill, entry, undefined, verdict.reason)
-  }
-  return toCell(skill, entry)
+  return unselectedCell(skill, judgement.verdictOf(skill.id))
 }
 
 const cellsIn = (

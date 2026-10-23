@@ -7,8 +7,14 @@ export async function hostCompileNotices(
   provider: Provider,
   projectDir: string,
 ): Promise<string[]> {
-  return [
-    ...(await codexCompileNotices(provider, projectDir)),
-    ...(await claudeCompileNotices(provider, projectDir)),
-  ];
+  switch (provider) {
+    case "claude":
+      return claudeCompileNotices(provider, projectDir);
+    case "codex":
+      return codexCompileNotices(provider, projectDir);
+    default: {
+      const _exhaustive: never = provider;
+      return _exhaustive;
+    }
+  }
 }

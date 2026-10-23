@@ -82,16 +82,14 @@ export async function loadConfig<T>(configPath: string, schema?: z.ZodType<T>): 
     throw new ConfigDefaultExportError(configPath);
   }
 
-  if (schema) {
-    const result = schema.safeParse(raw);
-    if (!result.success) {
-      throw new ConfigSchemaError(configPath, formatZodIssues(result.error.issues));
-    }
-    return result.data;
-  }
-
   // Boundary cast: jiti returns unknown, caller provides expected type
-  return raw as T;
+  if (!schema) return raw as T;
+
+  const result = schema.safeParse(raw);
+  if (!result.success) {
+    throw new ConfigSchemaError(configPath, formatZodIssues(result.error.issues));
+  }
+  return result.data;
 }
 
 /** A fresh engine and no module cache: one run writes a config and reads it back several times. */

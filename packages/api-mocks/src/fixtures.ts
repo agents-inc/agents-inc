@@ -7,7 +7,12 @@ import {
 } from "@workspace/matrix/skill-index"
 
 import type { AssignmentTarget } from "@workspace/matrix"
-import type { SeedAgent, SeedPayload, SeedSkill } from "@workspace/matrix/seed"
+import type {
+  SeedAgent,
+  SeedExternalSkill,
+  SeedPayload,
+  SeedSkill,
+} from "@workspace/matrix/seed"
 
 // Plain values: no mocking library is imported here.
 
@@ -448,6 +453,9 @@ export const GITHUB_RAW_ORIGIN = "https://raw.githubusercontent.com"
 /** Set on `window` if the SKILL.md below were ever executed rather than shown. */
 export const XSS_SENTINEL = "__agentsIncSkillContentsRan"
 
+/** A skill directory the GitHub stubs serve, in the fields a payload's `external` entry uses. */
+export type ServedSkillTree = Pick<SeedExternalSkill, "repo" | "path" | "files">
+
 // Its SKILL.md carries live markup on purpose: the preview must neither run nor lose it.
 export const EXTERNAL_SKILL = {
   repo: "obra/superpowers",
@@ -461,7 +469,7 @@ export const EXTERNAL_SKILL = {
     "metadata.yaml": "slug: brainstorming\ndomain: shared\n",
     "reference/prompts.md": "# Prompts\n\nThe questions to ask first.\n",
   },
-} as const
+} as const satisfies ServedSkillTree
 
 export const OTHER_EXTERNAL_SKILL = {
   repo: "addyosmani/agent-skills",
@@ -470,12 +478,12 @@ export const OTHER_EXTERNAL_SKILL = {
     "SKILL.md":
       "---\nname: code-review-and-quality\n---\n\nMulti-axis review.\n",
   },
-} as const
+} as const satisfies ServedSkillTree
 
 export const OVERSIZED_EXTERNAL_SKILL = {
   repo: "anthropics/skills",
   path: "skills/docx",
-} as const
+} as const satisfies Pick<ServedSkillTree, "repo" | "path">
 
 // PNG magic bytes, invalid UTF-8, so a strict decoder refuses them.
 export const BINARY_FILE_BYTES = new Uint8Array([

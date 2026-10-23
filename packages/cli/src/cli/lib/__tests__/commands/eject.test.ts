@@ -1506,6 +1506,82 @@ describe("what eject says", () => {
     });
   });
 
+  /** Only skills are copied from the marketplace, so only their eject needs it to load. */
+  describe("with a configured marketplace that cannot be loaded", () => {
+    let missingMarketplace: string;
+    let configPath: string;
+    let configBefore: string;
+
+    beforeEach(async () => {
+      missingMarketplace = path.join(tempDir, "no-such-marketplace");
+      configPath = await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({ skills: [], agents: [], marketplace: missingMarketplace }),
+      );
+      configBefore = await readFile(configPath, "utf-8");
+    });
+
+    it("refuses to eject skills, naming the path, and copies nothing", async () => {
+      const { error } = await runCliCommand(["eject", "skills"]);
+
+      expect([error?.name, error?.message]).toStrictEqual([
+        "Error",
+        [
+          `Local marketplace not found: '${missingMarketplace}'`,
+          "",
+          "Nothing is at that path, and a local marketplace must be a directory holding skills.",
+          "",
+          "Check it for a typo, or name a marketplace that exists:",
+          "  --marketplace github:agents-inc/skills",
+        ].join("\n"),
+      ]);
+      expect([
+        await directoryExists(path.join(projectDir, LOCAL_SKILLS_PATH)),
+        await readFile(configPath, "utf-8"),
+      ]).toStrictEqual([false, configBefore]);
+    });
+
+    it("still ejects the templates, which never read it", async () => {
+      const templatesDir = path.join(agentsDirOf(projectDir), path.basename(DIRS.templates));
+
+      const { stdout, stderr, error } = await runCliCommand(["eject", "templates"]);
+
+      expect(error).toBeUndefined();
+      expect(stderr).toBe("");
+      expect(stdout).toBe(
+        [
+          ...HEADER,
+          `✓ Agent templates ejected to ${templatesDir}`,
+          "You can now customize agent templates locally.",
+          ...ENDING,
+        ].join("\n"),
+      );
+      expect([
+        [...(await readdir(templatesDir))].sort(),
+        await readFile(configPath, "utf-8"),
+      ]).toStrictEqual([EJECTED_TEMPLATE_ENTRIES, configBefore]);
+    });
+
+    it("still ejects the agent partials, which never read it", async () => {
+      const { stdout, stderr, error } = await runCliCommand(["eject", "agent-partials"]);
+
+      expect(error).toBeUndefined();
+      expect(stderr).toBe("");
+      expect(stdout).toBe(
+        [
+          ...HEADER,
+          `✓ Agent partials ejected to ${agentsDirOf(projectDir)}`,
+          PARTIALS_CUSTOMIZABLE,
+          ...ENDING,
+        ].join("\n"),
+      );
+      expect([
+        [...(await readdir(agentsDirOf(projectDir)))].sort(),
+        await readFile(configPath, "utf-8"),
+      ]).toStrictEqual([EJECTED_AGENT_DIRS, configBefore]);
+    });
+  });
+
   describe("with no config of its own", () => {
     it("records the marketplace it read in the config it creates", async () => {
       await runCliCommand(["eject", "agent-partials"]);

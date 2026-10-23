@@ -1,4 +1,5 @@
 import { isDeepEqual } from "remeda";
+import { EXTRACTED_FIELDS } from "@workspace/compile/config-source";
 import { isRecord } from "../../utils/type-guards.js";
 import type { AgentName, ProjectConfig, SkillId } from "../../types";
 import type { AgentScopeConfig, SkillConfig } from "../../types/config";
@@ -39,17 +40,19 @@ export const NO_CHANGES: GlobalChangeSet = {
   projectsChanged: false,
 };
 
-/** The four fields the config writer extracts into typed named variables. */
-const EXTRACTED_FIELDS = new Set(["skills", "agents", "stack", "selectedDomains"]);
+const extractedFields: ReadonlySet<string> = new Set(EXTRACTED_FIELDS);
 
 /** The registration list — bookkeeping, never emitted into a project config. */
-const REGISTRATION_FIELD = "projects";
+const REGISTRATION_FIELD = "projects" satisfies keyof ProjectConfig;
 
 /**
  * Fields an empty value leaves meaning nothing: the writer omits an empty `stack` and writes an
  * empty `selectedDomains`, and the global merge spells both out, so either reading occurs.
  */
-const EMPTY_MEANS_ABSENT = new Set(["stack", "selectedDomains"]);
+const EMPTY_MEANS_ABSENT: ReadonlySet<string> = new Set<keyof ProjectConfig>([
+  "stack",
+  "selectedDomains",
+]);
 
 function isEmptyCollection(value: unknown): boolean {
   return Array.isArray(value)
@@ -86,7 +89,7 @@ function agentsByName(config: Record<string, unknown>): Map<AgentName, AgentScop
 /** The scalar keys either side carries, in `next`-first order with `prev` extras appended. */
 function scalarKeys(prev: Record<string, unknown>, next: Record<string, unknown>): string[] {
   const isScalarKey = (key: string): boolean =>
-    !EXTRACTED_FIELDS.has(key) && key !== REGISTRATION_FIELD;
+    !extractedFields.has(key) && key !== REGISTRATION_FIELD;
   const nextKeys = Object.keys(next).filter(isScalarKey);
   const extraPrevKeys = Object.keys(prev).filter(
     (key) => isScalarKey(key) && !nextKeys.includes(key),
@@ -174,14 +177,24 @@ export function consequenceTier(changes: GlobalChangeSet): ConsequenceTier {
   return "T4";
 }
 
+type TierConsequences = { needsDeps: boolean; regeneratesTypes: boolean; propagates: boolean };
+
+/** One row per tier, so a new tier does not compile until its consequences are stated. */
+const TIER_CONSEQUENCES = {
+  T1: { needsDeps: true, regeneratesTypes: true, propagates: true },
+  T2: { needsDeps: true, regeneratesTypes: false, propagates: true },
+  T3: { needsDeps: false, regeneratesTypes: false, propagates: false },
+  T4: { needsDeps: false, regeneratesTypes: false, propagates: false },
+} satisfies Record<ConsequenceTier, TierConsequences>;
+
 export function tierNeedsDeps(tier: ConsequenceTier): boolean {
-  return tier === "T1" || tier === "T2";
+  return TIER_CONSEQUENCES[tier].needsDeps;
 }
 
 export function tierRegeneratesTypes(tier: ConsequenceTier): boolean {
-  return tier === "T1";
+  return TIER_CONSEQUENCES[tier].regeneratesTypes;
 }
 
 export function tierPropagates(tier: ConsequenceTier): boolean {
-  return tier === "T1" || tier === "T2";
+  return TIER_CONSEQUENCES[tier].propagates;
 }

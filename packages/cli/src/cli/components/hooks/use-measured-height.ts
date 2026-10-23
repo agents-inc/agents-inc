@@ -11,10 +11,9 @@ export function useMeasuredHeight(): {
   const { stdout } = useStdout();
 
   const measure = () => {
-    if (ref.current) {
-      const { height } = measureElement(ref.current);
-      setMeasuredHeight((prev) => (prev !== height ? height : prev));
-    }
+    if (!ref.current) return;
+    const { height } = measureElement(ref.current);
+    setMeasuredHeight((prev) => (prev !== height ? height : prev));
   };
 
   // Every render, so late-mounted refs are picked up.

@@ -12,17 +12,20 @@ type WorkerEnv = { Bindings: Env }
 
 import type { BetterAuthOptions } from "better-auth"
 
-type CloudflareKv = NonNullable<Parameters<typeof withCloudflare>[0]["kv"]>
+type CloudflareOptions = Parameters<typeof withCloudflare>[0]
+
+type CloudflareKv = NonNullable<CloudflareOptions["kv"]>
 
 const AUTH_BASE_PATH = "/api/auth"
 
 // Location detection off. `cf` must be present (even empty) on both paths or
-// the adapter throws.
+// the adapter throws. Both flags default on, and only a fresh object literal is
+// checked for unknown keys, so `satisfies` is what refuses a misspelt one.
 const DECLINE_LOCATION = {
   cf: {},
   autoDetectIpAddress: false,
   geolocationTracking: false,
-} as const
+} as const satisfies CloudflareOptions
 
 // Two whole objects, not a conditional spread: `exactOptionalPropertyTypes`
 // refuses the `d1?: T | undefined` a spread infers. The env-less branch serves

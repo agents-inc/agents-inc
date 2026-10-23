@@ -162,12 +162,13 @@ export async function loadStackById(
     return null;
   }
 
-  const defaultStack = defaultStacks.find((s) => s.id === stackId) ?? null;
-  if (defaultStack) {
-    verbose(`Found default stack: ${defaultStack.name} (${stackId})`);
-  } else {
+  const defaultStack = defaultStacks.find((s) => s.id === stackId);
+  if (!defaultStack) {
     verbose(`Stack '${stackId}' not found in the default marketplace or the built-ins`);
+    return null;
   }
+
+  verbose(`Found default stack: ${defaultStack.name} (${stackId})`);
   return defaultStack;
 }
 

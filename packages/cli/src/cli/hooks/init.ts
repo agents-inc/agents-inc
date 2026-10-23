@@ -13,18 +13,29 @@ import {
 const hook: Hook<"init"> = async function (options) {
   sayTheRetiredSourceFolderIsUnsupported(process.cwd());
 
-  // No command: the dashboard.
-  if (options.id === undefined) {
-    const projectDir = process.cwd();
-    // Checked here: oclif's hook runner swallows a load error thrown inside the dashboard.
-    const unreadable = await findConfigLoadFailures(projectDir);
-    if (unreadable.length > 0) {
-      this.error(installationConfigsUnreadable(unreadable), { exit: EXIT_CODES.ERROR });
-    }
+  // A named command runs as named; no command is the dashboard.
+  if (options.id !== undefined) return;
 
-    const dashboard = await runDashboardFlow(projectDir, options.config);
-    if (dashboard === "cancelled") this.error("Cancelled", { exit: EXIT_CODES.CANCELLED });
-    if (dashboard === "shown") await endRun(EXIT_CODES.SUCCESS);
+  const projectDir = process.cwd();
+  // Checked here: oclif's hook runner swallows a load error thrown inside the dashboard.
+  const unreadable = await findConfigLoadFailures(projectDir);
+  if (unreadable.length > 0) {
+    this.error(installationConfigsUnreadable(unreadable), { exit: EXIT_CODES.ERROR });
+  }
+
+  const dashboard = await runDashboardFlow(projectDir, options.config);
+  switch (dashboard) {
+    case "cancelled":
+      return this.error("Cancelled", { exit: EXIT_CODES.CANCELLED });
+    case "shown":
+      return endRun(EXIT_CODES.SUCCESS);
+    case "not-installed":
+      // oclif goes on to print the root help.
+      return;
+    default: {
+      const _exhaustive: never = dashboard;
+      return _exhaustive;
+    }
   }
 };
 

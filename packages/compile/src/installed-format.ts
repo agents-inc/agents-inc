@@ -130,9 +130,16 @@ export function renderUnionBody(
 ): string {
   const padding = spaces(bodyIndent)
 
-  return layout === "indented"
-    ? `${padding}${flatUnion(members)}`
-    : members.map((member) => `${padding}| ${member}`).join("\n")
+  switch (layout) {
+    case "indented":
+      return `${padding}${flatUnion(members)}`
+    case "stacked":
+      return members.map((member) => `${padding}| ${member}`).join("\n")
+    default: {
+      const _exhaustive: never = layout
+      return _exhaustive
+    }
+  }
 }
 
 export function flatUnion(members: readonly string[]): string {
@@ -213,9 +220,18 @@ function renderArray(
 }
 
 function renderEntryLine(entry: ArrayEntry, indent: number): string {
-  if (entry.kind === "comment") return `${spaces(indent)}// ${entry.text}`
-  if (entry.kind === "source") return `${spaces(indent)}${entry.source},`
-  return renderValueLine(entry.value, { indent, prefix: "", suffix: "," })
+  switch (entry.kind) {
+    case "comment":
+      return `${spaces(indent)}// ${entry.text}`
+    case "source":
+      return `${spaces(indent)}${entry.source},`
+    case "value":
+      return renderValueLine(entry.value, { indent, prefix: "", suffix: "," })
+    default: {
+      const _exhaustive: never = entry
+      return _exhaustive
+    }
+  }
 }
 
 function renderRecord(
@@ -244,12 +260,28 @@ function flatArray(entries: readonly ArrayEntry[]): string | undefined {
   const items: string[] = []
 
   for (const entry of entries) {
-    // A `//` line cannot fold onto one line.
-    if (entry.kind === "comment") return undefined
-    items.push(entry.kind === "source" ? entry.source : flatValue(entry.value))
+    const item = flatEntry(entry)
+    if (item === undefined) return undefined
+    items.push(item)
   }
 
   return flatList(items)
+}
+
+function flatEntry(entry: ArrayEntry): string | undefined {
+  switch (entry.kind) {
+    // A `//` line cannot fold onto one line.
+    case "comment":
+      return undefined
+    case "source":
+      return entry.source
+    case "value":
+      return flatValue(entry.value)
+    default: {
+      const _exhaustive: never = entry
+      return _exhaustive
+    }
+  }
 }
 
 function flatValue(value: unknown): string {

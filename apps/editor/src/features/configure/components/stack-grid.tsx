@@ -54,7 +54,7 @@ const membersLine = (skillIds: readonly string[]) => {
 const SCRATCH_AT_REST = {
   name: SCRATCH_NAME,
   members: "no stack · pick every skill yourself",
-} as const
+} as const satisfies Pick<StackCell, "name" | "members">
 
 // "and every sub-agent" because the roster empties with the selection, but for
 // what a project's link holds.
@@ -221,11 +221,19 @@ export function StackGrid() {
 
   // A save is recognised only by the selection being it, and that wins over
   // the `stackId` underneath. An account's is matched once its payload is read.
-  const isApplied = (request: StackRequest) => {
-    if (request.kind === "saved") return appliedSaveIds.has(request.saveId)
-    if (request.kind === "remote") return appliedConfigIds.has(request.configId)
-
-    return !onASave && request.stackId === stackId
+  const isApplied = (request: StackRequest): boolean => {
+    switch (request.kind) {
+      case "stack":
+        return !onASave && request.stackId === stackId
+      case "saved":
+        return appliedSaveIds.has(request.saveId)
+      case "remote":
+        return appliedConfigIds.has(request.configId)
+      default: {
+        const _exhaustive: never = request
+        return _exhaustive
+      }
+    }
   }
 
   const choose = (request: StackRequest) => {

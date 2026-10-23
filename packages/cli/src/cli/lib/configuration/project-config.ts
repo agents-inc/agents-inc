@@ -163,12 +163,9 @@ export async function loadProjectConfig(projectDir: string): Promise<LoadedProje
   const provider = providerInUse(projectDir);
   const projectResult = await loadProjectConfigFromDir(projectDir, provider);
   if (projectResult) return projectResult;
+  if (isHomeDirectory(projectDir)) return null;
 
-  if (!isHomeDirectory(projectDir)) {
-    return loadProjectConfigFromDir(os.homedir(), provider);
-  }
-
-  return null;
+  return loadProjectConfigFromDir(os.homedir(), provider);
 }
 
 /** On top of the lenient schema, a usable config also needs `name` and `agents`. */

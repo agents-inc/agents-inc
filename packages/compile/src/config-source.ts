@@ -65,12 +65,20 @@ export const GLOBAL_IDENTITY_FIELDS = [
 ] as const satisfies readonly (keyof ProjectConfig)[]
 
 /** Emitted as typed named variables above the export default. */
-const EXTRACTED_FIELDS = new Set([
+export const EXTRACTED_FIELDS = [
   "skills",
   "agents",
   "stack",
   "selectedDomains",
-])
+] as const satisfies readonly (keyof ProjectConfig)[]
+
+type ExtractedField = (typeof EXTRACTED_FIELDS)[number]
+
+const extractedFields: ReadonlySet<string> = new Set(EXTRACTED_FIELDS)
+
+function isExtractedField(key: string): key is ExtractedField {
+  return extractedFields.has(key)
+}
 
 /**
  * The loader schema's field order, so the writer is a fixed point: a Zod load and a merge insert
@@ -391,11 +399,22 @@ function standaloneExportField(
   value: unknown,
   emitted: EmittedSections
 ): string[] {
-  if (!EXTRACTED_FIELDS.has(key)) return [renderScalarField(key, value)]
-  if (key === "skills") return [`  skills${emitted.hasSkills ? "" : ": []"},`]
-  if (key === "agents") return [`  agents${emitted.hasAgents ? "" : ": []"},`]
-  if (key === "stack") return emitted.hasStack ? [`  stack,`] : []
-  return [`  selectedDomains${emitted.hasSelectedDomains ? "" : ": []"},`]
+  if (!isExtractedField(key)) return [renderScalarField(key, value)]
+
+  switch (key) {
+    case "skills":
+      return [`  skills${emitted.hasSkills ? "" : ": []"},`]
+    case "agents":
+      return [`  agents${emitted.hasAgents ? "" : ": []"},`]
+    case "stack":
+      return emitted.hasStack ? [`  stack,`] : []
+    case "selectedDomains":
+      return [`  selectedDomains${emitted.hasSelectedDomains ? "" : ": []"},`]
+    default: {
+      const _exhaustive: never = key
+      return _exhaustive
+    }
+  }
 }
 
 type ConfigSourceParts = {
@@ -445,7 +464,7 @@ function buildTypeImports(flags: EmittedSections): string[] {
 
 /** A project copies these as they stand; its `name` is {@link resolveProjectName}'s. */
 function isCopiedScalarField(key: string): boolean {
-  return !EXTRACTED_FIELDS.has(key) && key !== "name"
+  return !isExtractedField(key) && key !== "name"
 }
 
 /** Project configs never inherit "global" as their name from the globalConfig spread. */
