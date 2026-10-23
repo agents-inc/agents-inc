@@ -951,11 +951,11 @@ test.describe("the marketplace on the public catalogue", () => {
 })
 
 /**
- * Loading a marketplace that carries every picked skill moves nothing in the
- * configuration, yet the preview must redraw for the new catalogue. A fork, so
- * its ref differs from the public one.
+ * Loading the marketplace on screen again keeps the selection, yet the preview
+ * must redraw for what its catalogue now says. Another marketplace would start
+ * a new configuration instead. A fork, so its ref differs from the public one.
  */
-test.describe("the preview after a marketplace loads under the same selection", () => {
+test.describe("the preview after a marketplace loads again under the same selection", () => {
   const LOADED_REF = "public-fork/skills"
   // Mirrored rather than built by the app's formatter.
   const LOADED_CANONICAL_REF = "github:public-fork/skills"
@@ -978,19 +978,33 @@ test.describe("the preview after a marketplace loads under the same selection", 
     },
   })
 
+  // The fork as it first published: the public catalogue's own words.
+  const FIRST_CATALOG = matrixSchema.parse({
+    ...MATRIX,
+    version: "9.9.9-first",
+    generatedAt: "build",
+  })
+
+  const loadFork = async (configure: ConfigurePage) => {
+    await configure.marketplaceButton.click()
+    await configure.marketplaceDialog.fill(LOADED_REF)
+    await configure.marketplaceDialog.load()
+    await expect(configure.marketplaceDialog.root).toBeHidden()
+  }
+
   test.beforeEach(async ({ configure, page }) => {
-    stubMarketplaceCatalogOf(page, LOADED_CATALOG)
+    stubMarketplaceCatalogOf(page, FIRST_CATALOG)
     const preview = configure.outputPreviewDialog
 
+    await loadFork(configure)
     await pickReactOnDemand(configure)
     await configure.roster.previewButton.click()
     await expect(preview.row(GLOBAL_CONFIG_PATH)).toBeVisible()
     await preview.close()
 
-    await configure.marketplaceButton.click()
-    await configure.marketplaceDialog.fill(LOADED_REF)
-    await configure.marketplaceDialog.load()
-    await expect(configure.marketplaceDialog.root).toBeHidden()
+    // Added last, so it answers first: the fork has published since.
+    stubMarketplaceCatalogOf(page, LOADED_CATALOG)
+    await loadFork(configure)
 
     // Subject guard: only the catalogue changed.
     await expect(configure.skillIn(web, CATEGORY, REACT).root).toHaveAttribute(

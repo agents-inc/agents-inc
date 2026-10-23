@@ -85,6 +85,7 @@ beforeEach(() => {
     unadopted: {},
     ready: false,
     payloads: {},
+    failedReads: [],
   })
   useSavedStackStore.setState({ saves: [], owed: [] })
 })
@@ -541,5 +542,85 @@ describe("the payload behind each of the account's stacks", () => {
     await useAccountStore.getState().refresh()
 
     expect(payloads()).toStrictEqual({})
+  })
+})
+
+// The switch question says a stack could not load only once its read has
+// answered with a failure, and shows loading again while it is re-read.
+describe("a read of an account's stack that failed", () => {
+  const failedReads = () => useAccountStore.getState().failedReads
+
+  // The worker answering this id's GET with 503 until `recover` is called.
+  const failingUntilRecovered = (configId: string) => {
+    let failing = true
+    configMockServer.use(
+      http.get(`${CONFIGS_URL}/${configId}`, () =>
+        failing
+          ? new HttpResponse(null, { status: SERVICE_UNAVAILABLE })
+          : HttpResponse.json(STORED_PAYLOAD)
+      )
+    )
+    return () => {
+      failing = false
+    }
+  }
+
+  it("is recorded under its config id", async () => {
+    accountHolding([savedStack("Weekday", STORED_ID)])
+    failingUntilRecovered(STORED_ID)
+    await useAccountStore.getState().refresh()
+
+    await useAccountStore.getState().readPayloads()
+
+    expect({
+      payloads: useAccountStore.getState().payloads,
+      failedReads: failedReads(),
+    }).toStrictEqual({ payloads: {}, failedReads: [STORED_ID] })
+  })
+
+  it("is not failed while it is read again, and failed again when that read fails too", async () => {
+    accountHolding([savedStack("Weekday", STORED_ID)])
+    failingUntilRecovered(STORED_ID)
+    await useAccountStore.getState().refresh()
+    await useAccountStore.getState().readPayloads()
+
+    const reading = useAccountStore.getState().readPayloads()
+    const whileReading = failedReads()
+    await reading
+
+    expect({ whileReading, after: failedReads() }).toStrictEqual({
+      whileReading: [],
+      after: [STORED_ID],
+    })
+  })
+
+  it("gives way to the payload once a later read succeeds", async () => {
+    accountHolding([savedStack("Weekday", STORED_ID)])
+    const recover = failingUntilRecovered(STORED_ID)
+    await useAccountStore.getState().refresh()
+    await useAccountStore.getState().readPayloads()
+
+    recover()
+    await useAccountStore.getState().readPayloads()
+
+    expect({
+      payloads: useAccountStore.getState().payloads,
+      failedReads: failedReads(),
+    }).toStrictEqual({
+      payloads: { [STORED_ID]: STORED_PAYLOAD },
+      failedReads: [],
+    })
+  })
+
+  it("is forgotten on a sign-out", async () => {
+    accountHolding([savedStack("Weekday", STORED_ID)])
+    failingUntilRecovered(STORED_ID)
+    await useAccountStore.getState().refresh()
+    await useAccountStore.getState().readPayloads()
+
+    configMockServer.resetHandlers()
+    await useAccountStore.getState().refresh()
+
+    expect(failedReads()).toStrictEqual([])
   })
 })

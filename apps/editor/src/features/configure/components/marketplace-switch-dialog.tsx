@@ -9,7 +9,8 @@ import {
 } from "@workspace/ui/components/alert-dialog"
 import { useEffect, useState } from "react"
 
-import { switchConsequence } from "@/features/configure/lib/marketplace-switch"
+import { losesNothing } from "@/features/configure/lib/marketplace-switch"
+import { useMarketplaceLoad } from "@/features/configure/lib/use-marketplace-load"
 import { fetchCatalog, type CatalogResult } from "@/lib/api/catalog"
 import { useCatalogStore } from "@/stores/catalog-store"
 import { useConfigStore } from "@/stores/config-store"
@@ -19,8 +20,8 @@ import { useUiStore } from "@/stores/ui-store"
 import type { MarketplaceRecovery } from "@/features/configure/lib/use-catalog-first"
 import type { Matrix } from "@workspace/matrix/matrix-schema"
 
-// The target is fetched first so the dialog can name which skills go; nothing
-// is seated, stored or pruned until the CTA.
+// The target is fetched first so the dialog can say what the switch costs;
+// nothing is seated, stored or cleared until the CTA.
 
 type TargetState =
   | { status: "reading" }
@@ -57,7 +58,7 @@ const useTargetCatalog = (marketplace: string) => {
   return state
 }
 
-// Any load that seats a catalogue finishes a parked recovery.
+// A switch to the marketplace a parked recovery waits on finishes it.
 export function MarketplaceSwitchDialog({
   recovery,
 }: {
@@ -98,25 +99,34 @@ function SwitchConfirmation({
   const target = useTargetCatalog(marketplace)
   const choose = useMarketplaceStore((state) => state.choose)
   const load = useCatalogStore((state) => state.load)
-  const pruneToCatalog = useConfigStore((state) => state.pruneToCatalog)
-  // The map, not `Object.keys`: a fresh array per call would loop updates.
+  const { costOf, land } = useMarketplaceLoad(recovery)
+  // Field by field: a fresh object per call would loop updates.
+  const stackId = useConfigStore((state) => state.stackId)
   const skills = useConfigStore((state) => state.skills)
+  const agents = useConfigStore((state) => state.agents)
 
+  const costOfSwitching = (matrix: Matrix) =>
+    costOf({ marketplace, matrix }, marketplace, { stackId, skills, agents }) ??
+    losesNothing(marketplace)
+
+  const seat = (matrix: Matrix) => {
+    choose(marketplace)
+    load(matrix, marketplace)
+  }
+
+  // Takes what the description said, not just hides it.
   const confirm = () => {
     if (target.status !== "read") return
 
-    choose(marketplace)
-    load(target.matrix, marketplace)
-    // Actually drop what the description named, not just hide it.
-    pruneToCatalog()
-    recovery?.onSeated()
+    const { matrix } = target
+    land(marketplace, () => seat(matrix))
     onDone()
   }
 
   return (
     <>
       <AlertDialogDescription>
-        {descriptionFor(target, marketplace, Object.keys(skills))}
+        {descriptionFor(target, marketplace, costOfSwitching)}
       </AlertDialogDescription>
       <AlertDialogFooter>
         <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -133,12 +143,18 @@ function SwitchConfirmation({
 const descriptionFor = (
   target: TargetState,
   marketplace: string,
-  selectedIds: string[]
-) => {
-  if (target.status === "reading") return `Reading ${marketplace}…`
-  if (target.status === "refused") {
-    return `${target.error} Nothing has changed — load it from Marketplace to try a token.`
+  costOfSwitching: (matrix: Matrix) => string
+): string => {
+  switch (target.status) {
+    case "reading":
+      return `Reading ${marketplace}…`
+    case "read":
+      return costOfSwitching(target.matrix)
+    case "refused":
+      return `${target.error} Nothing has changed — load it from Marketplace to try a token.`
+    default: {
+      const _exhaustive: never = target
+      return _exhaustive
+    }
   }
-
-  return switchConsequence(marketplace, target.matrix, selectedIds)
 }

@@ -91,3 +91,27 @@ export const DisabledBlocksClicks: Story = {
     await expect(args.onClick).not.toHaveBeenCalled()
   },
 }
+
+// For a button its own press disables: focus stays on it.
+export const DisabledFocusable: Story = {
+  args: { disabled: true, focusableWhenDisabled: true },
+}
+
+export const DisabledFocusableIsDimmed: Story = {
+  ...DisabledFocusable,
+  play: async ({ canvas }) => {
+    await expect(
+      getComputedStyle(canvas.getByRole("button", { name: "close" })).opacity
+    ).toBe("0.4")
+  },
+}
+
+export const DisabledFocusableRefusesThePointer: Story = {
+  ...DisabledFocusable,
+  play: async ({ canvas }) => {
+    await expect(
+      getComputedStyle(canvas.getByRole("button", { name: "close" }))
+        .pointerEvents
+    ).toBe("none")
+  },
+}

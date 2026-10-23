@@ -375,12 +375,24 @@ export class MarketplaceSwitchDialog {
 // Only reached once the configuration has actually been edited.
 export class StackSwitchDialog {
   readonly root: Locator
+  readonly description: Locator
+  // Where an account's stack's marketplace is named once its payload arrives.
+  readonly marketplaceLoading: Locator
   readonly confirmButton: Locator
+  // In Switch's place once an account's stack has failed to load.
+  readonly retryButton: Locator
   readonly cancelButton: Locator
 
   constructor(page: Page) {
     this.root = page.getByRole("alertdialog")
+    this.description = this.root.locator(
+      '[data-slot="alert-dialog-description"]'
+    )
+    this.marketplaceLoading = this.root.locator(
+      '[data-slot="stack-marketplace-loading"]'
+    )
     this.confirmButton = this.root.getByRole("button", { name: "Switch" })
+    this.retryButton = this.root.getByRole("button", { name: "Retry" })
     this.cancelButton = this.root.getByRole("button", {
       name: "Keep my setup",
     })
@@ -388,6 +400,10 @@ export class StackSwitchDialog {
 
   async confirm() {
     await this.confirmButton.click()
+  }
+
+  async retry() {
+    await this.retryButton.click()
   }
 
   async cancel() {

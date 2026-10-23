@@ -11,18 +11,12 @@ import { tokenFor } from "@/stores/marketplace-store"
 
 export type Unseated = { marketplace: string; failure: CatalogFailure }
 
-// Each caller answers; only it knows whether the public catalogue finishes
-// what is parked.
-export type RecoveryEndings = {
-  onSeated: () => void
-  onPublic: () => void
-}
+// Each caller answers. Only the marketplace it waits on finishes it: the
+// public catalogue is another marketplace, and a payload's ids belong to its
+// own.
+export type RecoveryEndings = { onSeated: () => void }
 
 export type MarketplaceRecovery = Unseated & RecoveryEndings
-
-// For ids a payload names: the public catalogue would prune them all, so
-// clearing the field leaves them parked.
-export const STAYS_PARKED = () => undefined
 
 // Both seats are idempotent: re-seating refetches and drops this session's
 // external skills.
@@ -53,18 +47,24 @@ const seatPublicCatalog = () => {
   useCatalogStore.getState().reset()
 }
 
+/**
+ * The marketplace a payload names, as this browser keys it. Older payloads
+ * name it as typed; canonical, the token lookup finds the entry this browser
+ * holds. `""` is the public catalogue.
+ */
+export const marketplaceOf = (named: string | undefined) =>
+  named ? canonicalMarketplaceRef(named) : ""
+
 // None names the public catalogue, which cannot fail but must still be seated.
 export const seatCatalog = async (
   marketplace: string | undefined
 ): Promise<Unseated | null> => {
-  if (!marketplace) {
+  const named = marketplaceOf(marketplace)
+  if (!named) {
     seatPublicCatalog()
     return null
   }
 
-  // Older payloads name the marketplace as typed; canonical, the token lookup
-  // finds the entry this browser holds.
-  const named = canonicalMarketplaceRef(marketplace)
   const failure = await seatMarketplace(named)
   return failure ? { marketplace: named, failure } : null
 }

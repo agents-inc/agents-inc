@@ -12,9 +12,9 @@ import { Input } from "@workspace/ui/components/input"
 import { useRef, useState, type RefObject } from "react"
 
 import {
-  dropsSelection,
-  switchConsequence,
-} from "@/features/configure/lib/marketplace-switch"
+  useMarketplaceLoad,
+  type LoadTarget,
+} from "@/features/configure/lib/use-marketplace-load"
 import {
   canonicalMarketplaceRef,
   fetchCatalog,
@@ -29,7 +29,6 @@ import { useUiStore } from "@/stores/ui-store"
 import { FIELD_INSET, Field, Note } from "./dialog-field"
 
 import type { MarketplaceRecovery } from "@/features/configure/lib/use-catalog-first"
-import type { Matrix } from "@workspace/matrix/matrix-schema"
 
 // The token field appears only once an answer says a token could help. Both
 // live in localStorage, never on our worker; each token is filed under the
@@ -39,27 +38,22 @@ import type { Matrix } from "@workspace/matrix/matrix-schema"
 // same however it is authorized.
 const OFFERS_TOKEN: CatalogFailureKind = "unauthorized"
 
-// A catalogue read and not yet seated, carried so confirming seats what was
-// described rather than whatever the field says by then. `""` is public.
-type Target = { marketplace: string; matrix: Matrix }
+const PUBLIC_TARGET: LoadTarget = { marketplace: "", matrix: MATRIX }
 
-const PUBLIC_TARGET: Target = { marketplace: "", matrix: MATRIX }
+const isPublic = ({ marketplace }: LoadTarget) => marketplace === ""
 
-const isPublic = ({ marketplace }: Target) => marketplace === ""
-
-const catalogueName = (target: Target) =>
+const catalogueName = (target: LoadTarget) =>
   isPublic(target) ? "the public catalogue" : target.marketplace
 
 const PRESS_AGAIN = "Nothing has changed yet — press Load again to switch."
 
-const consequenceOf = (target: Target, selectedIds: string[]) =>
-  `${switchConsequence(catalogueName(target), target.matrix, selectedIds)} ${PRESS_AGAIN}`
-
 type LoadState =
   | { status: "idle" }
   | { status: "loading" }
-  // Read and described, waiting on the press that seats it.
-  | { status: "confirming"; target: Target; consequence: string }
+  // Read and described, waiting on the press that seats it: the target is
+  // carried so confirming seats what was described rather than whatever the
+  // field says by then.
+  | { status: "confirming"; target: LoadTarget; consequence: string }
   // The shape a recovery arrives in, so a payload's dialog opens where a
   // failed manual attempt would have got to.
   | ({ status: "failed" } & CatalogFailure)
@@ -125,10 +119,7 @@ function MarketplaceForm({
   const choosePublic = useMarketplaceStore((state) => state.choosePublic)
   const load = useCatalogStore((state) => state.load)
   const reset = useCatalogStore((state) => state.reset)
-  const pruneToCatalog = useConfigStore((state) => state.pruneToCatalog)
-  // The map, not `Object.keys(...)`: a fresh array per call never compares
-  // equal and loops the subscription.
-  const skills = useConfigStore((state) => state.skills)
+  const { costOf, land } = useMarketplaceLoad(recovery)
 
   const [marketplace, setMarketplace] = useState(
     () => recovery?.marketplace ?? useMarketplaceStore.getState().current
@@ -160,31 +151,31 @@ function MarketplaceForm({
     reset()
   }
 
-  // The only place a marketplace is remembered, and only once it has loaded.
-  const seatNamed = ({ marketplace: named, matrix }: Target) => {
+  // Remembered only once it has loaded.
+  const seatNamed = ({ marketplace: named, matrix }: LoadTarget) => {
     remember(named, token)
     load(matrix, named)
   }
 
-  // A saved configuration's marketplace was the slot just cleared, so public
-  // finishes it; an arriving payload names its own and stays parked.
-  const finishRecovery = (target: Target) =>
-    isPublic(target) ? recovery?.onPublic() : recovery?.onSeated()
-
-  // Naming a consequence and dropping the skills it names travel together.
-  const seat = (target: Target) => {
+  const seatCatalogue = (target: LoadTarget) => {
     if (isPublic(target)) seatPublic()
     else seatNamed(target)
+  }
 
-    pruneToCatalog()
-    finishRecovery(target)
+  // Naming a cost and taking it travel together.
+  const seat = (target: LoadTarget) => {
+    land(target.marketplace, () => seatCatalogue(target))
     onDone()
   }
 
-  // A load that drops nothing seats at once; one that would asks first.
-  const readCatalogue = (target: Target) => {
-    const selectedIds = Object.keys(skills)
-    if (!dropsSelection(target.matrix, selectedIds)) {
+  // A load that costs nothing seats at once; one that would asks first.
+  const readCatalogue = (target: LoadTarget) => {
+    const cost = costOf(
+      target,
+      catalogueName(target),
+      useConfigStore.getState()
+    )
+    if (cost === null) {
       seat(target)
       return
     }
@@ -192,7 +183,7 @@ function MarketplaceForm({
     setState({
       status: "confirming",
       target,
-      consequence: consequenceOf(target, selectedIds),
+      consequence: `${cost} ${PRESS_AGAIN}`,
     })
   }
 
@@ -275,9 +266,11 @@ function MarketplaceForm({
         <Button variant="outline" onClick={onDone}>
           Cancel
         </Button>
-        {/* One Load for both presses; the line above says which happened. */}
+        {/* One Load for both presses; the line above says which happened.
+            Focusable while it reads, so the caret is there for the second. */}
         <Button
           variant="primary"
+          focusableWhenDisabled
           disabled={state.status === "loading"}
           onClick={press}
         >

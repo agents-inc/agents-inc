@@ -309,7 +309,6 @@ const RECOVERY: MarketplaceRecovery = {
   marketplace: "github:acme/skills",
   failure: { kind: "unreachable", error: "acme/skills is unreachable" },
   onSeated: () => undefined,
-  onPublic: () => undefined,
 }
 
 describe("the ui store's transient actions", () => {

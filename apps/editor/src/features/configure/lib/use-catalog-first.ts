@@ -10,7 +10,6 @@ import { useHeldGlobalStore } from "@/stores/held-global-store"
 import { useMarketplaceStore } from "@/stores/marketplace-store"
 import { useUiStore } from "@/stores/ui-store"
 import {
-  STAYS_PARKED,
   droppedNotice,
   parkedNotice,
   seatCatalog,
@@ -93,7 +92,7 @@ const openShared = async (id: string) => {
     park(
       unseated,
       sentences([SHARED_NOTICE, parkedNotice(A_LINK, unseated.marketplace)]),
-      { onSeated: () => applyShared(payload), onPublic: STAYS_PARKED }
+      { onSeated: () => applyShared(payload) }
     )
     return
   }
@@ -119,12 +118,10 @@ const applyShared = (payload: SeedPayload) => {
 const openOwn = async () => {
   const unseated = await restoreSavedCatalog()
   if (unseated) {
-    // Both endings restore: the slot names the marketplace, so once cleared
-    // the public catalogue is the one the config is saved against.
-    const restore = () => void finishRestore()
+    // Only its own marketplace restores it: any other opens that one's own,
+    // and this one stays saved with its marketplace.
     park(unseated, restoreParkedNotice(unseated.marketplace), {
-      onSeated: restore,
-      onPublic: restore,
+      onSeated: () => void finishRestore(),
     })
     return
   }

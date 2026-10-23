@@ -26,7 +26,7 @@ import { getResponse, http } from "msw"
 import { stubWith } from "./stub"
 
 import type { Page } from "@playwright/test"
-import type { JsonBodyType, PathParams } from "msw"
+import type { JsonBodyType, PathParams, RequestHandler } from "msw"
 
 // The sharing worker's handlers come from `@workspace/api-mocks`; this file
 // decides only which answer a spec gets.
@@ -174,6 +174,40 @@ export const holdCreateConfig = (page: Page) => {
 
   return release
 }
+
+const holdGetConfigAnswering = (
+  page: Page,
+  id: string,
+  answer: RequestHandler
+) => {
+  let release = () => {}
+  const released = new Promise<void>((resolve) => {
+    release = resolve
+  })
+
+  stubWith(page, [
+    http.get(`${CONFIGS_URL}/${id}`, async ({ request }) => {
+      await released
+      return getResponse([answer], request)
+    }),
+  ])
+
+  return release
+}
+
+/**
+ * One id's GET answered with `payload` only once `release` is called, so a
+ * spec can read what the page shows before the payload arrives.
+ */
+export const holdGetConfig = (
+  page: Page,
+  id: string,
+  payload: JsonBodyType = STORED_PAYLOAD
+) => holdGetConfigAnswering(page, id, storedConfigHandlerFor(id, payload))
+
+/** One id's GET answered 404 only once `release` is called. */
+export const holdGetConfigMissing = (page: Page, id: string) =>
+  holdGetConfigAnswering(page, id, missingConfigHandlerFor(id))
 
 /** The POST never answered: unlike a refusal, there is no status to read. */
 export const stubCreateConfigUnreachable = (page: Page) =>

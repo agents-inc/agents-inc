@@ -26,6 +26,13 @@ const UI_STORAGE_KEY = "agents-inc:ui:v1"
 
 const CONFIG_STORAGE_KEY = "agents-inc:config:v1"
 
+// Each marketplace's saved configuration has a slot of its own; the public
+// catalogue's is the bare key.
+const configStorageKey = (marketplace: string) =>
+  marketplace === ""
+    ? CONFIG_STORAGE_KEY
+    : `${CONFIG_STORAGE_KEY}@${marketplace}`
+
 const SAVED_STACK_STORAGE_KEY = "agents-inc:saved-stack:v1"
 
 // The persist version this release writes; the key's `v1` is not it.
@@ -42,6 +49,14 @@ const UNNORMALISED_PERSIST_VERSION = 1
 export type SavedMarketplaces = {
   current: string
   saved: Record<string, string>
+}
+
+/** The visitor's own saved selection; option values are not this type's claim. */
+export type StoredSelection = {
+  stackId: string | null
+  skills: Record<string, unknown>
+  remembered: Record<string, unknown>
+  agents: Record<string, unknown>
 }
 
 export type StoredUi = {
@@ -305,13 +320,33 @@ export class ConfigurePage {
     })
   }
 
-  // The visitor's own saved selection, read from the slot because the screen
-  // may be showing a configuration that is not this browser's.
-  async storedConfig() {
+  // The visitor's own saved selection on a marketplace, `""` the public
+  // catalogue, read from the slot because the screen may be showing a
+  // configuration that is not this browser's.
+  async storedConfig(marketplace = "") {
     return this.page.evaluate(
       (key) => window.localStorage.getItem(key) ?? "",
-      CONFIG_STORAGE_KEY
+      configStorageKey(marketplace)
     )
+  }
+
+  /** Writes a saved selection, as `storedConfig` reads it, to a marketplace's slot. */
+  async seedStoredConfig(marketplace: string, blob: string) {
+    await this.page.evaluate(
+      ([key, value]) => window.localStorage.setItem(key!, value!),
+      [configStorageKey(marketplace), blob]
+    )
+  }
+
+  // Parsed, for the reason `savedMarketplaces` is.
+  async storedSelection(marketplace = ""): Promise<StoredSelection | null> {
+    const raw = await this.page.evaluate(
+      (key) => window.localStorage.getItem(key),
+      configStorageKey(marketplace)
+    )
+    if (raw === null) return null
+
+    return (JSON.parse(raw) as { state: StoredSelection }).state
   }
 
   // Parsed, for the reason `savedMarketplaces` is.

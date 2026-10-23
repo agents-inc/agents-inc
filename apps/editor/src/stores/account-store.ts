@@ -42,6 +42,9 @@ type AccountState = {
   // Config id → the payload a stack points at, which the grid matches the
   // selection against. An id names one payload forever, so each is read once.
   payloads: Readonly<Record<string, SeedPayload>>
+  // Config ids whose last read failed. One not answered yet is not here, so
+  // the switch question tells loading from failed.
+  failedReads: readonly string[]
   refresh: () => Promise<void>
   // Reads each listed stack's payload not yet held; one the store cannot serve
   // is asked for again next time.
@@ -51,6 +54,9 @@ type AccountState = {
   // Still owed: the next sign-in asks again.
   defer: (saveId: string) => void
 }
+
+/** What the grid has read of an account's stacks. */
+export type AccountReads = Pick<AccountState, "payloads" | "failedReads">
 
 type Adoption = {
   stacks: RemoteStack[]
@@ -158,20 +164,24 @@ const unheldConfigIds = (
   ),
 ]
 
-const readUnheldPayloads = async (
-  stacks: readonly RemoteStack[],
-  payloads: AccountState["payloads"]
-) => {
-  const read = await Promise.all(
-    unheldConfigIds(stacks, payloads).map(
+const readEach = (configIds: readonly string[]) =>
+  Promise.all(
+    configIds.map(
       async (configId) => [configId, await fetchSharedConfig(configId)] as const
     )
   )
 
-  return read.flatMap(([configId, result]) =>
-    result.ok ? [[configId, result.payload] as const] : []
+type Reads = Awaited<ReturnType<typeof readEach>>
+
+const arrivedIn = (reads: Reads) =>
+  Object.fromEntries(
+    reads.flatMap(([configId, result]) =>
+      result.ok ? [[configId, result.payload] as const] : []
+    )
   )
-}
+
+const failedIn = (reads: Reads) =>
+  reads.flatMap(([configId, result]) => (result.ok ? [] : [configId]))
 
 // One refresh at a time: two overlapping (StrictMode, sign-out-then-refresh)
 // would both read an empty account and adopt every save twice.
@@ -179,6 +189,13 @@ let inFlight: Promise<void> | null = null
 
 const withoutId = (ids: readonly string[], id: string) =>
   ids.filter((other) => other !== id)
+
+const withoutIds = (ids: readonly string[], removed: readonly string[]) =>
+  ids.filter((id) => !removed.includes(id))
+
+const unionOf = (ids: readonly string[], added: readonly string[]) => [
+  ...new Set([...ids, ...added]),
+]
 
 const settleCarried = (save: SavedStack, name: string) => {
   const store = useSavedStackStore.getState()
@@ -193,14 +210,23 @@ export const useAccountStore = create<AccountState>()((set, get) => ({
   clashes: [],
   ready: false,
   payloads: {},
+  failedReads: [],
 
   refresh: () =>
     (inFlight ??= refreshOnce(set).finally(() => (inFlight = null))),
 
+  // A failed read being read again is failed no longer, so the question shows
+  // loading until this read answers.
   readPayloads: async () => {
-    const read = await readUnheldPayloads(get().stacks, get().payloads)
-    if (read.length > 0)
-      set({ payloads: { ...get().payloads, ...Object.fromEntries(read) } })
+    const unheld = unheldConfigIds(get().stacks, get().payloads)
+    if (unheld.length === 0) return
+
+    set({ failedReads: withoutIds(get().failedReads, unheld) })
+    const reads = await readEach(unheld)
+    set({
+      payloads: { ...get().payloads, ...arrivedIn(reads) },
+      failedReads: unionOf(get().failedReads, failedIn(reads)),
+    })
   },
 
   // Leaves `unadopted` alone: a save of some other selection reaches no local
@@ -238,6 +264,7 @@ const refreshOnce = async (set: (state: Partial<AccountState>) => void) => {
       unadopted: {},
       clashes: [],
       payloads: {},
+      failedReads: [],
     })
 
   const { owed, ...adoption } = await adoptLocalSaves(await listStacks())

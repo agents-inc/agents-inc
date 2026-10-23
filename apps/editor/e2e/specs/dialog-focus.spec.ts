@@ -1,4 +1,5 @@
 import {
+  MARKETPLACE_CANONICAL_REF,
   MARKETPLACE_TOKEN,
   PRIVATE_MARKETPLACE_CANONICAL_REF,
   SKILL_INDEX,
@@ -6,7 +7,10 @@ import {
 
 import { expect, test } from "../fixtures"
 import { DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
-import { stubPrivateMarketplaceCatalog } from "../support/marketplace"
+import {
+  stubMarketplaceCatalog,
+  stubPrivateMarketplaceCatalog,
+} from "../support/marketplace"
 import { stubCreateConfig } from "../support/sharing"
 import { stubSkillContents } from "../support/skill-contents"
 import { stubSkillIndex } from "../support/skill-index"
@@ -19,6 +23,9 @@ import type { ConfigurePage } from "../pages/configure-page"
 
 const [FIRST] = SKILL_INDEX.skills
 const FIRST_NAME = FIRST!.name
+
+// Mirrored, not imported: a rendering assertion keeps its literal.
+const PRESS_LOAD_AGAIN = "press Load again to switch."
 
 // As the add-skill dropdown spells it.
 const CATEGORY = `${DOMAINS.web.toLowerCase()} · ${EXCLUSIVE_CATEGORY.name.toLowerCase()}`
@@ -117,6 +124,26 @@ test.describe("the marketplace dialog", () => {
 
     await expect(configure.marketplaceDialog.root).toBeHidden()
     await expect(configure.marketplaceButton).toBeFocused()
+  })
+
+  // Load is disabled while it reads, by its own press. The caret stays on it,
+  // so the press its answer asks for is one key away.
+  test("keeps focus on Load through the read it starts", async ({
+    configure,
+    page,
+  }) => {
+    stubMarketplaceCatalog(page)
+    await configure
+      .skillIn(DOMAINS.web, EXCLUSIVE_CATEGORY.name, EXCLUSIVE_CATEGORY.first)
+      .toggle()
+
+    await configure.marketplaceButton.press("Enter")
+    const dialog = configure.marketplaceDialog
+    await dialog.fill(MARKETPLACE_CANONICAL_REF)
+    await dialog.loadButton.press("Enter")
+
+    await expect(dialog.consequence).toContainText(PRESS_LOAD_AGAIN)
+    await expect(dialog.loadButton).toBeFocused()
   })
 })
 

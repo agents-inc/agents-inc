@@ -11,9 +11,11 @@ import { SKILL_INDEX } from "@workspace/api-mocks/fixtures"
 import { expect, test } from "../fixtures"
 import { DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
 import {
+  BIGCO_REF,
   stubHeldMissingMarketplace,
   stubMalformedCatalog,
   stubMarketplaceCatalog,
+  stubMarketplaceEstate,
   stubMissingMarketplace,
   stubPrivateMarketplaceCatalog,
 } from "../support/marketplace"
@@ -33,6 +35,7 @@ import {
   stubGetConfigMissing,
 } from "../support/sharing"
 
+import type { ConfigurePage } from "../pages/configure-page"
 import type { Page } from "@playwright/test"
 
 // Nothing may resolve an id before the catalogue it was minted against is
@@ -40,7 +43,10 @@ import type { Page } from "@playwright/test"
 
 // Marketplace ids are prefixed, so which catalogue answered is observable.
 const ACME_SKILL = "Acme Widgets"
+const ACME_OTHER_SKILL = "Acme Gateway"
 const PUBLIC_SKILL = EXCLUSIVE_CATEGORY.first
+
+const SAVED_STACK = "Weekday"
 
 // Its directory lives for the session and never reaches storage: the witness
 // that storage was not reread.
@@ -49,6 +55,8 @@ const ADDED_CATEGORY = `${DOMAINS.web.toLowerCase()} · ${EXCLUSIVE_CATEGORY.nam
 
 // The private stub refuses anything but the real token, as with an expired one.
 const STALE_TOKEN = "ghp_staleaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+const BIGCO_SKILL = "Bigco Widgets"
 
 test.describe("a configuration saved against a marketplace", () => {
   test.beforeEach(({ page }) => {
@@ -73,8 +81,7 @@ test.describe("a configuration saved against a marketplace", () => {
   })
 })
 
-// A saved marketplace that fails on startup prompts like a first load, and the
-// picks are kept.
+// A saved marketplace that fails on startup prompts like a first load.
 test.describe("a saved marketplace that no longer loads", () => {
   // Loaded with a good token, a skill picked, then the token gone stale.
   test.beforeEach(async ({ configure, page }) => {
@@ -136,7 +143,34 @@ test.describe("a saved marketplace that no longer loads", () => {
     await configure.marketplaceDialog.cancel()
 
     await expect(configure.importNotice).toContainText(PRIVATE_MARKETPLACE_REF)
-    expect(await configure.storedConfig()).toContain(ACME_SKILL_ID)
+    expect(
+      await configure.storedConfig(PRIVATE_MARKETPLACE_CANONICAL_REF)
+    ).toContain(ACME_SKILL_ID)
+  })
+
+  // The catalogue drawn while it waits is not its own, so a pick there lands
+  // in no slot: not its own, and not the public catalogue's either.
+  test("keeps the saved picks through a pick made while it waits", async ({
+    configure,
+    page,
+  }) => {
+    await configure.seedStoredConfig(
+      "",
+      await configure.storedConfig(PRIVATE_MARKETPLACE_CANONICAL_REF)
+    )
+    const publicSaved = await configure.storedConfig()
+
+    await page.reload()
+    await expect(configure.marketplaceDialog.root).toBeVisible()
+    await configure.marketplaceDialog.cancel()
+
+    await configure.skill(PUBLIC_SKILL).toggle()
+    expect(await configure.skill(PUBLIC_SKILL).isSelected()).toBe(true)
+
+    expect(
+      await configure.storedConfig(PRIVATE_MARKETPLACE_CANONICAL_REF)
+    ).toContain(ACME_SKILL_ID)
+    expect(await configure.storedConfig()).toBe(publicSaved)
   })
 
   test("finishes from the button after the prompt was cancelled", async ({
@@ -160,8 +194,42 @@ test.describe("a saved marketplace that no longer loads", () => {
     )
   })
 
-  // Clearing the field re-points a parked restore at the public catalogue.
-  test("finishes the parked restore when the field is cleared for the public catalogue", async ({
+  // Nothing different for a marketplace that will not load: the public
+  // catalogue is another marketplace like any other.
+  test("starts the public catalogue's own when the field is cleared", async ({
+    configure,
+    page,
+  }) => {
+    // One of the public catalogue's own, saved beside the parked one.
+    await configure.marketplaceButton.click()
+    await configure.marketplaceDialog.fill("")
+    await configure.marketplaceDialog.load()
+    await configure.marketplaceDialog.load()
+    await configure.skill(PUBLIC_SKILL).toggle()
+    await configure.seedSavedMarketplaces({
+      current: PRIVATE_MARKETPLACE_REF,
+      saved: { [PRIVATE_MARKETPLACE_REF]: STALE_TOKEN },
+    })
+
+    await page.reload()
+    await expect(configure.marketplaceDialog.root).toBeVisible()
+
+    await configure.marketplaceDialog.fill("")
+    await configure.marketplaceDialog.load()
+
+    await expect(configure.skill(PUBLIC_SKILL).root).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+    await expect(configure.importNotice).toBeHidden()
+    // From the slot: the notice going while the marketplace stays stored is the
+    // same bug.
+    expect(await configure.chosenMarketplace()).not.toBe(
+      PRIVATE_MARKETPLACE_CANONICAL_REF
+    )
+  })
+
+  test("restores none of it into the public catalogue", async ({
     configure,
     page,
   }) => {
@@ -172,18 +240,11 @@ test.describe("a saved marketplace that no longer loads", () => {
     await configure.marketplaceDialog.load()
 
     await expect(configure.skill(PUBLIC_SKILL).root).toBeVisible()
-    // Not "no line at all": the next test's notice replaces it.
-    await expect(configure.importNotice).not.toContainText(
-      PRIVATE_MARKETPLACE_REF
-    )
-    // From the slot: the notice going while the marketplace stays stored is the
-    // same bug.
-    expect(await configure.chosenMarketplace()).not.toBe(
-      PRIVATE_MARKETPLACE_CANONICAL_REF
-    )
+    await expect(configure.importNotice).toBeHidden()
+    expect(await configure.storedConfig()).not.toContain(ACME_SKILL_ID)
   })
 
-  test("names the saved ids the public catalogue could not place", async ({
+  test("leaves it saved with its marketplace when the public catalogue loads", async ({
     configure,
     page,
   }) => {
@@ -192,8 +253,126 @@ test.describe("a saved marketplace that no longer loads", () => {
 
     await configure.marketplaceDialog.fill("")
     await configure.marketplaceDialog.load()
+    await expect(configure.skill(PUBLIC_SKILL).root).toBeVisible()
 
-    await expect(configure.importNotice).toContainText(ACME_SKILL_ID)
+    expect(
+      await configure.storedConfig(PRIVATE_MARKETPLACE_CANONICAL_REF)
+    ).toContain(ACME_SKILL_ID)
+  })
+
+  // Nothing on screen and nothing saved is lost, so the press that asks loads.
+  test("loads another marketplace on one press, leaving it saved with its own", async ({
+    configure,
+    page,
+  }) => {
+    // Bigco needs no token, which the private stub refuses.
+    stubMarketplaceEstate(page)
+    await page.reload()
+    await expect(configure.marketplaceDialog.root).toBeVisible()
+
+    await configure.marketplaceDialog.fill(BIGCO_REF)
+    await configure.marketplaceDialog.load()
+
+    await expect(configure.skill(BIGCO_SKILL).root).toBeVisible()
+    await expect(configure.importNotice).toBeHidden()
+    expect(
+      await configure.storedConfig(PRIVATE_MARKETPLACE_CANONICAL_REF)
+    ).toContain(ACME_SKILL_ID)
+  })
+
+  test("reopens it untouched once its own marketplace loads again", async ({
+    configure,
+    page,
+  }) => {
+    stubMarketplaceEstate(page)
+    await page.reload()
+    await expect(configure.marketplaceDialog.root).toBeVisible()
+    await configure.marketplaceDialog.fill(BIGCO_REF)
+    await configure.marketplaceDialog.load()
+    await expect(configure.skill(BIGCO_SKILL).root).toBeVisible()
+
+    await configure.marketplaceButton.click()
+    await configure.marketplaceDialog.fill(PRIVATE_MARKETPLACE_REF)
+    await configure.marketplaceDialog.fillToken(MARKETPLACE_TOKEN)
+    await configure.marketplaceDialog.load()
+
+    await expect(configure.skill(ACME_SKILL).root).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+  })
+
+  // Its slot was never read, so the stack's marketplace being the stored one
+  // makes it no less a load.
+  test("keeps a stack applied on it once it loads, and the picks after it", async ({
+    configure,
+    page,
+  }) => {
+    await configure.saveStackDialog.seed([
+      { name: SAVED_STACK, payload: PRIVATE_MARKETPLACE_PAYLOAD },
+    ])
+    await page.reload()
+    await expect(configure.marketplaceDialog.root).toBeVisible()
+    await configure.marketplaceDialog.cancel()
+
+    await configure.stack(SAVED_STACK).click()
+    await expect(configure.marketplaceDialog.tokenInput).toBeVisible()
+    await configure.marketplaceDialog.fillToken(MARKETPLACE_TOKEN)
+    await configure.marketplaceDialog.load()
+    await expect(configure.skill(ACME_SKILL).root).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+    await configure.skill(ACME_OTHER_SKILL).toggle()
+
+    await page.reload()
+
+    await expect(configure.skill(ACME_OTHER_SKILL).root).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+    await expect(configure.skill(ACME_SKILL).root).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+  })
+
+  // The stack on another marketplace takes the restore's place in waiting, so
+  // its own marketplace loading is a plain load, and it still reopens.
+  test("reopens it once it loads, after a stack on another marketplace parked in its place", async ({
+    configure,
+    page,
+  }) => {
+    // No token is filed for it, so the private stub refuses it.
+    await configure.saveStackDialog.seed([
+      { name: SAVED_STACK, payload: MARKETPLACE_PAYLOAD },
+    ])
+    await page.reload()
+    await expect(configure.marketplaceDialog.root).toBeVisible()
+    await configure.marketplaceDialog.cancel()
+    await configure.stack(SAVED_STACK).click()
+    await expect(configure.marketplaceDialog.marketplaceInput).toHaveValue(
+      MARKETPLACE_CANONICAL_REF
+    )
+    await configure.marketplaceDialog.cancel()
+
+    await configure.marketplaceButton.click()
+    await configure.marketplaceDialog.fill(PRIVATE_MARKETPLACE_REF)
+    await configure.marketplaceDialog.fillToken(MARKETPLACE_TOKEN)
+    await configure.marketplaceDialog.load()
+
+    await expect(configure.skill(ACME_SKILL).root).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+    await configure.skill(ACME_OTHER_SKILL).toggle()
+
+    await page.reload()
+
+    await expect(configure.skill(ACME_OTHER_SKILL).root).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
   })
 })
 
@@ -205,15 +384,26 @@ test.describe("a saved configuration its seated catalogue has outgrown", () => {
     await configure.marketplaceDialog.fill(MARKETPLACE_REF)
     await configure.marketplaceDialog.load()
     await configure.skill(ACME_SKILL).toggle()
-    expect(await configure.storedConfig()).toContain(ACME_SKILL_ID)
+    expect(await configure.storedConfig(MARKETPLACE_CANONICAL_REF)).toContain(
+      ACME_SKILL_ID
+    )
   })
+
+  // The marketplace's selection, saved where the public catalogue reads it.
+  const outgrownByThePublicCatalogue = async (configure: ConfigurePage) => {
+    await configure.seedStoredConfig(
+      "",
+      await configure.storedConfig(MARKETPLACE_CANONICAL_REF)
+    )
+    // An empty `current` is the public catalogue, so nothing parks.
+    await configure.seedSavedMarketplaces({ current: "", saved: {} })
+  }
 
   test("names the saved ids the seated catalogue could not place", async ({
     configure,
     page,
   }) => {
-    // An empty `current` is the public catalogue, so nothing parks.
-    await configure.seedSavedMarketplaces({ current: "", saved: {} })
+    await outgrownByThePublicCatalogue(configure)
 
     await page.reload()
 
@@ -237,7 +427,7 @@ test.describe("a saved configuration its seated catalogue has outgrown", () => {
     page,
   }) => {
     stubGetConfigMissing(page, DEAD_LINK_ID)
-    await configure.seedSavedMarketplaces({ current: "", saved: {} })
+    await outgrownByThePublicCatalogue(configure)
 
     await page.goto(`/?fromId=${DEAD_LINK_ID}`)
 

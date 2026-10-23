@@ -6,7 +6,7 @@ import { cn } from "@workspace/ui/lib/utils"
 // `action` has no fill so Install stays the roster's one filled element. `onDark` is for the stuck
 // filter bar, whose band is already ink.
 const buttonVariants = cva(
-  "inline-flex shrink-0 cursor-pointer items-center justify-center font-mono font-semibold whitespace-nowrap uppercase outline-none select-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40",
+  "inline-flex shrink-0 cursor-pointer items-center justify-center font-mono font-semibold whitespace-nowrap uppercase outline-none select-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 aria-disabled:pointer-events-none aria-disabled:opacity-40",
   {
     variants: {
       variant: {
