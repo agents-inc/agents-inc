@@ -1,6 +1,6 @@
 import { Box } from "ink";
 import { render } from "ink-testing-library";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SummaryPanel, summaryPanelText, type SummaryPanelProps } from "./summary-panel";
 import {
   ALL_SKILLS_EJECTED_LABEL,
@@ -17,7 +17,7 @@ import {
   ARROW_DOWN,
   ARROW_UP,
   INPUT_DELAY_MS,
-  RENDER_DELAY_MS,
+  SETTLE_TIMEOUT_MS,
   delay,
 } from "../../lib/__tests__/test-constants";
 
@@ -265,20 +265,26 @@ describe("SummaryPanel component", () => {
       agentConfigs: buildAgentConfigs(["web-developer"]),
     };
 
+    /** The viewport settles over several renders, each a scheduler task a busy worker starts late. */
+    async function untilClipped(lastFrame: () => string | undefined): Promise<void> {
+      await vi.waitFor(
+        () => expect(lastFrame()).toContain(`${CLIPPED_LINES} more below`),
+        SETTLE_TIMEOUT_MS,
+      );
+    }
+
     it("should count the lines it clips when the content outgrows the viewport", async () => {
       const { lastFrame, unmount } = renderInClippedViewport(SUMMARISED);
       cleanup = unmount;
 
-      await delay(RENDER_DELAY_MS);
-
-      expect(lastFrame()).toContain(`${CLIPPED_LINES} more below`);
+      await untilClipped(lastFrame);
     });
 
     it("should move the content up one line per down-arrow press", async () => {
       const { stdin, lastFrame, unmount } = renderInClippedViewport(SUMMARISED);
       cleanup = unmount;
 
-      await delay(RENDER_DELAY_MS);
+      await untilClipped(lastFrame);
       stdin.write(ARROW_DOWN);
       await delay(INPUT_DELAY_MS);
 
@@ -291,7 +297,7 @@ describe("SummaryPanel component", () => {
       const { stdin, lastFrame, unmount } = renderInClippedViewport(SUMMARISED);
       cleanup = unmount;
 
-      await delay(RENDER_DELAY_MS);
+      await untilClipped(lastFrame);
       stdin.write(ARROW_UP);
       await delay(INPUT_DELAY_MS);
 
@@ -304,7 +310,7 @@ describe("SummaryPanel component", () => {
       const { stdin, lastFrame, unmount } = renderInClippedViewport(SUMMARISED);
       cleanup = unmount;
 
-      await delay(RENDER_DELAY_MS);
+      await untilClipped(lastFrame);
       for (let press = 0; press < CLIPPED_LINES + 1; press++) {
         stdin.write(ARROW_DOWN);
         await delay(INPUT_DELAY_MS);

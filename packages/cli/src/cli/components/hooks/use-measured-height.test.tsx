@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useMeasuredHeight } from "./use-measured-height.js";
 import { render as renderToTerminal } from "../render.js";
-import { RENDER_DELAY_MS, delay } from "../../lib/__tests__/test-constants.js";
+import { RENDER_DELAY_MS, SETTLE_TIMEOUT_MS, delay } from "../../lib/__tests__/test-constants.js";
 
 /** One line reports the measurement; the measured box fills the rest of `height`. */
 const MeasuredFill: React.FC<{ height: number }> = ({ height }) => {
@@ -50,19 +50,18 @@ describe("useMeasuredHeight", () => {
     cleanup = unmount;
 
     expect(lastFrame()).toContain("measured 0");
-    await delay(RENDER_DELAY_MS);
-    expect(lastFrame()).toContain("measured 5");
+    await vi.waitFor(() => expect(lastFrame()).toContain("measured 5"), SETTLE_TIMEOUT_MS);
   });
 
   it("measures again when a re-render changes the layout", async () => {
     const { lastFrame, rerender, unmount } = render(<MeasuredFill height={6} />);
     cleanup = unmount;
+    // Past the mount's retries, so only the re-render can measure again.
     await delay(RENDER_DELAY_MS);
 
     rerender(<MeasuredFill height={9} />);
-    await delay(RENDER_DELAY_MS);
 
-    expect(lastFrame()).toContain("measured 8");
+    await vi.waitFor(() => expect(lastFrame()).toContain("measured 8"), SETTLE_TIMEOUT_MS);
   });
 
   it("leaves no resize listener on the terminal once unmounted", async () => {
@@ -115,14 +114,20 @@ describe("useMeasuredHeight on a terminal that is resized", () => {
   it("measures again when narrowing the terminal wraps the content onto more lines", async () => {
     const { unmount } = renderToTerminal(<MeasuredWrap />);
     try {
+      // Past the mount's retries, so only the resize can measure again.
       await delay(RENDER_DELAY_MS);
-      expect(painted, "the wide terminal must hold the words on two lines").toContain("measured 2");
+      await vi.waitFor(
+        () =>
+          expect(painted, "the wide terminal must hold the words on two lines").toContain(
+            "measured 2",
+          ),
+        SETTLE_TIMEOUT_MS,
+      );
 
       process.stdout.columns = NARROW_COLUMNS;
       process.stdout.emit(RESIZE);
-      await delay(RENDER_DELAY_MS);
 
-      expect(painted).toContain("measured 4");
+      await vi.waitFor(() => expect(painted).toContain("measured 4"), SETTLE_TIMEOUT_MS);
     } finally {
       unmount();
     }

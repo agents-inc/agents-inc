@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
 import { render } from "ink-testing-library";
 import React from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { usePanelScroll } from "./use-panel-scroll.js";
 import { ScrollAffordance } from "../common/scroll-affordance.js";
@@ -9,11 +9,14 @@ import {
   ARROW_DOWN,
   ARROW_UP,
   INPUT_DELAY_MS,
-  RENDER_DELAY_MS,
+  SETTLE_TIMEOUT_MS,
   delay,
 } from "../../lib/__tests__/test-constants.js";
 
 const LINES = ["line 1", "line 2", "line 3", "line 4", "line 5", "line 6"] as const;
+const PANEL_ROWS = 4;
+/** {@link PANEL_ROWS} rows before any key: three lines and the affordance. */
+const AT_THE_TOP = "line 1\nline 2\nline 3\n3 more below";
 
 /** Laid out as SummaryPanel lays it out: a clipped viewport and the affordance beside it. */
 const ScrolledLines: React.FC<{ height: number }> = ({ height }) => {
@@ -40,10 +43,21 @@ describe("usePanelScroll", () => {
     cleanup = undefined;
   });
 
-  async function scrolled(height: number) {
-    const view = render(<ScrolledLines height={height} />);
+  function mounted() {
+    const view = render(<ScrolledLines height={PANEL_ROWS} />);
     cleanup = view.unmount;
-    await delay(RENDER_DELAY_MS);
+    return view;
+  }
+
+  /** The heights settle over several renders, each a scheduler task a busy worker starts late. */
+  async function untilAtTheTop(view: ReturnType<typeof mounted>): Promise<void> {
+    await vi.waitFor(() => expect(view.lastFrame()).toBe(AT_THE_TOP), SETTLE_TIMEOUT_MS);
+  }
+
+  /** A key pressed before the heights settle is clamped at a bottom that is still moving. */
+  async function scrolled() {
+    const view = mounted();
+    await untilAtTheTop(view);
     return async (...keys: string[]): Promise<string | undefined> => {
       for (const key of keys) {
         view.stdin.write(key);
@@ -54,13 +68,11 @@ describe("usePanelScroll", () => {
   }
 
   it("shows the top lines and counts the rest below before any key", async () => {
-    const press = await scrolled(4);
-
-    expect(await press()).toBe("line 1\nline 2\nline 3\n3 more below");
+    await untilAtTheTop(mounted());
   });
 
   it("moves the content up a line per down arrow, counting both sides", async () => {
-    const press = await scrolled(4);
+    const press = await scrolled();
 
     expect(await press(ARROW_DOWN, ARROW_DOWN)).toBe(
       "line 3\nline 4\nline 5\n2 more above   1 more below",
@@ -68,21 +80,19 @@ describe("usePanelScroll", () => {
   });
 
   it("moves it back a line per up arrow", async () => {
-    const press = await scrolled(4);
+    const press = await scrolled();
     await press(ARROW_DOWN, ARROW_DOWN);
 
     expect(await press(ARROW_UP)).toBe("line 2\nline 3\nline 4\n1 more above   2 more below");
   });
 
   it("stops at the last line and at the first", async () => {
-    const press = await scrolled(4);
+    const press = await scrolled();
 
     expect(await press(...Array.from({ length: 5 }, () => ARROW_DOWN))).toBe(
       "line 4\nline 5\nline 6\n3 more above",
     );
-    expect(await press(...Array.from({ length: 6 }, () => ARROW_UP))).toBe(
-      "line 1\nline 2\nline 3\n3 more below",
-    );
+    expect(await press(...Array.from({ length: 6 }, () => ARROW_UP))).toBe(AT_THE_TOP);
   });
 });
 

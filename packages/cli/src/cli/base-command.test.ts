@@ -2,7 +2,7 @@ import os from "os";
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { captureOutput } from "@oclif/test";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { BaseCommand } from "./base-command";
 import { EXIT_CODES } from "./lib/exit-codes";
@@ -157,11 +157,6 @@ describe("BaseCommand", () => {
       Object.assign(process.stdout, { columns, rows });
     }
 
-    /** Node's own count: a poll left running keeps the CLI's process alive after its run. */
-    function runningTimers(): number {
-      return process.getActiveResourcesInfo().filter((resource) => resource === "Timeout").length;
-    }
-
     afterEach(() => {
       Object.assign(process.stdout, real);
       // Ends a wait a failed spec left pending, so its listener cannot leak into the next spec.
@@ -231,18 +226,30 @@ describe("BaseCommand", () => {
       expect(settled).toBe("waiting");
     });
 
+    // A poll left running keeps the CLI's process alive after its run. Judged by the run's own
+    // handles: a process-wide timer count also moves with timers the run does not own.
     it("leaves no poll running once the terminal is large enough", async () => {
       sizeTheTerminal(40, 30);
       const listenersBefore = process.stdout.listenerCount("resize");
-      const timersBefore = runningTimers();
+      const started = vi.spyOn(globalThis, "setInterval");
+      const cleared = vi.spyOn(globalThis, "clearInterval");
+      onTestFinished(() => {
+        started.mockRestore();
+        cleared.mockRestore();
+      });
 
       const run = runProbe(() => undefined);
       await untilTheRunWaits(listenersBefore);
+      const polls = started.mock.results.map((result) => result.value);
       sizeTheTerminal(120, 40);
       process.stdout.emit("resize");
       await run;
+      const stillPolling = polls.filter(
+        (poll) => !cleared.mock.calls.some(([handle]) => handle === poll),
+      );
 
-      expect(runningTimers()).toBe(timersBefore);
+      expect(polls, "the run polls while it waits").not.toStrictEqual([]);
+      expect(stillPolling).toStrictEqual([]);
     });
 
     it("notices a resize no event reported, at the next poll", async () => {

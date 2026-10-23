@@ -8,6 +8,11 @@ export const KEY_N = "n";
 export const INPUT_DELAY_MS = 50;
 export const RENDER_DELAY_MS = 100;
 export const CONFIRM_INPUT_DELAY_MS = 100;
+/**
+ * How long `vi.waitFor` gives a frame that effects settle over several renders, each started late
+ * by a busy worker.
+ */
+export const SETTLE_TIMEOUT_MS = 5_000;
 
 /** The terminal a spec's piped stdout is sized by: what a headless run measures. */
 export const SPEC_TERMINAL_COLUMNS = 80;
