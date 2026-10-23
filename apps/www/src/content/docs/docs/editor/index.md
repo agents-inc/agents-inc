@@ -42,7 +42,7 @@ The editor wants a wide window. The page grid has a fixed minimum width and no l
 
 The grid's first cell is **Start from scratch**, which is the state a first visit opens in — nothing selected, every sub-agent off. After it come the catalogue's own stacks, each cell naming the stack and the first few skills in it. Clicking one applies it whole, except on a link a bare `edit` minted inside a project, where what is installed globally stays as it is. See [Stacks](/docs/concepts/stacks) for what a stack is.
 
-**Switching between stacks with an untouched selection prompts nothing** — a stack's own expansion isn't something you chose, so there's nothing to lose. Once you've edited away from it, though — a changed install mode or scope, a changed assignment, any per-agent decision — switching asks first: _"Switch to `<name>`?"_, with **Keep my setup** and **Switch**, and a sentence counting the skills, options and assignments it would discard.
+**Switching between stacks with an untouched selection prompts nothing** — a stack's own expansion isn't something you chose, so there's nothing to lose. Once you've edited away from it, though — a changed install mode or scope, a changed assignment, any per-agent decision — switching asks first: _"Switch to `<name>`?"_, with **Keep my setup** and **Switch** — or **Retry**, if a stack saved to your account couldn't load.
 
 **Save** in the roster footer opens **Save stack**, which asks for a name. A name the grid already shows, in any case, is refused in place — nothing is ever overwritten — and each save becomes its own cell right after Start from scratch, newest first. It's a starting point like any other stack from then on. Signed out, saves stay in this browser. Signed in, they go to your account, on any machine, and the grid shows the account's stacks; a first sign-in carries this browser's saves into an empty account under their own names, and any the account refuses stay on the grid with a sentence saying why. Either way a save is recognized as the stack you're on by the selection _being_ it rather than by any id — a save taken from scratch lights up its own cell rather than Start from scratch.
 
@@ -50,7 +50,7 @@ Save uses the same serialization Share does, so a saved stack and a shared link 
 
 ## Sub-agents
 
-The sub-agent cards are grouped by domain. Pressing a card switches that sub-agent on or off, as clicking its name in the roster does, and each card carries its settings with every value on screen at once:
+The sub-agent cards are grouped by domain. Pressing a card does what clicking its name in the roster does, and each card carries its settings with every value on screen at once:
 
 | Control | Values                                          | Where it rests                                           |
 | ------- | ----------------------------------------------- | -------------------------------------------------------- |
@@ -64,7 +64,7 @@ On Codex the model row offers Codex's own models instead.
 
 The right column groups every sub-agent under sticky bands. A **group by** pair in its header, `domain | scope`, switches between the two bandings: by domain, or by where each agent's file is written, global first. Clicking a band collapses it.
 
-**Every sub-agent is listed whether it's on or off.** An agent is on when it holds at least one enabled skill, or when the stack you picked names it, which keeps it on after its last skill goes; clicking its name pins it to the opposite of whatever it works out to. So you can switch on an agent that carries nothing — it reads `no skills — base agent`, and installs as front-matter alone — or switch off one that carries plenty.
+**Every sub-agent is listed whether it's on or off.** An agent is on when it holds at least one enabled skill, or when the stack you picked names it, which keeps it on after its last skill goes; clicking its name pins it to the opposite of whatever it works out to. So you can switch on an agent that carries nothing — it reads `no skills — base agent`, and installs as front-matter alone — or switch off one that carries plenty. On a link a bare `edit` minted inside a project, a sub-agent installed globally stays on whatever it carries, and clicking it won't switch it off.
 
 Under each agent sits one row per skill it carries, ending in a load word — `pre` or `lazy`, click to flip it for this agent alone. Hovering or focusing a row lists every switched-on sub-agent carrying that skill. Clicking a row itself switches that copy off without removing it; it stays listed, recessed.
 
@@ -74,20 +74,20 @@ The footer's actions are **Save**, **Share**, **Preview** and **Install**, in th
 
 ## What survives a reload
 
-Four slots in this browser's own storage, plus the URL — and, once you sign in, your saved stacks on the server.
+Four kinds of slot in this browser's own storage, plus the URL — and, once you sign in, your saved stacks on the server.
 
-| What               | Holds                                                                                                                                                                                          |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Your configuration | the stack, every selected skill with its install mode, scope and sub-agent assignments, the options you set on skills you _haven't_ selected, and every per-agent model, effort, scope and pin |
-| Your saved stacks  | every stack you saved while signed out                                                                                                                                                         |
-| Your marketplaces  | every marketplace a load has succeeded against, and the token that reached it                                                                                                                  |
-| Arrangement        | which roster bands are collapsed, whether you're grouped by domain or scope, which of steps 01–03 are folded, and the theme                                                                    |
+| What                | Holds                                                                                                                                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Your configurations | one per marketplace: the stack, every selected skill with its install mode, scope and sub-agent assignments, the options you set on skills you _haven't_ selected, and every per-agent model, effort, scope and pin |
+| Your saved stacks   | every stack you saved while signed out                                                                                                                                                                              |
+| Your marketplaces   | every marketplace a load has succeeded against, and the token that reached it                                                                                                                                       |
+| Arrangement         | which roster bands are collapsed, whether you're grouped by domain or scope, which of steps 01–03 are folded, and the theme                                                                                         |
 
 The filter state — the search text, the domain the strip last jumped to, and the `all | selected` toggle — lives in the URL along with `fromId`, so a filtered grid is an address you can send.
 
 **What doesn't survive**: a skill you added from GitHub this session, and any selection naming one. Nor do open dialogs, open options panels or pending confirmations. Closing the tab keeps your stack, your skills, their options, every sub-agent decision and your saved marketplaces — but not an added skill, unless you saved it as a stack or shared it first. [Selecting skills](/docs/editor/selecting-skills) says why that one is different.
 
-The configuration slot is versioned and has no migrations. A blob written against a different version of the format is discarded rather than guessed at, and the discard is reported.
+Each configuration slot is versioned and has no migrations. A blob written against a different version of the format is discarded rather than guessed at, and the discard is reported.
 
 ## What the editor doesn't do
 

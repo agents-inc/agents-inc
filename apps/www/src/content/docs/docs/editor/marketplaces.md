@@ -1,6 +1,6 @@
 ---
 title: Marketplaces in the editor
-description: Pointing the grid at a catalogue other than the default, what a switch costs your current selection, and where a private marketplace's access token lives.
+description: Pointing the grid at a catalogue other than the default, what a switch does to your current selection, and where a private marketplace's access token lives.
 sidebar:
   order: 5
 ---
@@ -21,23 +21,27 @@ A marketplace publishes `catalog.json` in its `.claude-plugin/` directory, besid
 
 The field accepts several spellings of one repository — a bare `owner/repo`, a `github:` or `gh:` prefix, a pasted `https://github.com/owner/repo` URL, and a `#branch` on the end for a catalogue not yet on the default branch. Whatever you type is normalized to the CLI's own form, `github:owner/repo`, because that's what `--marketplace` expects and what a shared payload has to carry so `--from` installs the skills your ids actually name.
 
-## Loading takes two presses when it costs something
+## Each marketplace keeps its own configuration
 
-The dialog reads the target catalogue before it seats it, so it can name what a switch would do rather than warn that something might happen:
+This browser saves one configuration per marketplace. Loading a different marketplace opens the configuration saved with it — or a new, empty one if there is none — and the one on screen stays saved with its own marketplace, stack, skills, options and sub-agent choices intact. Loading that marketplace again reopens it as you left it. The marketplace you load becomes this browser's active one, so a reload continues where you left off. Only the loaded marketplace's skills are on the grid.
 
-> Switching to github:acme/skills will drop 3 of your 7 skills: Prisma, Drizzle, Hono. Nothing has changed yet — press Load again to switch.
+The dialog reads the target catalogue before it seats it, and asks first whenever something is selected:
 
-The second press performs it. **A load that costs your selection nothing does both at once** — that's every load onto a catalogue that carries what you already picked, where a second press would stand in front of nothing.
+> Switching to github:acme/skills opens the configuration saved with it, or a new one. This one stays saved with the public catalogue and reopens when you load it again. Nothing has changed yet — press Load again to switch.
 
-Clearing the field is how you go back to the public catalogue. It's read and described exactly like naming a repository, because it costs the selection exactly as much.
+The second press performs it. **With nothing selected, one press does both**, since a second would stand in front of nothing. Clearing the field is how you go back to the public catalogue, and it's another marketplace like any other.
 
-## What happens to your selection
+A marketplace that stops loading — a token gone stale, a repository deleted — is no different. The dialog opens on it with the answer GitHub gave, and nothing is read from it until it loads; its configuration stays saved with it meanwhile. Loading it again, with a token if it needs one, reopens it. Loading any other marketplace opens that one's own and leaves it where it is.
 
-Skills the incoming catalogue doesn't carry are **dropped**, and they're precisely the skills the sentence just named. Everything else survives with its install mode, its scope and its sub-agent assignments intact.
+**Applying a saved stack built on another marketplace is a load of that marketplace, then the stack.** The marketplace becomes the active one, so the stack's skills survive a reload, and the configuration on screen stays saved with its own marketplace.
 
-A skill hidden from the grid but left in the configuration would still be in the install list and in every link you minted afterwards, under a marketplace ref that can't resolve it — so the link would install a subset and you'd never be told.
+## Loading the same marketplace again
 
-**The sub-agent roster is the same whatever catalogue is loaded.** A marketplace publishes skills, categories and stacks — never sub-agents — so every per-agent decision you made survives a switch untouched. Your saved stacks survive too; they're kept in their own slot rather than in the configuration. What doesn't survive is the stack you're _on_, if the incoming catalogue doesn't carry it: that clears back to no stack, and your selection stays as it was.
+Loading the marketplace that's already on screen re-reads its catalogue and keeps your selection, less any skill the catalogue no longer carries. Those are named before the second press:
+
+> Switching to github:acme/skills will drop 1 of your 7 skills: Prisma. Nothing has changed yet — press Load again to switch.
+
+They're dropped rather than hidden: a skill left in the configuration would still be in the install list and in every link you minted afterwards, under a marketplace ref that can't resolve it.
 
 ## Private marketplaces
 
@@ -49,7 +53,7 @@ There's deliberately no control anywhere that forgets a token. A GitHub personal
 
 ### What the editor can tell you, and what it can't
 
-**It can tell you** whether the catalogue is readable with what you've supplied, exactly which of your selected skills a switch would drop, and — once loaded — everything the catalogue offers, judged by that catalogue's own relationships rather than the public one's.
+**It can tell you** whether the catalogue is readable with what you've supplied, what a load does to your selection before it happens, and — once loaded — everything the catalogue offers, judged by that catalogue's own relationships rather than the public one's.
 
 **It can't tell you whether you typed the name wrong.** GitHub answers 404 for a private repository whenever the caller isn't allowed to know it exists, so "not found" and "not yours" are the same answer. The editor says what it actually knows: _"`<name>` could not be read (404) — if it is private, a token with repo access will reach it."_
 
@@ -59,7 +63,7 @@ There's deliberately no control anywhere that forgets a token. A GitHub personal
 
 Every marketplace loaded from the Marketplace dialog is remembered, along with the token that reached it. Once this browser holds more than one, the others are listed by their refs under **Marketplace** in the nav rail, one press each — with one saved there's nowhere to switch to, and the rail already names it.
 
-Pressing one opens **Switch marketplace**, which fetches the target in order to describe it in the same words the Load flow uses, and offers **Cancel** or **Switch marketplace**. Reading is not switching: nothing is seated, stored or dropped until you press the CTA, so canceling costs you nothing but the fetch.
+Pressing one opens **Switch marketplace**, which fetches the target in order to describe it in the same words the Load flow uses, and offers **Cancel** or **Switch marketplace**. Switching opens that marketplace's configuration exactly as a load does. Reading is not switching: nothing is seated or stored until you press the CTA, so canceling costs you nothing but the fetch.
 
 ## Shared links and marketplaces
 
@@ -69,7 +73,9 @@ A payload is stamped with the marketplace it was minted against, so opening some
 
 The Marketplace dialog then opens pre-filled with the repository that failed and the answer that explains why, so you start where the attempt got to. Loading it finishes the import that was waiting.
 
-**A marketplace a link loads on its own isn't saved.** Only a load from the Marketplace dialog reaches the saved list, so the switcher offers only catalogues you loaded there.
+**A marketplace a link loads on its own isn't saved.**
+
+**Loading a different marketplace while a link is open leaves the link.** The link's id leaves the address and the marketplace's own configuration opens, as from anywhere else. The link's configuration was never saved here, and its link still opens it; the configurations this browser saved are untouched, as the link's notice promises. On a link a bare `edit` made inside a project, the global entries it holds go with the link.
 
 ## Related
 

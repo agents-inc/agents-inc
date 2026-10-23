@@ -11,7 +11,7 @@ Every installation reads one marketplace. The default is the public `github:agen
 
 **Marketplace** sits in the editor's nav rail, on the left. Open it, type `acme/skills` — the `github:` prefix and a github.com URL are both accepted and normalized — and press Load. The whole grid becomes that catalogue's skills: its domains, its categories, its relationships.
 
-If the repository answers with anything a token could change, a credential field appears — paste a personal access token and load again. If the new catalogue doesn't carry something you've already picked, the dialog names what the switch would cost, and a second Load performs it.
+If the repository answers with anything a token could change, a credential field appears — paste a personal access token and load again.
 
 The editor reads a catalogue straight from GitHub, never through the Agents Inc worker, so a private catalogue's contents and the token that reaches it stay between your browser and your repository. Both the ref and the token are kept in your browser's local storage.
 
@@ -22,7 +22,7 @@ Two things the editor needs that the CLI doesn't:
 - **GitHub only.** GitLab, Bitbucket, sourcehut and a path on your own disk all work from the CLI, and none of them work here.
 - **A built catalogue.** The editor reads `.claude-plugin/catalog.json`, which `npx agents-inc build marketplace` writes beside `marketplace.json`. A repository that has never been built has nothing for the editor to load.
 
-[Marketplaces in the editor](/docs/editor/marketplaces) covers the dialog in full, including what switching catalogues costs the selection you already have.
+[Marketplaces in the editor](/docs/editor/marketplaces) covers the dialog in full, including what switching catalogues does to the selection you already have.
 
 :::note[Doing this from the terminal]
 `init` takes the marketplace as a flag, and it's the only command that does:
