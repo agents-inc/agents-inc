@@ -10,7 +10,7 @@ import { http, HttpResponse } from "msw"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { upstreamMock } from "../vitest.setup"
-import { seedSession } from "./db/seed-session"
+import { seedSession, signInAgain } from "./db/seed-session"
 import { app } from "./index"
 
 // `clearMocks` does not restore a spy, and some cases replace console or a binding.
@@ -78,13 +78,14 @@ const answerWith = (proposal: Proposal) => {
   return model
 }
 
-const signedIn = (cookie: string, sentence: string) =>
+const signedIn = (cookie: string, sentence: string, address?: string) =>
   SELF.fetch(`${BASE}/compose`, {
     method: "POST",
     headers: {
       origin: WEB_ORIGIN,
       "content-type": "application/json",
       cookie,
+      ...(address === undefined ? {} : { "cf-connecting-ip": address }),
     },
     body: JSON.stringify({ sentence }),
   })
@@ -94,6 +95,18 @@ const PAST_THE_CAP = "x".repeat(601)
 const AT_THE_CAP = "x".repeat(600)
 
 const COMPOSE_LIMIT = 10
+
+// Counted per key as the binding counts, with no window: the binding's is the
+// wall clock's minute, which a burst cannot be held inside.
+const stubAllowance = (allowance: number) => {
+  const spent = new Map<string, number>()
+  vi.spyOn(env.COMPOSE_CALLS, "limit").mockImplementation(({ key }) => {
+    const used = spent.get(key) ?? 0
+    const success = used < allowance
+    if (success) spent.set(key, used + 1)
+    return Promise.resolve({ success })
+  })
+}
 
 describe("what may be asked", () => {
   it("refuses a sentence long enough to be a payload rather than a prompt", async () => {
@@ -112,6 +125,7 @@ describe("what may be asked", () => {
   it("spends no allowance on a sentence it refuses for length", async () => {
     const { cookie } = await seedSession(env)
     const model = answerWith({ skillIds: [], reason: "because" })
+    stubAllowance(COMPOSE_LIMIT)
 
     // Past the whole allowance, so the next sentence passes only if none counted.
     for (let attempt = 0; attempt <= COMPOSE_LIMIT; attempt++) {
@@ -126,12 +140,31 @@ describe("what may be asked", () => {
   it("still spends an allowance on every sentence that reaches the model", async () => {
     const { cookie } = await seedSession(env)
     answerWith({ skillIds: [], reason: "because" })
+    stubAllowance(COMPOSE_LIMIT)
 
     for (let attempt = 0; attempt < COMPOSE_LIMIT; attempt++) {
       expect((await signedIn(cookie, "a react app")).status).toBe(200)
     }
 
     expect((await signedIn(cookie, "a react app")).status).toBe(429)
+  })
+
+  // A limiter keyed by session lets the second sign-in through; one keyed by
+  // address, or by nothing, refuses the other person at that address.
+  it("counts a person's calls across their sessions, and apart from another person's at the same address", async () => {
+    answerWith({ skillIds: [], reason: "because" })
+    stubAllowance(1)
+    const person = await seedSession(env)
+    const secondSignIn = await signInAgain(env, person.userId)
+    const other = await seedSession(env)
+    const sharedAddress = "203.0.113.91"
+
+    const composeAs = (cookie: string) =>
+      signedIn(cookie, "a react app", sharedAddress)
+
+    expect((await composeAs(person.cookie)).status).toBe(200)
+    expect((await composeAs(secondSignIn)).status).toBe(429)
+    expect((await composeAs(other.cookie)).status).toBe(200)
   })
 
   it("refuses an empty sentence without asking the model", async () => {

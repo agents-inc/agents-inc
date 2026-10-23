@@ -33,6 +33,22 @@ const signatureOf = async (value: string, secret: string) => {
 const signedCookie = async (name: string, value: string, secret: string) =>
   `${name}=${encodeURIComponent(`${value}.${await signatureOf(value, secret)}`)}`
 
+type AuthContext = Awaited<ReturnType<typeof createAuth>["$context"]>
+
+const sessionCookie = async (auth: AuthContext, env: Env, userId: string) => {
+  const session = await auth.internalAdapter.createSession(userId, false)
+
+  return signedCookie(
+    auth.authCookies.sessionToken.name,
+    session.token,
+    env.BETTER_AUTH_SECRET
+  )
+}
+
+/** Another session for someone `seedSession` made, as a second sign-in. */
+export const signInAgain = async (env: Env, userId: string) =>
+  sessionCookie(await createAuth(env).$context, env, userId)
+
 // A fresh person per call: rate limits are keyed by user id and the pool
 // shares state across a file.
 export const seedSession = async (env: Env): Promise<SeededSession> => {
@@ -64,14 +80,8 @@ export const seedSession = async (env: Env): Promise<SeededSession> => {
     updatedAt: new Date(),
   })
 
-  const session = await auth.internalAdapter.createSession(user.id, false)
-
   return {
-    cookie: await signedCookie(
-      auth.authCookies.sessionToken.name,
-      session.token,
-      env.BETTER_AUTH_SECRET
-    ),
+    cookie: await sessionCookie(auth, env, user.id),
     userId: user.id,
     email,
     githubAccessToken,
