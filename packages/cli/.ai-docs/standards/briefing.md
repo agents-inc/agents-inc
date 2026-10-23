@@ -223,13 +223,13 @@ line is indistinguishable from one that returned nothing, which is rule 12's own
 
 ## What a report must return
 
-| Field                  | What it holds                                                                                |
-| ---------------------- | -------------------------------------------------------------------------------------------- |
-| **Per row**            | What was found versus what the row claimed; what changed; the red-then-green evidence        |
-| **Corrections**        | Rule 12 — everything in the brief that proved false, or an explicit "nothing"                |
-| **Hardening verdict**  | What would have caught this, whether it is cheap, and — when nothing honest exists — why not |
-| **Cross-lane needs**   | The exact change wanted in a file this lane does not own (rule 11)                           |
-| **Owner rulings owed** | Anything that needs a decision, surfaced rather than guessed                                 |
+| Field                  | What it holds                                                                                                                                                                                                                                                                                                                 |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Per row**            | What was found versus what the row claimed; what changed; the red-then-green evidence                                                                                                                                                                                                                                         |
+| **Corrections**        | Rule 12 — everything in the brief that proved false, or an explicit "nothing"                                                                                                                                                                                                                                                 |
+| **Hardening verdict**  | What would have caught this, whether it is cheap, and — when nothing honest exists — why not                                                                                                                                                                                                                                  |
+| **Cross-lane needs**   | The exact change wanted in a file this lane does not own (rule 11)                                                                                                                                                                                                                                                            |
+| **Owner rulings owed** | Anything that needs a decision, surfaced rather than guessed. A question about how the app behaves quotes the sentence the user docs (`apps/www/src/content/docs/docs/`) give it, or says they give none, and a reproduction with its control case; where the code contradicts the docs it is a defect report, not a question |
 
 **A hardening verdict of "no honest gate exists, because …" is worth more than a weak guard.** One
 gate that holds a class beats many individual assertions, and a guard that can be satisfied without
