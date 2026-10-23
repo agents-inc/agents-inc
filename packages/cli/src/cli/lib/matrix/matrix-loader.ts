@@ -56,7 +56,7 @@ export async function loadSkillRules(configPath: string): Promise<SkillRulesConf
   return config;
 }
 
-/** Files describing no skill are warned and skipped; a missing `displayName` throws. */
+/** A file describing no usable skill is warned and skipped; it never ends the scan. */
 export async function extractAllSkills(skillsDir: string): Promise<ExtractedSkillMetadata[]> {
   const metadataFiles = await glob(`**/${STANDARD_FILES.METADATA_YAML}`, skillsDir);
   const skills: ExtractedSkillMetadata[] = [];
@@ -89,9 +89,10 @@ async function extractSkill(
   if (!frontmatter) return null;
 
   if (!metadata.displayName) {
-    throw new Error(
-      `Skill at ${metadataFile} is missing required '${METADATA_KEYS.DISPLAY_NAME}' field in metadata.yaml`,
+    warn(
+      `Skipping '${metadataFile}': invalid ${STANDARD_FILES.METADATA_YAML} — missing required field: ${METADATA_KEYS.DISPLAY_NAME}`,
     );
+    return null;
   }
 
   const skillId = frontmatter.name;

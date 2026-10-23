@@ -108,9 +108,11 @@ describe("matrix-loader", () => {
     }
   }
 
-  async function writeBrokenSkillAndHealthySkill(): Promise<void> {
+  async function writeBrokenSkillAndHealthySkill(
+    brokenMetadata = renderUnparseableMetadataYaml(),
+  ): Promise<void> {
     await writeSkill(BROKEN_SKILL_DIR, {
-      metadata: renderUnparseableMetadataYaml(),
+      metadata: brokenMetadata,
       skillMd: renderSkillMd(BROKEN_SKILL_DIR),
     });
     await writeSkill(HEALTHY_SKILL_DIR, {
@@ -256,17 +258,22 @@ describe("matrix-loader", () => {
       expect(await extractAllSkills(skillsDir)).toStrictEqual([]);
     });
 
-    it("throws when displayName is missing from metadata", async () => {
-      await writeSkill("no-cli", {
-        metadata: renderIncompleteMetadataYaml(
+    it("skips a skill whose metadata.yaml has no displayName, naming the file and the field, and extracts every other skill", async () => {
+      await writeBrokenSkillAndHealthySkill(
+        renderIncompleteMetadataYaml(
           { contentHash: CONTENT_HASH, category: "web-framework", slug: "no-cli" },
           ["displayName"],
         ),
-        skillMd: renderSkillMd("no-cli", "test", "# Test"),
-      });
+      );
 
-      await expect(extractAllSkills(skillsDir)).rejects.toThrow(
-        /missing required 'displayName' field/,
+      const skills = await extractAllSkills(skillsDir);
+
+      expect(
+        skills.map((skill) => skill.id),
+        "a skill with no displayName must not abort the scan",
+      ).toStrictEqual([HEALTHY_SKILL_ID]);
+      expect(warn).toHaveBeenCalledExactlyOnceWith(
+        `Skipping '${path.join(BROKEN_SKILL_DIR, STANDARD_FILES.METADATA_YAML)}': invalid metadata.yaml — missing required field: displayName`,
       );
     });
 

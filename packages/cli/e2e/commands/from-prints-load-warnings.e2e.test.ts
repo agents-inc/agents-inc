@@ -27,6 +27,7 @@ import {
   listFiles,
   loadConfigOrFail,
   readTreeSnapshot,
+  renderIncompleteMetadataYaml,
   renderUnparseableMetadataYaml,
   skillsPath,
 } from "../helpers/test-utils.js";
@@ -38,10 +39,11 @@ import {
 
 /**
  * `init --from` and `edit --from` print the marketplace load's warnings, cause above effect; an
- * unparseable metadata.yaml stands for the class. The clean marketplace is the control: the capture
- * also holds narration that must not be replayed. Observed red against the unfixed build: both
- * `--from` runs printed the effect and not the cause, while the clean control, the installed files
- * and the declined apply were green and must stay so.
+ * unparseable metadata.yaml stands for the class, and one with no displayName is pinned beside it,
+ * having refused every link instead of skipping the skill. The clean marketplace is the control:
+ * the capture also holds narration that must not be replayed. Observed red against the unfixed
+ * build: both `--from` runs printed the effect and not the cause, while the clean control, the
+ * installed files and the declined apply were green and must stay so.
  */
 
 const BROKEN_SKILL_ID = e2eSkillId("web-broken-metadata");
@@ -50,6 +52,10 @@ const BROKEN_FILE = `${BROKEN_SKILL_ID}/${FILES.METADATA_YAML}`;
 
 /** The effect the cause explains. */
 const EFFECT = `${STEP_TEXT.CATALOG_DOES_NOT_KNOW} ${BROKEN_SKILL_ID}`;
+
+const NAMELESS_SKILL_ID = e2eSkillId("web-nameless-metadata");
+
+const NAMELESS_FILE = `${NAMELESS_SKILL_ID}/${FILES.METADATA_YAML}`;
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const API_DEV = E2E_AGENT["api-developer"].name;
@@ -62,8 +68,19 @@ async function shipSkillWithUnparseableMetadata(sourceDir: string): Promise<void
   });
 }
 
+async function shipSkillWithNoDisplayName(sourceDir: string): Promise<void> {
+  await createLocalSkillIn(path.join(sourceDir, SOURCE_PATHS.SKILLS_DIR), NAMELESS_SKILL_ID, {
+    description: "Shipped with no displayName",
+    metadata: renderIncompleteMetadataYaml(
+      { contentHash: "a1b2c3d", category: "web-tooling", slug: "nameless-metadata" },
+      ["displayName"],
+    ),
+  });
+}
+
 describe("--from runs say what the marketplace load raised", () => {
   let broken: E2ESource;
+  let nameless: E2ESource;
   let clean: E2ESource;
   let store: SeedConfigStore;
   let tempDir: string | undefined;
@@ -72,6 +89,8 @@ describe("--from runs say what the marketplace load raised", () => {
   beforeAll(async () => {
     broken = await createE2ESource();
     await shipSkillWithUnparseableMetadata(broken.sourceDir);
+    nameless = await createE2ESource();
+    await shipSkillWithNoDisplayName(nameless.sourceDir);
     clean = await createE2ESource();
     store = await startSeedConfigStore();
   }, TIMEOUTS.SETUP);
@@ -79,6 +98,7 @@ describe("--from runs say what the marketplace load raised", () => {
   afterAll(async () => {
     await store.close();
     await cleanupFixture(broken);
+    await cleanupFixture(nameless);
     await cleanupFixture(clean);
   });
 
@@ -212,6 +232,80 @@ describe("--from runs say what the marketplace load raised", () => {
         `${EFFECT} sub-agent(s) installed without ${BROKEN_SKILL_ID}, ${STEP_TEXT.INSTALLED_WITHOUT_THE_SKILL} ${WEB_DEV}, ${API_DEV}`,
       );
       expect(output).toContain(STEP_TEXT.INIT_SUCCESS);
+      const config = await loadConfigOrFail(tempDir);
+      expect({
+        skills: config.skills,
+        agents: config.agents.map((agent) => agent.name).sort(),
+      }).toStrictEqual({ skills: [], agents: [API_DEV, WEB_DEV].sort() });
+      expect(await listFiles(agentsPath(tempDir))).toStrictEqual(
+        [`${API_DEV}.md`, `${WEB_DEV}.md`].sort(),
+      );
+    },
+  );
+
+  it(
+    "init --from installs a link that does not name a skill with no displayName, saying which file it skipped and why",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async () => {
+      tempDir = await createTempDir();
+      store.publish(
+        "Namels01",
+        buildSeedPayload({
+          v: PINNED_WIRE_VERSION,
+          skills: { [E2E_SKILL.react.id]: ejectedGlobalSkill() },
+        }),
+      );
+
+      const { exitCode, output, stderr } = await runInitFrom(
+        store,
+        "Namels01",
+        { dir: tempDir },
+        nameless.sourceDir,
+      );
+
+      expect(exitCode, `init --from output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
+      const said = flattenCliOutput(stderr);
+      expect(said, "the load names the file it skipped").toContain(NAMELESS_FILE);
+      expect(said, "and what is wrong with it").toContain(
+        STEP_TEXT.MARKETPLACE_METADATA_NO_DISPLAY_NAME,
+      );
+      expect(output).toContain(STEP_TEXT.INIT_SUCCESS);
+      expect((await loadConfigOrFail(tempDir)).skills.map((skill) => skill.id)).toStrictEqual([
+        E2E_SKILL.react.id,
+      ]);
+      expect(await listFiles(agentsPath(tempDir))).toStrictEqual([`${WEB_DEV}.md`]);
+    },
+  );
+
+  it(
+    "init --from installs the sub-agents empty when the one skill it names has no displayName, with the warning",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async () => {
+      tempDir = await createTempDir();
+      store.publish(
+        "Namels02",
+        buildSeedPayload({
+          v: PINNED_WIRE_VERSION,
+          skills: {
+            [NAMELESS_SKILL_ID]: ejectedGlobalSkill({
+              assignments: { [WEB_DEV]: "lazy", [API_DEV]: "preloaded" },
+            }),
+          },
+          agents: { [WEB_DEV]: { scope: "global" }, [API_DEV]: { scope: "global" } },
+        }),
+      );
+
+      const { exitCode, output, stderr } = await runInitFrom(
+        store,
+        "Namels02",
+        { dir: tempDir },
+        nameless.sourceDir,
+      );
+
+      expect(exitCode, `init --from output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
+      expect(flattenCliOutput(stderr)).toContain(
+        `${STEP_TEXT.CATALOG_DOES_NOT_KNOW} ${NAMELESS_SKILL_ID} sub-agent(s) installed without ${NAMELESS_SKILL_ID}, ${STEP_TEXT.INSTALLED_WITHOUT_THE_SKILL} ${WEB_DEV}, ${API_DEV}`,
+      );
       const config = await loadConfigOrFail(tempDir);
       expect({
         skills: config.skills,
