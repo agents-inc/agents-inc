@@ -17,7 +17,13 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: rule-not-specific-enough
-status: open
+status: partial
+partial_note: >-
+  The root is named: since 4035099a `retiredSourceFolderUnsupported` prints
+  `path.join(root, RETIRED_SOURCE_FOLDER)` and its Move-it target under the same root, one line per
+  root that holds the folder. Pending: the case where that target already holds the live
+  installation is 2026-10-23-the-retired-folder-notice-says-move-it-onto-a-folder-that-already-holds-the-live-installation.md,
+  and the CLAUDE.md widening proposed below is not written.
 ---
 
 ## What Was Wrong

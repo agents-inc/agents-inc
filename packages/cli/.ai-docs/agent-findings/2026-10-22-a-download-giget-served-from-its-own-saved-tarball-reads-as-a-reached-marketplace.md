@@ -15,10 +15,9 @@ domain: cli
 root_cause: convention-undocumented
 status: partial
 partial_note: >-
-  Inside `askingEachMarketplaceItself` (doctor's load) both halves are handled. A download is
-  confirmed by its own HEAD and refused unanswered, after the record is written. A record with no
+  Inside `askingEachMarketplaceItself` (doctor's load) both halves are handled. A record with no
   ETag is asked about anyway. Outside that scope a record written without an ETag is still never
-  asked about again, so no other command ever refreshes that copy. Not tracked anywhere yet.
+  asked about again, so no other command ever refreshes that copy.
 ---
 
 ## What Was Wrong
