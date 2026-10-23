@@ -170,6 +170,33 @@ describe("the bytes the output preview draws", () => {
     expect(configTs).toContain(stack!.description)
   })
 
+  it("carries the link's own description over the applied stack's, as the install does", async () => {
+    const LINK_DESCRIPTION = "What this team installs, in its own words."
+    const [stack] = activeStacks()
+
+    expect(
+      stack,
+      "the seated catalogue offers no stack, so this assertion has no subject"
+    ).toBeDefined()
+    expect(
+      stack!.description,
+      "the stack and the link share a description, so a wrong pick cannot show"
+    ).not.toStrictEqual(LINK_DESCRIPTION)
+
+    const preview = await buildOutputPreview(
+      {
+        ...payload({ [REACT]: skill("global", "plugin") }),
+        stackId: stack!.id,
+        description: LINK_DESCRIPTION,
+      },
+      "claude"
+    )
+    const configTs = bodyOf(preview, PROJECT_BASE, CONFIG_TS)
+
+    expect(configTs).toContain(`\n  description: '${LINK_DESCRIPTION}',\n`)
+    expect(configTs).not.toContain(stack!.description)
+  })
+
   it("leaves the description out of the global config.ts, which the CLI rebuilds from the blank pair", async () => {
     const [stack] = activeStacks()
 

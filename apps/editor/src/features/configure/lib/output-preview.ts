@@ -69,7 +69,6 @@ import type {
   SeedPayload,
 } from "@workspace/matrix"
 
-// Imported in Node by an e2e spec: no browser-only modules (e.g. `./derive`).
 import { COMPUTED_AT_INSTALL, type PreviewLang } from "./render-tokens"
 
 // What `init --from` would write on a clean machine, rendered with the CLI's
@@ -242,8 +241,8 @@ const resolveDescription = (
   selectedStackId: string | null,
   shared: string | undefined
 ): string | undefined =>
-  activeStacks().find((stack) => stack.id === selectedStackId)?.description ??
-  shared
+  shared ??
+  activeStacks().find((stack) => stack.id === selectedStackId)?.description
 
 // Another marketplace's name comes from a manifest never fetched here; the
 // public one's is recorded only when a plugin registers it.

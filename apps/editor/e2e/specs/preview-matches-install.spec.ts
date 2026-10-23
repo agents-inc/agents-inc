@@ -50,6 +50,9 @@ const COMPUTED_AT_INSTALL = "<computed at install time>"
 // editor mints it.
 const CARRIED_ID = `external-${HARBOR_STORE.category}-brainstorming`
 
+// Differs from HARBOR_STACK's, so a side taking the stack's shows.
+const LINK_DESCRIPTION = "Harbor checkout, as the team that shares it puts it."
+
 /** One configuration, minted as an id the browser opens and the CLI installs. */
 type Install = {
   title: string
@@ -114,6 +117,29 @@ const INSTALLS: Install[] = [
     id: "HbrStak3",
     payload: harbor({
       stackId: HARBOR_STACK.id,
+      skills: {
+        [HARBOR_WIDGETS.id]: {
+          install: "eject",
+          scope: "global",
+          assignments: { "web-developer": "preloaded" },
+        },
+        [HARBOR_STORE.id]: {
+          install: "eject",
+          scope: "project",
+          assignments: { "web-developer": "lazy" },
+        },
+      },
+      agents: { "web-developer": { scope: "project" } },
+    }),
+    shows: HARBOR_WIDGETS.displayName,
+  },
+  {
+    title:
+      "a configuration built from a described stack, carrying its own description",
+    id: "HbrDesc7",
+    payload: harbor({
+      stackId: HARBOR_STACK.id,
+      description: LINK_DESCRIPTION,
       skills: {
         [HARBOR_WIDGETS.id]: {
           install: "eject",
