@@ -1,6 +1,6 @@
 {
   "name": "agents-inc",
-  "version": "0.173.0",
+  "version": "0.174.0",
   "description": "CLI for managing Agents Inc. skills, stacks, and agents for Claude Code",
   "//generate": "Runs all four generators in dependency order; the :check variants stay separate because CI runs different subsets.",
   "//no-shared-vitest-config": "A three-project suite with globals on and its own setup and timeouts; the shared single-project, globals-off config would contradict it.",

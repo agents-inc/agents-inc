@@ -7,6 +7,60 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.174.0] - 2026-10-24
+
+**Every summary names a skill by the display name its install recorded, `init --from` and `edit --from` stop when a marketplace refuses the version check, every command says an old `.claude-src/` is ignored, and the editor says when an account's stacks could not be read, with Retry**
+
+- REPO-44: the standards, the journey page and the findings follow the code.
+- REPO-45: the git rule in both `CLAUDE.md` files names its one exception, a `commit-plan` skill run.
+- CLI-963: `init --from` and `edit --from` record each skill's display name in `config.ts`, and every summary names a skill by it, then by the catalogue's name, then by its id.
+- CLI-959: `list` at a terminal shows each skill by the name its install recorded, plugins included.
+- CLI-978: piped `list` names each skill on its own line, with its scope.
+- CLI-954: `uninstall`'s panel names a kept global copy and a local-marketplace plugin by name, where it printed the id.
+- CLI-960: `uninstall`'s panel header names the marketplace of what it removes, or of what it keeps when it removes no skill.
+- CLI-973: the line naming what a sub-agent gains or loses under `edit --from`'s panel names each skill as the panel does.
+- CLI-975: `edit --from` asks the plugin host once, not twice, when a skill changes both mode and scope.
+- CLI-946: a 404 or 403 from the version check stops `init --from` and `edit --from` with exit 1, leaving everything as it was.
+- CLI-958: they stop on every 4xx but 405; on a 5xx or 405 they keep the saved copy and warn once a run.
+- CLI-962: `compile`, `search`, `eject` and `uninstall` keep the saved copy over a refusal, warning on a 5xx or 405 only.
+- CLI-966: offline with only giget's saved tarball left, every load but `doctor`'s warns that it is using the cached copy.
+- CLI-931: every command prints one line to stderr for each place holding an old `.claude-src/`: it is ignored, and which folder agents-inc reads.
+- CLI-965: that line names `.agents-inc/codex/` for a root whose installation is Codex.
+- CLI-967: on a run given `--provider`, that line names that provider's folder.
+- CLI-968: a run no longer inherits the provider an earlier run in the same process named.
+- CLI-977: without `--provider`, HOME's line names HOME's folder for the project's tool.
+- CLI-969: a bare `list` under a HOME holding one installation no longer says it "holds 1 installations".
+- CLI-964: the findings check gives the same verdict in a clean `git archive` as in a checkout, so publishing needs no extra files copied in.
+- CLI-980: `generate:types:check` without the skills checkout stops with one line naming the folder it looked in.
+- CLI-947: the summary panel's scrolling code is gone; its output is unchanged.
+- CLI-948: `clean-code-standards.md` 15.19 says how to ask a library that can answer from its own cache which it did.
+- CLI-949: the editor's preview crossing spec gets a row setting both sources for the model.
+- CLI-950: doctor's row patterns in the e2e specs are built once, by `doctorRow`.
+- CLI-951: a spec that counts a rate limiter stubs it and pins the callers its key separates and merges.
+- CLI-952: the editor standard says to ask which saved configuration was read, never the stored marketplace choice.
+- CLI-953: the stack-switch question's cost is covered with a restore waiting and with a shared link open.
+- CLI-955: the resize specs wait for the settled frame instead of reading it once after a delay.
+- CLI-956: every path, URL, id and mirrored text in a spec's pattern goes through one tested escaper, `matchedAsWritten`.
+- CLI-961: the test fixtures write each skill's real display name, so specs assert names where the CLI prints names.
+- CLI-974: eleven `edit --from` plugin specs check what each run left behind, not only what it printed.
+- CLI-976: the compile and `init --from` spec files check what each run left behind.
+- EDITOR-103: an account's saved stack that fails to load with nothing unsaved says `Couldn't load this stack.`, with Retry.
+- EDITOR-104: that click and its Retry read through the account store, so the stack's tile lights and no false "discarding" is shown.
+- EDITOR-108: while an account's stack list cannot be read, `Couldn't load your saved stacks.` shows with Retry, and the grid shows this browser's saves.
+- EDITOR-106: a list that could not be read no longer counts as an empty account, so no save is carried in again.
+- EDITOR-110: a Retry that works hands keyboard focus to the stack it loaded or to the Stacks grid.
+- EDITOR-101: pressing the skill option already in effect saves nothing and reports nothing.
+- EDITOR-105: applying a stack already in effect saves nothing and reports nothing.
+- EDITOR-107: "already in effect" is judged by value, whatever the key order.
+- EDITOR-102: a "nothing saved" test checks both that the state is unchanged and that nothing was written.
+- EDITOR-109: every editor store action is filed by what a second identical call does, checked by a census spec.
+- EDITOR-85: the owed-save dialog, Escape in a skill's options panel and Apply on a proposal put keyboard focus where it was.
+- CLI-979: known gap. When `edit --from` at home drops a skill whose plugin came from another marketplace, the plugin stays installed. The fix waits on the owner's card `q-cli-979-fix`.
+- CLI-971: known gap. A project config that declares nothing, under a HOME holding both tools, is counted as an installation by the refusal and `list`, while commands skip it. The fix is queued.
+- CLI-982: known gap. `init --from` that cannot write the project's config leaves a half-install. Waiting on the owner's card `q-cli-init-half-install`.
+
+See [changelogs/0.174.0.md](./changelogs/0.174.0.md) for full details.
+
 ## [0.173.0] - 2026-10-23
 
 **`doctor` downloads each marketplace on every run, the editor keeps a saved configuration per marketplace and its stack-switch question waits for the stack, and a sub-agent goes off with its last skill**

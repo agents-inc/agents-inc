@@ -21,12 +21,7 @@ import { loadProjectConfig } from "../lib/configuration/project-config.js";
 import { computeScopeDiff, type SkillDiffRow } from "../lib/configuration/scope-diff.js";
 import { getSkillEntryDisplayName } from "../lib/matrix/matrix-provider.js";
 import { SkillAgentSummary } from "../components/common/skill-agent-summary.js";
-import type {
-  AgentScopeConfig,
-  ProjectConfig,
-  SkillConfig,
-  SkillScope,
-} from "../types/config.js";
+import type { AgentScopeConfig, ProjectConfig, SkillConfig, SkillScope } from "../types/config.js";
 
 type ListViewProps = {
   mode: string;

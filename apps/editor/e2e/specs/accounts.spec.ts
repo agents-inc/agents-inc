@@ -608,9 +608,7 @@ const showsEachSaveOnce = async (configure: ConfigurePage) => {
 
 // These assert what reaches the account, and the grid only once the list reads.
 test.describe("a load whose account list cannot be read, after a first sign-in", () => {
-  test("a load that reads the list carries nothing again", async ({
-    page,
-  }) => {
+  test("a load that reads the list carries nothing again", async ({ page }) => {
     const { configure, created } = await carriedByAFirstSignIn(page)
 
     await reload(configure)
