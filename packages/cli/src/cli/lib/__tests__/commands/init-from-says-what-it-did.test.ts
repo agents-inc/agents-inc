@@ -1,5 +1,5 @@
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, readdir, readFile, realpath, writeFile } from "fs/promises";
 import { storedConfigHandlerFor } from "@workspace/api-mocks";
 import { configMockServer } from "@workspace/api-mocks/node";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -7,11 +7,12 @@ import type { SeedPayload } from "@workspace/matrix/seed";
 
 import { runCliCommand } from "../helpers/cli-runner.js";
 import { printAtWidth, standAtTerminal } from "../helpers/terminal-input.js";
-import { fileExists } from "../test-fs-utils";
+import { directoryExists, fileExists } from "../test-fs-utils";
 import { CONFIRM_INPUT_DELAY_MS, delay, KEY_N, KEY_Y } from "../test-constants";
 import { useMockWorker } from "../helpers/mock-worker.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { readTestTsConfig, writeTestTsConfig } from "../helpers/config-io.js";
+import { readInstallTree } from "../helpers/golden-tree.js";
 import { compactCliOutput, flattenCliOutput } from "../helpers/flatten-cli-output.js";
 import {
   buildSeedExternalSkill,
@@ -19,7 +20,11 @@ import {
   buildSeedSkill,
 } from "../factories/seed-factories.js";
 import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
-import { buildSkillConfigs } from "../helpers/skill-config-builders.js";
+import {
+  buildSkillConfig,
+  buildSkillConfigs,
+  type FixtureProjectConfig,
+} from "../helpers/skill-config-builders.js";
 import {
   createTestSource,
   cleanupTestSource,
@@ -30,8 +35,9 @@ import {
 import { DEFAULT_TEST_SKILLS } from "../mock-data/mock-skills";
 import { renderSkillMd, renderUnparseableMetadataYaml } from "../content-generators";
 import { sa } from "../factories/skill-factories.js";
-import { CLAUDE_DIR, STANDARD_FILES } from "../../../consts";
+import { CLAUDE_DIR, STANDARD_DIRS, STANDARD_FILES } from "../../../consts";
 import { EXIT_CODES } from "../../exit-codes";
+import { loadInstalledConfig } from "../../configuration/index.js";
 import type { ProjectConfig } from "../../../types";
 
 const SEED_ID = "Seed1";
@@ -41,6 +47,41 @@ const PANEL_COLUMNS = 160;
 const REACT = testMarketplaceSkillId("web-framework-react");
 const HONO = testMarketplaceSkillId("api-framework-hono");
 const VITEST = testMarketplaceSkillId("web-testing-vitest");
+
+const configFileAt = (root: string) =>
+  path.join(root, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS);
+const skillsDirAt = (root: string) => path.join(root, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
+const agentsDirAt = (root: string) => path.join(root, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
+
+async function configuredAt(root: string) {
+  const { skills, agents } = await readTestTsConfig<FixtureProjectConfig>(configFileAt(root));
+  return { skills, agents };
+}
+
+async function entriesIn(dir: string): Promise<string[]> {
+  return (await directoryExists(dir)) ? (await readdir(dir)).sort() : [];
+}
+
+/** What an install left at a root: its config's entries, its local copies, its compiled agents. */
+async function installedAt(root: string) {
+  return {
+    ...(await configuredAt(root)),
+    copies: await entriesIn(skillsDirAt(root)),
+    compiled: await entriesIn(agentsDirAt(root)),
+  };
+}
+
+/** An entry as the install records it, under the name its marketplace gives it. */
+const copyEntry = (id: string, displayName: string, scope: "project" | "global" = "project") =>
+  buildSkillConfig(id, { scope, origin: "eject", displayName });
+
+/** Every file under the project and the home, the home's shared marketplace cache aside. */
+async function treesUnder(projectDir: string, fakeHome: string) {
+  return {
+    project: await readInstallTree(projectDir),
+    home: await readInstallTree(fakeHome, { skip: [".cache"] }),
+  };
+}
 
 /**
  * `init --from` run whole, through `dist/`: the shared configuration is served by the mock worker,
@@ -88,6 +129,7 @@ describe("what init --from says", () => {
 
   const projectConfigPath = () =>
     path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS);
+  const bothRoots = () => treesUnder(projectDir, fakeHome);
 
   it("shows the panel of what it installs where, then narrates the install and where each part went", async () => {
     serve(
@@ -104,8 +146,8 @@ describe("what init --from says", () => {
 
     expect(error).toBeUndefined();
     expect(stdout.startsWith(`Fetching configuration ${SEED_ID}...\n┌`)).toBe(true);
-    expect(stdout).toContain(`│  + ${REACT} ⏏ `);
-    expect(stdout).toContain(`│  + ${HONO} ⏏ `);
+    expect(stdout).toContain("│  + React ⏏ ");
+    expect(stdout).toContain("│  + Hono ⏏ ");
     expect(stdout).toContain("│  + web-developer ");
     expect(stdout).toContain("│  + api-developer ");
     expect(stdout).not.toContain("Into this project:");
@@ -159,6 +201,27 @@ describe("what init --from says", () => {
       ].join("\n"),
     );
     expect(stdout.endsWith("recompile it.\n\n")).toBe(true);
+    expect(
+      await installedAt(fakeHome),
+      "the global install holds Hono's copy and api-developer, compiled",
+    ).toStrictEqual({
+      skills: [copyEntry(HONO, "Hono", "global")],
+      agents: buildAgentConfigs(["api-developer"], { scope: "global" }),
+      copies: [HONO],
+      compiled: ["api-developer.md"],
+    });
+    expect(
+      await installedAt(projectDir),
+      "the project holds React's copy and web-developer, compiled, beside the global entries",
+    ).toStrictEqual({
+      skills: [copyEntry(HONO, "Hono", "global"), copyEntry(REACT, "React")],
+      agents: [
+        ...buildAgentConfigs(["api-developer"], { scope: "global" }),
+        ...buildAgentConfigs(["web-developer"], { scope: "project" }),
+      ],
+      copies: [REACT],
+      compiled: ["web-developer.md"],
+    });
   });
 
   it("names the one folder a project-only install landed in, and both configs it wrote, with no global step", async () => {
@@ -199,6 +262,19 @@ describe("what init --from says", () => {
         ].join("\n"),
       ),
     ).toBe(true);
+    expect(
+      await installedAt(projectDir),
+      "the project holds React's copy and web-developer, compiled",
+    ).toStrictEqual({
+      skills: [copyEntry(REACT, "React")],
+      agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+      copies: [REACT],
+      compiled: ["web-developer.md"],
+    });
+    expect(
+      await installedAt(fakeHome),
+      "the global config it names holds nothing, and nothing lands at home",
+    ).toStrictEqual({ skills: [], agents: [], copies: [], compiled: [] });
   });
 
   it("points a global-only install at the global config and at compiling from home, naming both configs it wrote", async () => {
@@ -228,6 +304,24 @@ describe("what init --from says", () => {
         ].join("\n"),
       ),
     ).toBe(true);
+    expect(
+      await installedAt(fakeHome),
+      "the global install holds Hono's copy and api-developer, compiled",
+    ).toStrictEqual({
+      skills: [copyEntry(HONO, "Hono", "global")],
+      agents: buildAgentConfigs(["api-developer"], { scope: "global" }),
+      copies: [HONO],
+      compiled: ["api-developer.md"],
+    });
+    expect(
+      await installedAt(projectDir),
+      "the project config inherits the global entries, and the project holds no copy or agent",
+    ).toStrictEqual({
+      skills: [copyEntry(HONO, "Hono", "global")],
+      agents: buildAgentConfigs(["api-developer"], { scope: "global" }),
+      copies: [],
+      compiled: [],
+    });
   });
 
   it("at home, names the one skills and agents folder both scopes share", async () => {
@@ -263,6 +357,15 @@ describe("what init --from says", () => {
         "",
       ].join("\n"),
     );
+    expect(
+      await installedAt(fakeHome),
+      "the one installation at home holds Hono's copy and api-developer, compiled",
+    ).toStrictEqual({
+      skills: [copyEntry(HONO, "Hono", "global")],
+      agents: buildAgentConfigs(["api-developer"], { scope: "global" }),
+      copies: [HONO],
+      compiled: ["api-developer.md"],
+    });
   });
 
   it("warns which skills the catalogue does not know, and installs the rest", async () => {
@@ -285,6 +388,15 @@ describe("what init --from says", () => {
     ).toBe(
       "Warning: Skipped 1 skill(s) this catalog does not know: web-framework-angular-standalone",
     );
+    expect(
+      await installedAt(projectDir),
+      "the skill the catalogue knows is installed, and the one it does not is recorded nowhere",
+    ).toStrictEqual({
+      skills: [copyEntry(REACT, "React")],
+      agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+      copies: [REACT],
+      compiled: ["web-developer.md"],
+    });
   });
 
   it("names the sub-agents it installs without a skill the catalogue does not know, which carried only that skill", async () => {
@@ -317,6 +429,15 @@ describe("what init --from says", () => {
     expect(await fileExists(path.join(projectDir, CLAUDE_DIR, "agents", "api-developer.md"))).toBe(
       true,
     );
+    const { skills, copies, compiled } = await installedAt(projectDir);
+    expect(
+      { skills, copies, compiled },
+      "React alone is installed, and both sub-agents are compiled",
+    ).toStrictEqual({
+      skills: [copyEntry(REACT, "React")],
+      copies: [REACT],
+      compiled: ["api-developer.md", "web-developer.md"],
+    });
   });
 
   it("installs the sub-agents a configuration names when none of its skills installs, with the warning", async () => {
@@ -347,6 +468,11 @@ describe("what init --from says", () => {
     expect(await fileExists(path.join(projectDir, CLAUDE_DIR, "agents", "web-developer.md"))).toBe(
       true,
     );
+    const { copies, compiled } = await installedAt(projectDir);
+    expect(
+      { copies, compiled },
+      "nothing is copied, and web-developer alone is compiled",
+    ).toStrictEqual({ copies: [], compiled: ["web-developer.md"] });
   });
 
   it("refuses a configuration that names nothing this catalogue can install", async () => {
@@ -361,6 +487,7 @@ describe("what init --from says", () => {
         },
       }),
     );
+    const before = await bothRoots();
 
     const { error } = await initFrom();
 
@@ -369,6 +496,10 @@ describe("what init --from says", () => {
     );
     expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
     expect(await fileExists(projectConfigPath()), "a refusal writes nothing").toBe(false);
+    expect(
+      await bothRoots(),
+      "a refusal leaves the project and the home as they were",
+    ).toStrictEqual(before);
   });
 
   it("refuses to install over this project's own installation, naming it", async () => {
@@ -377,15 +508,21 @@ describe("what init --from says", () => {
       buildProjectConfig({ name: "installed" }),
     );
     serve(buildSeedPayload({ skills: { [REACT]: ejected("project", "web-developer") } }));
+    const before = await bothRoots();
 
     const { error } = await initFrom();
 
     expect(error?.message).toContain(`An installation already exists at ${configPath}.`);
     expect(error?.message).toContain(`'npx agents-inc edit --from ${SEED_ID}'`);
     expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+    expect(await bothRoots(), "the installation it refuses is left as it was").toStrictEqual(
+      before,
+    );
   });
 
   it("fails when the configuration cannot be fetched", async () => {
+    const before = await bothRoots();
+
     const { error } = await runCliCommand([
       "init",
       "--from",
@@ -396,6 +533,7 @@ describe("what init --from says", () => {
 
     expect(error?.message).toBe("No configuration found for id 'NoSuchId'.");
     expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+    expect(await bothRoots(), "a failed fetch writes nothing").toStrictEqual(before);
   });
 
   it("installs from the marketplace the configuration names when no --marketplace is given", async () => {
@@ -414,6 +552,15 @@ describe("what init --from says", () => {
       path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS),
     );
     expect(config.marketplace).toBe(dirs.sourceDir);
+    expect(
+      await installedAt(projectDir),
+      "React is installed from the marketplace the configuration names",
+    ).toStrictEqual({
+      skills: [copyEntry(REACT, "React")],
+      agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+      copies: [REACT],
+      compiled: ["web-developer.md"],
+    });
   });
 
   it("says it merged with a config here that declared nothing yet", async () => {
@@ -433,6 +580,19 @@ describe("what init --from says", () => {
     expect(stdout).toContain(
       `Generating configuration...\nMerged with existing config at ${configPath}\nConfiguration saved (1 agent)\n`,
     );
+    expect(
+      (await readTestTsConfig<FixtureProjectConfig>(configPath)).name,
+      "the merge keeps the name the config here gave itself",
+    ).toBe("empty");
+    expect(
+      await installedAt(projectDir),
+      "the merged config holds what the configuration installed",
+    ).toStrictEqual({
+      skills: [copyEntry(REACT, "React")],
+      agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+      copies: [REACT],
+      compiled: ["web-developer.md"],
+    });
   });
 
   it("shows the permission notice to a project that grants no permissions", async () => {
@@ -454,6 +614,18 @@ describe("what init --from says", () => {
         "│ No permissions configured in .claude/settings.json                           │",
         "│ Agents will prompt for approval on each tool use.                            │",
       ].join("\n"),
+    );
+    expect(
+      await readFile(path.join(projectDir, CLAUDE_DIR, STANDARD_FILES.SETTINGS_JSON), "utf8"),
+      "the notice grants nothing on the project's behalf",
+    ).toBe("{}");
+    expect(await installedAt(projectDir), "the install goes ahead beside the notice").toStrictEqual(
+      {
+        skills: [copyEntry(REACT, "React")],
+        agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+        copies: [REACT],
+        compiled: ["web-developer.md"],
+      },
     );
   });
 
@@ -479,10 +651,11 @@ describe("what init --from says", () => {
         agents: { "web-developer": { scope: "project" }, "api-developer": { scope: "global" } },
       }),
     );
+    const globalBefore = await installedAt(fakeHome);
 
     const { stdout } = await initFrom();
 
-    expect(stdout).toContain(`│  • ${HONO} ⏏ `);
+    expect(stdout).toContain("│  • Hono ⏏ ");
     expect(stdout).toContain("│  • api-developer ");
     expect(stdout).toContain(
       [
@@ -495,6 +668,22 @@ describe("what init --from says", () => {
         "Installing 1 skill(s) across 2 sub-agent(s)",
       ].join("\n"),
     );
+    expect(
+      await installedAt(fakeHome),
+      "the global install keeps Hono as the copy it was, and api-developer, untouched",
+    ).toStrictEqual(globalBefore);
+    expect(
+      await installedAt(projectDir),
+      "the project installs React beside the global entries it inherits as they were",
+    ).toStrictEqual({
+      skills: [...buildSkillConfigs([HONO], { scope: "global" }), copyEntry(REACT, "React")],
+      agents: [
+        ...buildAgentConfigs(["api-developer"], { scope: "global" }),
+        ...buildAgentConfigs(["web-developer"], { scope: "project" }),
+      ],
+      copies: [REACT],
+      compiled: ["web-developer.md"],
+    });
   });
 
   it("lists the whole global install the project inherits, each entry unchanged under Global", async () => {
@@ -512,17 +701,36 @@ describe("what init --from says", () => {
         agents: { "web-developer": { scope: "project" } },
       }),
     );
+    const globalBefore = await installedAt(fakeHome);
 
     const { stdout, error } = await initFrom();
 
     expect(error).toBeUndefined();
-    expect(stdout).toContain(`│  + ${REACT} ⏏ `);
-    expect(stdout).toContain(`│  • ${HONO} ⏏ `);
-    expect(stdout).toContain(` • ${VITEST} ⏏ `);
+    expect(stdout).toContain("│  + React ⏏ ");
+    expect(stdout).toContain("│  • Hono ⏏ ");
+    expect(stdout).toContain(" • Vitest ⏏ ");
     expect(stdout).toContain("│  + web-developer ");
     expect(stdout).toContain("│  • api-developer ");
     expect(stdout).toContain("│  • web-tester ");
-    expect(stdout).not.toContain(`+ ${HONO}`);
+    expect(stdout).not.toContain("+ Hono");
+    expect(await installedAt(fakeHome), "the global install is left as it was").toStrictEqual(
+      globalBefore,
+    );
+    expect(
+      await installedAt(projectDir),
+      "the project inherits every global entry unchanged, beside its own React",
+    ).toStrictEqual({
+      skills: [
+        ...buildSkillConfigs([HONO, VITEST], { scope: "global" }),
+        copyEntry(REACT, "React"),
+      ],
+      agents: [
+        ...buildAgentConfigs(["api-developer", "web-tester"], { scope: "global" }),
+        ...buildAgentConfigs(["web-developer"], { scope: "project" }),
+      ],
+      copies: [REACT],
+      compiled: ["web-developer.md"],
+    });
   });
 
   it("marks a global sub-agent an arriving skill joins ~, with a line saying what it gains", async () => {
@@ -548,13 +756,13 @@ describe("what init --from says", () => {
     const { stdout, error } = await initFrom();
 
     expect(error).toBeUndefined();
-    expect(stdout).toContain(`│  • ${HONO} ⏏ `);
-    expect(stdout).toContain(` + ${VITEST} ⏏ `);
+    expect(stdout).toContain("│  • Hono ⏏ ");
+    expect(stdout).toContain(" + Vitest ⏏ ");
     expect(stdout).toContain("│  ~ api-developer ");
     expect(stdout).toContain(
       [
         "┘",
-        `~ api-developer (global): gains ${VITEST}`,
+        "~ api-developer (global): gains Vitest",
         "",
         "Added to sub-agents in the global install — each keeps everything it already has, since a project run only adds to the global install:",
         `  sub-agent api-developer: + ${VITEST}`,
@@ -562,6 +770,22 @@ describe("what init --from says", () => {
         "Installing 1 skill(s) across 1 sub-agent(s)",
       ].join("\n"),
     );
+    expect(
+      await installedAt(fakeHome),
+      "the global install adds Vitest's copy beside Hono, and recompiles api-developer",
+    ).toStrictEqual({
+      skills: [
+        ...buildSkillConfigs([HONO], { scope: "global" }),
+        copyEntry(VITEST, "Vitest", "global"),
+      ],
+      agents: buildAgentConfigs(["api-developer"], { scope: "global" }),
+      copies: [VITEST],
+      compiled: ["api-developer.md"],
+    });
+    expect(
+      (await loadInstalledConfig(fakeHome))?.config.stack,
+      "api-developer keeps Hono and gains Vitest",
+    ).toStrictEqual({ "api-developer": { "api-api": [sa(HONO)], "web-testing": [sa(VITEST)] } });
   });
 
   it("installs nothing new when every entry is already in the global install, says no count, and names the run from home that changes them", async () => {
@@ -579,6 +803,7 @@ describe("what init --from says", () => {
         agents: { "api-developer": { scope: "global" } },
       }),
     );
+    const globalBefore = await installedAt(fakeHome);
 
     const { stdout } = await initFrom();
 
@@ -594,6 +819,13 @@ describe("what init --from says", () => {
       ].join("\n"),
     );
     expect(stdout).not.toContain("Installing ");
+    expect(await installedAt(fakeHome), "the global install is left as it was").toStrictEqual(
+      globalBefore,
+    );
+    expect(
+      await installedAt(projectDir),
+      "the project inherits the global entries, and copies or compiles nothing of its own",
+    ).toStrictEqual({ ...globalBefore, copies: [], compiled: [] });
   });
 
   it("names Claude in the run from home that changes what it keeps, where home holds Codex beside it", async () => {
@@ -605,13 +837,19 @@ describe("what init --from says", () => {
         agents: buildAgentConfigs(["api-developer"], { scope: "global" }),
       }),
     );
-    await writeTestTsConfig(fakeHome, buildProjectConfig({ name: "codex" }), ".agents-inc/codex");
+    const codexConfig = await writeTestTsConfig(
+      fakeHome,
+      buildProjectConfig({ name: "codex" }),
+      ".agents-inc/codex",
+    );
     serve(
       buildSeedPayload({
         skills: { [HONO]: ejected("global", "api-developer") },
         agents: { "api-developer": { scope: "global" } },
       }),
     );
+    const globalBefore = await installedAt(fakeHome);
+    const codexBefore = await readFile(codexConfig, "utf8");
 
     const { stdout } = await initFrom();
 
@@ -621,6 +859,12 @@ describe("what init --from says", () => {
         "",
         "",
       ].join("\n"),
+    );
+    expect(await installedAt(fakeHome), "the global install is left as it was").toStrictEqual(
+      globalBefore,
+    );
+    expect(await readFile(codexConfig, "utf8"), "the Codex installation is left as it was").toBe(
+      codexBefore,
     );
   });
 
@@ -647,6 +891,7 @@ describe("what init --from says", () => {
         agents: { "web-developer": { scope: "project" }, "api-developer": { scope: "global" } },
       }),
     );
+    const globalBefore = await installedAt(fakeHome);
 
     const { stdout, error } = await initFrom();
 
@@ -661,6 +906,14 @@ describe("what init --from says", () => {
         "Installing 1 skill(s) across 2 sub-agent(s)",
       ].join("\n"),
     );
+    expect(
+      await installedAt(fakeHome),
+      "the global install keeps Hono as the copy it was, not the plugin this configuration states",
+    ).toStrictEqual(globalBefore);
+    expect(
+      (await installedAt(projectDir)).copies,
+      "React's is the one copy it makes",
+    ).toStrictEqual([REACT]);
   });
 
   it("names a global sub-agent it kept as installed, and no skill when each is restated", async () => {
@@ -681,6 +934,7 @@ describe("what init --from says", () => {
         agents: { "web-developer": { scope: "project" }, "api-developer": { scope: "global" } },
       }),
     );
+    const globalBefore = await installedAt(fakeHome);
 
     const { stdout, error } = await initFrom();
 
@@ -695,6 +949,10 @@ describe("what init --from says", () => {
         "Installing 1 skill(s) across 2 sub-agent(s)",
       ].join("\n"),
     );
+    expect(
+      await installedAt(fakeHome),
+      "the global install keeps api-developer as it was, carrying nothing it did not",
+    ).toStrictEqual(globalBefore);
   });
 
   it("installs only what the global install does not already hold", async () => {
@@ -728,6 +986,22 @@ describe("what init --from says", () => {
         `Copied 1 skill to ${path.join(projectDir, CLAUDE_DIR, "skills")}/`,
       ].join("\n"),
     );
+    expect(
+      (await installedAt(fakeHome)).copies,
+      "Hono, which the global install holds, is not copied again",
+    ).toStrictEqual([]);
+    expect(
+      await installedAt(projectDir),
+      "the project installs React beside the global Hono it inherits",
+    ).toStrictEqual({
+      skills: [...buildSkillConfigs([HONO], { scope: "global" }), copyEntry(REACT, "React")],
+      agents: [
+        ...buildAgentConfigs(["api-developer"], { scope: "global" }),
+        ...buildAgentConfigs(["web-developer"], { scope: "project" }),
+      ],
+      copies: [REACT],
+      compiled: ["web-developer.md"],
+    });
   });
 
   it("recompiles only the project's sub-agents beside a global install it leaves as it was", async () => {
@@ -746,6 +1020,7 @@ describe("what init --from says", () => {
         agents: { "web-developer": { scope: "project" } },
       }),
     );
+    const globalBefore = await installedAt(fakeHome);
 
     const { stdout, error } = await initFrom();
 
@@ -754,6 +1029,13 @@ describe("what init --from says", () => {
     expect(await fileExists(path.join(fakeHome, CLAUDE_DIR, "agents", "api-developer.md"))).toBe(
       false,
     );
+    expect(await installedAt(fakeHome), "the global install is left as it was").toStrictEqual(
+      globalBefore,
+    );
+    expect(
+      (await installedAt(projectDir)).compiled,
+      "web-developer is compiled here",
+    ).toStrictEqual(["web-developer.md"]);
   });
 
   it("recompiles each project registered against the global install it adds to, and says so", async () => {
@@ -783,6 +1065,22 @@ describe("what init --from says", () => {
 
     expect(error).toBeUndefined();
     expect(stdout).toContain("\nRegistered projects: 1 recompiled\n");
+    expect(
+      await installedAt(registered),
+      "the registered project inherits Vitest, keeps its own entries, and is compiled",
+    ).toStrictEqual({
+      skills: [
+        ...buildSkillConfigs([HONO], { scope: "global" }),
+        copyEntry(VITEST, "Vitest", "global"),
+        ...buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+      ],
+      agents: [
+        ...buildAgentConfigs(["api-developer"], { scope: "global" }),
+        ...buildAgentConfigs(["web-developer"], { scope: "project" }),
+      ],
+      copies: [],
+      compiled: ["web-developer.md"],
+    });
   });
 
   it("installs a sub-agent on its own, with no skill", async () => {
@@ -797,6 +1095,15 @@ describe("what init --from says", () => {
     expect(await fileExists(path.join(projectDir, CLAUDE_DIR, "agents", "web-developer.md"))).toBe(
       true,
     );
+    expect(
+      await installedAt(projectDir),
+      "web-developer is recorded and compiled, and no skill is",
+    ).toStrictEqual({
+      skills: [],
+      agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+      copies: [],
+      compiled: ["web-developer.md"],
+    });
   });
 
   it("installs a skill no sub-agent carries, warns that nothing loads it, and points at the configs it wrote", async () => {
@@ -830,6 +1137,15 @@ describe("what init --from says", () => {
         ].join("\n"),
       ),
     ).toBe(true);
+    expect(
+      await installedAt(projectDir),
+      "React is recorded and copied, and no sub-agent is compiled",
+    ).toStrictEqual({
+      skills: [copyEntry(REACT, "React")],
+      agents: [],
+      copies: [REACT],
+      compiled: [],
+    });
   });
 
   it("warns of a skill folder here whose metadata describes no skill, as the load found it", async () => {
@@ -847,6 +1163,8 @@ describe("what init --from says", () => {
       }),
     );
 
+    const strayBefore = await readInstallTree(strayDir);
+
     const { stderr, error } = await initFrom();
 
     expect(error).toBeUndefined();
@@ -855,6 +1173,18 @@ describe("what init --from says", () => {
         `Warning: Skipping local skill 'stray-skill': metadata.yaml at ${path.join(strayDir, STANDARD_FILES.METADATA_YAML)} does not describe it`,
       ),
     );
+    expect(await readInstallTree(strayDir), "the folder it skips is left as it was").toStrictEqual(
+      strayBefore,
+    );
+    expect(
+      await installedAt(projectDir),
+      "React is installed beside the skipped folder, which no config entry names",
+    ).toStrictEqual({
+      skills: [copyEntry(REACT, "React")],
+      agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+      copies: ["stray-skill", REACT],
+      compiled: ["web-developer.md"],
+    });
   });
 
   it("fails, naming the cause, when the marketplace it is pointed at cannot be loaded", async () => {
@@ -865,6 +1195,7 @@ describe("what init --from says", () => {
         agents: { "web-developer": { scope: "project" } },
       }),
     );
+    const before = await bothRoots();
 
     const { error } = await runCliCommand(["init", "--from", SEED_ID, "--marketplace", missing]);
 
@@ -882,6 +1213,7 @@ describe("what init --from says", () => {
     expect(
       await fileExists(path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS)),
     ).toBe(false);
+    expect(await bothRoots(), "a failed load writes nothing").toStrictEqual(before);
   });
 
   it("warns which sub-agents the catalogue does not know, and installs the rest", async () => {
@@ -898,6 +1230,15 @@ describe("what init --from says", () => {
     expect(flattenCliOutput(stderr)).toContain(
       "Warning: Skipped 1 unknown sub-agent(s): no-such-agent",
     );
+    expect(
+      await installedAt(projectDir),
+      "the sub-agent the catalogue knows is installed, and the one it does not is recorded nowhere",
+    ).toStrictEqual({
+      skills: [copyEntry(REACT, "React")],
+      agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+      copies: [REACT],
+      compiled: ["web-developer.md"],
+    });
   });
 
   it("writes the skills the configuration carries, and names them", async () => {
@@ -919,6 +1260,15 @@ describe("what init --from says", () => {
     expect(stdout).toContain(
       `\nWrote 1 skill(s) this configuration carries: ${carried}\nInstalling 2 skill(s) across 1 sub-agent(s)\n`,
     );
+    expect(
+      await installedAt(projectDir),
+      "the carried skill is installed beside React, each a local copy",
+    ).toStrictEqual({
+      skills: [copyEntry(REACT, "React"), copyEntry(carried, "Brainstorming")],
+      agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+      copies: [carried, REACT],
+      compiled: ["web-developer.md"],
+    });
   });
 
   // Root writes through the mode bits, so the failures under test cannot happen there.
@@ -943,6 +1293,15 @@ describe("what init --from says", () => {
         expect(flattenCliOutput(stderr)).toContain("web-developer");
         expect(stdout).toContain("  1 sub-agent(s) did not compile: web-developer");
         expect(error?.oclif?.exit).toBe(EXIT_CODES.COMPLETED_WITH_FAILURES);
+        const { skills, agents, copies } = await installedAt(projectDir);
+        expect(
+          { skills, agents, copies },
+          "the config and the copy are written before the compile fails",
+        ).toStrictEqual({
+          skills: [copyEntry(REACT, "React")],
+          agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+          copies: [REACT],
+        });
       } finally {
         await chmod(agentsDir, 0o755);
       }
@@ -968,6 +1327,39 @@ describe("what init --from says", () => {
         await chmod(sourceFolder, 0o755);
       }
     });
+
+    /**
+     * KNOWN GAP: the copy is made and the home's config registers the project before the project's
+     * config is written, so a refused write leaves both behind with no `config.ts` to name them.
+     * `init.tsx` copies after resolving the marketplace so that a refusal there cannot do this.
+     */
+    it("leaves the copy it made, and the project registered at home, when the configuration cannot be written", async () => {
+      const sourceFolder = path.join(projectDir, ".agents-inc", "claude");
+      await mkdir(sourceFolder, { recursive: true });
+      const { chmod } = await import("fs/promises");
+      await chmod(sourceFolder, 0o555);
+      serve(
+        buildSeedPayload({
+          skills: { [REACT]: ejected("project", "web-developer") },
+          agents: { "web-developer": { scope: "project" } },
+        }),
+      );
+      try {
+        expect((await initFrom()).error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+
+        const leftWithNoProjectConfig = {
+          copies: [REACT],
+          registered: [await realpath(projectDir)],
+        };
+        expect({
+          copies: await entriesIn(skillsDirAt(projectDir)),
+          registered: (await readTestTsConfig<FixtureProjectConfig>(configFileAt(fakeHome)))
+            .projects,
+        }).toStrictEqual(leftWithNoProjectConfig);
+      } finally {
+        await chmod(sourceFolder, 0o755);
+      }
+    });
   });
 });
 
@@ -975,11 +1367,12 @@ describe("what init --from says at a terminal", () => {
   useMockWorker();
   const terminal = standAtTerminal();
   let projectDir: string;
+  let fakeHome: string;
   let cleanup: () => Promise<void>;
   let dirs: TestDirs;
 
   beforeEach(async () => {
-    ({ projectDir, cleanup } = await setupIsolatedHome("cc-init-from-asks-test-"));
+    ({ projectDir, fakeHome, cleanup } = await setupIsolatedHome("cc-init-from-asks-test-"));
     dirs = await createTestSource({ skills: inTestMarketplace(DEFAULT_TEST_SKILLS) });
     await mkdir(path.join(projectDir, CLAUDE_DIR), { recursive: true });
     await writeFile(
@@ -1019,11 +1412,17 @@ describe("what init --from says at a terminal", () => {
   }
 
   it("asks before installing, and writes nothing on a no", async () => {
+    const before = await treesUnder(projectDir, fakeHome);
+
     const { stdout, error } = await answer(KEY_N);
 
     expect(stdout).toContain("Setup cancelled\n");
     expect(error?.oclif?.exit).toBe(EXIT_CODES.CANCELLED);
     expect(await fileExists(projectConfig())).toBe(false);
+    expect(
+      await treesUnder(projectDir, fakeHome),
+      "a no leaves the project and the home as they were",
+    ).toStrictEqual(before);
   });
 
   it("installs on a yes", async () => {
@@ -1031,6 +1430,12 @@ describe("what init --from says at a terminal", () => {
 
     expect(error).toBeUndefined();
     expect(await fileExists(projectConfig())).toBe(true);
+    expect(await installedAt(projectDir), "a yes installs what the panel listed").toStrictEqual({
+      skills: [copyEntry(REACT, "React")],
+      agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+      copies: [REACT],
+      compiled: ["web-developer.md"],
+    });
   });
 });
 

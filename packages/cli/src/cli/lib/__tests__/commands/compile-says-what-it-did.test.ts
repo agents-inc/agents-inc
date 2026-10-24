@@ -1,12 +1,15 @@
 import path from "path";
-import { chmod, mkdir, writeFile } from "fs/promises";
+import { chmod, mkdir, readdir, readFile, writeFile } from "fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { runCliCommand } from "../helpers/cli-runner.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { compactCliOutput, flattenCliOutput } from "../helpers/flatten-cli-output.js";
-import { writeTestTsConfig } from "../helpers/config-io.js";
+import { readTestTsConfig, writeTestTsConfig } from "../helpers/config-io.js";
+import { readInstallTree } from "../helpers/golden-tree.js";
+import { parseCompiledAgentSections } from "../helpers/compiled-agent-sections.js";
 import { buildSkillConfig } from "../helpers/index.js";
+import type { FixtureProjectConfig } from "../helpers/skill-config-builders.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -22,8 +25,47 @@ import {
 } from "../factories/plugin-registry-factories.js";
 import { renderSkillMd, renderUnparseableMetadataYaml } from "../content-generators";
 import { VALID_LOCAL_SKILL } from "../mock-data/mock-skills";
-import { CLAUDE_DIR, PLUGINS_SUBDIR, PROJECT_ROOT, STANDARD_FILES } from "../../../consts";
+import {
+  CLAUDE_DIR,
+  PLUGINS_SUBDIR,
+  PROJECT_ROOT,
+  STANDARD_DIRS,
+  STANDARD_FILES,
+} from "../../../consts";
 import { EXIT_CODES } from "../../exit-codes";
+import { directoryExists, fileExists } from "../test-fs-utils";
+
+/** What a compile writes at the root it compiles: its sub-agents, and config-types.ts. */
+const COMPILE_OUTPUTS = [
+  `${CLAUDE_DIR}/${STANDARD_DIRS.AGENTS}`,
+  `.agents-inc/claude/${STANDARD_FILES.CONFIG_TYPES_TS}`,
+];
+
+const agentsDirAt = (root: string) => path.join(root, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
+const configTypesAt = (root: string) =>
+  path.join(root, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TYPES_TS);
+
+/** Every file under a root but a compile's outputs and the home's shared marketplace cache. */
+function allButCompileOutputsAt(root: string) {
+  return readInstallTree(root, { skip: [...COMPILE_OUTPUTS, ".cache"] });
+}
+
+async function compiledAt(root: string): Promise<string[]> {
+  return (await directoryExists(agentsDirAt(root)))
+    ? (await readdir(agentsDirAt(root))).sort()
+    : [];
+}
+
+/** A root after a compile: everything it does not write, and the sub-agents it compiled. */
+async function afterCompileAt(root: string) {
+  return { rest: await allButCompileOutputsAt(root), compiled: await compiledAt(root) };
+}
+
+async function skillsCarriedBy(root: string, agent: string) {
+  const compiled = await readFile(path.join(agentsDirAt(root), `${agent}.md`), "utf8");
+  const { preloadedRefs, dynamicEntries } = parseCompiledAgentSections(compiled);
+  return { preloadedRefs, dynamicEntries };
+}
 
 /** Each line a run prints, in order: the progress a person watches, then where it all went. */
 describe("what compile says", () => {
@@ -43,6 +85,9 @@ describe("what compile says", () => {
     await cleanup();
   });
 
+  /** Every file at home but the shared marketplace cache. */
+  const homeNow = () => readInstallTree(fakeHome, { skip: [".cache"] });
+
   async function installProject(config: Record<string, unknown>): Promise<string> {
     dirs = await createTestSource({
       skills: [],
@@ -57,7 +102,10 @@ describe("what compile says", () => {
   }
 
   it("narrates each step of a project compile", async () => {
-    await installProject(buildTestProjectConfig(["web-developer", "api-developer"], []));
+    const installedAt = await installProject(
+      buildTestProjectConfig(["web-developer", "api-developer"], []),
+    );
+    const before = await allButCompileOutputsAt(installedAt);
 
     const { stdout, error } = await runCliCommand(["compile"]);
 
@@ -82,6 +130,15 @@ describe("what compile says", () => {
         "",
       ].join("\n"),
     );
+    expect(
+      await afterCompileAt(installedAt),
+      "both sub-agents are compiled, and nothing else in the project changes",
+    ).toStrictEqual({ rest: before, compiled: ["api-developer.md", "web-developer.md"] });
+    expect(await fileExists(configTypesAt(installedAt)), "config-types.ts is written").toBe(true);
+    expect(await homeNow(), "a project compile writes nothing at home").toStrictEqual({
+      files: {},
+      emptyDirectories: [],
+    });
   });
 
   it("names the directories and the agents it compiled under --verbose", async () => {
@@ -110,10 +167,14 @@ describe("what compile says", () => {
         "    Compiled: web-developer, api-developer",
       ].join("\n"),
     );
+    expect(
+      await compiledAt(projectDir),
+      "the agents it names are in the folder it names",
+    ).toStrictEqual(["api-developer.md", "web-developer.md"]);
   });
 
   it("warns for a stack skill installed nowhere, but not for one the config excludes", async () => {
-    await installProject(
+    const installedAt = await installProject(
       buildProjectConfig({
         agents: buildAgentConfigs(["web-developer"]),
         skills: [
@@ -134,10 +195,15 @@ describe("what compile says", () => {
     expect(flattenCliOutput(stderr)).toBe(
       "Warning: Skill 'web-testing-vitest' is configured but was not found — agents will be compiled without it.",
     );
+    expect(await compiledAt(installedAt)).toStrictEqual(["web-developer.md"]);
+    expect(
+      await skillsCarriedBy(installedAt, "web-developer"),
+      "web-developer is compiled without the missing skill and the excluded one",
+    ).toStrictEqual({ preloadedRefs: [], dynamicEntries: [] });
   });
 
   it("warns that a global sub-agent cannot carry the project-scoped skill its stack names", async () => {
-    await installProject(
+    const installedAt = await installProject(
       buildProjectConfig({
         skills: [
           buildSkillConfig(VALID_LOCAL_SKILL.id, { scope: "project" }),
@@ -164,10 +230,26 @@ describe("what compile says", () => {
     expect(flattenCliOutput(stderr)).toContain(
       "Warning: Sub-agent 'api-developer' cannot carry project-scoped skill 'web-testing-vitest' — global-scoped sub-agents only carry global-scoped skills.",
     );
+    expect(await compiledAt(installedAt)).toStrictEqual([
+      "api-developer.md",
+      "web-developer.md",
+      "web-tester.md",
+    ]);
+    expect(
+      await skillsCarriedBy(installedAt, "web-developer"),
+      "the global sub-agent is compiled without the project-scoped skill its stack names",
+    ).toStrictEqual({ preloadedRefs: [], dynamicEntries: [] });
+    expect(
+      await skillsCarriedBy(installedAt, "web-tester"),
+      "the project-scoped sub-agent carries it",
+    ).toStrictEqual({
+      preloadedRefs: [],
+      dynamicEntries: [{ id: VALID_LOCAL_SKILL.id, invokeRef: VALID_LOCAL_SKILL.id }],
+    });
   });
 
   it("says nothing of scope for a project-scoped sub-agent carrying a project-scoped skill", async () => {
-    await installProject(
+    const installedAt = await installProject(
       buildProjectConfig({
         skills: [buildSkillConfig(VALID_LOCAL_SKILL.id, { scope: "project" })],
         agents: buildAgentConfigs(["web-tester"], { scope: "project" }),
@@ -180,10 +262,15 @@ describe("what compile says", () => {
     const { stderr } = await runCliCommand(["compile"]);
 
     expect(stderr).toBe("");
+    expect(await compiledAt(installedAt)).toStrictEqual(["web-tester.md"]);
+    expect(await skillsCarriedBy(installedAt, "web-tester")).toStrictEqual({
+      preloadedRefs: [],
+      dynamicEntries: [{ id: VALID_LOCAL_SKILL.id, invokeRef: VALID_LOCAL_SKILL.id }],
+    });
   });
 
   it("blames a global sub-agent for the project-scoped skill among the skills its stack names", async () => {
-    await installProject(
+    const installedAt = await installProject(
       buildProjectConfig({
         skills: [
           buildSkillConfig(VALID_LOCAL_SKILL.id, { scope: "project" }),
@@ -205,10 +292,15 @@ describe("what compile says", () => {
       "Warning: Sub-agent 'web-developer' cannot carry project-scoped skill 'web-tooling-valid' — global-scoped sub-agents only carry global-scoped skills.",
     );
     expect(flattenCliOutput(stderr)).not.toContain("project-scoped skill 'web-testing-vitest'");
+    expect(await compiledAt(installedAt)).toStrictEqual(["web-developer.md"]);
+    expect(
+      await skillsCarriedBy(installedAt, "web-developer"),
+      "the project-scoped skill is left out of the global sub-agent",
+    ).toStrictEqual({ preloadedRefs: [], dynamicEntries: [] });
   });
 
   it("blames no global sub-agent carrying a global-scoped skill, or carrying nothing", async () => {
-    await installProject(
+    const installedAt = await installProject(
       buildProjectConfig({
         skills: [
           buildSkillConfig(VALID_LOCAL_SKILL.id, { scope: "project" }),
@@ -228,21 +320,32 @@ describe("what compile says", () => {
     const { stderr } = await runCliCommand(["compile"]);
 
     expect(flattenCliOutput(stderr)).not.toContain("cannot carry");
+    expect(await compiledAt(installedAt)).toStrictEqual([
+      "api-developer.md",
+      "web-developer.md",
+      "web-tester.md",
+    ]);
   });
 
   it("says only that there is nothing to recompile when no sub-agent is configured", async () => {
-    await installProject(
+    const installedAt = await installProject(
       buildProjectConfig({
         skills: [buildSkillConfig(VALID_LOCAL_SKILL.id, { scope: "project" })],
         agents: [],
       }),
     );
+    const before = await allButCompileOutputsAt(installedAt);
 
     const { stdout } = await runCliCommand(["compile"]);
 
     expect(stdout).toContain(
       ["Recompiling agents...", "No agents to recompile", "Refreshed config-types.ts"].join("\n"),
     );
+    expect(await afterCompileAt(installedAt), "no sub-agent is written").toStrictEqual({
+      rest: before,
+      compiled: [],
+    });
+    expect(await fileExists(configTypesAt(installedAt)), "config-types.ts is written").toBe(true);
   });
 
   it("says there are no project agents to recompile and points at the global ones", async () => {
@@ -254,7 +357,7 @@ describe("what compile says", () => {
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
       }),
     );
-    await installProject(
+    const installedAt = await installProject(
       buildProjectConfig({
         skills: [buildSkillConfig(VALID_LOCAL_SKILL.id, { scope: "project" })],
         agents: [
@@ -263,6 +366,7 @@ describe("what compile says", () => {
         ],
       }),
     );
+    const homeBefore = await homeNow();
 
     const { stdout, error } = await runCliCommand(["compile"]);
 
@@ -274,11 +378,19 @@ describe("what compile says", () => {
         "2 agents are global-scoped — run 'npx agents-inc compile' from your home directory to recompile them.",
       ].join("\n"),
     );
+    expect(
+      await compiledAt(installedAt),
+      "no global sub-agent is compiled into the project",
+    ).toStrictEqual([]);
+    expect(await homeNow(), "the global sub-agents are left to a compile from home").toStrictEqual(
+      homeBefore,
+    );
   });
 
   it("refuses to run with nothing installed here or at home", async () => {
     dirs = await createTestSource({ skills: [], agents: [] });
     process.chdir(dirs.projectDir);
+    const before = { project: await readInstallTree(dirs.projectDir), home: await homeNow() };
 
     const { error } = await runCliCommand(["compile"]);
 
@@ -286,6 +398,10 @@ describe("what compile says", () => {
       "No installation found. Run 'npx agents-inc init' first to set up Agents Inc.",
     );
     expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+    expect(
+      { project: await readInstallTree(dirs.projectDir), home: await homeNow() },
+      "a refused run writes nothing",
+    ).toStrictEqual(before);
   });
 
   describe("its count of the skills it discovered", () => {
@@ -329,13 +445,18 @@ describe("what compile says", () => {
     }
 
     it("splits the count into plugin and local skills when both are installed", async () => {
-      await installProject(buildTestProjectConfig(["web-developer"], []));
+      const installedAt = await installProject(buildTestProjectConfig(["web-developer"], []));
       await installReactPluginGlobally();
+      const homeBefore = await homeNow();
 
       const { stdout } = await runCliCommand(["compile"]);
 
       expect(stdout).toContain(
         "Discovering skills...\nDiscovered 2 skills (1 from plugins, 1 local)\n",
+      );
+      expect(await compiledAt(installedAt)).toStrictEqual(["web-developer.md"]);
+      expect(await homeNow(), "the plugin and its registry are only read").toStrictEqual(
+        homeBefore,
       );
     });
 
@@ -345,10 +466,15 @@ describe("what compile says", () => {
       await writeTestTsConfig(source.projectDir, buildTestProjectConfig(["web-developer"], []));
       process.chdir(source.projectDir);
       await installReactPluginGlobally();
+      const homeBefore = await homeNow();
 
       const { stdout } = await runCliCommand(["compile"]);
 
       expect(stdout).toContain("Discovering skills...\nDiscovered 1 skill from plugins\n");
+      expect(await compiledAt(source.projectDir)).toStrictEqual(["web-developer.md"]);
+      expect(await homeNow(), "the plugin and its registry are only read").toStrictEqual(
+        homeBefore,
+      );
     });
 
     it("counts a plugin installed at both scopes once", async () => {
@@ -365,12 +491,17 @@ describe("what compile says", () => {
       ]);
       await enablePluginIn(fakeHome);
       await enablePluginIn(installedAt);
+      const before = await allButCompileOutputsAt(installedAt);
 
       const { stdout } = await runCliCommand(["compile"]);
 
       expect(stdout).toContain(
         "Discovering skills...\nDiscovered 2 skills (1 from plugins, 1 local)\n",
       );
+      expect(await afterCompileAt(installedAt)).toStrictEqual({
+        rest: before,
+        compiled: ["web-developer.md"],
+      });
     });
   });
 
@@ -388,6 +519,7 @@ describe("what compile says", () => {
         }),
       );
       process.chdir(dirs.projectDir);
+      const before = await allButCompileOutputsAt(dirs.projectDir);
 
       const { stdout, error } = await runCliCommand(["compile"]);
 
@@ -402,6 +534,10 @@ describe("what compile says", () => {
           "1 project agent rewritten, 0 unchanged",
         ].join("\n"),
       );
+      expect(
+        await afterCompileAt(dirs.projectDir),
+        "the base agent is compiled, and the excluded one is not",
+      ).toStrictEqual({ rest: before, compiled: ["web-developer.md"] });
     });
 
     it("skips a pass whose declared skills are on disk nowhere, and refuses the run", async () => {
@@ -411,6 +547,7 @@ describe("what compile says", () => {
         buildTestProjectConfig(["web-developer"], ["web-framework-react"]),
       );
       process.chdir(dirs.projectDir);
+      const before = await readInstallTree(dirs.projectDir);
 
       const { stdout, error } = await runCliCommand(["compile"]);
 
@@ -432,6 +569,10 @@ describe("what compile says", () => {
         "No skills found. Run 'npx agents-inc init' to choose skills, or add your own under .claude/skills/.",
       );
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(
+        await readInstallTree(dirs.projectDir),
+        "a skipped pass writes nothing, config-types.ts included",
+      ).toStrictEqual(before);
     });
   });
 
@@ -445,6 +586,7 @@ describe("what compile says", () => {
       STANDARD_FILES.METADATA_YAML,
     );
     await writeFile(metadataPath, renderUnparseableMetadataYaml());
+    const before = await readInstallTree(installedAt);
 
     const { stdout, error } = await runCliCommand(["compile"]);
 
@@ -459,6 +601,10 @@ describe("what compile says", () => {
       ].join("\n"),
     );
     expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+    expect(
+      await readInstallTree(installedAt),
+      "the refusal comes before anything is written",
+    ).toStrictEqual(before);
   });
 
   it("says why it could not refresh config-types.ts when the catalogue would not load", async () => {
@@ -466,6 +612,7 @@ describe("what compile says", () => {
       ...buildTestProjectConfig(["web-developer"], []),
       marketplace: path.join(tempDir, "marketplace-that-is-gone"),
     });
+    const before = await allButCompileOutputsAt(installedAt);
 
     const { stderr } = await runCliCommand(["compile"]);
 
@@ -474,6 +621,13 @@ describe("what compile says", () => {
         `Warning: Could not refresh config-types.ts — type unions may be stale: no skills catalogue could be loaded for ${installedAt}`,
       ),
     );
+    expect(await fileExists(configTypesAt(installedAt)), "config-types.ts is not written").toBe(
+      false,
+    );
+    expect(await afterCompileAt(installedAt), "the agents are still compiled").toStrictEqual({
+      rest: before,
+      compiled: ["web-developer.md"],
+    });
   });
 
   // Root writes through the mode bits, so the failures under test cannot happen there.
@@ -481,6 +635,7 @@ describe("what compile says", () => {
     it("warns that config-types.ts could not be refreshed, with the cause, and still completes", async () => {
       const installedAt = await installProject(buildTestProjectConfig(["web-developer"], []));
       const sourceFolder = path.join(installedAt, ".agents-inc", "claude");
+      const before = await allButCompileOutputsAt(installedAt);
       await chmod(sourceFolder, 0o555);
       try {
         const { stdout, stderr, error } = await runCliCommand(["compile"]);
@@ -493,6 +648,10 @@ describe("what compile says", () => {
         );
         expect(stdout).not.toContain("Refreshed config-types.ts");
         expect(stdout).toContain("✓ Project compile complete!");
+        expect(await afterCompileAt(installedAt), "the agents are still compiled").toStrictEqual({
+          rest: before,
+          compiled: ["web-developer.md"],
+        });
       } finally {
         await chmod(sourceFolder, 0o755);
       }
@@ -506,6 +665,7 @@ describe("what compile says", () => {
       await mkdir(agentsDir, { recursive: true });
       // Not empty, or the prune of stale agents removes the folder before the write is tried.
       await writeFile(path.join(agentsDir, "notes.txt"), "the user's own file");
+      const before = await allButCompileOutputsAt(installedAt);
       await chmod(agentsDir, 0o555);
       try {
         const { stdout, stderr } = await runCliCommand(["compile"]);
@@ -515,6 +675,10 @@ describe("what compile says", () => {
         );
         expect(flattenCliOutput(stderr)).toContain("web-developer");
         expect(flattenCliOutput(stderr)).toContain("api-developer");
+        expect(
+          await allButCompileOutputsAt(installedAt),
+          "an agent it cannot write lands nowhere else, and nothing else changes",
+        ).toStrictEqual(before);
       } finally {
         await chmod(agentsDir, 0o755);
       }
@@ -529,17 +693,20 @@ describe("what compile says", () => {
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
       }),
     );
-    await installProject(
+    const installedAt = await installProject(
       buildProjectConfig({
         skills: [buildSkillConfig(VALID_LOCAL_SKILL.id, { scope: "project" })],
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
       }),
     );
+    const homeBefore = await homeNow();
 
     const { stdout } = await runCliCommand(["compile", "--verbose"]);
 
     expect(stdout).toContain("No agents to recompile");
     expect(stdout).not.toContain("Compiled: ");
+    expect(await compiledAt(installedAt), "it compiled none here").toStrictEqual([]);
+    expect(await homeNow(), "and none at home").toStrictEqual(homeBefore);
   });
 
   describe("a global compile, with projects registered against it", () => {
@@ -568,6 +735,10 @@ describe("what compile says", () => {
         }),
       );
       process.chdir(fakeHome);
+      const homeBefore = await allButCompileOutputsAt(fakeHome);
+      const unreachedBefore = await Promise.all(
+        [codexProject, unloadable].map((root) => readInstallTree(root)),
+      );
 
       const { stdout, stderr, error } = await runCliCommand(["compile"]);
 
@@ -602,6 +773,33 @@ describe("what compile says", () => {
           ].join(""),
         ),
       );
+      expect(
+        await afterCompileAt(fakeHome),
+        "the global sub-agent is compiled at home, and nothing else there changes",
+      ).toStrictEqual({ rest: homeBefore, compiled: ["web-developer.md"] });
+      expect(await compiledAt(projectDir), "the project it reached is recompiled").toStrictEqual([
+        "api-developer.md",
+      ]);
+      const { skills, agents } = await readTestTsConfig<FixtureProjectConfig>(
+        path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS),
+      );
+      expect(
+        { skills, agents },
+        "the project it reached keeps its own sub-agent beside the global one it inherits",
+      ).toStrictEqual({
+        skills: [],
+        agents: [
+          ...buildAgentConfigs(["web-developer"], { scope: "global" }),
+          ...buildAgentConfigs(["api-developer"], { scope: "project" }),
+        ],
+      });
+      expect(
+        await Promise.all([codexProject, unloadable].map((root) => readInstallTree(root))),
+        "the projects it could not reach are left as they were",
+      ).toStrictEqual(unreachedBefore);
+      expect(await directoryExists(gone), "nothing is made where nothing was installed").toBe(
+        false,
+      );
     });
 
     it("leaves the directory it runs from out of the global pass's reach", async () => {
@@ -613,6 +811,8 @@ describe("what compile says", () => {
           projects: [projectDir],
         }),
       );
+      const homeBefore = await allButCompileOutputsAt(fakeHome);
+      const projectBefore = await readInstallTree(projectDir);
 
       const { stdout, stderr, error } = await runCliCommand(["compile"]);
 
@@ -621,6 +821,17 @@ describe("what compile says", () => {
         ["1 global agent rewritten, 0 unchanged", "Refreshed config-types.ts", "", "✓"].join("\n"),
       );
       expect(stderr).toBe("");
+      expect(await afterCompileAt(fakeHome)).toStrictEqual({
+        rest: homeBefore,
+        compiled: ["web-developer.md"],
+      });
+      expect(await fileExists(configTypesAt(fakeHome)), "config-types.ts is written at home").toBe(
+        true,
+      );
+      expect(
+        await readInstallTree(projectDir),
+        "the directory it runs from is left as it was",
+      ).toStrictEqual(projectBefore);
     });
 
     it("compiles the global installation from a project that has none of its own", async () => {
@@ -631,6 +842,8 @@ describe("what compile says", () => {
           agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
         }),
       );
+      const homeBefore = await allButCompileOutputsAt(fakeHome);
+      const projectBefore = await readInstallTree(projectDir);
 
       const { stdout, error } = await runCliCommand(["compile"]);
 
@@ -644,6 +857,13 @@ describe("what compile says", () => {
           "Recompiling agents...",
           "1 global agent rewritten, 0 unchanged",
         ].join("\n"),
+      );
+      expect(
+        await afterCompileAt(fakeHome),
+        "the global sub-agent is compiled at home",
+      ).toStrictEqual({ rest: homeBefore, compiled: ["web-developer.md"] });
+      expect(await readInstallTree(projectDir), "nothing is written in the project").toStrictEqual(
+        projectBefore,
       );
     });
   });
