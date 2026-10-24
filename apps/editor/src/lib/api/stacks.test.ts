@@ -37,32 +37,52 @@ const notAStackHandler = http.post(STACKS_URL, () =>
 
 const listUnreachableHandler = http.get(STACKS_URL, () => HttpResponse.error())
 
+const emptyAccountHandler = http.get(STACKS_URL, () => HttpResponse.json([]))
+
 beforeEach(() => {
   setReportingSink(sink)
 })
 
+// An empty list is an answer about the account: a first sign-in carries every
+// local save into it. So a list that could not be read must never look like
+// one.
 describe("listStacks", () => {
   it("returns the stacks the worker holds, newest first", async () => {
     configMockServer.use(...signedInHandlers)
 
-    await expect(listStacks()).resolves.toStrictEqual(SAVED_STACKS)
+    await expect(listStacks()).resolves.toStrictEqual({
+      ok: true,
+      stacks: SAVED_STACKS,
+    })
+  })
+
+  it("lists nothing for an account that holds no stacks", async () => {
+    configMockServer.use(emptyAccountHandler)
+
+    await expect(listStacks()).resolves.toStrictEqual({ ok: true, stacks: [] })
   })
 
   it("is empty when nobody is signed in, and reports nothing", async () => {
-    await expect(listStacks()).resolves.toStrictEqual([])
+    await expect(listStacks()).resolves.toStrictEqual({ ok: true, stacks: [] })
     expect(sink.issue).not.toHaveBeenCalled()
   })
 
-  it("is empty when the list does not match the contract", async () => {
+  it("fails, rather than listing nothing, when the list does not match the contract", async () => {
     configMockServer.use(notAStackListHandler)
 
-    await expect(listStacks()).resolves.toStrictEqual([])
+    await expect(listStacks()).resolves.toStrictEqual({
+      ok: false,
+      refusal: "refused",
+    })
   })
 
-  it("is empty when the worker cannot be reached", async () => {
+  it("fails, rather than listing nothing, when the worker cannot be reached", async () => {
     configMockServer.use(listUnreachableHandler)
 
-    await expect(listStacks()).resolves.toStrictEqual([])
+    await expect(listStacks()).resolves.toStrictEqual({
+      ok: false,
+      refusal: "unreachable",
+    })
   })
 })
 
@@ -136,13 +156,13 @@ describe("createStack", () => {
 
 // Only an answer the worker stood behind lists anything.
 describe("listStacks on a refused answer", () => {
-  it("lists nothing even when its body holds stacks", async () => {
+  it("fails, listing none of the stacks its body holds", async () => {
     configMockServer.use(
       http.get(STACKS_URL, () =>
         HttpResponse.json(SAVED_STACKS, { status: SERVER_ERROR })
       )
     )
 
-    expect(await listStacks()).toStrictEqual([])
+    expect(await listStacks()).toStrictEqual({ ok: false, refusal: "refused" })
   })
 })

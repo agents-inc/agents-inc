@@ -1,5 +1,14 @@
+import { Button } from "@workspace/ui/components/button"
 import { Lattice, LatticeCell } from "@workspace/ui/components/lattice"
-import { useEffect, useMemo } from "react"
+import {
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react"
 
 import {
   displayNameOf,
@@ -12,7 +21,7 @@ import {
 } from "@/features/configure/lib/held-global"
 import { useLocalSavesOnGrid } from "@/features/configure/lib/save-stack"
 import { matchesSavedStack } from "@/features/configure/lib/seed"
-import { useApplyStackRequest } from "@/features/configure/lib/use-apply-stack-request"
+import { useChooseStack } from "@/features/configure/lib/use-apply-stack-request"
 import { useLatticeColumns } from "@/features/configure/lib/use-lattice-columns"
 import { expandActiveStack, useCatalogStore } from "@/stores/catalog-store"
 import { useConfigStore } from "@/stores/config-store"
@@ -23,13 +32,16 @@ import {
   type Unadopted,
 } from "@/stores/account-store"
 import type { SavedStack } from "@/stores/saved-stack-store"
-import { useUiStore, type StackRequest } from "@/stores/ui-store"
+import type { StackRequest } from "@/stores/ui-store"
 
 import type { RemoteStack } from "@/lib/api/stacks"
 import type { SeedPayload } from "@workspace/matrix"
 
 export const SCRATCH_NAME = "Start from scratch"
 export const CLEARED_SCRATCH_NAME = "Clear and start from scratch"
+
+// The save dialog is a sibling, so it finds the grid by this rather than a ref.
+export const STACKS_GRID = "data-stacks-grid"
 
 type StackCell = {
   key: string
@@ -106,6 +118,27 @@ const accountCells = (
     request: { kind: "remote", configId: saved.configId },
   }))
 
+// One key per stack, whichever request names it.
+const stackKeyOf = (request: StackRequest): string => {
+  switch (request.kind) {
+    case "stack":
+      return `stack:${request.stackId ?? ""}`
+    case "saved":
+      return `saved:${request.saveId}`
+    case "remote":
+      return `remote:${request.configId}`
+    default: {
+      const _exhaustive: never = request
+      return _exhaustive
+    }
+  }
+}
+
+// The switch question's words too, for a stack whose read failed.
+export const STACK_NOT_LOADED = "Couldn't load this stack."
+
+const STACK_LIST_NOT_LOADED = "Couldn't load your saved stacks."
+
 // `unwritable` never comes back on its own, so its words name the fix.
 const WHY_NOT_ADOPTED = {
   unwritable:
@@ -174,8 +207,6 @@ export function StackGrid() {
   const readAccountPayloads = useAccountStore((state) => state.readPayloads)
   const unadopted = useAccountStore((state) => state.unadopted)
   const stacks = useCatalogStore((state) => state.stacks)
-  const requestStack = useUiStore((state) => state.requestStack)
-  const applyStackRequest = useApplyStackRequest()
   const columns = useLatticeColumns()
 
   const edited = useMemo(
@@ -203,6 +234,16 @@ export function StackGrid() {
   const onASave = appliedSaveIds.size > 0 || appliedConfigIds.size > 0
 
   const unsaved = edited && !onASave
+  const { unloaded, choose: chooseStack } = useChooseStack(unsaved)
+
+  // Where each line's Retry hands the keyboard once it works: the grid it
+  // filled, and the cell the failed stack was chosen from, as Switch in the
+  // question leaves it. Not the first cell, which clears on one more press.
+  const stacksRef = useRef<HTMLDivElement>(null)
+  const unloadedCellRef = useRef<HTMLDivElement>(null)
+  const unloadedStack = unloaded && stackKeyOf(unloaded.request)
+  const isUnloaded = (request: StackRequest) =>
+    stackKeyOf(request) === unloadedStack
 
   const catalogueCells = useMemo(() => toCatalogueCells(stacks), [stacks])
 
@@ -237,15 +278,14 @@ export function StackGrid() {
   }
 
   const choose = (request: StackRequest) => {
-    if (isApplied(request)) return
-    if (unsaved) requestStack(request)
-    else applyStackRequest(request)
+    if (!isApplied(request)) chooseStack(request)
   }
 
   const hasRefusals = Object.keys(unadopted).length > 0
 
   return (
     <>
+      <StackListNotice handsKeyboardTo={stacksRef} />
       {/* Not dismissible: hiding it would hide the saves it explains. */}
       {hasRefusals && (
         <p
@@ -256,10 +296,20 @@ export function StackGrid() {
           {unadoptedNotice(unadopted)}
         </p>
       )}
-      <Lattice columns={columns} role="group" aria-label="Stacks">
+      {/* Focusable but no Tab stop, so it can take the keyboard. */}
+      <Lattice
+        ref={stacksRef}
+        {...{ [STACKS_GRID]: "" }}
+        columns={columns}
+        role="group"
+        aria-label="Stacks"
+        tabIndex={-1}
+        className="outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      >
         {cells.map((cell) => (
           <LatticeCell
             key={cell.key}
+            ref={isUnloaded(cell.request) ? unloadedCellRef : undefined}
             selected={isApplied(cell.request)}
             className="px-[0.8125rem] py-[0.6875rem]"
             role="button"
@@ -286,6 +336,101 @@ export function StackGrid() {
           </LatticeCell>
         ))}
       </Lattice>
+      {/* Under the grid, so the cell just pressed stays under the pointer. */}
+      {unloaded && (
+        <RetryLine
+          slot="stack-load-notice"
+          className="pt-3"
+          words={STACK_NOT_LOADED}
+          reading={unloaded.reading}
+          onRetry={() => choose(unloaded.request)}
+          handsKeyboardTo={unloadedCellRef}
+        />
+      )}
     </>
+  )
+}
+
+// Signed in, while the account's list cannot be read; the grid shows this
+// browser's saves meanwhile. Retry is another refresh.
+function StackListNotice({
+  handsKeyboardTo,
+}: {
+  handsKeyboardTo: RefObject<HTMLElement | null>
+}) {
+  const unread = useAccountStore((state) => state.listRefusal !== null)
+  const refresh = useAccountStore((state) => state.refresh)
+  const [reading, setReading] = useState(false)
+
+  const retry = async () => {
+    setReading(true)
+    await refresh()
+    setReading(false)
+  }
+
+  if (!unread) return null
+
+  return (
+    <RetryLine
+      slot="stack-list-notice"
+      className="pt-4 pb-3"
+      words={STACK_LIST_NOT_LOADED}
+      reading={reading}
+      onRetry={() => void retry()}
+      handsKeyboardTo={handsKeyboardTo}
+    />
+  )
+}
+
+function RetryLine({
+  slot,
+  className,
+  words,
+  reading,
+  onRetry,
+  handsKeyboardTo,
+}: {
+  slot: string
+  className: string
+  words: string
+  reading: boolean
+  onRetry: () => void
+  handsKeyboardTo: RefObject<HTMLElement | null>
+}) {
+  const retryRef = useRef<HTMLButtonElement>(null)
+  const handKeyboardOn = useEffectEvent(() => handsKeyboardTo.current?.focus())
+
+  // Retry goes once it works, so it hands the keyboard on rather than drop it
+  // on the page; only if it still holds it, so a dialog the read opened keeps
+  // it. A layout cleanup: it runs while Retry is still in the page, before a
+  // question opening in the same commit notes where to return the keyboard.
+  useLayoutEffect(() => {
+    const retry = retryRef.current
+    return () => {
+      if (retry === document.activeElement) handKeyboardOn()
+    }
+  }, [])
+
+  return (
+    <p data-slot={slot} className={`flex items-center gap-3 ${className}`}>
+      {/* Emptied while Retry reads, so a second failure is read out too;
+          its width held, in monospace, so Retry stays under the pointer. */}
+      <span
+        role="alert"
+        className="font-mono text-11 text-muted-foreground italic"
+        style={{ minWidth: `${words.length}ch` }}
+      >
+        {reading ? "" : words}
+      </span>
+      {/* Focusable while it waits, so the keyboard stays on it. */}
+      <Button
+        ref={retryRef}
+        focusableWhenDisabled
+        disabled={reading}
+        onClick={onRetry}
+      >
+        Retry
+      </Button>
+    </p>
   )
 }

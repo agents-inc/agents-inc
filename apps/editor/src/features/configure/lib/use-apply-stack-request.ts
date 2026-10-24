@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router"
+import { useState } from "react"
 
-import { fetchSharedConfig } from "@/lib/api/configs"
 import { useAccountStore } from "@/stores/account-store"
 import { useConfigStore } from "@/stores/config-store"
 import { tokenFor, useMarketplaceStore } from "@/stores/marketplace-store"
@@ -91,7 +91,19 @@ const chooseMarketplace = (marketplace: string) => {
   else remember(marketplace, tokenFor(marketplace))
 }
 
-export const useApplyStackRequest = () => {
+/** `failed`: an account's stack whose read failed, so nothing changed. */
+type StackLoad = "loaded" | "failed"
+
+// Through the account's store, as the question's Retry reads, so the grid
+// recognises the stack once it applies.
+const readAccountStack = async (configId: string) => {
+  const account = useAccountStore.getState()
+  if (!Object.hasOwn(account.payloads, configId)) await account.readPayloads()
+
+  return useAccountStore.getState().payloads[configId]
+}
+
+const useApplyStack = () => {
   const applyStack = useConfigStore((state) => state.applyStack)
   const applySavedStack = useConfigStore((state) => state.applySavedStack)
   const navigate = useNavigate({ from: "/" })
@@ -139,12 +151,12 @@ export const useApplyStackRequest = () => {
 
   // The payload the question described, so Switch applies what it said. The
   // grid applies at once when nothing is at stake, which can be before the read.
-  const adoptRemote = async (configId: string) => {
-    const read = useAccountStore.getState().payloads[configId]
-    if (read) return adopt(read)
+  const adoptRemote = async (configId: string): Promise<StackLoad> => {
+    const payload = await readAccountStack(configId)
+    if (!payload) return "failed"
 
-    const result = await fetchSharedConfig(configId)
-    if (result.ok) await adopt(result.payload)
+    await adopt(payload)
+    return "loaded"
   }
 
   const applyCatalogueStack = (stackId: string | null) => {
@@ -157,18 +169,62 @@ export const useApplyStackRequest = () => {
     if (saved) void adopt(saved.payload)
   }
 
-  return (request: StackRequest): void => {
+  return async (request: StackRequest): Promise<StackLoad> => {
     switch (request.kind) {
       case "stack":
-        return applyCatalogueStack(request.stackId)
+        applyCatalogueStack(request.stackId)
+        return "loaded"
       case "saved":
-        return adoptLocalSave(request.saveId)
+        adoptLocalSave(request.saveId)
+        return "loaded"
       case "remote":
-        return void adoptRemote(request.configId)
+        return adoptRemote(request.configId)
       default: {
         const _exhaustive: never = request
         return _exhaustive
       }
     }
   }
+}
+
+// The question's door: it says a failed load itself.
+export const useApplyStackRequest = () => {
+  const apply = useApplyStack()
+  return (request: StackRequest): void => void apply(request)
+}
+
+/** An account's stack applied at once whose load failed; `reading` while it is tried again. */
+type UnloadedStack = { request: StackRequest; reading: boolean }
+
+const readingAgain = (last: UnloadedStack | null) =>
+  last && { ...last, reading: true }
+
+/**
+ * The grid's door. Over unsaved work the question asks first and says its own
+ * load's outcome; with nothing at stake the stack applies at once, so a load
+ * that fails is held here until a stack applies.
+ */
+export const useChooseStack = (unsaved: boolean) => {
+  const apply = useApplyStack()
+  const requestStack = useUiStore((state) => state.requestStack)
+  const [unloaded, setUnloaded] = useState<UnloadedStack | null>(null)
+
+  const applyAtOnce = async (request: StackRequest) => {
+    setUnloaded(readingAgain)
+    const load = await apply(request)
+    setUnloaded(load === "failed" ? { request, reading: false } : null)
+  }
+
+  // The question speaks for this choice, so the last one's message goes.
+  const ask = (request: StackRequest) => {
+    setUnloaded(null)
+    requestStack(request)
+  }
+
+  const choose = (request: StackRequest) => {
+    if (unsaved) ask(request)
+    else void applyAtOnce(request)
+  }
+
+  return { unloaded, choose }
 }

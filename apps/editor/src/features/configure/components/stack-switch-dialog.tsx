@@ -23,7 +23,7 @@ import { useConfigStore } from "@/stores/config-store"
 import { useHeldGlobalStore } from "@/stores/held-global-store"
 import { useUiStore, type StackRequest } from "@/stores/ui-store"
 
-import { SCRATCH_NAME } from "./stack-grid"
+import { SCRATCH_NAME, STACK_NOT_LOADED } from "./stack-grid"
 
 const catalogueStackName = (stackId: string | null) => {
   if (stackId === null) return SCRATCH_NAME
@@ -71,7 +71,7 @@ const consequenceOf = (cost: StackSwitchCost, skillCount: number) => {
     case "unread":
       return builtOnUnread
     case "failed":
-      return "Couldn't load this stack."
+      return STACK_NOT_LOADED
     case "replaces":
       return discarding(skillCount)
     case "elsewhere":

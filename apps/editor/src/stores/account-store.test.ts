@@ -2,6 +2,7 @@ import {
   CONFIGS_URL,
   OUT_OF_SCOPE_PAYLOAD,
   SAVED_STACKS,
+  SIGNED_IN_USER,
   STACKS_URL,
   STORED_ID,
   STORED_PAYLOAD,
@@ -15,6 +16,7 @@ import { beforeEach, describe, expect, it } from "vitest"
 import { useAccountStore } from "./account-store"
 import { useSavedStackStore } from "./saved-stack-store"
 
+import type { ListRefusal } from "@/lib/api/stacks"
 import type { SeedPayload } from "@workspace/matrix"
 
 // Driven through `refresh` and `save`, since the grid reads the store's answer.
@@ -84,6 +86,7 @@ beforeEach(() => {
     stacks: [],
     unadopted: {},
     ready: false,
+    listRefusal: null,
     payloads: {},
     failedReads: [],
   })
@@ -253,6 +256,193 @@ describe("a save a first sign-in could not carry", () => {
 
     expect(named).toStrictEqual(["A", "B"])
     expect(answer().unadopted).toStrictEqual({})
+  })
+})
+
+// A list that could not be read says nothing about the account, so it is never
+// taken for an empty one.
+describe("an account whose list could not be read", () => {
+  const serverError = () =>
+    new HttpResponse(null, { status: SERVICE_UNAVAILABLE })
+
+  // A worker a release ahead: the account's rows, under a field this build
+  // does not know.
+  const listThisBuildCannotRead = () =>
+    HttpResponse.json(
+      SAVED_STACKS.map(({ updatedAt, ...row }) => ({
+        ...row,
+        modifiedAt: updatedAt,
+      }))
+    )
+
+  const FAILED_READS = [
+    ["a server error", serverError],
+    ["no answer at all", () => HttpResponse.error()],
+    ["a list this build cannot read", listThisBuildCannotRead],
+  ] as const satisfies readonly (readonly [string, () => Response])[]
+
+  // Ahead of `signedInHandlers`, so the session still reads.
+  const listFailing = (answer: () => Response) =>
+    configMockServer.use(http.get(STACKS_URL, answer), ...signedInHandlers)
+
+  // An earlier sign-in carried both, so neither is owed.
+  const carriedEarlier = () =>
+    withLocalSaves(local("B", STORED_PAYLOAD), local("A", STORED_PAYLOAD))
+
+  it.each(FAILED_READS)(
+    "carries no save into it on %s",
+    async (_failure, answer) => {
+      listFailing(answer)
+      const { posted } = recordWrites()
+      carriedEarlier()
+
+      await useAccountStore.getState().refresh()
+
+      expect(posted).toStrictEqual([])
+    }
+  )
+
+  // Writes that fail too would leave every save owed, and the next good read
+  // would ask a new name for stacks the account already holds.
+  it("marks no save as still owed, though the account would refuse the writes too", async () => {
+    listFailing(serverError)
+    recordWrites(new Set(["A", "B"]))
+    carriedEarlier()
+
+    await useAccountStore.getState().refresh()
+
+    expect(useSavedStackStore.getState().owed).toStrictEqual([])
+  })
+
+  it("asks no new name once the list reads again, listing the saves", async () => {
+    listFailing(serverError)
+    recordWrites(new Set(["A", "B"]))
+    carriedEarlier()
+    await useAccountStore.getState().refresh()
+
+    accountNowLists([savedStack("B"), savedStack("A")])
+    await useAccountStore.getState().refresh()
+
+    expect(useAccountStore.getState().clashes).toStrictEqual([])
+  })
+
+  // Held back, not given up: a first sign-in whose read failed still carries
+  // each save once a read finds the account empty.
+  it("carries each save once a later read finds the account empty", async () => {
+    listFailing(serverError)
+    const { named } = recordWrites()
+    withLocalSaves(local("B", STORED_PAYLOAD), local("A", STORED_PAYLOAD))
+    await useAccountStore.getState().refresh()
+
+    accountNowLists([])
+    await useAccountStore.getState().refresh()
+
+    expect(named).toStrictEqual(["A", "B"])
+  })
+
+  // The rail draws the session once a refresh lands, list or no list.
+  it("is ready, and names who is signed in", async () => {
+    listFailing(serverError)
+
+    await useAccountStore.getState().refresh()
+
+    const { ready, session } = useAccountStore.getState()
+    expect({ ready, name: session?.user.name }).toStrictEqual({
+      ready: true,
+      name: SIGNED_IN_USER.name,
+    })
+  })
+
+  // The grid says the list could not be read, with Retry, while the store holds
+  // why; a Retry is another refresh.
+  describe("why, and a Retry", () => {
+    const listRefusal = () => useAccountStore.getState().listRefusal
+
+    const WHY_UNREAD = [
+      { failure: "a server error", answer: serverError, refusal: "refused" },
+      {
+        failure: "no answer at all",
+        answer: () => HttpResponse.error(),
+        refusal: "unreachable",
+      },
+      {
+        failure: "a list this build cannot read",
+        answer: listThisBuildCannotRead,
+        refusal: "refused",
+      },
+    ] as const satisfies readonly {
+      failure: string
+      answer: () => Response
+      refusal: ListRefusal
+    }[]
+
+    it.each(WHY_UNREAD)(
+      "holds $refusal on $failure",
+      async ({ answer, refusal }) => {
+        listFailing(answer)
+
+        await useAccountStore.getState().refresh()
+
+        expect(listRefusal()).toBe(refusal)
+      }
+    )
+
+    it("gives way to the account's stacks on a Retry that reads them, carrying none in", async () => {
+      listFailing(serverError)
+      const { posted } = recordWrites()
+      carriedEarlier()
+      await useAccountStore.getState().refresh()
+      const before = listRefusal()
+
+      accountNowLists([savedStack("B"), savedStack("A")])
+      await useAccountStore.getState().refresh()
+
+      expect({
+        before,
+        after: listRefusal(),
+        stacks: useAccountStore.getState().stacks,
+        posted,
+      }).toStrictEqual({
+        before: "refused",
+        after: null,
+        stacks: [savedStack("B"), savedStack("A")],
+        posted: [],
+      })
+    })
+
+    // Two reads out at once would both find the account empty.
+    it("carries each save in once when a Retry is asked for again while one is out", async () => {
+      listFailing(serverError)
+      const { named } = recordWrites()
+      withLocalSaves(local("B", STORED_PAYLOAD), local("A", STORED_PAYLOAD))
+      await useAccountStore.getState().refresh()
+
+      // What has been carried so far, newest first, as the worker lists it.
+      configMockServer.use(
+        http.get(STACKS_URL, () =>
+          HttpResponse.json(named.toReversed().map((name) => savedStack(name)))
+        )
+      )
+      const { refresh } = useAccountStore.getState()
+      await Promise.all([refresh(), refresh()])
+
+      expect(named).toStrictEqual(["A", "B"])
+    })
+
+    // Signed out, the grid draws every local save and has no list to miss.
+    it("is dropped on a sign-out", async () => {
+      listFailing(serverError)
+      await useAccountStore.getState().refresh()
+      const before = listRefusal()
+
+      configMockServer.resetHandlers()
+      await useAccountStore.getState().refresh()
+
+      expect({ before, after: listRefusal() }).toStrictEqual({
+        before: "refused",
+        after: null,
+      })
+    })
   })
 })
 

@@ -37,17 +37,20 @@ export const saveStack = async (
   return minted.ok ? account.save(name, minted.id) : minted
 }
 
-// Signed in, only the local saves the account refused.
+// Once the account's list is read, only the local saves the account refused.
+// Until then, every one: an unread list stands in for nothing.
 export const useLocalSavesOnGrid = () => {
   const saves = useSavedStackStore((state) => state.saves)
-  const session = useAccountStore((state) => state.session)
+  const listRead = useAccountStore(
+    (state) => state.session !== null && state.listRefusal === null
+  )
   const unadopted = useAccountStore((state) => state.unadopted)
 
   return useMemo(
     () =>
-      session
+      listRead
         ? saves.filter((save) => Object.hasOwn(unadopted, save.id))
         : saves,
-    [saves, session, unadopted]
+    [saves, listRead, unadopted]
   )
 }

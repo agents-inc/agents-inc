@@ -1,10 +1,19 @@
 import { expect, test } from "../fixtures"
+import { ConfigurePage } from "../pages/configure-page"
+import { stack, stubSignedIn } from "../support/auth"
 import {
   DOMAINS,
   EXCLUSIVE_CATEGORY,
   MULTI_CATEGORY,
   STACKS,
 } from "../support/catalog"
+import {
+  STORED_ID,
+  stubGetConfig,
+  stubGetConfigMissing,
+} from "../support/sharing"
+
+import type { Page } from "@playwright/test"
 
 const { web } = DOMAINS
 const { name: CATEGORY, first: REACT, second: VUE } = EXCLUSIVE_CATEGORY
@@ -116,5 +125,179 @@ test.describe("saving the current selection", () => {
 
     await expect(configure.stack("B")).toHaveAttribute("aria-pressed", "true")
     await expect(configure.stack("A")).toHaveAttribute("aria-pressed", "false")
+  })
+})
+
+// The selection is a stack and a save of it, so the save's cell is the lit one
+// and the stack's can still be pressed.
+test.describe("a stack under a save of it", () => {
+  // The public catalogue's saved configuration.
+  const CONFIG_KEY = "agents-inc:config:v1"
+
+  // Every write to it from here on. The slot's bytes cannot show one: a write
+  // of what it already holds leaves them as they were. Slipped in under
+  // `localStorage` alone, since a property set on a Storage is stored.
+  const watchConfigWrites = async (page: Page) => {
+    const writes = await page.evaluateHandle((key) => {
+      const seen: string[] = []
+      const watched = {
+        setItem(this: Storage, name: string, value: string) {
+          if (name === key) seen.push(value)
+          Storage.prototype.setItem.call(this, name, value)
+        },
+      }
+      Object.setPrototypeOf(watched, Storage.prototype)
+      Object.setPrototypeOf(window.localStorage, watched)
+      return seen
+    }, CONFIG_KEY)
+
+    return () => writes.jsonValue()
+  }
+
+  test.beforeEach(async ({ configure }) => {
+    await configure.chooseStack(STACKS.nextjs)
+    await configure.roster.saveButton.click()
+    await configure.saveStackDialog.saveAs(SAVE)
+
+    await expect(configure.stack(SAVE)).toHaveAttribute("aria-pressed", "true")
+    await expect(configure.stack(STACKS.nextjs)).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    )
+  })
+
+  // The control, and the proof that the watch reports a write.
+  test("a press on another stack writes the saved configuration once", async ({
+    configure,
+    page,
+  }) => {
+    const writes = await watchConfigWrites(page)
+
+    await configure.chooseStack(STACKS.t3)
+
+    await expect(configure.stack(STACKS.t3)).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+    expect(await writes()).toStrictEqual([await configure.storedConfig()])
+  })
+
+  // Nothing on screen moves, so the next stack's write is what is waited on:
+  // anything the first press wrote lands ahead of it.
+  test("a press on the stack itself writes nothing", async ({
+    configure,
+    page,
+  }) => {
+    const writes = await watchConfigWrites(page)
+
+    await configure.chooseStack(STACKS.nextjs)
+    await configure.chooseStack(STACKS.t3)
+
+    await expect(configure.stack(STACKS.t3)).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+    expect(await writes()).toStrictEqual([await configure.storedConfig()])
+  })
+})
+
+// An account's save is recognised by its payload, which the grid reads as the
+// account's stacks arrive. Where that read failed, the click reads it again,
+// and the stack it applies is the account's save all the same.
+test.describe("an account's saved stack, applied", () => {
+  // Applied with nothing unsaved, so it applies at once. The click's read
+  // loads; the grid's own read went `firstRead`.
+  const appliedAfterTheGridsRead = async (
+    page: Page,
+    firstRead: "loaded" | "failed"
+  ) => {
+    stubSignedIn(page, [stack(SAVE, STORED_ID)])
+    if (firstRead === "failed") stubGetConfigMissing(page, STORED_ID)
+    else stubGetConfig(page, STORED_ID)
+    const gridsRead = page.waitForResponse((response) =>
+      response.url().endsWith(`/configs/${STORED_ID}`)
+    )
+    const configure = new ConfigurePage(page)
+    await configure.goto()
+    expect((await gridsRead).ok()).toBe(firstRead === "loaded")
+
+    stubGetConfig(page, STORED_ID)
+    await configure.chooseStack(STACKS.nextjs)
+    await configure.stack(SAVE).click()
+    await expect(configure.skillIn(web, CATEGORY, REACT).root).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+    await expect(configure.stack(STACKS.nextjs)).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    )
+
+    return configure
+  }
+
+  test("draws its own cell as the applied stack when the grid's read loaded it", async ({
+    page,
+  }) => {
+    const configure = await appliedAfterTheGridsRead(page, "loaded")
+
+    await expect(configure.stack(SAVE)).toHaveAttribute("aria-pressed", "true")
+  })
+
+  test("draws its own cell as the applied stack when the grid's read failed and the click's loaded it", async ({
+    page,
+  }) => {
+    const configure = await appliedAfterTheGridsRead(page, "failed")
+
+    await expect(configure.stack(SAVE)).toHaveAttribute("aria-pressed", "true")
+  })
+
+  // The next stack applying is waited on first: the question opening is what
+  // keeps it from applying, and its absence alone would pass before it opened.
+  test("leaves nothing to lose, so the next stack applies unprompted, when the grid's read loaded it", async ({
+    page,
+  }) => {
+    const configure = await appliedAfterTheGridsRead(page, "loaded")
+
+    await configure.chooseStack(STACKS.t3)
+
+    await expect(configure.stack(STACKS.t3)).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+    await expect(configure.stackSwitchDialog.root).toBeHidden()
+  })
+
+  test("leaves nothing to lose, so the next stack applies unprompted, when the grid's read failed and the click's loaded it", async ({
+    page,
+  }) => {
+    const configure = await appliedAfterTheGridsRead(page, "failed")
+
+    await configure.chooseStack(STACKS.t3)
+
+    await expect(configure.stack(STACKS.t3)).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+    await expect(configure.stackSwitchDialog.root).toBeHidden()
+  })
+
+  // The case the question is for, and the proof that `stackSwitchDialog`
+  // reports it when it opens.
+  test("an edit on top of it brings the question back", async ({ page }) => {
+    const configure = await appliedAfterTheGridsRead(page, "failed")
+    const tailwind = configure.skillIn(web, STYLING, TAILWIND)
+
+    await tailwind.toggle()
+    await configure.chooseStack(STACKS.t3)
+
+    await expect(configure.stackSwitchDialog.root).toBeVisible()
+    await configure.stackSwitchDialog.cancel()
+
+    await expect(tailwind.root).toHaveAttribute("aria-pressed", "true")
+    await expect(configure.stack(STACKS.t3)).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    )
   })
 })

@@ -92,15 +92,16 @@ const openDialogs = (page: TestPage) =>
   page.locator('[role="dialog"], [role="alertdialog"]')
 
 // The account's list answering only on `release`, so a sign-in can land while
-// something else is already on screen. Install after `stubSignedIn`.
-const holdStackList = (page: TestPage, stacks: SavedStack[]) => {
+// something else is already on screen. Given no `stacks`, it then falls through
+// to the account `stubSignedIn` keeps. Install after `stubSignedIn`.
+const holdStackList = (page: TestPage, stacks?: SavedStack[]) => {
   let release!: () => void
   const released = new Promise<void>((resolve) => (release = resolve))
 
   stubWith(page, [
     http.get(STACKS_URL, async () => {
       await released
-      return HttpResponse.json(stacks)
+      return stacks && HttpResponse.json(stacks)
     }),
   ])
 
@@ -531,6 +532,388 @@ test.describe("signing in for the first time", () => {
   })
 })
 
+// The account's list answering `failure` while one is set; with none, the read
+// falls through to the account `stubSignedIn` keeps. Install after it.
+const stackListFailing = (page: TestPage) => {
+  let failure: (() => Response) | null = null
+
+  stubWith(page, [
+    http.get(STACKS_URL, () => (failure === null ? undefined : failure())),
+  ])
+
+  return {
+    fail: (answer: () => Response) => {
+      failure = answer
+    },
+    recover: () => {
+      failure = null
+    },
+  }
+}
+
+const SERVER_ERROR = 500
+
+const serverError = () => new HttpResponse(null, { status: SERVER_ERROR })
+
+// A worker a release ahead: the account's rows, under a field this build does
+// not know.
+const listThisBuildCannotRead = () =>
+  HttpResponse.json(
+    [stack("B"), stack("A")].map(({ updatedAt, ...row }) => ({
+      ...row,
+      modifiedAt: updatedAt,
+    }))
+  )
+
+const FAILED_READS = [
+  { failure: "a server error", answer: serverError },
+  { failure: "no answer at all", answer: () => HttpResponse.error() },
+  { failure: "a list this build cannot read", answer: listThisBuildCannotRead },
+]
+
+// Holding B (newest) and A, both carried in by a first sign-in. `created`
+// hearing those two writes is what shows it hears any later one.
+const carriedByAFirstSignIn = async (page: TestPage) => {
+  stubCreateConfig(page)
+  const account = stubSignedIn(page)
+  const list = stackListFailing(page)
+
+  const configure = await arriveHolding(page, [
+    { name: "B", payload: STORED_PAYLOAD },
+    { name: "A", payload: STORED_PAYLOAD },
+  ])
+  await expect
+    .poll(() => account.created.map((body) => body.name))
+    .toStrictEqual(["A", "B"])
+  await expect(accountRow(configure, "A")).toBeVisible()
+  await expect(accountRow(configure, "B")).toBeVisible()
+
+  return { configure, list, ...account }
+}
+
+// The rail names who is signed in only once the refresh, adoption included,
+// has landed, so every write this load was going to make has been made.
+const reload = async (configure: ConfigurePage) => {
+  await configure.goto()
+  await expect(configure.accountName).toHaveText(SIGNED_IN_USER.name)
+}
+
+// Once among the account's rows, and nowhere else on the grid.
+const showsEachSaveOnce = async (configure: ConfigurePage) => {
+  for (const name of ["A", "B"]) {
+    await expect(accountRow(configure, name)).toHaveCount(1)
+    await expect(configure.stack(name)).toHaveCount(1)
+  }
+}
+
+// These assert what reaches the account, and the grid only once the list reads.
+test.describe("a load whose account list cannot be read, after a first sign-in", () => {
+  test("a load that reads the list carries nothing again", async ({
+    page,
+  }) => {
+    const { configure, created } = await carriedByAFirstSignIn(page)
+
+    await reload(configure)
+
+    expect(created.map((body) => body.name)).toStrictEqual(["A", "B"])
+    await showsEachSaveOnce(configure)
+  })
+
+  for (const { failure, answer } of FAILED_READS) {
+    test(`a load meeting ${failure} carries nothing again, and the next shows each save once`, async ({
+      page,
+    }) => {
+      const { configure, created, list } = await carriedByAFirstSignIn(page)
+
+      list.fail(answer)
+      await reload(configure)
+
+      expect(created.map((body) => body.name)).toStrictEqual(["A", "B"])
+
+      list.recover()
+      await reload(configure)
+
+      await showsEachSaveOnce(configure)
+    })
+  }
+
+  test("two such loads in a row carry nothing again, and the next shows each save once", async ({
+    page,
+  }) => {
+    const { configure, created, list } = await carriedByAFirstSignIn(page)
+
+    list.fail(serverError)
+    await reload(configure)
+    await reload(configure)
+
+    expect(created.map((body) => body.name)).toStrictEqual(["A", "B"])
+
+    list.recover()
+    await reload(configure)
+
+    await showsEachSaveOnce(configure)
+  })
+
+  // Writes failing beside the read would leave both saves owed, and the next
+  // load would ask a new name for stacks the account already holds.
+  test("a load whose writes would fail too leaves nothing owed, and the next asks no new name", async ({
+    page,
+  }) => {
+    const { configure, list, refusing } = await carriedByAFirstSignIn(page)
+    const dialog = configure.saveStackDialog
+
+    list.fail(serverError)
+    refusing.add("A").add("B")
+    await reload(configure)
+
+    expect(await dialog.owed()).toStrictEqual([])
+
+    list.recover()
+    refusing.clear()
+    await reload(configure)
+
+    await showsEachSaveOnce(configure)
+    await expect(dialog.root).toBeHidden()
+  })
+})
+
+// After a first sign-in carried B and A, a load whose list read meets `answer`.
+// Both are in this browser and in the account.
+const unreadAfterAFirstSignIn = async (
+  page: TestPage,
+  answer: () => Response = serverError
+) => {
+  const carried = await carriedByAFirstSignIn(page)
+
+  carried.list.fail(answer)
+  await reload(carried.configure)
+
+  return carried
+}
+
+// Signed in to an empty account, holding B (newest) and A, on a load whose list
+// read fails: a first sign-in nothing has been carried for yet.
+const firstSignInUnread = async (page: TestPage) => {
+  stubCreateConfig(page)
+  const account = stubSignedIn(page)
+  const list = stackListFailing(page)
+  const configure = await arrive(page)
+  await configure.saveStackDialog.seed([
+    { name: "B", payload: STORED_PAYLOAD },
+    { name: "A", payload: STORED_PAYLOAD },
+  ])
+
+  list.fail(serverError)
+  await reload(configure)
+
+  return { configure, list, ...account }
+}
+
+// The owner's ruling: while the account's list cannot be read, a line says so
+// with Retry, the grid shows this browser's saves, and nothing is carried in
+// until a read succeeds.
+test.describe("a signed-in load whose account list cannot be read", () => {
+  for (const { failure, answer } of FAILED_READS) {
+    test(`says it couldn't load your saved stacks, with Retry, on ${failure}`, async ({
+      page,
+    }) => {
+      const { configure } = await unreadAfterAFirstSignIn(page, answer)
+
+      await expect(configure.stackListFailure).toBeVisible()
+      await expect(configure.stackListRetry).toBeEnabled()
+    })
+
+    test(`shows each of this browser's saves once on ${failure}, carrying none in`, async ({
+      page,
+    }) => {
+      const { configure, created } = await unreadAfterAFirstSignIn(page, answer)
+
+      for (const name of ["A", "B"]) {
+        await expect(localSave(configure, name)).toBeVisible()
+        await expect(configure.stack(name)).toHaveCount(1)
+      }
+      expect(created.map((body) => body.name)).toStrictEqual(["A", "B"])
+    })
+  }
+
+  // Nothing takes focus when it says so, so a live region is what reads it out.
+  test("reads it out, opening no dialog", async ({ page }) => {
+    const { configure } = await unreadAfterAFirstSignIn(page)
+
+    await expect(configure.stackListAnnouncement).toBeVisible()
+    await expect(openDialogs(page)).toHaveCount(0)
+  })
+
+  test("shows the account's stacks, each once, and says no more, on a Retry once the account answers", async ({
+    page,
+  }) => {
+    const { configure, created, list } = await unreadAfterAFirstSignIn(page)
+    await expect(configure.stackListRetry).toBeVisible()
+
+    list.recover()
+    await configure.stackListRetry.click()
+
+    await showsEachSaveOnce(configure)
+    await expect(configure.stackListFailure).toBeHidden()
+    await expect(configure.stackListRetry).toBeHidden()
+    expect(created.map((body) => body.name)).toStrictEqual(["A", "B"])
+  })
+
+  // Retry's refusal is awaited: the first failure's words would otherwise
+  // satisfy the assertion before Retry answered.
+  test("says so again, still showing this browser's saves, when Retry fails too", async ({
+    page,
+  }) => {
+    const { configure, created } = await unreadAfterAFirstSignIn(page)
+    await expect(configure.stackListRetry).toBeVisible()
+
+    const refused = page.waitForResponse(
+      (response) =>
+        response.url().startsWith(STACKS_URL) &&
+        response.request().method() === "GET"
+    )
+    await configure.stackListRetry.click()
+    await refused
+
+    await expect(configure.stackListFailure).toBeVisible()
+    await expect(localSave(configure, "A")).toBeVisible()
+    await expect(localSave(configure, "B")).toBeVisible()
+    expect(created.map((body) => body.name)).toStrictEqual(["A", "B"])
+  })
+
+  // Retry goes once the list reads, so the keyboard goes to the grid it
+  // filled. The grid itself, not its first cell: with anything selected, that
+  // cell clears it on one more press.
+  for (const key of ["Enter", "Space"]) {
+    test(`takes the keyboard to the stacks grid once Retry by ${key} reads the list`, async ({
+      page,
+    }) => {
+      const { configure, list } = await unreadAfterAFirstSignIn(page)
+      await expect(configure.stackListRetry).toBeVisible()
+
+      list.recover()
+      await configure.stackListRetry.press(key)
+      await showsEachSaveOnce(configure)
+
+      await expect(configure.stacks).toBeFocused()
+    })
+  }
+
+  // The allowed case for the two above: Retry is still there.
+  test("keeps the keyboard on Retry when Retry fails too", async ({ page }) => {
+    const { configure } = await unreadAfterAFirstSignIn(page)
+    await expect(configure.stackListRetry).toBeVisible()
+
+    const refused = page.waitForResponse(
+      (response) =>
+        response.url().startsWith(STACKS_URL) &&
+        response.request().method() === "GET"
+    )
+    await configure.stackListRetry.press("Enter")
+    await refused
+    await expect(configure.stackListFailure).toBeVisible()
+    await expect(localSave(configure, "A")).toBeVisible()
+
+    await expect(configure.stackListRetry).toBeFocused()
+  })
+
+  // The allowed case. The tests above show `stackListFailure` finds the words
+  // when they are there, so their absence here is the line not shown: a list
+  // that read has nothing to say it could not.
+  test("says nothing of the kind on a load that reads the list", async ({
+    page,
+  }) => {
+    const { configure } = await carriedByAFirstSignIn(page)
+
+    await reload(configure)
+
+    await showsEachSaveOnce(configure)
+    await expect(configure.stackListFailure).toBeHidden()
+    await expect(configure.stackListRetry).toBeHidden()
+  })
+})
+
+test.describe("a first sign-in whose account list cannot be read", () => {
+  test("shows this browser's saves and says it couldn't load the account's, carrying none in", async ({
+    page,
+  }) => {
+    const { configure, created } = await firstSignInUnread(page)
+
+    await expect(configure.stackListFailure).toBeVisible()
+    await expect(localSave(configure, "A")).toBeVisible()
+    await expect(localSave(configure, "B")).toBeVisible()
+    expect(created).toStrictEqual([])
+  })
+
+  test("carries each save in once on a Retry once the account answers, and says no more", async ({
+    page,
+  }) => {
+    const { configure, created, list } = await firstSignInUnread(page)
+    await expect(configure.stackListRetry).toBeVisible()
+
+    list.recover()
+    await configure.stackListRetry.click()
+
+    await showsEachSaveOnce(configure)
+    await expect(configure.stackListFailure).toBeHidden()
+    expect(created.map((body) => body.name)).toStrictEqual(["A", "B"])
+  })
+
+  // Two reads out at once would both find the account empty and carry every
+  // save twice. The reload shows what the account came to hold.
+  test("carries each save in once though Retry is pressed again while the list is read", async ({
+    page,
+  }) => {
+    const { configure, created, list } = await firstSignInUnread(page)
+    await expect(configure.stackListRetry).toBeVisible()
+
+    list.recover()
+    const { release } = holdStackList(page)
+    await configure.stackListRetry.focus()
+    await page.keyboard.press("Enter")
+    await page.keyboard.press("Enter")
+    release()
+
+    await showsEachSaveOnce(configure)
+    await reload(configure)
+    await showsEachSaveOnce(configure)
+    expect(created.map((body) => body.name)).toStrictEqual(["A", "B"])
+  })
+})
+
+// The editor guide refuses in place a name the grid shows, and meanwhile the
+// grid shows this browser's saves.
+test.describe("saving while the account's list cannot be read", () => {
+  test("refuses the name of a save this browser holds, posting nothing", async ({
+    page,
+  }) => {
+    const { configure, created } = await unreadAfterAFirstSignIn(page)
+    const minted = captureCreateConfig(page)
+
+    const dialog = await openSaveDialog(configure)
+    await dialog.fill("A")
+    await dialog.save()
+
+    await expect(dialog.alert).toHaveText(UNIQUE("A"))
+    await expect(dialog.nameInput).toHaveAttribute("aria-invalid", "true")
+    expect(minted).toStrictEqual([])
+    expect(created.map((body) => body.name)).toStrictEqual(["A", "B"])
+  })
+
+  test("saves a name nobody holds to the account", async ({ page }) => {
+    const { configure, created } = await unreadAfterAFirstSignIn(page)
+
+    const dialog = await openSaveDialog(configure)
+    await dialog.saveAs("Client work")
+
+    expect(created.map((body) => body.name)).toStrictEqual([
+      "A",
+      "B",
+      "Client work",
+    ])
+  })
+})
+
 // Owed by a first sign-in whose write was refused; the account has since come
 // to list each name, lower-cased.
 const owingThenListed = async (page: TestPage, oldestFirst: string[]) => {
@@ -625,6 +1008,30 @@ test.describe("an owed save whose name the account now lists", () => {
     await expect(dialog.nameInput).toHaveAccessibleDescription(UNIQUE("Alpha"))
     expect(minted).toStrictEqual([])
     expect(created).toStrictEqual([])
+  })
+
+  // The keyboard a successful Retry moves to the grid must not leave a dialog
+  // that read opened. Typed, so a move after the field took focus shows too.
+  test("keeps the keyboard on the field when it opens on a Retry that reads the list", async ({
+    page,
+  }) => {
+    stubCreateConfig(page)
+    stubSignedIn(page, [stack("alpha")])
+    const list = stackListFailing(page)
+    const configure = await arrive(page)
+    const dialog = configure.saveStackDialog
+    await dialog.seed([{ name: "Alpha", payload: STORED_PAYLOAD }], ["Alpha"])
+    list.fail(serverError)
+    await configure.goto()
+    await expect(configure.stackListRetry).toBeVisible()
+
+    list.recover()
+    await configure.stackListRetry.press("Enter")
+    await expect(dialog.nameInput).toHaveValue("Alpha")
+    await page.keyboard.press("End")
+    await page.keyboard.type(" 2")
+
+    await expect(dialog.nameInput).toHaveValue("Alpha 2")
   })
 
   test("a unique name renames it and carries its own payload, and it is owed no more", async ({
@@ -819,6 +1226,107 @@ test.describe("an owed save whose name the account now lists", () => {
       release,
       configure.marketplaceSwitchDialog
     )
+  })
+})
+
+// Owing "Alpha" to an account listing "alpha", asked once a Retry reads the
+// list. `arrange` runs on the first visit, before anything is owed.
+const owedOnARetry = async (
+  page: TestPage,
+  arrange: (configure: ConfigurePage) => Promise<void> = async () => {}
+) => {
+  stubCreateConfig(page)
+  stubSignedIn(page, [stack("alpha")])
+  const list = stackListFailing(page)
+  const configure = await arrive(page)
+  await arrange(configure)
+  const dialog = configure.saveStackDialog
+  await dialog.seed([{ name: "Alpha", payload: STORED_PAYLOAD }], ["Alpha"])
+  list.fail(serverError)
+  await configure.goto()
+  await expect(configure.stackListRetry).toBeVisible()
+
+  list.recover()
+  await configure.stackListRetry.press("Enter")
+
+  return { configure, dialog }
+}
+
+const OWED_OPENINGS = [
+  {
+    opening: "a page load",
+    open: (page: TestPage) =>
+      owingBeside(
+        page,
+        [stack("alpha")],
+        [{ name: "Alpha", payload: STORED_PAYLOAD }],
+        ["Alpha"]
+      ),
+  },
+  { opening: "a Retry that reads the list", open: owedOnARetry },
+]
+
+type SaveDialog = ConfigurePage["saveStackDialog"]
+
+const OWED_CLOSINGS = [
+  {
+    closing: "Escape",
+    close: (dialog: SaveDialog) => dialog.nameInput.press("Escape"),
+  },
+  {
+    closing: "Cancel",
+    close: (dialog: SaveDialog) => dialog.cancelButton.press("Enter"),
+  },
+  {
+    closing: "the ✕",
+    close: (dialog: SaveDialog) => dialog.closeButton.press("Enter"),
+  },
+  {
+    closing: "Save",
+    close: async (dialog: SaveDialog) => {
+      await dialog.fill("Alpha 2")
+      await dialog.nameInput.press("Enter")
+    },
+  },
+]
+
+// It opens on its own, so on closing it hands the keyboard to the grid, as the
+// list's Retry does: the grid itself, since with anything selected its first
+// cell clears it on one more press.
+test.describe("where the keyboard goes when an owed save's dialog closes", () => {
+  for (const { opening, open } of OWED_OPENINGS) {
+    for (const { closing, close } of OWED_CLOSINGS) {
+      test(`takes the keyboard to the stacks grid once ${closing} closes it, opened on ${opening}`, async ({
+        page,
+      }) => {
+        const { configure, dialog } = await open(page)
+        await expect(dialog.nameInput).toHaveValue("Alpha")
+        await expect(dialog.nameInput).toBeFocused()
+
+        await close(dialog)
+
+        await expect(dialog.root).toBeHidden()
+        await expect(configure.stacks).toBeFocused()
+      })
+    }
+  }
+
+  test("takes the keyboard to the stacks grid, not the cell that clears the applied stack, once Escape closes it, opened on a Retry", async ({
+    page,
+  }) => {
+    const { configure, dialog } = await owedOnARetry(page, (configure) =>
+      configure.chooseStack(STACKS.nextjs)
+    )
+    await expect(dialog.nameInput).toBeFocused()
+
+    await dialog.nameInput.press("Escape")
+
+    await expect(dialog.root).toBeHidden()
+    await expect(configure.stackCell(0)).toHaveAccessibleName(
+      STACKS.clearScratch
+    )
+    await expect(configure.stacks).toBeFocused()
+    await expect(configure.stackCell(0)).not.toBeFocused()
   })
 })
 

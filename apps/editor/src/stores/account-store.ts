@@ -14,6 +14,7 @@ import { readSession, type Session } from "@/lib/api/auth"
 import {
   createStack,
   listStacks,
+  type ListRefusal,
   type RemoteStack,
   type StackRefusal,
   type StackResult,
@@ -39,6 +40,10 @@ type AccountState = {
   clashes: string[]
   // `false` until the first `refresh` lands, so the rail never flashes "Sign in".
   ready: boolean
+  // Why the last refresh could not read the account's list; `null` once one
+  // did. A refusal leaves `stacks`, `unadopted` and `clashes` as the last read
+  // set them.
+  listRefusal: ListRefusal | null
   // Config id → the payload a stack points at, which the grid matches the
   // selection against. An id names one payload forever, so each is read once.
   payloads: Readonly<Record<string, SeedPayload>>
@@ -209,6 +214,7 @@ export const useAccountStore = create<AccountState>()((set, get) => ({
   unadopted: {},
   clashes: [],
   ready: false,
+  listRefusal: null,
   payloads: {},
   failedReads: [],
 
@@ -260,6 +266,7 @@ const refreshOnce = async (set: (state: Partial<AccountState>) => void) => {
     return set({
       session: null,
       ready: true,
+      listRefusal: null,
       stacks: [],
       unadopted: {},
       clashes: [],
@@ -267,7 +274,12 @@ const refreshOnce = async (set: (state: Partial<AccountState>) => void) => {
       failedReads: [],
     })
 
-  const { owed, ...adoption } = await adoptLocalSaves(await listStacks())
+  // Unread is not empty: adopting on it would carry every save in again. What
+  // is owed stays owed until a list is read.
+  const list = await listStacks()
+  if (!list.ok) return set({ session, ready: true, listRefusal: list.refusal })
+
+  const { owed, ...adoption } = await adoptLocalSaves(list.stacks)
   settleOwed(owed)
-  set({ session, ready: true, ...adoption })
+  set({ session, ready: true, listRefusal: null, ...adoption })
 }

@@ -81,6 +81,18 @@ const MARKETPLACE_SECTION = '[data-slot="marketplace-row"]'
 // Far enough past the bar's own top that it has pinned and changed shape.
 const PAST_THE_PIN = 400
 
+// The switch question's own words for a stack that failed to load.
+const STACK_NOT_LOADED = "Couldn't load this stack."
+
+// The owner's words for an account whose list could not be read, ended as the
+// stack-load line is.
+const STACK_LIST_NOT_LOADED = "Couldn't load your saved stacks."
+
+// Whatever reads its words out without taking focus: an alert, a status line,
+// or a polite or assertive live region (the toasts' viewport is one).
+const LIVE_REGION =
+  '[role="alert"], [role="status"], [aria-live="polite"], [aria-live="assertive"]'
+
 // Room around an element for a ring drawn outside its box.
 const RING_ROOM = 4
 
@@ -154,6 +166,23 @@ export class ConfigurePage {
   readonly importNotice: Locator
   // By slot: it is an alert inside `main`, as `importNotice` is.
   readonly adoptionNotice: Locator
+  // Said when an account's stack, applied with nothing unsaved, fails to load.
+  // Page-wide and by its words: no ruling placed it. Not exact, so the element
+  // holding them may hold its Retry too.
+  readonly stackLoadFailure: Locator
+  // The same words inside a live region. Any one will do, since a live region
+  // may sit inside another.
+  readonly stackLoadAnnouncement: Locator
+  // Its way to try again. The switch question's Retry is scoped to the question.
+  readonly stackLoadRetry: Locator
+  // Said, signed in, while the account's list cannot be read. Page-wide and by
+  // its words, as `stackLoadFailure` is: the ruling did not place it.
+  readonly stackListFailure: Locator
+  readonly stackListAnnouncement: Locator
+  // The Retry nearest those words, so the stack-load line's cannot answer for
+  // it. Found through the words, which empty while Retry reads, so it is
+  // hidden then too: wait on what the read brings, not on this going.
+  readonly stackListRetry: Locator
 
   readonly roster: RosterPanel
   readonly provider: ProviderControl
@@ -206,6 +235,26 @@ export class ConfigurePage {
       .locator(MARKETPLACE_SECTION)
     this.importNotice = page.locator("main").getByRole("alert")
     this.adoptionNotice = page.locator('[data-slot="adoption-notice"]')
+    this.stackLoadFailure = page.getByText(STACK_NOT_LOADED)
+    this.stackLoadAnnouncement = page
+      .locator(LIVE_REGION)
+      .filter({ hasText: STACK_NOT_LOADED })
+      .first()
+    const retry = page.getByRole("button", { name: "Retry", exact: true })
+    this.stackLoadRetry = retry
+    this.stackListFailure = page.getByText(STACK_LIST_NOT_LOADED)
+    this.stackListAnnouncement = page
+      .locator(LIVE_REGION)
+      .filter({ hasText: STACK_LIST_NOT_LOADED })
+      .first()
+    // Ancestors come in document order, so the last to hold a Retry is the
+    // nearest, whatever the depth between the words and the button. "Or self",
+    // since the element holding the words may hold the button too.
+    this.stackListRetry = this.stackListFailure
+      .locator("xpath=ancestor-or-self::*")
+      .filter({ has: retry })
+      .last()
+      .locator(retry)
 
     this.roster = new RosterPanel(page)
     this.provider = new ProviderControl(page)

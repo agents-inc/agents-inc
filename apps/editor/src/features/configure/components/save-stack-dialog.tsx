@@ -29,7 +29,7 @@ import { useSavedStackStore, type SavedStack } from "@/stores/saved-stack-store"
 import { useUiStore } from "@/stores/ui-store"
 
 import { FIELD_INSET, Field, Note } from "./dialog-field"
-import { CLEARED_SCRATCH_NAME, SCRATCH_NAME } from "./stack-grid"
+import { CLEARED_SCRATCH_NAME, SCRATCH_NAME, STACKS_GRID } from "./stack-grid"
 
 const PROBLEM_SENTENCES = {
   empty: () => "Give this stack a name.",
@@ -84,6 +84,17 @@ const useOwedToAsk = () => {
   return anotherModalOpen ? undefined : clashing
 }
 
+// An owed save has no opener to go back to. Base UI would pass over the grid,
+// no Tab stop, to its first cell, which may clear the selection; so the grid
+// is focused here and Base UI moves nothing. Folded away, its default stands.
+const handKeyboardToStacks = () => {
+  const grid = document.querySelector<HTMLElement>(`[${STACKS_GRID}]`)
+  if (!grid) return true
+
+  grid.focus()
+  return false
+}
+
 export function SaveStackDialog({ config }: { config: ConfigSelection }) {
   const dialog = useUiStore((state) => state.dialog)
   const setDialog = useUiStore((state) => state.setDialog)
@@ -94,7 +105,13 @@ export function SaveStackDialog({ config }: { config: ConfigSelection }) {
   const nameInput = useRef<HTMLInputElement>(null)
   const [saving, setSaving] = useState(false)
 
-  const open = dialog === "save" || owed !== undefined
+  const asksOwed = owed !== undefined
+  const open = dialog === "save" || asksOwed
+  // Held past the close, which takes the save off the queue before Base UI
+  // asks where the keyboard goes.
+  const [closesOnStacks, setClosesOnStacks] = useState(asksOwed)
+  if (open && closesOnStacks !== asksOwed) setClosesOnStacks(asksOwed)
+
   const cancel = () => (owed ? defer(owed.id) : setDialog("none"))
   // A carried owed save has already left the queue.
   const done = () => {
@@ -103,7 +120,10 @@ export function SaveStackDialog({ config }: { config: ConfigSelection }) {
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && !saving && cancel()}>
-      <DialogContent initialFocus={nameInput}>
+      <DialogContent
+        initialFocus={nameInput}
+        finalFocus={closesOnStacks ? handKeyboardToStacks : true}
+      >
         <DialogHeader title="Save stack" subtitle="keep this setup by name" />
         {open && (
           <SaveStackForm

@@ -6,7 +6,12 @@ import {
 import { expect, test } from "../fixtures"
 import { ConfigurePage } from "../pages/configure-page"
 import { stack, stubSignedIn } from "../support/auth"
-import { DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
+import {
+  DOMAINS,
+  EXCLUSIVE_CATEGORY,
+  SINGLE_AGENT_SKILL,
+  STACKS,
+} from "../support/catalog"
 import {
   stubMarketplaceCatalog,
   stubMissingMarketplace,
@@ -556,5 +561,276 @@ test.describe("the question while an account's saved stack loads", () => {
       "aria-pressed",
       "true"
     )
+  })
+})
+
+// With nothing unsaved no question is asked: the stack applies at once, so a
+// load that fails is said on the page, in the question's own words and with its
+// Retry. The selection is read while the message shows, so it must stay
+// readable beside it.
+test.describe("an account's saved stack that fails to load with nothing unsaved", () => {
+  // A Next.js member the stored payload, which holds React alone, leaves out:
+  // pressed only while the Next.js stack is what is on screen.
+  const { name: VITE, category: BUILD_TOOLS } = SINGLE_AGENT_SKILL
+
+  // A selection with nothing unsaved: a stack's own expansion.
+  const onTheNextjsStack = async (page: Page) => {
+    const configure = await arrive(page)
+    await configure.chooseStack(STACKS.nextjs)
+    await expect(configure.stack(STACKS.nextjs)).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+    return configure
+  }
+
+  const expectTheNextjsStackOnScreen = async (configure: ConfigurePage) => {
+    await expect(configure.stack(STACKS.nextjs)).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+    await expect(configure.stack(SAVED_NAME)).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    )
+    await expect(
+      configure.skillIn(web, BUILD_TOOLS, VITE).root
+    ).toHaveAttribute("aria-pressed", "true")
+  }
+
+  const expectTheStoredStackOnScreen = async (configure: ConfigurePage) => {
+    await expect(configure.skillIn(web, CATEGORY, REACT).root).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+    await expect(
+      configure.skillIn(web, BUILD_TOOLS, VITE).root
+    ).toHaveAttribute("aria-pressed", "false")
+    await expect(configure.stack(STACKS.nextjs)).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    )
+  }
+
+  test("says it couldn't load the stack, with a way to try again", async ({
+    page,
+  }) => {
+    stubSignedIn(page, [stack(SAVED_NAME, STORED_ID)])
+    stubGetConfigMissing(page, STORED_ID)
+    const configure = await onTheNextjsStack(page)
+
+    await configure.stack(SAVED_NAME).click()
+
+    await expect(configure.stackLoadFailure).toBeVisible()
+    await expect(configure.stackLoadRetry).toBeEnabled()
+  })
+
+  test("leaves the setup on screen and saved as it was while it says so", async ({
+    page,
+  }) => {
+    stubSignedIn(page, [stack(SAVED_NAME, STORED_ID)])
+    stubGetConfigMissing(page, STORED_ID)
+    const configure = await onTheNextjsStack(page)
+    const saved = await configure.storedConfig()
+
+    await configure.stack(SAVED_NAME).click()
+    await expect(configure.stackLoadFailure).toBeVisible()
+
+    await expectTheNextjsStackOnScreen(configure)
+    expect(await configure.storedConfig()).toBe(saved)
+  })
+
+  // Nothing takes focus when it says so, so a live region is what reads it out.
+  test("reads out that it couldn't load the stack", async ({ page }) => {
+    stubSignedIn(page, [stack(SAVED_NAME, STORED_ID)])
+    stubGetConfigMissing(page, STORED_ID)
+    const configure = await onTheNextjsStack(page)
+
+    await configure.stack(SAVED_NAME).click()
+
+    await expect(configure.stackLoadAnnouncement).toBeVisible()
+  })
+
+  // The grid's own read has not answered when the stack is chosen.
+  test("says so when its first read was still out at the click and then fails", async ({
+    page,
+  }) => {
+    stubSignedIn(page, [stack(SAVED_NAME, STORED_ID)])
+    const release = holdGetConfigMissing(page, STORED_ID)
+    const configure = await onTheNextjsStack(page)
+
+    await configure.stack(SAVED_NAME).click()
+    release()
+
+    await expect(configure.stackLoadFailure).toBeVisible()
+    await expectTheNextjsStackOnScreen(configure)
+  })
+
+  test("applies the stack on Retry once its load recovers", async ({
+    page,
+  }) => {
+    stubSignedIn(page, [stack(SAVED_NAME, STORED_ID)])
+    stubGetConfigMissing(page, STORED_ID)
+    const configure = await onTheNextjsStack(page)
+    await configure.stack(SAVED_NAME).click()
+    await expect(configure.stackLoadFailure).toBeVisible()
+
+    stubGetConfig(page, STORED_ID)
+    await configure.stackLoadRetry.click()
+
+    await expectTheStoredStackOnScreen(configure)
+  })
+
+  // Once the stack applied, a sentence saying it could not load is false.
+  test("stops saying it couldn't load the stack once Retry applies it", async ({
+    page,
+  }) => {
+    stubSignedIn(page, [stack(SAVED_NAME, STORED_ID)])
+    stubGetConfigMissing(page, STORED_ID)
+    const configure = await onTheNextjsStack(page)
+    await configure.stack(SAVED_NAME).click()
+    await expect(configure.stackLoadFailure).toBeVisible()
+
+    stubGetConfig(page, STORED_ID)
+    await configure.stackLoadRetry.click()
+    await expectTheStoredStackOnScreen(configure)
+
+    await expect(configure.stackLoadFailure).toBeHidden()
+    await expect(configure.stackLoadRetry).toBeHidden()
+  })
+
+  // Retry's refusal is awaited: the message from the first failure would
+  // otherwise satisfy the assertion before Retry answered.
+  test("says so again, leaving the setup as it was, when Retry fails too", async ({
+    page,
+  }) => {
+    stubSignedIn(page, [stack(SAVED_NAME, STORED_ID)])
+    stubGetConfigMissing(page, STORED_ID)
+    const configure = await onTheNextjsStack(page)
+    await configure.stack(SAVED_NAME).click()
+    await expect(configure.stackLoadFailure).toBeVisible()
+
+    const refused = page.waitForResponse((response) =>
+      response.url().endsWith(`/configs/${STORED_ID}`)
+    )
+    await configure.stackLoadRetry.click()
+    await refused
+
+    await expect(configure.stackLoadFailure).toBeVisible()
+    await expectTheNextjsStackOnScreen(configure)
+  })
+
+  test("is chosen and retried from the keyboard", async ({ page }) => {
+    stubSignedIn(page, [stack(SAVED_NAME, STORED_ID)])
+    stubGetConfigMissing(page, STORED_ID)
+    const configure = await onTheNextjsStack(page)
+
+    await configure.stack(SAVED_NAME).press("Enter")
+    await expect(configure.stackLoadFailure).toBeVisible()
+
+    stubGetConfig(page, STORED_ID)
+    await configure.stackLoadRetry.press("Enter")
+
+    await expectTheStoredStackOnScreen(configure)
+  })
+
+  // Retry goes once it applies the stack, so the keyboard goes back to the
+  // cell that asked for it, as Switch in the question leaves it. Not the grid's
+  // first cell: one more press there clears the stack just loaded, unasked.
+  for (const key of ["Enter", "Space"]) {
+    test(`takes the keyboard back to the stack's cell once Retry by ${key} applies it`, async ({
+      page,
+    }) => {
+      stubSignedIn(page, [stack(SAVED_NAME, STORED_ID)])
+      stubGetConfigMissing(page, STORED_ID)
+      const configure = await onTheNextjsStack(page)
+      await configure.stack(SAVED_NAME).press("Enter")
+      await expect(configure.stackLoadFailure).toBeVisible()
+
+      stubGetConfig(page, STORED_ID)
+      await configure.stackLoadRetry.press(key)
+      await expectTheStoredStackOnScreen(configure)
+
+      await expect(configure.stack(SAVED_NAME)).toBeFocused()
+    })
+  }
+
+  // After an edit, Retry asks first. The question hands the keyboard back to
+  // what opened it, and that Retry is gone once Switch applies the stack. The
+  // question opens on the read that failed, so its own Retry comes first.
+  test("takes the keyboard back to the stack's cell once Retry asks first and Switch applies it", async ({
+    page,
+  }) => {
+    stubSignedIn(page, [stack(SAVED_NAME, STORED_ID)])
+    stubGetConfigMissing(page, STORED_ID)
+    const configure = await onTheNextjsStack(page)
+    const dialog = configure.stackSwitchDialog
+    await configure.stack(SAVED_NAME).press("Enter")
+    await expect(configure.stackLoadFailure).toBeVisible()
+    await configure.skillIn(web, CATEGORY, VUE).toggle()
+
+    stubGetConfig(page, STORED_ID)
+    await configure.stackLoadRetry.press("Enter")
+    await dialog.retryButton.press("Enter")
+    await expect(dialog.confirmButton).toBeEnabled()
+    await dialog.confirmButton.press("Enter")
+    await expect(dialog.root).toBeHidden()
+    await expectTheStoredStackOnScreen(configure)
+
+    await expect(configure.stack(SAVED_NAME)).toBeFocused()
+  })
+
+  // The allowed case for the three above: Retry is still there.
+  test("keeps the keyboard on Retry when Retry fails too", async ({ page }) => {
+    stubSignedIn(page, [stack(SAVED_NAME, STORED_ID)])
+    stubGetConfigMissing(page, STORED_ID)
+    const configure = await onTheNextjsStack(page)
+    await configure.stack(SAVED_NAME).press("Enter")
+    await expect(configure.stackLoadFailure).toBeVisible()
+
+    const refused = page.waitForResponse((response) =>
+      response.url().endsWith(`/configs/${STORED_ID}`)
+    )
+    await configure.stackLoadRetry.press("Enter")
+    await refused
+    await expect(configure.stackLoadFailure).toBeVisible()
+    await expectTheNextjsStackOnScreen(configure)
+
+    await expect(configure.stackLoadRetry).toBeFocused()
+  })
+
+  // The allowed cases. The tests above show `stackLoadFailure` finds the
+  // message when it is there, so its absence here is the message not shown —
+  // a stack that loaded has nothing to say it failed.
+  test("applies a stack that loads at once, saying nothing", async ({
+    page,
+  }) => {
+    stubSignedIn(page, [stack(SAVED_NAME, STORED_ID)])
+    stubGetConfig(page, STORED_ID)
+    const configure = await onTheNextjsStack(page)
+
+    await configure.stack(SAVED_NAME).click()
+
+    await expectTheStoredStackOnScreen(configure)
+    await expect(configure.stackLoadFailure).toBeHidden()
+  })
+
+  // The grid's own read failing says nothing about the click's.
+  test("applies at once, saying nothing, when an earlier read failed and this one loads", async ({
+    page,
+  }) => {
+    stubSignedIn(page, [stack(SAVED_NAME, STORED_ID)])
+    stubGetConfigMissing(page, STORED_ID)
+    const firstRead = page.waitForResponse((response) =>
+      response.url().endsWith(`/configs/${STORED_ID}`)
+    )
+    const configure = await onTheNextjsStack(page)
+    expect((await firstRead).status()).toBe(404)
+
+    stubGetConfig(page, STORED_ID)
+    await configure.stack(SAVED_NAME).click()
+
+    await expectTheStoredStackOnScreen(configure)
+    await expect(configure.stackLoadFailure).toBeHidden()
   })
 })

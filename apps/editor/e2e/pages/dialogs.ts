@@ -425,6 +425,8 @@ export class SaveStackDialog {
   readonly saveButton: Locator
   readonly savingButton: Locator
   readonly cancelButton: Locator
+  // The header's ✕.
+  readonly closeButton: Locator
   readonly alert: Locator
 
   constructor(private readonly page: Page) {
@@ -445,6 +447,9 @@ export class SaveStackDialog {
       name: "Cancel",
       exact: true,
     })
+    this.closeButton = this.root
+      .locator('[data-slot="dialog-header"]')
+      .getByRole("button", { name: "Close", exact: true })
     this.alert = this.root.getByRole("alert")
   }
 
