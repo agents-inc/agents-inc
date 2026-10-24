@@ -657,6 +657,83 @@ test.describe("discarding a proposal", () => {
   })
 })
 
+// Signed in, one skill proposed by the chord, the caret still in the field.
+const proposeOneSkill = async (page: Page) => {
+  const configure = await arriveSignedIn(page)
+  const { composer } = configure
+  const cell = configure.skillIn(web, CATEGORY, SKILL)
+  stubCompose(page, [await skillIdOf(configure, cell)])
+
+  await composer.type(SENTENCE)
+  await composer.submitWithKeys("Control+Enter")
+  await settled(composer)
+  await expect(composer.applyButton).toBeEnabled()
+
+  return { configure, cell }
+}
+
+// Apply takes the block, and itself, off the page: the keyboard goes where
+// Discard sends it rather than to `body`.
+test.describe("where the keyboard goes when a proposal leaves", () => {
+  test("goes to the field when Apply is clicked", async ({ page }) => {
+    const { configure, cell } = await proposeOneSkill(page)
+    const { composer } = configure
+
+    await composer.applyButton.click()
+
+    await expect(composer.proposal).toHaveCount(0)
+    await expect(cell.root).toHaveAttribute("aria-pressed", "true")
+    await expect(composer.field).toBeFocused()
+  })
+
+  for (const key of ["Enter", "Space"] as const) {
+    test(`goes to the field when ${key} on Apply applies it`, async ({
+      page,
+    }) => {
+      const { configure, cell } = await proposeOneSkill(page)
+      const { composer } = configure
+
+      await page.keyboard.press("Shift+Tab")
+      await expect(composer.applyButton).toBeFocused()
+      await page.keyboard.press(key)
+
+      await expect(composer.proposal).toHaveCount(0)
+      await expect(cell.root).toHaveAttribute("aria-pressed", "true")
+      await expect(composer.field).toBeFocused()
+    })
+  }
+
+  // The Enter that applies must not also reach the field it hands the caret to.
+  test("keeps the draft as it was when Enter on Apply applies it", async ({
+    page,
+  }) => {
+    const { configure } = await proposeOneSkill(page)
+    const { composer } = configure
+
+    await page.keyboard.press("Shift+Tab")
+    await expect(composer.applyButton).toBeFocused()
+    await page.keyboard.press("Enter")
+
+    await expect(composer.proposal).toHaveCount(0)
+    expect(await composer.draft()).toBe(SENTENCE)
+  })
+
+  test("goes to the field when Enter on Discard discards it", async ({
+    page,
+  }) => {
+    const { configure } = await proposeOneSkill(page)
+    const { composer } = configure
+
+    await page.keyboard.press("Shift+Tab")
+    await page.keyboard.press("Shift+Tab")
+    await expect(composer.discardButton).toBeFocused()
+    await page.keyboard.press("Enter")
+
+    await expect(composer.proposal).toHaveCount(0)
+    await expect(composer.field).toBeFocused()
+  })
+})
+
 // Floating controls: every assertion is a relationship between two live boxes.
 test.describe("the composer's geometry", () => {
   test("leaves the marketplace button clear at its shortest", async ({

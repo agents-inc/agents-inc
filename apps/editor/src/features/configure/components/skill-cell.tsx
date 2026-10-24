@@ -100,6 +100,8 @@ export function SkillCell({
   const inLastColumn = column === columns - 1
   const ejectOnly = isEjectOnly(skill.id)
   const cellRef = useRef<HTMLDivElement>(null)
+  const optionsButtonRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   // The store's fallbacks, so the panel never shows one thing and saves another.
   const remembered = useConfigStore((state) => state.remembered[skill.id])
@@ -138,7 +140,9 @@ export function SkillCell({
     setSkillOption(skill.id, patchForPress(provider, landed(patch)))
   }
 
-  // Presses inside are ignored, or the ••• would close then reopen.
+  // Presses inside are ignored, or the ••• would close then reopen. Escape
+  // hands a keyboard inside the panel to the ••• before the panel goes, or it
+  // falls to `body`; a keyboard anywhere else stays put.
   useEffect(() => {
     if (!open) return
 
@@ -146,7 +150,11 @@ export function SkillCell({
       if (!cellRef.current?.contains(event.target as Node)) openPanel(null)
     }
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") openPanel(null)
+      if (event.key !== "Escape") return
+
+      const keyboardInPanel = panelRef.current?.contains(document.activeElement)
+      if (keyboardInPanel) optionsButtonRef.current?.focus()
+      openPanel(null)
     }
 
     document.addEventListener("pointerdown", onPointerDown)
@@ -230,6 +238,7 @@ export function SkillCell({
 
         {/* Zero opacity, not absent, so revealing them cannot reflow. */}
         <button
+          ref={optionsButtonRef}
           type="button"
           aria-label={`Options for ${skill.displayName}`}
           aria-expanded={open}
@@ -299,6 +308,7 @@ export function SkillCell({
 
       {open && (
         <SkillOptionsPanel
+          ref={panelRef}
           skillId={skill.id}
           sourceUrl={skill.sourceUrl}
           entry={options}

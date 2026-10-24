@@ -35,6 +35,7 @@ import {
   unknownSavedIds,
   useConfigStore,
   withoutWrites,
+  type ConfigState,
 } from "./config-store"
 import { useCatalogStore } from "./catalog-store"
 import { useHeldGlobalStore } from "./held-global-store"
@@ -177,26 +178,34 @@ describe("an action the catalogue refuses", () => {
 
   it("writes nothing for a skill the catalogue cannot place", async () => {
     const { store, writes } = await storeOnAWatchedSlot()
+    const before = store.getState()
 
     store.getState().toggleSkill(UNKNOWN_SKILL)
 
     expect(writes).toStrictEqual([])
+    expect(store.getState()).toBe(before)
   })
 
+  // Not the scope a fresh entry starts with: the check for a press already in
+  // effect would answer that one before the catalogue is asked.
   it("writes nothing for an option set on a skill it cannot place", async () => {
     const { store, writes } = await storeOnAWatchedSlot()
+    const before = store.getState()
 
-    store.getState().setSkillOption(UNKNOWN_SKILL, { scope: "global" })
+    store.getState().setSkillOption(UNKNOWN_SKILL, { scope: "project" })
 
     expect(writes).toStrictEqual([])
+    expect(store.getState()).toBe(before)
   })
 
   it("writes nothing for a row no selected skill holds", async () => {
     const { store, writes } = await storeOnAWatchedSlot()
+    const before = store.getState()
 
     store.getState().toggleAssignmentEnabled(KNOWN_SKILL, KNOWN_AGENT)
 
     expect(writes).toStrictEqual([])
+    expect(store.getState()).toBe(before)
   })
 })
 
@@ -315,6 +324,7 @@ describe("remembered project plugins on Codex", () => {
   afterEach(() => {
     useConfigStore.getState().reset()
     useUiStore.getState().setProvider("claude")
+    vi.unstubAllGlobals()
   })
 
   it("moves only remembered plugin+project entries to global", () => {
@@ -342,9 +352,26 @@ describe("remembered project plugins on Codex", () => {
     })
   })
 
+  // The control: without it the next spec passes against a slot nothing writes
+  // to.
+  it("writes the slot when a remembered plugin moves to global", async () => {
+    const { store, writes } = await storeOnAWatchedSlot()
+    store
+      .getState()
+      .applySavedStack(
+        persistedConfig({ remembered: { [PLUGIN_PROJECT]: pluginProject } })
+      )
+    expect(writes).toHaveLength(1)
+
+    store.getState().moveRememberedPluginsToGlobal()
+
+    expect(writes).toHaveLength(2)
+  })
+
   // `set` is what writes the slot, so a switch that moves nothing skips it.
-  it("leaves the state untouched when no remembered plugin is at project", () => {
-    useConfigStore.getState().applySavedStack(
+  it("leaves the state untouched when no remembered plugin is at project", async () => {
+    const { store, writes } = await storeOnAWatchedSlot()
+    store.getState().applySavedStack(
       persistedConfig({
         skills: { [KNOWN_SKILL]: pluginProject },
         remembered: {
@@ -357,11 +384,13 @@ describe("remembered project plugins on Codex", () => {
         },
       })
     )
-    const before = useConfigStore.getState()
+    expect(writes).toHaveLength(1)
+    const before = store.getState()
 
     before.moveRememberedPluginsToGlobal()
 
-    expect(useConfigStore.getState()).toBe(before)
+    expect(writes).toHaveLength(1)
+    expect(store.getState()).toBe(before)
   })
 
   it("sets a skill deselected on Codex aside at global", () => {
@@ -469,10 +498,12 @@ describe("setAgentOption", () => {
     ["Codex model", { codexModel: resting.codexModel }],
   ] as const)("writes nothing for the resting %s", async (_label, patch) => {
     const { store, writes } = await storeOnAWatchedSlot()
+    const before = store.getState()
 
     store.getState().setAgentOption(KNOWN_AGENT, patch)
 
     expect(writes).toStrictEqual([])
+    expect(store.getState()).toBe(before)
   })
 
   it.each([
@@ -485,10 +516,12 @@ describe("setAgentOption", () => {
       const { store, writes } = await storeOnAWatchedSlot()
       store.getState().setAgentOption(KNOWN_AGENT, patch)
       expect(writes).toHaveLength(1)
+      const before = store.getState()
 
       store.getState().setAgentOption(KNOWN_AGENT, patch)
 
       expect(writes).toHaveLength(1)
+      expect(store.getState()).toBe(before)
     }
   )
 
@@ -503,23 +536,163 @@ describe("setAgentOption", () => {
   })
 })
 
-// A prune that drops nothing must not reach `set`, which writes.
-describe("pruneToCatalog", () => {
-  it("leaves the state untouched when the catalogue can place everything", () => {
-    const before = useConfigStore.getState()
+// The same rule for a skill. Configuring never selects, so an unselected skill
+// has options in effect too: the ones its panel draws.
+describe("setSkillOption", () => {
+  const untouched = freshEntry(KNOWN_SKILL)
 
-    before.pruneToCatalog()
-
-    expect(useConfigStore.getState()).toBe(before)
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
-  it("leaves an empty configuration untouched", () => {
-    useConfigStore.getState().reset()
-    const before = useConfigStore.getState()
+  // The controls: without them the rest pass against a slot nothing writes to.
+  it("writes the slot when a selected skill's pick changes", async () => {
+    const { store, writes } = await storeOnAWatchedSlot()
+    store.getState().toggleSkill(KNOWN_SKILL)
+    expect(writes).toHaveLength(1)
+
+    store.getState().setSkillOption(KNOWN_SKILL, { scope: "project" })
+
+    expect(writes).toHaveLength(2)
+  })
+
+  it("writes the slot when an unselected skill's pick changes", async () => {
+    const { store, writes } = await storeOnAWatchedSlot()
+
+    store.getState().setSkillOption(KNOWN_SKILL, { install: "eject" })
+
+    expect(writes).toHaveLength(1)
+  })
+
+  it.each([
+    ["install mode", { install: untouched.install }],
+    ["scope", { scope: untouched.scope }],
+  ] as const)(
+    "writes nothing for the %s a selected skill starts with",
+    async (_label, patch) => {
+      const { store, writes } = await storeOnAWatchedSlot()
+      store.getState().toggleSkill(KNOWN_SKILL)
+      expect(writes).toHaveLength(1)
+      const before = store.getState()
+
+      store.getState().setSkillOption(KNOWN_SKILL, patch)
+
+      expect(writes).toHaveLength(1)
+      expect(store.getState()).toBe(before)
+    }
+  )
+
+  it.each([
+    ["install mode", { install: untouched.install }],
+    ["scope", { scope: untouched.scope }],
+  ] as const)(
+    "writes nothing for the %s an unselected skill starts with",
+    async (_label, patch) => {
+      const { store, writes } = await storeOnAWatchedSlot()
+      const before = store.getState()
+
+      store.getState().setSkillOption(KNOWN_SKILL, patch)
+
+      expect(writes).toStrictEqual([])
+      expect(store.getState()).toBe(before)
+    }
+  )
+
+  it.each([
+    ["install mode", { install: "eject" }],
+    ["scope", { scope: "project" }],
+  ] as const)(
+    "writes nothing for the %s a selected skill already has",
+    async (_label, patch) => {
+      const { store, writes } = await storeOnAWatchedSlot()
+      store.getState().toggleSkill(KNOWN_SKILL)
+      store.getState().setSkillOption(KNOWN_SKILL, patch)
+      expect(writes).toHaveLength(2)
+      const before = store.getState()
+
+      store.getState().setSkillOption(KNOWN_SKILL, patch)
+
+      expect(writes).toHaveLength(2)
+      expect(store.getState()).toBe(before)
+    }
+  )
+
+  it.each([
+    ["install mode", { install: "eject" }],
+    ["scope", { scope: "project" }],
+  ] as const)(
+    "writes nothing for the %s an unselected skill already remembers",
+    async (_label, patch) => {
+      const { store, writes } = await storeOnAWatchedSlot()
+      store.getState().setSkillOption(KNOWN_SKILL, patch)
+      expect(writes).toHaveLength(1)
+      const before = store.getState()
+
+      store.getState().setSkillOption(KNOWN_SKILL, patch)
+
+      expect(writes).toHaveLength(1)
+      expect(store.getState()).toBe(before)
+    }
+  )
+
+  it("writes when one field of the patch changes", async () => {
+    const { store, writes } = await storeOnAWatchedSlot()
+    store.getState().toggleSkill(KNOWN_SKILL)
+    expect(writes).toHaveLength(1)
+
+    store.getState().setSkillOption(KNOWN_SKILL, {
+      install: untouched.install,
+      scope: "project",
+    })
+
+    expect(writes).toHaveLength(2)
+  })
+})
+
+// A prune that drops nothing must not reach `set`, which writes.
+describe("pruneToCatalog", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  // The control: without it the rest pass against a slot nothing writes to.
+  it("writes the slot when the prune drops something", async () => {
+    const { store, writes } = await storeOnAWatchedSlot()
+    store.getState().importConfig(
+      persistedConfig({
+        skills: {
+          [UNKNOWN_SKILL]: skillEntry(),
+          [KNOWN_SKILL]: skillEntry(),
+        },
+      })
+    )
+    expect(writes).toHaveLength(1)
+
+    store.getState().pruneToCatalog()
+
+    expect(writes).toHaveLength(2)
+  })
+
+  it("leaves the state untouched when the catalogue can place everything", async () => {
+    const { store, writes } = await storeOnAWatchedSlot()
+    store.getState().toggleSkill(KNOWN_SKILL)
+    expect(writes).toHaveLength(1)
+    const before = store.getState()
 
     before.pruneToCatalog()
 
-    expect(useConfigStore.getState()).toBe(before)
+    expect(writes).toHaveLength(1)
+    expect(store.getState()).toBe(before)
+  })
+
+  it("leaves an empty configuration untouched", async () => {
+    const { store, writes } = await storeOnAWatchedSlot()
+    const before = store.getState()
+
+    before.pruneToCatalog()
+
+    expect(writes).toStrictEqual([])
+    expect(store.getState()).toBe(before)
   })
 })
 
@@ -949,6 +1122,498 @@ describe("stackSelection", () => {
   it("names nothing for a stack the catalogue does not carry", () => {
     expect(stackSelection("retired-stack")).toBeUndefined()
   })
+})
+
+const selectionOf = (state: PersistedConfig) => ({
+  stackId: state.stackId,
+  skills: state.skills,
+  remembered: state.remembered,
+  agents: state.agents,
+  description: state.description,
+})
+
+// Applying the selection already in effect must not reach `set`, which writes.
+// The grid can ask it to: under a save of a stack, the save's cell is the lit
+// one and the stack's can still be pressed.
+describe("applyStack", () => {
+  const OTHER_STACK_ID = STACKS[1]!.id
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  // The controls: without them the rest pass against a slot nothing writes to.
+  it("writes the slot when a different stack is applied", async () => {
+    const { store, writes } = await storeOnAWatchedSlot()
+    store.getState().applyStack(STACK_ID)
+    expect(writes).toHaveLength(1)
+
+    store.getState().applyStack(OTHER_STACK_ID)
+
+    expect(writes).toHaveLength(2)
+    expect(selectionOf(store.getState())).toStrictEqual(
+      stackSelection(OTHER_STACK_ID)
+    )
+  })
+
+  // Each leaves the stack's id in place, and the last two its skills and pins
+  // as well, so only the whole selection tells them from the stack's.
+  it.each([
+    [
+      "a skill picked on top of it",
+      (store: typeof useConfigStore) =>
+        store.getState().toggleSkill(OTHER_CATEGORY_SKILL),
+    ],
+    [
+      "a skill set aside",
+      (store: typeof useConfigStore) => {
+        store.getState().toggleSkill(OTHER_CATEGORY_SKILL)
+        store
+          .getState()
+          .setSkillOption(OTHER_CATEGORY_SKILL, { scope: "project" })
+        store.getState().toggleSkill(OTHER_CATEGORY_SKILL)
+      },
+    ],
+    [
+      "a description of its own",
+      (store: typeof useConfigStore) =>
+        store.getState().importConfig({
+          ...stackSelection(STACK_ID)!,
+          description: "The house web app, as installed.",
+        }),
+    ],
+  ])(
+    "writes the slot when the stack is applied over %s",
+    async (_label, departFromIt) => {
+      const { store, writes } = await storeOnAWatchedSlot()
+      store.getState().applyStack(STACK_ID)
+      departFromIt(store)
+      const written = writes.length
+
+      store.getState().applyStack(STACK_ID)
+
+      expect(writes).toHaveLength(written + 1)
+      expect(selectionOf(store.getState())).toStrictEqual(
+        stackSelection(STACK_ID)
+      )
+    }
+  )
+
+  it("writes nothing for the stack already in effect", async () => {
+    const { store, writes } = await storeOnAWatchedSlot()
+    store.getState().applyStack(STACK_ID)
+    expect(writes).toHaveLength(1)
+    const before = store.getState()
+
+    store.getState().applyStack(STACK_ID)
+
+    expect(writes).toHaveLength(1)
+    expect(store.getState()).toBe(before)
+  })
+
+  // The link's global skill stays beside the stack's, so what is in effect is
+  // the stack as the link keeps it, not the stack's own selection.
+  it("writes nothing for the stack already in effect inside a project's link", async () => {
+    const { store, writes } = await storeOnAWatchedSlot()
+    const { useHeldGlobalStore: heldGlobal } =
+      await import("./held-global-store")
+    const payload = projectMintedPayload({
+      [OTHER_CATEGORY_SKILL]: freshlyPickedSkill(OTHER_CATEGORY_SKILL),
+    })
+    const opened = recogniseStack(payload, adoptSeedPayload(payload))
+    store.getState().importConfig(opened)
+    heldGlobal.getState().hold(heldGlobalOf(payload, opened))
+    store.getState().applyStack(STACK_ID)
+    expect(writes).toHaveLength(2)
+    expect(Object.keys(store.getState().skills)).toContain(OTHER_CATEGORY_SKILL)
+    const before = store.getState()
+
+    store.getState().applyStack(STACK_ID)
+
+    expect(writes).toHaveLength(2)
+    expect(store.getState()).toBe(before)
+  })
+
+  it("writes the slot on Start from scratch over a selection", async () => {
+    const { store, writes } = await storeOnAWatchedSlot()
+    store.getState().toggleSkill(KNOWN_SKILL)
+    expect(writes).toHaveLength(1)
+
+    store.getState().applyStack(null)
+
+    expect(writes).toHaveLength(2)
+    expect(selectionOf(store.getState())).toStrictEqual({
+      ...persistedConfig(),
+      description: undefined,
+    })
+  })
+
+  it("writes nothing on Start from scratch with nothing selected", async () => {
+    const { store, writes } = await storeOnAWatchedSlot()
+    const before = store.getState()
+
+    store.getState().applyStack(null)
+
+    expect(writes).toStrictEqual([])
+    expect(store.getState()).toBe(before)
+  })
+})
+
+// The same rule for a save. Each application is handed a fresh copy, as each
+// read of a save adopts one, so only its value says it is already in effect.
+describe("applySavedStack", () => {
+  const saved = () =>
+    persistedConfig({
+      skills: { [KNOWN_SKILL]: skillCarriedBy([KNOWN_AGENT]) },
+    })
+  const otherSaved = () =>
+    persistedConfig({
+      skills: { [OTHER_CATEGORY_SKILL]: skillCarriedBy([KNOWN_AGENT]) },
+    })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  // The controls: without them the rest pass against a slot nothing writes to.
+  it("writes the slot when a different saved stack is applied", async () => {
+    const { store, writes } = await storeOnAWatchedSlot()
+    store.getState().applySavedStack(saved())
+    expect(writes).toHaveLength(1)
+
+    store.getState().applySavedStack(otherSaved())
+
+    expect(writes).toHaveLength(2)
+    expect(selectionOf(store.getState())).toStrictEqual({
+      ...otherSaved(),
+      description: undefined,
+    })
+  })
+
+  // The last two leave the save's skills and pins as they were, so only the
+  // whole selection tells them from the save.
+  it.each([
+    [
+      "a skill picked on top of it",
+      (store: typeof useConfigStore) =>
+        store.getState().toggleSkill(OTHER_CATEGORY_SKILL),
+    ],
+    [
+      "a skill set aside",
+      (store: typeof useConfigStore) => {
+        store.getState().toggleSkill(OTHER_CATEGORY_SKILL)
+        store
+          .getState()
+          .setSkillOption(OTHER_CATEGORY_SKILL, { scope: "project" })
+        store.getState().toggleSkill(OTHER_CATEGORY_SKILL)
+      },
+    ],
+    [
+      "a description of its own",
+      (store: typeof useConfigStore) =>
+        store.getState().importConfig({
+          ...saved(),
+          description: "The house web app, as installed.",
+        }),
+    ],
+  ])(
+    "writes the slot when the saved stack is applied over %s",
+    async (_label, departFromIt) => {
+      const { store, writes } = await storeOnAWatchedSlot()
+      store.getState().applySavedStack(saved())
+      departFromIt(store)
+      const written = writes.length
+
+      store.getState().applySavedStack(saved())
+
+      expect(writes).toHaveLength(written + 1)
+      expect(selectionOf(store.getState())).toStrictEqual({
+        ...saved(),
+        description: undefined,
+      })
+    }
+  )
+
+  it("writes nothing for the saved stack already in effect", async () => {
+    const { store, writes } = await storeOnAWatchedSlot()
+    store.getState().applySavedStack(saved())
+    expect(writes).toHaveLength(1)
+    const before = store.getState()
+
+    store.getState().applySavedStack(saved())
+
+    expect(writes).toHaveLength(1)
+    expect(store.getState()).toBe(before)
+  })
+
+  // As for a stack: what is in effect is the save as the link keeps it.
+  it("writes nothing for the saved stack already in effect inside a project's link", async () => {
+    const { store, writes } = await storeOnAWatchedSlot()
+    const { useHeldGlobalStore: heldGlobal } =
+      await import("./held-global-store")
+    const payload = projectMintedPayload({
+      [OTHER_CATEGORY_SKILL]: freshlyPickedSkill(OTHER_CATEGORY_SKILL),
+    })
+    const opened = recogniseStack(payload, adoptSeedPayload(payload))
+    store.getState().importConfig(opened)
+    heldGlobal.getState().hold(heldGlobalOf(payload, opened))
+    store.getState().applySavedStack(saved())
+    expect(writes).toHaveLength(2)
+    expect(Object.keys(store.getState().skills)).toStrictEqual([
+      KNOWN_SKILL,
+      OTHER_CATEGORY_SKILL,
+    ])
+    const before = store.getState()
+
+    store.getState().applySavedStack(saved())
+
+    expect(writes).toHaveLength(2)
+    expect(store.getState()).toBe(before)
+  })
+})
+
+type ConfigAction = Exclude<keyof ConfigState, keyof PersistedConfig>
+
+type SecondCall =
+  // Returns before `set`, which writes, once its input is in effect.
+  | "writes nothing"
+  // A toggle, cycle or flip: pressed again, it changes the selection again.
+  | "changes it again"
+  // Its next state is its argument alone, so the return is not owed: that is
+  // for an action computing its next state from the current one.
+  | "sets it from its argument"
+
+type SecondCallRow = {
+  secondCall: SecondCall
+  // What the store holds first, so the first call is a change.
+  arrange?: (store: typeof useConfigStore) => void
+  apply: (store: typeof useConfigStore) => void
+}
+
+// Every action the store hands out, by what a second call with the same input
+// does. Typed by the store's actions, and held against them below at runtime.
+const SECOND_CALLS: Record<ConfigAction, SecondCallRow> = {
+  applyStack: {
+    secondCall: "writes nothing",
+    apply: (store) => store.getState().applyStack(STACK_ID),
+  },
+  applySavedStack: {
+    secondCall: "writes nothing",
+    apply: (store) =>
+      store.getState().applySavedStack(
+        persistedConfig({
+          skills: { [KNOWN_SKILL]: skillCarriedBy([KNOWN_AGENT]) },
+        })
+      ),
+  },
+  setSkillOption: {
+    secondCall: "writes nothing",
+    apply: (store) =>
+      store.getState().setSkillOption(KNOWN_SKILL, { scope: "project" }),
+  },
+  setAgentOption: {
+    secondCall: "writes nothing",
+    apply: (store) =>
+      store.getState().setAgentOption(KNOWN_AGENT, { effort: "high" }),
+  },
+  moveRememberedPluginsToGlobal: {
+    secondCall: "writes nothing",
+    arrange: (store) =>
+      store.getState().applySavedStack(
+        persistedConfig({
+          remembered: {
+            [OTHER_CATEGORY_SKILL]: skillEntry({
+              scope: "project",
+              assignments: { [KNOWN_AGENT]: liveAssignment() },
+            }),
+          },
+        })
+      ),
+    apply: (store) => store.getState().moveRememberedPluginsToGlobal(),
+  },
+  pruneToCatalog: {
+    secondCall: "writes nothing",
+    // The slot never holds an unknown skill, so the stack is what it loses.
+    arrange: (store) =>
+      store.getState().importConfig(
+        persistedConfig({
+          stackId: PRIVATE_CATALOG_STACK,
+          skills: {
+            [UNKNOWN_SKILL]: skillEntry(),
+            [KNOWN_SKILL]: skillEntry(),
+          },
+        })
+      ),
+    apply: (store) => store.getState().pruneToCatalog(),
+  },
+  toggleSkill: {
+    secondCall: "changes it again",
+    apply: (store) => store.getState().toggleSkill(KNOWN_SKILL),
+  },
+  toggleSkills: {
+    secondCall: "changes it again",
+    apply: (store) =>
+      store.getState().toggleSkills([KNOWN_SKILL, OTHER_CATEGORY_SKILL]),
+  },
+  cycleAssignment: {
+    secondCall: "changes it again",
+    arrange: (store) => store.getState().toggleSkill(KNOWN_SKILL),
+    apply: (store) =>
+      store.getState().cycleAssignment(KNOWN_SKILL, OTHER_AGENT),
+  },
+  toggleAssignmentEnabled: {
+    secondCall: "changes it again",
+    arrange: (store) => store.getState().toggleSkill(KNOWN_SKILL),
+    apply: (store) =>
+      store.getState().toggleAssignmentEnabled(KNOWN_SKILL, KNOWN_AGENT),
+  },
+  flipAssignmentLoad: {
+    secondCall: "changes it again",
+    arrange: (store) => store.getState().toggleSkill(KNOWN_SKILL),
+    apply: (store) =>
+      store.getState().flipAssignmentLoad(KNOWN_SKILL, KNOWN_AGENT),
+  },
+  toggleAgentPin: {
+    secondCall: "changes it again",
+    apply: (store) => store.getState().toggleAgentPin(KNOWN_AGENT),
+  },
+  importConfig: {
+    secondCall: "sets it from its argument",
+    apply: (store) =>
+      store
+        .getState()
+        .importConfig(
+          persistedConfig({ skills: { [KNOWN_SKILL]: skillEntry() } })
+        ),
+  },
+  reset: {
+    secondCall: "sets it from its argument",
+    apply: (store) => store.getState().reset(),
+  },
+}
+
+const actionsOf = (state: object) =>
+  Object.entries(state)
+    .filter(([, value]) => typeof value === "function")
+    .map(([action]) => action)
+    .sort()
+
+const whose = (secondCall: SecondCall) =>
+  Object.entries(SECOND_CALLS).filter(
+    ([, row]) => row.secondCall === secondCall
+  )
+
+describe("an action given the same input twice", () => {
+  // The watched store is a fresh import, with its own copy of `track`.
+  const storeOnAWatchedSlotAndSink = async () => {
+    const watched = await storeOnAWatchedSlot()
+    const { setAnalyticsSink: listen } = await import("@/lib/analytics/track")
+    const events: unknown[] = []
+    listen((event) => events.push(event))
+
+    return { ...watched, events }
+  }
+
+  // A stack applied inside a project's link, whose global skill the link keeps.
+  const holdingAStackInsideALink = async (store: typeof useConfigStore) => {
+    const { useHeldGlobalStore: heldGlobal } =
+      await import("./held-global-store")
+    const payload = projectMintedPayload({
+      [OTHER_CATEGORY_SKILL]: freshlyPickedSkill(OTHER_CATEGORY_SKILL),
+    })
+    const opened = recogniseStack(payload, adoptSeedPayload(payload))
+    store.getState().importConfig(opened)
+    heldGlobal.getState().hold(heldGlobalOf(payload, opened))
+    store.getState().applyStack(STACK_ID)
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it("has a row for every action the store hands out, and for no other", () => {
+    expect(actionsOf(useConfigStore.getState())).toStrictEqual(
+      Object.keys(SECOND_CALLS).sort()
+    )
+  })
+
+  // The control: the census above sees an action that has no row.
+  it("notices an action that has no row", () => {
+    const grown = {
+      ...useConfigStore.getState(),
+      renameSelection: () => undefined,
+    }
+
+    expect(actionsOf(grown)).toStrictEqual(
+      [...Object.keys(SECOND_CALLS), "renameSelection"].sort()
+    )
+  })
+
+  // The control: "reports nothing" needs a sink the watched store calls.
+  it("hears what the watched store reports", async () => {
+    const { store, events } = await storeOnAWatchedSlotAndSink()
+
+    store.getState().applyStack(STACK_ID)
+
+    expect(events).toStrictEqual([{ name: "stack_applied", stackId: STACK_ID }])
+  })
+
+  it.each(whose("writes nothing"))(
+    "%s writes nothing and reports nothing the second time",
+    async (_action, { arrange, apply }) => {
+      const { store, writes, events } = await storeOnAWatchedSlotAndSink()
+      arrange?.(store)
+      const arranged = writes.length
+      // The control: the first call is a change, and the slot takes it.
+      apply(store)
+      expect(writes).toHaveLength(arranged + 1)
+      const written = [...writes]
+      const reported = [...events]
+      const before = store.getState()
+
+      apply(store)
+
+      expect(writes).toStrictEqual(written)
+      expect(store.getState()).toBe(before)
+      expect(events).toStrictEqual(reported)
+    }
+  )
+
+  it.each(whose("changes it again"))(
+    "%s changes the selection again the second time",
+    async (_action, { arrange, apply }) => {
+      const { store, writes } = await storeOnAWatchedSlot()
+      arrange?.(store)
+      apply(store)
+      const written = writes.length
+      const first = selectionOf(store.getState())
+
+      apply(store)
+
+      expect(selectionOf(store.getState())).not.toStrictEqual(first)
+      expect(writes.length).toBeGreaterThan(written)
+    }
+  )
+
+  it.each(whose("sets it from its argument"))(
+    "%s leaves the same selection whatever it is applied over",
+    async (_action, { apply }) => {
+      const overNothing = await storeOnAWatchedSlot()
+      apply(overNothing.store)
+      const fromNothing = selectionOf(overNothing.store.getState())
+
+      const { store } = await storeOnAWatchedSlot()
+      await holdingAStackInsideALink(store)
+      expect(store.getState().stackId).toBe(STACK_ID)
+      expect(Object.keys(store.getState().skills)).toContain(
+        OTHER_CATEGORY_SKILL
+      )
+
+      apply(store)
+
+      expect(selectionOf(store.getState())).toStrictEqual(fromNothing)
+    }
+  )
 })
 
 // The configuration's own words, which `init --from` writes into config.ts.
@@ -1482,6 +2147,76 @@ describe("what the store tells analytics", () => {
         value: "eject",
       },
     ])
+  })
+
+  it("reports the option a press changed on a selected skill", () => {
+    useConfigStore.getState().toggleSkill(KNOWN_SKILL)
+    const before = [...events]
+
+    useConfigStore.getState().setSkillOption(KNOWN_SKILL, { scope: "project" })
+
+    expect(events).toStrictEqual([
+      ...before,
+      {
+        name: "skill_configured",
+        skillId: KNOWN_SKILL,
+        field: "scope",
+        value: "project",
+      },
+    ])
+  })
+
+  it("reports nothing for the option a selected skill already has", () => {
+    useConfigStore.getState().toggleSkill(KNOWN_SKILL)
+    const before = [...events]
+
+    useConfigStore
+      .getState()
+      .setSkillOption(KNOWN_SKILL, { scope: freshEntry(KNOWN_SKILL).scope })
+
+    expect(events).toStrictEqual(before)
+  })
+
+  it("reports nothing for the option an unselected skill starts with", () => {
+    useConfigStore
+      .getState()
+      .setSkillOption(KNOWN_SKILL, { install: freshEntry(KNOWN_SKILL).install })
+
+    expect(events).toStrictEqual([])
+  })
+
+  // As for an option: a press that changes nothing is not reported.
+  it("reports the stack a press applies", () => {
+    useConfigStore.getState().applyStack(STACK_ID)
+
+    expect(events).toStrictEqual([{ name: "stack_applied", stackId: STACK_ID }])
+  })
+
+  it("reports Start from scratch over a selection", () => {
+    useConfigStore.getState().toggleSkill(KNOWN_SKILL)
+    const before = [...events]
+
+    useConfigStore.getState().applyStack(null)
+
+    expect(events).toStrictEqual([
+      ...before,
+      { name: "stack_applied", stackId: null },
+    ])
+  })
+
+  it("reports nothing for the stack already in effect", () => {
+    useConfigStore.getState().applyStack(STACK_ID)
+    const before = [...events]
+
+    useConfigStore.getState().applyStack(STACK_ID)
+
+    expect(events).toStrictEqual(before)
+  })
+
+  it("reports nothing for Start from scratch with nothing selected", () => {
+    useConfigStore.getState().applyStack(null)
+
+    expect(events).toStrictEqual([])
   })
 
   it("reports each choice made for a sub-agent as its own event", () => {

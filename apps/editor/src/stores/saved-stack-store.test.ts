@@ -172,6 +172,19 @@ describe("save", () => {
     useSavedStackStore.setState({ saves: [] })
   })
 
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const storeHoldingTwoSaves = async () => {
+    const held = new Map<string, string>()
+    const store = await storeOnABrowserHolding(held)
+    store.getState().save("A", valid())
+    store.getState().save("B", valid())
+
+    return { store, writes: vi.spyOn(held, "set") }
+  }
+
   it("keeps every name, newest first", () => {
     useSavedStackStore.getState().save("A", valid())
     useSavedStackStore.getState().save("B", valid())
@@ -199,18 +212,37 @@ describe("save", () => {
     expect(a?.id).not.toBe(b?.id)
   })
 
+  // The control: without it the next spec passes against a slot nothing
+  // writes to.
+  it("writes the slot for a name not yet saved", async () => {
+    const { store, writes } = await storeHoldingTwoSaves()
+
+    store.getState().save("C", valid())
+
+    expect(writes).toHaveBeenCalledOnce()
+  })
+
+  // A refusal must not reach `set`, which writes.
   it.each([
     ["in another case", "a"],
     ["padded", " B "],
-  ])("refuses a name already saved %s, and writes nothing", (_label, name) => {
-    useSavedStackStore.getState().save("A", valid())
-    useSavedStackStore.getState().save("B", valid())
+  ])(
+    "refuses a name already saved %s, and writes nothing",
+    async (_label, name) => {
+      const { store, writes } = await storeHoldingTwoSaves()
+      const before = store.getState()
 
-    const refused = useSavedStackStore.getState().save(name, valid())
+      const refused = store.getState().save(name, valid())
 
-    expect(refused.ok).toBe(false)
-    expect(names()).toStrictEqual(["B", "A"])
-  })
+      expect(refused.ok).toBe(false)
+      expect(store.getState().saves.map((s) => s.name)).toStrictEqual([
+        "B",
+        "A",
+      ])
+      expect(writes).not.toHaveBeenCalled()
+      expect(store.getState()).toBe(before)
+    }
+  )
 })
 
 describe("the saves before anything has been read", () => {

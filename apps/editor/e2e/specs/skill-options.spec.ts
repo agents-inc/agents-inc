@@ -207,6 +207,86 @@ test.describe("skill options panel", () => {
   })
 })
 
+// The panel leaves the page as it closes, so a keyboard inside it goes back to
+// the ellipsis that opened it rather than to `body`; one anywhere else stays.
+test.describe("where the keyboard goes when the panel closes", () => {
+  test("goes back to the ellipsis when Escape closes the panel from inside it", async ({
+    configure,
+    page,
+  }) => {
+    const skill = configure.skillIn(web, CATEGORY, SKILL)
+
+    await skill.optionsButton.focus()
+    await page.keyboard.press("Enter")
+    await skill.options.tabIn()
+    await expect(skill.options.focused).toHaveCount(1)
+
+    await page.keyboard.press("Escape")
+
+    await expect(skill.options.root).toBeHidden()
+    await expect(skill.optionsButton).toBeFocused()
+  })
+
+  test("goes back to the ellipsis when Escape follows a press inside the panel", async ({
+    configure,
+    page,
+  }) => {
+    const skill = configure.skillIn(web, CATEGORY, SKILL)
+
+    await skill.openOptions()
+    await skill.options.choose("project")
+    await expect(skill.options.segment("project")).toBeFocused()
+
+    await page.keyboard.press("Escape")
+
+    await expect(skill.options.root).toBeHidden()
+    await expect(skill.optionsButton).toBeFocused()
+  })
+
+  test("stays on the ellipsis when Escape closes the panel it just opened", async ({
+    configure,
+    page,
+  }) => {
+    const skill = configure.skillIn(web, CATEGORY, SKILL)
+
+    await skill.optionsButton.focus()
+    await page.keyboard.press("Enter")
+    await expect(skill.options.root).toBeVisible()
+
+    await page.keyboard.press("Escape")
+
+    await expect(skill.options.root).toBeHidden()
+    await expect(skill.optionsButton).toBeFocused()
+  })
+
+  test("stays where it is when Escape closes the panel from outside it", async ({
+    configure,
+    page,
+  }) => {
+    const skill = configure.skillIn(web, CATEGORY, SKILL)
+
+    await skill.openOptions()
+    await configure.composer.field.focus()
+
+    await page.keyboard.press("Escape")
+
+    await expect(skill.options.root).toBeHidden()
+    await expect(configure.composer.field).toBeFocused()
+  })
+
+  test("goes where a press outside the panel put it", async ({ configure }) => {
+    const skill = configure.skillIn(web, CATEGORY, SKILL)
+
+    await skill.openOptions()
+    await skill.options.choose("project")
+
+    await configure.composer.field.click()
+
+    await expect(skill.options.root).toBeHidden()
+    await expect(configure.composer.field).toBeFocused()
+  })
+})
+
 test.describe("source code link", () => {
   test("a catalogue skill links into the marketplace repository", async ({
     configure,

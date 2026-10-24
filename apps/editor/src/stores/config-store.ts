@@ -474,15 +474,31 @@ const withoutRestingValues = (
   ...(isNonResting(entry.scope, resting.scope) && { scope: entry.scope }),
 })
 
-const alreadyInEffect = (
-  options: AgentOptions,
-  patch: Partial<AgentOptions>
-) => {
-  const current: Record<string, unknown> = options
-  return Object.entries(patch).every(
-    ([field, value]) => current[field] === value
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null
+
+// By value: a record built in another key order holds the same.
+const sameValue = (a: unknown, b: unknown): boolean =>
+  Object.is(a, b) || (isRecord(a) && isRecord(b) && sameRecords(a, b))
+
+const sameRecords = (a: Record<string, unknown>, b: Record<string, unknown>) =>
+  Object.keys(a).length === Object.keys(b).length &&
+  Object.entries(a).every(
+    ([key, value]) => Object.hasOwn(b, key) && sameValue(value, b[key])
   )
-}
+
+// Whether `set(patch)` would change nothing.
+const alreadyInEffect = <T extends Record<string, unknown>>(
+  current: T,
+  patch: Partial<T>
+) =>
+  Object.entries(patch).every(([field, value]) =>
+    sameValue(current[field], value)
+  )
+
+// What the cell and its panel draw, so a press is judged against what was seen.
+const skillOptionsInEffect = (state: PersistedConfig, skillId: string) =>
+  state.skills[skillId] ?? state.remembered[skillId] ?? freshEntry(skillId)
 
 const configureAgent = (
   agents: AgentMap,
@@ -581,10 +597,15 @@ export const useConfigStore = create<ConfigState>()(
         // Whatever was pulsing belonged to the selection being replaced.
         useUiStore.getState().clearFlash()
 
-        track({ name: "stack_applied", stackId })
-
         const applied = stackId === null ? EMPTY : stackSelection(stackId)
-        if (applied) set(keepingHeld(activeHeldGlobal(), get(), applied))
+        if (!applied) return
+
+        const next = keepingHeld(activeHeldGlobal(), get(), applied)
+        // `set` writes, and a press that changes nothing is not reported.
+        if (alreadyInEffect(get(), next)) return
+
+        track({ name: "stack_applied", stackId })
+        set(next)
       },
 
       toggleSkill: (skillId) => get().toggleSkills([skillId]),
@@ -595,6 +616,10 @@ export const useConfigStore = create<ConfigState>()(
         }),
 
       setSkillOption: (skillId, patch) => {
+        // As `setAgentOption`. Judged as pressed, not as offered, so plugin
+        // pressed on an eject-only skill still reports that it stays eject.
+        if (alreadyInEffect(skillOptionsInEffect(get(), skillId), patch)) return
+
         const held = activeHeldGlobal()
         if (skillOptionRefusal(held, get(), skillId, patch)) return
 
@@ -721,7 +746,14 @@ export const useConfigStore = create<ConfigState>()(
       applySavedStack: (config) => {
         // Whatever was pulsing belonged to the selection being replaced.
         useUiStore.getState().clearFlash()
-        set(keepingHeld(activeHeldGlobal(), get(), { ...EMPTY, ...config }))
+
+        const next = keepingHeld(activeHeldGlobal(), get(), {
+          ...EMPTY,
+          ...config,
+        })
+        if (alreadyInEffect(get(), next)) return
+
+        set(next)
       },
 
       pruneToCatalog: () => {

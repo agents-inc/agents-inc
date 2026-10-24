@@ -1,12 +1,26 @@
 import type { Locator, Page } from "@playwright/test"
 
+// The panel follows its cell's own pairs in the tab order, a few stops on.
+const TAB_STOPS_TO_THE_PANEL = 8
+
 // The single open `•••` panel. Exclusive rows are radios (`aria-checked`);
 // sub-agent chips are toggles (`aria-pressed`).
 export class OptionsPanel {
   readonly root: Locator
+  /** Empty unless the keyboard is on one of the panel's own controls. */
+  readonly focused: Locator
 
-  constructor(page: Page) {
+  constructor(private readonly page: Page) {
     this.root = page.getByRole("group", { name: "Skill options" })
+    this.focused = this.root.locator(":focus")
+  }
+
+  // Stops on arrival, so a spec asserts `focused` to learn whether it got in.
+  async tabIn() {
+    for (let stop = 0; stop < TAB_STOPS_TO_THE_PANEL; stop++) {
+      await this.page.keyboard.press("Tab")
+      if ((await this.focused.count()) > 0) return
+    }
   }
 
   // One option in an exclusive row — plugin/eject, project/global.

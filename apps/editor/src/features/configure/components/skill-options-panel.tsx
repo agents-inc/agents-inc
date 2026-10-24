@@ -11,7 +11,7 @@ import {
   SegmentedItem,
 } from "@workspace/ui/components/segmented"
 import { cn } from "@workspace/ui/lib/utils"
-import { useRef, useState } from "react"
+import { useState, type RefObject } from "react"
 
 import {
   ROLE_COLUMNS,
@@ -114,11 +114,13 @@ function LabelledAgentCell({
 
 // The `•••` popover: right of its cell, flipped left in the last column.
 export function SkillOptionsPanel({
+  ref,
   skillId,
   sourceUrl,
   entry,
   flip,
 }: {
+  ref: RefObject<HTMLDivElement | null>
   skillId: string
   sourceUrl: string
   entry: SkillEntry
@@ -133,8 +135,7 @@ export function SkillOptionsPanel({
   )
   const [metaOpen, setMetaOpen] = useState(false)
 
-  const panelRef = useRef<HTMLDivElement>(null)
-  usePanelRoom(panelRef)
+  usePanelRoom(ref)
 
   const ejectOnly = isEjectOnly(skillId)
 
@@ -173,7 +174,7 @@ export function SkillOptionsPanel({
 
   return (
     <div
-      ref={panelRef}
+      ref={ref}
       role="group"
       aria-label="Skill options"
       // A guard: an ancestor handling it would deselect the skill.

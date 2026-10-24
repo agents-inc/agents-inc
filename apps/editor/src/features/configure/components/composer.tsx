@@ -145,10 +145,13 @@ export function Composer() {
   }
 
   // Through the same toggle a click runs, so every rule applies here too.
+  // Refocuses as `discard` does, on the click: from a keydown, the Enter that
+  // applies would land in the draft.
   const apply = () => {
     toggleSkills(appliedIds)
     setAppliedIds([])
     setProposal(null)
+    fieldRef.current?.focus()
   }
 
   // Keeps the sentence; refocuses the field so focus doesn't fall to `<body>`.
