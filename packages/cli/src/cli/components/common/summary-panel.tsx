@@ -9,19 +9,19 @@ import {
   formatSourceDisplayName,
 } from "../../consts.js";
 import type { SkillConfig } from "../../types/config.js";
-import { usePanelScroll } from "../hooks/use-panel-scroll.js";
 import { dimensionsOf } from "../hooks/use-terminal-dimensions.js";
-import { ScrollAffordance } from "./scroll-affordance.js";
 import { SkillAgentSummary, type SkillAgentSummaryProps } from "./skill-agent-summary.js";
 
 export type SummaryPanelProps = SkillAgentSummaryProps & {
   /** `undefined` when the configuration was built from no stack. */
   stackName: string | undefined;
+  /** Where set, the skills the header names in place of those the panel leaves in place. */
+  headerSkillConfigs?: SkillConfig[];
 };
 
 /**
- * The skills the panel leaves in place; leaving none, as an uninstall does, those it removes. The
- * default marketplace is only for a panel with no skill either way.
+ * The skills the panel leaves in place; leaving none, those it removes. The default marketplace is
+ * only for a panel with no skill either way.
  */
 function skillsTheHeaderNames({
   skillConfigs,
@@ -53,11 +53,9 @@ type PanelHeaderProps = {
   stackName: string | undefined;
 };
 
-/** `flexShrink={0}`: squeezed by Yoga on a short terminal, its two rows overprint. */
 const PanelHeader: React.FC<PanelHeaderProps> = ({ sourceNames, stackName }) => (
   <Box
     flexDirection="column"
-    flexShrink={0}
     borderStyle="single"
     borderBottom={true}
     borderTop={false}
@@ -83,34 +81,19 @@ const PanelHeader: React.FC<PanelHeaderProps> = ({ sourceNames, stackName }) => 
   </Box>
 );
 
-/** Horizontal padding only: unshrinkable vertical padding starves the viewport on a short terminal. */
-export const SummaryPanel: React.FC<SummaryPanelProps> = ({ stackName, ...summary }) => {
-  const { viewportRef, contentRef, contentMarginTop, hiddenAbove, hiddenBelow } = usePanelScroll();
-
-  const sourceNames = formatSkillMarketplaces(skillsTheHeaderNames(summary));
-
-  return (
-    <Box
-      flexDirection="column"
-      flexGrow={1}
-      flexBasis={0}
-      borderStyle="single"
-      borderColor={CLI_COLORS.NEUTRAL}
-      paddingX={2}
-    >
-      <Box ref={viewportRef} flexDirection="column" flexGrow={1} flexBasis={0} overflow="hidden">
-        <Box ref={contentRef} flexDirection="column" flexShrink={0} marginTop={contentMarginTop}>
-          <PanelHeader sourceNames={sourceNames} stackName={stackName} />
-
-          <Box width="100%">
-            <SkillAgentSummary {...summary} />
-          </Box>
-        </Box>
-      </Box>
-      <ScrollAffordance hiddenAbove={hiddenAbove} hiddenBelow={hiddenBelow} />
-    </Box>
-  );
-};
+const SummaryPanel: React.FC<SummaryPanelProps> = ({
+  stackName,
+  headerSkillConfigs,
+  ...summary
+}) => (
+  <Box flexDirection="column" borderStyle="single" borderColor={CLI_COLORS.NEUTRAL} paddingX={2}>
+    <PanelHeader
+      sourceNames={formatSkillMarketplaces(headerSkillConfigs ?? skillsTheHeaderNames(summary))}
+      stackName={stackName}
+    />
+    <SkillAgentSummary {...summary} />
+  </Box>
+);
 
 /**
  * The whole panel as text, drawn once: printed, it scrolls with the terminal like any other line,

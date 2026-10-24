@@ -8,7 +8,38 @@ import {
 } from "./check-findings-frontmatter.js";
 
 /** Named, not counted. References outside the repository or git-ignored are never judged, so never belong here. */
-const UNRESOLVED_REFERENCES_ON_DISK: UnresolvedReference[] = [];
+const UNRESOLVED_REFERENCES_ON_DISK: UnresolvedReference[] = [
+  {
+    file: "2026-10-22-the-summary-panel-is-drawn-only-by-render-to-string-so-its-scroll-hooks-never-act.md",
+    key: "affected_files",
+    value: "packages/cli/src/cli/components/hooks/use-panel-scroll.ts",
+  },
+  {
+    file: "2026-10-22-the-summary-panel-is-drawn-only-by-render-to-string-so-its-scroll-hooks-never-act.md",
+    key: "affected_files",
+    value: "packages/cli/src/cli/components/hooks/use-measured-height.ts",
+  },
+  {
+    file: "2026-10-22-the-summary-panel-is-drawn-only-by-render-to-string-so-its-scroll-hooks-never-act.md",
+    key: "affected_files",
+    value: "packages/cli/src/cli/components/common/scroll-affordance.tsx",
+  },
+  {
+    file: "2026-10-23-a-frame-sampled-once-after-a-fixed-delay-catches-the-scroll-panel-before-its-heights-settle-in-a-busy-worker.md",
+    key: "affected_files",
+    value: "packages/cli/src/cli/components/hooks/use-panel-scroll.test.tsx",
+  },
+  {
+    file: "2026-10-23-a-frame-sampled-once-after-a-fixed-delay-catches-the-scroll-panel-before-its-heights-settle-in-a-busy-worker.md",
+    key: "affected_files",
+    value: "packages/cli/src/cli/components/hooks/use-measured-height.test.tsx",
+  },
+  {
+    file: "2026-10-23-a-frame-sampled-once-after-a-fixed-delay-catches-the-scroll-panel-before-its-heights-settle-in-a-busy-worker.md",
+    key: "affected_files",
+    value: "packages/cli/src/cli/components/hooks/use-panel-scroll.ts",
+  },
+];
 
 /** Re-derive from the diff this assertion prints, not from a count. */
 const UNDECLARED_SYMBOLS_ON_DISK: UndeclaredSymbol[] = [];

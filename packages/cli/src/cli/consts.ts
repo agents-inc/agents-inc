@@ -173,10 +173,6 @@ export const MAX_CONFIG_FILE_SIZE = ONE_MB;
 export const MAX_JSON_NESTING_DEPTH = 10;
 export const MAX_MARKETPLACE_PLUGINS = 10_000;
 
-export const SCROLL_VIEWPORT = {
-  SCROLL_INDICATOR_HEIGHT: 1,
-} as const;
-
 export const MIN_TERMINAL_SIZE = {
   COLS: 80,
   ROWS: 20,
