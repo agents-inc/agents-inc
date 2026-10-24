@@ -86,6 +86,7 @@ describe.skipIf(!claudeAvailable)("install mode full cycle -- eject to plugin an
         id: E2E_SKILL.hono.id,
         scope: "project",
         origin: pluginFixture.marketplaceName,
+        displayName: E2E_SKILL.hono.display,
       });
 
       await applyFromSeed(store, "HonoEject1", e2eStackPayload(DUAL_SCOPE), site);

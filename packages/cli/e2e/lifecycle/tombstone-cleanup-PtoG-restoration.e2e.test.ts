@@ -91,6 +91,7 @@ describe("edit — tombstone cleanup after P→G restoration", () => {
         id: E2E_SKILL.react.id,
         scope: "global",
         origin: "eject",
+        displayName: E2E_SKILL.react.display,
       });
       expect(entriesPhase3.filter((entry) => entry.excluded === true)).toStrictEqual([]);
       expect(entriesPhase3.filter((entry) => entry.scope === "project")).toStrictEqual([]);
@@ -126,6 +127,7 @@ describe("edit — tombstone cleanup after P→G restoration", () => {
         id: E2E_SKILL.react.id,
         scope: "global",
         origin: "eject",
+        displayName: E2E_SKILL.react.display,
       });
       expect(reactEntries.filter((entry) => entry.excluded === true)).toStrictEqual([]);
       expect(reactEntries.filter((entry) => entry.scope === "project")).toStrictEqual([]);

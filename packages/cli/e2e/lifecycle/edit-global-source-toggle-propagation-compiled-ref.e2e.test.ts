@@ -189,7 +189,13 @@ describe("global-scope source change propagates to registered projects", () => {
     expect(
       projectConfig.skills.filter((s) => s.id === E2E_SKILL.react.id),
       "the registered project's inlined react entry must record the eject source",
-    ).toStrictEqual(buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: "eject" }));
+    ).toStrictEqual(
+      buildSkillConfigs([E2E_SKILL.react.id], {
+        scope: "global",
+        origin: "eject",
+        displayName: E2E_SKILL.react.display,
+      }),
+    );
   });
 
   it("recompiles the current context's global agent to the bare skill reference", async () => {

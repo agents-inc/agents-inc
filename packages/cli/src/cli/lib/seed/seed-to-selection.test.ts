@@ -13,6 +13,7 @@ import {
   REACT_REQUIRES_ZUSTAND_WEB_API_DOMAINS_MATRIX,
 } from "../__tests__/mock-data/mock-matrices.js";
 import { SKILLS } from "../__tests__/test-fixtures.js";
+import { matchedAsWritten } from "../__tests__/helpers/matched-as-written.js";
 
 /** An id no catalog in these specs knows, so the decode has to skip it. */
 const UNKNOWN_SKILL_ID = "web-framework-does-not-exist";
@@ -136,7 +137,12 @@ describe("seedToInstallSelection", () => {
     ]);
     // A sub-agent's scope is its own: the skill it carries stays where its own entry put it, and
     // a global skill reaches every sub-agent whatever scope each one rests at.
-    expect(result.skills).toStrictEqual(buildSkillConfigs([SKILLS.react.id], { scope: "global" }));
+    expect(result.skills).toStrictEqual(
+      buildSkillConfigs([SKILLS.react.id], {
+        scope: "global",
+        displayName: SKILLS.react.displayName,
+      }),
+    );
   });
 
   it("refuses a project-scoped skill assigned to a sub-agent that rests global, naming both", () => {
@@ -159,7 +165,7 @@ describe("seedToInstallSelection", () => {
 
     expect(() => seedToInstallSelection(payload, REACT_HONO_WEB_API_DOMAINS_MATRIX)).toThrow(
       new RegExp(
-        `${SKILLS.react.id}[\\s\\S]*web-developer[\\s\\S]*${SKILLS.hono.id}[\\s\\S]*api-developer`,
+        `${matchedAsWritten(SKILLS.react.id)}[\\s\\S]*web-developer[\\s\\S]*${matchedAsWritten(SKILLS.hono.id)}[\\s\\S]*api-developer`,
       ),
     );
   });

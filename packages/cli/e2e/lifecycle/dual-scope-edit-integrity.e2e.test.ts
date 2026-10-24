@@ -192,17 +192,48 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- config preservat
       const { skills: globalSkillsAfterA, ...globalRestAfterA } = await loadConfigOrFail(fakeHome);
 
       expect(sortedById(globalSkillsAfterA)).toStrictEqual([
-        { id: E2E_SKILL.hono.id, scope: "global", origin: MARKETPLACE_SOURCE },
+        {
+          id: E2E_SKILL.hono.id,
+          scope: "global",
+          origin: MARKETPLACE_SOURCE,
+          displayName: E2E_SKILL.hono.display,
+        },
         {
           id: E2E_SKILL["research-methodology"].id,
           scope: "global",
           origin: MARKETPLACE_SOURCE,
+          displayName: E2E_SKILL["research-methodology"].display,
         },
-        { id: E2E_SKILL["cli-reviewing"].id, scope: "global", origin: MARKETPLACE_SOURCE },
-        { id: E2E_SKILL.reviewing.id, scope: "global", origin: MARKETPLACE_SOURCE },
-        { id: E2E_SKILL.react.id, scope: "global", origin: MARKETPLACE_SOURCE },
-        { id: E2E_SKILL.zustand.id, scope: "global", origin: MARKETPLACE_SOURCE },
-        { id: E2E_SKILL.vitest.id, scope: "global", origin: MARKETPLACE_SOURCE },
+        {
+          id: E2E_SKILL["cli-reviewing"].id,
+          scope: "global",
+          origin: MARKETPLACE_SOURCE,
+          displayName: E2E_SKILL["cli-reviewing"].display,
+        },
+        {
+          id: E2E_SKILL.reviewing.id,
+          scope: "global",
+          origin: MARKETPLACE_SOURCE,
+          displayName: E2E_SKILL.reviewing.display,
+        },
+        {
+          id: E2E_SKILL.react.id,
+          scope: "global",
+          origin: MARKETPLACE_SOURCE,
+          displayName: E2E_SKILL.react.display,
+        },
+        {
+          id: E2E_SKILL.zustand.id,
+          scope: "global",
+          origin: MARKETPLACE_SOURCE,
+          displayName: E2E_SKILL.zustand.display,
+        },
+        {
+          id: E2E_SKILL.vitest.id,
+          scope: "global",
+          origin: MARKETPLACE_SOURCE,
+          displayName: E2E_SKILL.vitest.display,
+        },
       ]);
 
       const phaseB = await runInitFrom(

@@ -98,13 +98,30 @@ describe("a project-scoped skill in a category the global install lacks widens t
       expect(
         await readAllSkillEntries(fakeHome),
         "the global config must hold react alone — the divergence is that it never sees hono",
-      ).toStrictEqual([{ id: E2E_SKILL.react.id, scope: "global", origin: EJECT_SOURCE_NAME }]);
+      ).toStrictEqual([
+        {
+          id: E2E_SKILL.react.id,
+          scope: "global",
+          origin: EJECT_SOURCE_NAME,
+          displayName: E2E_SKILL.react.display,
+        },
+      ]);
       expect(
         await readAllSkillEntries(projectDir),
         "the project config must inline the global react row and own hono at project scope",
       ).toStrictEqual([
-        { id: E2E_SKILL.react.id, scope: "global", origin: EJECT_SOURCE_NAME },
-        { id: E2E_SKILL.hono.id, scope: "project", origin: EJECT_SOURCE_NAME },
+        {
+          id: E2E_SKILL.react.id,
+          scope: "global",
+          origin: EJECT_SOURCE_NAME,
+          displayName: E2E_SKILL.react.display,
+        },
+        {
+          id: E2E_SKILL.hono.id,
+          scope: "project",
+          origin: EJECT_SOURCE_NAME,
+          displayName: E2E_SKILL.hono.display,
+        },
       ]);
 
       expect(

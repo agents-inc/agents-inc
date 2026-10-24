@@ -95,7 +95,12 @@ describe("compile at the home directory fans a hand-edited global config out to 
       expect(
         await readAllSkillEntries(projectDir),
         "the project config must inline the global skill it is about to be orphaned from",
-      ).toContainEqual({ id: REMOVED_SKILL.id, scope: "global", origin: EJECT_SOURCE_NAME });
+      ).toContainEqual({
+        id: REMOVED_SKILL.id,
+        scope: "global",
+        origin: EJECT_SOURCE_NAME,
+        displayName: REMOVED_SKILL.display,
+      });
       await expect({ dir: projectDir }).toHaveCompiledAgentContent(PROJECT_AGENT.name, {
         contains: [REMOVED_SKILL.id],
       });

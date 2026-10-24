@@ -99,7 +99,11 @@ describe("init --from <id>: sub-agent scope", () => {
 
     const projectConfig = await loadConfigOrFail(env.projectDir);
     expect(projectConfig.skills).toStrictEqual(
-      buildSkillConfigs([E2E_SKILL.react.id], { scope: "project", origin: "eject" }),
+      buildSkillConfigs([E2E_SKILL.react.id], {
+        scope: "project",
+        origin: "eject",
+        displayName: E2E_SKILL.react.display,
+      }),
     );
 
     // Exhaustive listings: a sub-agent compiled into both scopes would pass a subset check.

@@ -83,7 +83,14 @@ describe("a fresh pick set up at project scope over a global install", () => {
       expect(
         await readSkillEntries(projectDir, E2E_SKILL.vitest.id),
         "the pick must be recorded at project scope only",
-      ).toStrictEqual([{ id: E2E_SKILL.vitest.id, scope: "project", origin: "eject" }]);
+      ).toStrictEqual([
+        {
+          id: E2E_SKILL.vitest.id,
+          scope: "project",
+          origin: "eject",
+          displayName: E2E_SKILL.vitest.display,
+        },
+      ]);
       expect(
         await directoryExists(path.join(skillsPath(projectDir), E2E_SKILL.vitest.id)),
         "the pick's files must land under the project's skills dir",

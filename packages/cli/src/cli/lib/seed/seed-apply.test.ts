@@ -643,8 +643,15 @@ describe("holding the global install as installed", () => {
 
   it("names nothing kept where the configuration states the global install exactly", () => {
     const decoded = decodedWithGlobal({ [ZUSTAND]: onApiDeveloper() });
+    const installedNamingZustand: InstalledGlobal = {
+      ...installedGlobal,
+      skills: buildSkillConfigs([ZUSTAND], {
+        scope: "global",
+        displayName: SKILLS.zustand.displayName,
+      }),
+    };
 
-    const held = holdInstalledGlobal(decoded, installedGlobal);
+    const held = holdInstalledGlobal(decoded, installedNamingZustand);
 
     expect(held.result).toStrictEqual(decoded);
     expect(held.installed).toStrictEqual({ skillIds: [ZUSTAND], agentNames: [API_DEV] });
@@ -717,7 +724,7 @@ describe("holding the global install as installed", () => {
     );
 
     expect(held.result.skills).toStrictEqual([
-      buildSkillConfig(REACT, { scope: "project" }),
+      buildSkillConfig(REACT, { scope: "project", displayName: SKILLS.react.displayName }),
       buildSkillConfig(ZUSTAND, { scope: "global", origin: "agents-inc" }),
     ]);
     expect(held.keptAsInstalled).toStrictEqual({ skillIds: [ZUSTAND], agentNames: [] });
@@ -732,7 +739,9 @@ describe("holding the global install as installed", () => {
     const held = holdInstalledGlobal(decoded, installedGlobal);
 
     // api-developer gains Hono's row beside its own, so it is named as added to, not kept.
-    expect(held.result.skills).toContainEqual(buildSkillConfig(HONO, { scope: "global" }));
+    expect(held.result.skills).toContainEqual(
+      buildSkillConfig(HONO, { scope: "global", displayName: SKILLS.hono.displayName }),
+    );
     expect(held.installed.skillIds).toStrictEqual([ZUSTAND]);
     expect(held.result.assignedStack[API_DEV]).toStrictEqual({
       "web-client-state": [sa(ZUSTAND)],
@@ -769,7 +778,9 @@ describe("holding the global install as installed", () => {
 
     const held = holdInstalledGlobal(decoded, installedGlobal);
 
-    expect(held.result.skills).toStrictEqual([buildSkillConfig(PINIA, { scope: "global" })]);
+    expect(held.result.skills).toStrictEqual([
+      buildSkillConfig(PINIA, { scope: "global", displayName: SKILLS.pinia.displayName }),
+    ]);
     expect(held.result.assignedStack[API_DEV]).toStrictEqual({
       "web-client-state": [sa(ZUSTAND)],
     });

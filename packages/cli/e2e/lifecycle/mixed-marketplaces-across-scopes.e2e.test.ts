@@ -25,6 +25,7 @@ import {
   E2E_MARKETPLACE_PREFIX,
   EXIT_CODES,
   FILES,
+  SCAFFOLDED_SKILL_DISPLAY_NAME,
   SOURCE_PATHS,
   STEP_TEXT,
   TIMEOUTS,
@@ -168,7 +169,11 @@ describe("a global installation from one marketplace under a project from anothe
       const globalConfig = await loadConfigOrFail(env.fakeHome);
       expect(globalConfig.marketplace).toBe(globalMarketplaceDir);
       expect(globalConfig.skills).toStrictEqual(
-        buildSkillConfigs([GLOBAL_SKILL], { scope: "global", origin: "eject" }),
+        buildSkillConfigs([GLOBAL_SKILL], {
+          scope: "global",
+          origin: "eject",
+          displayName: SCAFFOLDED_SKILL_DISPLAY_NAME,
+        }),
       );
       expect(globalConfig.agents).toStrictEqual(buildAgentConfigs([WEB_DEV], { scope: "global" }));
 
@@ -178,8 +183,16 @@ describe("a global installation from one marketplace under a project from anothe
         projectConfig.skills,
         "the project config lists the global skill beside its own, which is the list the unassigned check reads",
       ).toStrictEqual([
-        ...buildSkillConfigs([GLOBAL_SKILL], { scope: "global", origin: "eject" }),
-        ...buildSkillConfigs([PROJECT_SKILL], { scope: "project", origin: "eject" }),
+        ...buildSkillConfigs([GLOBAL_SKILL], {
+          scope: "global",
+          origin: "eject",
+          displayName: SCAFFOLDED_SKILL_DISPLAY_NAME,
+        }),
+        ...buildSkillConfigs([PROJECT_SKILL], {
+          scope: "project",
+          origin: "eject",
+          displayName: SCAFFOLDED_SKILL_DISPLAY_NAME,
+        }),
       ]);
 
       expect(await listFiles(skillsPath(env.fakeHome))).toStrictEqual([GLOBAL_SKILL]);

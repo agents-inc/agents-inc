@@ -56,6 +56,7 @@ export type SkillConfig = {
   id: SkillId
   scope: 'project' | 'global'
   origin: string
+  displayName?: string
   excluded?: boolean
 }
 

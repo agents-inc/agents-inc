@@ -198,8 +198,18 @@ describe("a shared configuration, decoded into the install it describes", () => 
     expect(decoded).toStrictEqual({
       result: {
         skills: [
-          { id: REACT, scope: "global", origin: "acme-market" },
-          { id: TAILWIND, scope: "project", origin: "eject" },
+          {
+            id: REACT,
+            scope: "global",
+            origin: "acme-market",
+            displayName: "React",
+          },
+          {
+            id: TAILWIND,
+            scope: "project",
+            origin: "eject",
+            displayName: "Tailwind",
+          },
         ],
         selectedAgents: [WEB_DEV, "web-tester"],
         agentConfigs: [
@@ -238,8 +248,18 @@ describe("a shared configuration, decoded into the install it describes", () => 
 
     expect(result).toStrictEqual({
       skills: [
-        { id: TAILWIND, scope: "global", origin: "agents-inc" },
-        { id: HONO, scope: "global", origin: "agents-inc" },
+        {
+          id: TAILWIND,
+          scope: "global",
+          origin: "agents-inc",
+          displayName: "Tailwind",
+        },
+        {
+          id: HONO,
+          scope: "global",
+          origin: "agents-inc",
+          displayName: "Hono",
+        },
       ],
       selectedAgents: [],
       agentConfigs: [],
@@ -301,6 +321,97 @@ describe("a shared configuration, decoded into the install it describes", () => 
   })
 })
 
+/** Names no shipped catalogue gives these ids, so only the catalogue handed in can supply them. */
+const RENAMED_CATALOG = buildCatalog(
+  {
+    "web-framework": buildCatalogCategory({
+      displayName: "Framework",
+      domain: "web",
+      exclusive: true,
+    }),
+    "web-styling": buildCatalogCategory({
+      displayName: "Styling",
+      domain: "web",
+    }),
+    "api-api": buildCatalogCategory({ displayName: "API", domain: "api" }),
+    "acme-pipeline": buildCatalogCategory({
+      displayName: "Pipeline",
+      domain: "acme",
+    }),
+  },
+  [
+    buildCatalogSkill(REACT, {
+      displayName: "Acme React",
+      category: "web-framework",
+      availableSources: [{ name: "acme-market", primary: true }],
+    }),
+    buildCatalogSkill(TAILWIND, {
+      displayName: "Acme Tailwind",
+      category: "web-styling",
+    }),
+    buildCatalogSkill(HONO, {
+      displayName: "Acme Hono",
+      category: "api-api",
+      availableSources: [{ name: "acme-market", primary: true }],
+    }),
+    buildCatalogSkill(ACME_DEPLOY, {
+      displayName: "Acme Deploy",
+      category: "acme-pipeline",
+    }),
+  ]
+)
+
+describe("the name each skill entry records", () => {
+  it("is the catalogue's display name, for a plugin and a copy at either scope", () => {
+    const { result } = seedToInstallSelection(
+      buildSeedPayload({
+        skills: {
+          [REACT]: { install: "plugin", scope: "global", assignments: {} },
+          [TAILWIND]: { install: "eject", scope: "global", assignments: {} },
+          [HONO]: { install: "plugin", scope: "project", assignments: {} },
+          [ACME_DEPLOY]: {
+            install: "eject",
+            scope: "project",
+            assignments: {},
+          },
+        },
+        agents: {},
+      }),
+      RENAMED_CATALOG
+    )
+
+    expect(
+      result.skills,
+      "each entry records the name the catalogue it was installed from gives it"
+    ).toStrictEqual([
+      {
+        id: REACT,
+        scope: "global",
+        origin: "acme-market",
+        displayName: "Acme React",
+      },
+      {
+        id: TAILWIND,
+        scope: "global",
+        origin: "eject",
+        displayName: "Acme Tailwind",
+      },
+      {
+        id: HONO,
+        scope: "project",
+        origin: "acme-market",
+        displayName: "Acme Hono",
+      },
+      {
+        id: ACME_DEPLOY,
+        scope: "project",
+        origin: "eject",
+        displayName: "Acme Deploy",
+      },
+    ])
+  })
+})
+
 describe("what a shared configuration names that this install cannot", () => {
   it("skips a skill this catalogue lacks or places in no domain, and a sub-agent nobody ships", () => {
     const decoded = seedToInstallSelection(
@@ -334,7 +445,14 @@ describe("what a shared configuration names that this install cannot", () => {
       skippedSkillIds: decoded.skippedSkillIds,
       skippedAgentNames: decoded.skippedAgentNames,
     }).toStrictEqual({
-      skills: [{ id: REACT, scope: "global", origin: "acme-market" }],
+      skills: [
+        {
+          id: REACT,
+          scope: "global",
+          origin: "acme-market",
+          displayName: "React",
+        },
+      ],
       selectedAgents: [WEB_DEV],
       assignedStack: {
         [WEB_DEV]: { "web-framework": [{ id: REACT, preloaded: false }] },
@@ -389,7 +507,14 @@ describe("the sub-agents a skipped skill names", () => {
     expect(
       seedToInstallSelection(withSkipped, SEED_CATALOG).result
     ).toStrictEqual({
-      skills: [{ id: REACT, scope: "global", origin: "acme-market" }],
+      skills: [
+        {
+          id: REACT,
+          scope: "global",
+          origin: "acme-market",
+          displayName: "React",
+        },
+      ],
       selectedAgents: [WEB_DEV, "reviewer", "web-tester", "pm"],
       agentConfigs: [
         { name: WEB_DEV, scope: "global" },

@@ -118,8 +118,19 @@ describe.skipIf(!claudeAvailable)(
         await readSkillEntries(env.projectDir, HONO.id),
         "the project's own row must take the install mode it was given",
       ).toStrictEqual([
-        { id: HONO.id, scope: "global", origin: originFor(globalMode), excluded: true },
-        { id: HONO.id, scope: "project", origin: originFor(projectMode) },
+        {
+          id: HONO.id,
+          scope: "global",
+          origin: originFor(globalMode),
+          displayName: HONO.display,
+          excluded: true,
+        },
+        {
+          id: HONO.id,
+          scope: "project",
+          origin: originFor(projectMode),
+          displayName: HONO.display,
+        },
       ]);
 
       return env;
@@ -218,7 +229,9 @@ describe.skipIf(!claudeAvailable)(
         expect(
           await readSkillEntries(env.projectDir, HONO.id),
           "dropping the project half must collapse the pair to the inherited global entry",
-        ).toStrictEqual([{ id: HONO.id, scope: "global", origin: originFor("plugin") }]);
+        ).toStrictEqual([
+          { id: HONO.id, scope: "global", origin: originFor("plugin"), displayName: HONO.display },
+        ]);
         await expectProjectPluginHalfGone(env);
         await expectGlobalInstallUntouched(env.fakeHome, before);
       },
@@ -241,7 +254,9 @@ describe.skipIf(!claudeAvailable)(
         expect(
           await readSkillEntries(env.projectDir, HONO.id),
           "dropping the project half must collapse the pair to the inherited global entry",
-        ).toStrictEqual([{ id: HONO.id, scope: "global", origin: originFor("plugin") }]);
+        ).toStrictEqual([
+          { id: HONO.id, scope: "global", origin: originFor("plugin"), displayName: HONO.display },
+        ]);
         await expectProjectCopyGone(env);
         await expectGlobalInstallUntouched(env.fakeHome, before);
       },
@@ -264,7 +279,9 @@ describe.skipIf(!claudeAvailable)(
         expect(
           await readSkillEntries(env.projectDir, HONO.id),
           "dropping the project half must collapse the pair to the inherited global entry",
-        ).toStrictEqual([{ id: HONO.id, scope: "global", origin: originFor("local") }]);
+        ).toStrictEqual([
+          { id: HONO.id, scope: "global", origin: originFor("local"), displayName: HONO.display },
+        ]);
         await expectProjectPluginHalfGone(env);
         await expectGlobalInstallUntouched(env.fakeHome, before);
       },

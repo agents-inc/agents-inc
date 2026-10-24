@@ -88,8 +88,19 @@ describe("scope change deselect integrity", () => {
         await readSkillEntries(projectDir, E2E_SKILL.hono.id),
         "setup must persist an active project entry plus a global tombstone to have a project half to drop",
       ).toStrictEqual([
-        { id: E2E_SKILL.hono.id, scope: "global", origin: "eject", excluded: true },
-        { id: E2E_SKILL.hono.id, scope: "project", origin: "eject" },
+        {
+          id: E2E_SKILL.hono.id,
+          scope: "global",
+          origin: "eject",
+          displayName: E2E_SKILL.hono.display,
+          excluded: true,
+        },
+        {
+          id: E2E_SKILL.hono.id,
+          scope: "project",
+          origin: "eject",
+          displayName: E2E_SKILL.hono.display,
+        },
       ]);
 
       // Drops the project's half: the only skill in the exclusive API Framework category.
@@ -119,7 +130,14 @@ describe("scope change deselect integrity", () => {
       expect(
         await readSkillEntries(projectDir, E2E_SKILL.hono.id),
         "emptying the category must leave the project owning no half of the pair",
-      ).toStrictEqual([{ id: E2E_SKILL.hono.id, scope: "global", origin: "eject" }]);
+      ).toStrictEqual([
+        {
+          id: E2E_SKILL.hono.id,
+          scope: "global",
+          origin: "eject",
+          displayName: E2E_SKILL.hono.display,
+        },
+      ]);
     },
   );
 });

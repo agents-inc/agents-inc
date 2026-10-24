@@ -231,6 +231,7 @@ describe("edit --from <id> without a terminal", () => {
         buildSkillConfigs([E2E_SKILL.pinia.id], {
           scope: "global",
           origin: "eject",
+          displayName: E2E_SKILL.pinia.display,
           excluded: true,
         }),
       );

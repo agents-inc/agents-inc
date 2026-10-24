@@ -25,7 +25,7 @@ import {
   buildSeedPayload,
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
+import { buildSkillConfig } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { DIRS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 
 /**
@@ -89,12 +89,18 @@ describe("init completes its install and exits non-zero when a sub-agent would n
    */
   async function expectTheInstallLanded(projectDir: string): Promise<void> {
     const config = await loadConfigOrFail(projectDir);
-    expect(config.skills, "surface 3 — the install wrote its own roster").toStrictEqual(
-      buildSkillConfigs([E2E_SKILL.react.id, E2E_SKILL.hono.id], {
+    expect(config.skills, "surface 3 — the install wrote its own roster").toStrictEqual([
+      buildSkillConfig(E2E_SKILL.react.id, {
         scope: "project",
         origin: "eject",
+        displayName: E2E_SKILL.react.display,
       }),
-    );
+      buildSkillConfig(E2E_SKILL.hono.id, {
+        scope: "project",
+        origin: "eject",
+        displayName: E2E_SKILL.hono.display,
+      }),
+    ]);
 
     // `writeProjectConfig` emits the types before compile, so the remedy's `compile` has a surface
     // for this roster. Both directions: presence alone passes a `string` collapse, absence alone an

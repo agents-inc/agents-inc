@@ -393,6 +393,43 @@ export default {
 } satisfies ProjectConfig
 `
 
+/** Each entry arrives with its keys out of the loader's order; the last records no name. */
+const NAMED_ENTRIES = buildProjectConfig({
+  name: "global",
+  agents: [],
+  skills: [
+    buildSkillConfig(REACT, {
+      excluded: true,
+      displayName: "React",
+      origin: "agents-inc",
+      scope: "global",
+    }),
+    buildSkillConfig(VITEST, { displayName: "Vitest", scope: "global" }),
+    buildSkillConfig(TAILWIND, { scope: "global" }),
+  ],
+})
+
+const NAMED_ENTRIES_SOURCE = `import type { ProjectConfig, SkillConfig } from './config-types'
+
+const skills: SkillConfig[] = [
+  {
+    id: 'web-framework-react',
+    scope: 'global',
+    origin: 'agents-inc',
+    displayName: 'React',
+    excluded: true,
+  },
+  { id: 'web-testing-vitest', scope: 'global', origin: 'eject', displayName: 'Vitest' },
+  { id: 'web-styling-tailwind', scope: 'global', origin: 'eject' },
+]
+
+export default {
+  name: 'global',
+  agents: [],
+  skills,
+} satisfies ProjectConfig
+`
+
 const TWO_IN_AN_EXCLUSIVE_CATEGORY: ProjectConfig["stack"] = {
   "web-developer": { "web-framework": [{ id: REACT }, { id: SVELTE }] },
 }
@@ -427,6 +464,27 @@ describe("a standalone config", () => {
         CATALOG
       )
     ).toThrow(TWO_IN_AN_EXCLUSIVE_CATEGORY_ERROR)
+  })
+})
+
+describe("a skill entry's keys", () => {
+  it("are written id, scope, origin, displayName, excluded, whatever order they arrived in", () => {
+    expect(generateConfigSource(NAMED_ENTRIES, CATALOG)).toBe(
+      NAMED_ENTRIES_SOURCE
+    )
+  })
+
+  it("hold no displayName for an entry that records none", () => {
+    const source = generateConfigSource(NAMED_ENTRIES, CATALOG)
+
+    // Subject guard: the named entries beside it were written with their names.
+    expect(source).toContain("displayName: 'Vitest' },\n")
+    expect(
+      source,
+      "an entry recording no name is written without the key, not with an empty or undefined one"
+    ).toContain(
+      "\n  { id: 'web-styling-tailwind', scope: 'global', origin: 'eject' },\n]\n"
+    )
   })
 })
 
@@ -615,6 +673,7 @@ const EXPECTED_SOURCES = {
   OWN_DESCRIPTION_INLINED_SOURCE,
   ONLY_GLOBAL_ENTRIES_INLINED_SOURCE,
   ONLY_PROJECT_ENTRIES_INLINED_SOURCE,
+  NAMED_ENTRIES_SOURCE,
 }
 
 describe("the bytes pinned above", () => {

@@ -136,15 +136,21 @@ describe("init --from <id>: install scopes and unknown ids", () => {
     // The project config inlines the global entry, still marked global.
     const projectConfig = await loadConfigOrFail(env.projectDir);
     expect(projectConfig.skills).toStrictEqual([
-      ...buildSkillConfigs([E2E_SKILL.react.id], { scope: "global" }),
-      ...buildSkillConfigs([E2E_SKILL.vitest.id]),
+      ...buildSkillConfigs([E2E_SKILL.react.id], {
+        scope: "global",
+        displayName: E2E_SKILL.react.display,
+      }),
+      ...buildSkillConfigs([E2E_SKILL.vitest.id], { displayName: E2E_SKILL.vitest.display }),
     ]);
     expect(projectConfig.agents).toStrictEqual(buildAgentConfigs([WEB_DEV], { scope: "project" }));
 
     // A skill's scope never moves the sub-agent that holds it.
     const globalConfig = await loadConfigOrFail(env.fakeHome);
     expect(globalConfig.skills).toStrictEqual(
-      buildSkillConfigs([E2E_SKILL.react.id], { scope: "global" }),
+      buildSkillConfigs([E2E_SKILL.react.id], {
+        scope: "global",
+        displayName: E2E_SKILL.react.display,
+      }),
     );
     expect(globalConfig.agents).toStrictEqual([]);
 
@@ -187,7 +193,9 @@ describe("init --from <id>: install scopes and unknown ids", () => {
     expect(flattenCliOutput(output)).toContain(UNKNOWN_AGENT_NAME);
 
     const config = await loadConfigOrFail(env.projectDir);
-    expect(config.skills).toStrictEqual(buildSkillConfigs([E2E_SKILL.react.id]));
+    expect(config.skills).toStrictEqual(
+      buildSkillConfigs([E2E_SKILL.react.id], { displayName: E2E_SKILL.react.display }),
+    );
     expect(config.agents).toStrictEqual(buildAgentConfigs([WEB_DEV], { scope: "project" }));
 
     expect(await listFiles(skillsPath(env.projectDir))).toStrictEqual([E2E_SKILL.react.id]);
@@ -364,8 +372,14 @@ describe.skipIf(!claudeAvailable)("init --from <id>: mixed install modes", () =>
       // owns.
       const projectConfig = await loadConfigOrFail(env.projectDir);
       expect(projectConfig.skills).toStrictEqual([
-        ...buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "global" }),
-        ...buildSkillConfigs([E2E_SKILL.react.id], { origin: fixture.marketplaceName }),
+        ...buildSkillConfigs([E2E_SKILL.vitest.id], {
+          scope: "global",
+          displayName: E2E_SKILL.vitest.display,
+        }),
+        ...buildSkillConfigs([E2E_SKILL.react.id], {
+          origin: fixture.marketplaceName,
+          displayName: E2E_SKILL.react.display,
+        }),
       ]);
       expect(projectConfig.marketplaceName).toBe(fixture.marketplaceName);
 
@@ -429,8 +443,12 @@ describe.skipIf(!claudeAvailable)("init --from <id>: mixed install modes", () =>
         ...buildSkillConfigs([E2E_SKILL.react.id], {
           scope: "global",
           origin: fixture.marketplaceName,
+          displayName: E2E_SKILL.react.display,
         }),
-        ...buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "global" }),
+        ...buildSkillConfigs([E2E_SKILL.vitest.id], {
+          scope: "global",
+          displayName: E2E_SKILL.vitest.display,
+        }),
       ]);
       expect(homeConfig.marketplaceName).toBe(fixture.marketplaceName);
 

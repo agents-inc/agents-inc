@@ -78,7 +78,12 @@ describe("a global-scope narrowing keeps an untouched project's config.ts type-c
       expect(
         await readAllSkillEntries(projectDir),
         "the project config must inline the global skill it is about to be orphaned from",
-      ).toContainEqual({ id: NARROWED_SKILL.id, scope: "global", origin: EJECT_SOURCE_NAME });
+      ).toContainEqual({
+        id: NARROWED_SKILL.id,
+        scope: "global",
+        origin: EJECT_SOURCE_NAME,
+        displayName: NARROWED_SKILL.display,
+      });
       expect((await readAllSkillEntries(fakeHome)).map((s) => s.id)).toContain(NARROWED_SKILL.id);
 
       const afterInstall = await typecheckGeneratedConfig(sourceFolderOf(projectDir));
@@ -103,7 +108,12 @@ describe("a global-scope narrowing keeps an untouched project's config.ts type-c
       expect(
         await readAllSkillEntries(projectDir),
         "the untouched project config must still inline the now-removed global row",
-      ).toContainEqual({ id: NARROWED_SKILL.id, scope: "global", origin: EJECT_SOURCE_NAME });
+      ).toContainEqual({
+        id: NARROWED_SKILL.id,
+        scope: "global",
+        origin: EJECT_SOURCE_NAME,
+        displayName: NARROWED_SKILL.display,
+      });
 
       const afterNarrowing = await typecheckGeneratedConfig(sourceFolderOf(projectDir));
       expect(

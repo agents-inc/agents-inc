@@ -39,6 +39,7 @@ import { buildSkillConfigs } from "../__tests__/helpers/skill-config-builders.js
 import { FALLBACK_USAGE } from "../__tests__/mock-data/mock-skills.js";
 import { SKILLS, TEST_CATEGORIES } from "../__tests__/test-fixtures.js";
 import { cleanupTempDir, createTempDir, fileExists } from "../__tests__/test-fs-utils.js";
+import { matchedAsWritten } from "../__tests__/helpers/matched-as-written.js";
 
 import type { LocalSkillMetadata } from "../skills/skill-metadata.js";
 import type { MergedSkillsMatrix, SkillId, SkillSlug } from "../../types/index.js";
@@ -176,7 +177,9 @@ describe("registerExternalSkills", () => {
     const { result, skippedSkillIds } = seedToInstallSelection(payload, matrix);
 
     expect(skippedSkillIds).toStrictEqual([]);
-    expect(result.skills).toStrictEqual(buildSkillConfigs([EXTERNAL_ID]));
+    expect(result.skills).toStrictEqual(
+      buildSkillConfigs([EXTERNAL_ID], { displayName: buildSeedExternalSkill().displayName }),
+    );
     expect(result.assignedStack).toStrictEqual({
       [WEB_DEV]: { "web-framework": [sa(EXTERNAL_ID, true)] },
     });
@@ -199,7 +202,7 @@ describe("registerExternalSkills", () => {
     });
 
     expect(() => registerExternalSkills(payload, catalogue, projectDir)).toThrow(
-      new RegExp(`${SKILLS.react.id}[\\s\\S]*${SKILLS.vue.id}`),
+      new RegExp(`${matchedAsWritten(SKILLS.react.id)}[\\s\\S]*${matchedAsWritten(SKILLS.vue.id)}`),
     );
     // Both incumbents survive, so the guard ran before anything was seated.
     expect([catalogue.skills[SKILLS.react.id], catalogue.skills[SKILLS.vue.id]]).toStrictEqual([
@@ -270,7 +273,9 @@ describe("registerExternalSkills", () => {
     });
 
     expect(() => registerExternalSkills(payload, matrix, projectDir)).toThrow(
-      new RegExp(`${EXTERNAL_ID}[\\s\\S]*${SECOND_EXTERNAL_ID}`),
+      new RegExp(
+        `${matchedAsWritten(EXTERNAL_ID)}[\\s\\S]*${matchedAsWritten(SECOND_EXTERNAL_ID)}`,
+      ),
     );
     expect(matrix.skills[EXTERNAL_ID]).toBeUndefined();
   });
@@ -290,7 +295,9 @@ describe("registerExternalSkills", () => {
     });
 
     expect(() => registerExternalSkills(payload, matrix, projectDir)).toThrow(
-      new RegExp(`${JSON.stringify(PARENT_ESCAPING_ID)}[\\s\\S]*${JSON.stringify(NESTED_ID)}`),
+      new RegExp(
+        `${matchedAsWritten(JSON.stringify(PARENT_ESCAPING_ID))}[\\s\\S]*${matchedAsWritten(JSON.stringify(NESTED_ID))}`,
+      ),
     );
     // The well-named one is refused with them, so nothing reaches the decode.
     expect(matrix.skills[EXTERNAL_ID]).toBeUndefined();
@@ -508,7 +515,11 @@ describe("writeExternalSkills", () => {
     });
 
     await expect(writeExternalSkills(registerExternalSkills(payload, matrix, projectDir))) //
-      .rejects.toThrow(new RegExp(`${EXTERNAL_ID}[\\s\\S]*${SECOND_EXTERNAL_ID}`));
+      .rejects.toThrow(
+        new RegExp(
+          `${matchedAsWritten(EXTERNAL_ID)}[\\s\\S]*${matchedAsWritten(SECOND_EXTERNAL_ID)}`,
+        ),
+      );
 
     expect(await readFile(path.join(handAuthored, STANDARD_FILES.SKILL_MD), "utf8")).toBe(
       renderSkillMd(EXTERNAL_ID),

@@ -108,7 +108,12 @@ describe("generated config types keep narrowing after a project-scope install", 
       // Precondition: no global skills at all, or the assertions below pass vacuously.
       const projectSkills = await readAllSkillEntries(projectDir);
       expect(projectSkills, "project config.ts must record react at project scope").toStrictEqual([
-        { id: E2E_SKILL.react.id, scope: "project", origin: EJECT_SOURCE_NAME },
+        {
+          id: E2E_SKILL.react.id,
+          scope: "project",
+          origin: EJECT_SOURCE_NAME,
+          displayName: E2E_SKILL.react.display,
+        },
       ]);
       expect(
         await readAllSkillEntries(fakeHome),
@@ -193,7 +198,14 @@ describe("generated config types keep narrowing after a project-scope install", 
       expect(
         await readAllSkillEntries(fakeHome),
         "global config.ts must record react at global scope",
-      ).toStrictEqual([{ id: E2E_SKILL.react.id, scope: "global", origin: EJECT_SOURCE_NAME }]);
+      ).toStrictEqual([
+        {
+          id: E2E_SKILL.react.id,
+          scope: "global",
+          origin: EJECT_SOURCE_NAME,
+          displayName: E2E_SKILL.react.display,
+        },
+      ]);
 
       expect(
         await listFiles(skillsPath(fakeHome)),

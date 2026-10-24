@@ -160,7 +160,12 @@ describe("global install masks a project-owned skill in an exclusive category", 
 
   it("adds the framework skill at global scope in the global config", () => {
     expect(globalReact).toStrictEqual([
-      { id: E2E_SKILL.react.id, scope: "global", origin: "eject" },
+      {
+        id: E2E_SKILL.react.id,
+        scope: "global",
+        origin: "eject",
+        displayName: E2E_SKILL.react.display,
+      },
     ]);
   });
 
@@ -189,7 +194,13 @@ describe("global install masks a project-owned skill in an exclusive category", 
 
   it("masks the colliding global framework skill with a tombstone", () => {
     expect(projectReact).toStrictEqual([
-      { id: E2E_SKILL.react.id, scope: "global", origin: "eject", excluded: true },
+      {
+        id: E2E_SKILL.react.id,
+        scope: "global",
+        origin: "eject",
+        displayName: E2E_SKILL.react.display,
+        excluded: true,
+      },
     ]);
   });
 });

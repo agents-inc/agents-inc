@@ -101,6 +101,7 @@ const CANONICAL_SKILL_ENTRY_ORDER = [
   "id",
   "scope",
   "origin",
+  "displayName",
   "excluded",
 ] as const satisfies readonly (keyof SkillConfig)[]
 

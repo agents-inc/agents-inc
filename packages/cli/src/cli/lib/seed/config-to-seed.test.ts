@@ -13,6 +13,7 @@ import { buildSkillConfig } from "../__tests__/helpers/skill-config-builders.js"
 import { REACT_HONO_WEB_API_DOMAINS_MATRIX } from "../__tests__/mock-data/mock-matrices.js";
 import { TEST_CUSTOM_SOURCE_URL } from "../__tests__/test-constants.js";
 import { SKILLS } from "../__tests__/test-fixtures.js";
+import { matchedAsWritten } from "../__tests__/helpers/matched-as-written.js";
 
 import type { ContentReading } from "./external-skills";
 
@@ -39,10 +40,15 @@ describe("configToSeedPayload", () => {
     it("mints a payload the decoder reads back as the same install", () => {
       const config = buildProjectConfig({
         skills: [
-          buildSkillConfig(SKILLS.react.id, { scope: "global", origin: EJECT_SOURCE }),
+          buildSkillConfig(SKILLS.react.id, {
+            scope: "global",
+            origin: EJECT_SOURCE,
+            displayName: SKILLS.react.displayName,
+          }),
           buildSkillConfig(SKILLS.hono.id, {
             scope: "global",
             origin: DEFAULT_PUBLIC_SOURCE_NAME,
+            displayName: SKILLS.hono.displayName,
           }),
         ],
         agents: buildAgentConfigs([WEB_DEV], {
@@ -328,7 +334,9 @@ describe("configToSeedPayload", () => {
 
       // `install: "plugin"` alone would install a different repository's skill under the same id.
       expect(() => configToSeedPayload(config, CARRIES_NOTHING)).toThrow(
-        new RegExp(`${SKILLS.react.id}[\\s\\S]*${PRIVATE_MARKETPLACE}`),
+        new RegExp(
+          `${matchedAsWritten(SKILLS.react.id)}[\\s\\S]*${matchedAsWritten(PRIVATE_MARKETPLACE)}`,
+        ),
       );
     });
 
@@ -343,7 +351,9 @@ describe("configToSeedPayload", () => {
 
       // An install reads one marketplace, so a second one's skill would be silently swapped.
       expect(() => configToSeedPayload(config, CARRIES_NOTHING)).toThrow(
-        new RegExp(`${SKILLS.react.id}[\\s\\S]*${OTHER_MARKETPLACE}`),
+        new RegExp(
+          `${matchedAsWritten(SKILLS.react.id)}[\\s\\S]*${matchedAsWritten(OTHER_MARKETPLACE)}`,
+        ),
       );
     });
 
@@ -356,7 +366,7 @@ describe("configToSeedPayload", () => {
       });
 
       expect(() => configToSeedPayload(config, CARRIES_NOTHING)).toThrow(
-        new RegExp(`${WEB_DEV}[\\s\\S]*inherit`),
+        new RegExp(`${matchedAsWritten(WEB_DEV)}[\\s\\S]*inherit`),
       );
     });
 
@@ -372,7 +382,7 @@ describe("configToSeedPayload", () => {
       expect(() => configToSeedPayload(config, CARRIES_NOTHING)).toThrow(
         new RegExp(
           `cannot be shared as it stands[\\s\\S]*` +
-            `${SKILLS.react.id} -> ${WEB_DEV}: a project-scoped skill never reaches`,
+            `${matchedAsWritten(`${SKILLS.react.id} -> ${WEB_DEV}: a project-scoped skill never reaches`)}`,
         ),
       );
     });
@@ -390,7 +400,11 @@ describe("configToSeedPayload", () => {
           external: {},
           uncarryable: [`${CARRIED_ID} travels inside a shared configuration, and it is too big`],
         }),
-      ).toThrow(new RegExp(`${WEB_DEV}[\\s\\S]*inherit[\\s\\S]*${CARRIED_ID}`));
+      ).toThrow(
+        new RegExp(
+          `${matchedAsWritten(WEB_DEV)}[\\s\\S]*inherit[\\s\\S]*${matchedAsWritten(CARRIED_ID)}`,
+        ),
+      );
     });
 
     it("names every unshareable thing at once, not just the first", () => {
@@ -410,7 +424,7 @@ describe("configToSeedPayload", () => {
 
       expect(() => configToSeedPayload(config, CARRIES_NOTHING)).toThrow(
         new RegExp(
-          `${SKILLS.react.id}[\\s\\S]*${SKILLS.hono.id}[\\s\\S]*${WEB_DEV}[\\s\\S]*inherit`,
+          `${matchedAsWritten(SKILLS.react.id)}[\\s\\S]*${matchedAsWritten(SKILLS.hono.id)}[\\s\\S]*${matchedAsWritten(WEB_DEV)}[\\s\\S]*inherit`,
         ),
       );
     });

@@ -44,7 +44,7 @@ import {
   buildSeedPayload,
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
+import { buildSkillConfig } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { renderSkillMd } from "../../src/cli/lib/__tests__/content-generators.js";
 import type { TreeSnapshotEntry } from "../helpers/test-utils.js";
 
@@ -519,12 +519,18 @@ describe("--from refusals come before the lists and the question", () => {
         const carriedFile = path.join(skillsPath(env.projectDir), CARRIED_ID, NESTED_FILE_KEY);
         expect(await readTestFile(carriedFile)).toBe(CARRIED_BYTES);
         const config = await loadConfigOrFail(env.projectDir);
-        expect(config.skills).toStrictEqual(
-          buildSkillConfigs([E2E_SKILL.react.id, CARRIED_ID], {
+        expect(config.skills).toStrictEqual([
+          buildSkillConfig(E2E_SKILL.react.id, {
             scope: "project",
             origin: "eject",
+            displayName: E2E_SKILL.react.display,
           }),
-        );
+          buildSkillConfig(CARRIED_ID, {
+            scope: "project",
+            origin: "eject",
+            displayName: buildSeedExternalSkill().displayName,
+          }),
+        ]);
       },
     );
   });

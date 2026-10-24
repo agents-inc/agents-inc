@@ -140,7 +140,12 @@ describe("global-scope install tombstones project-owned skills and agents", () =
 
   it("adds the selected skill at global scope in the global config", () => {
     expect(globalVitest).toStrictEqual([
-      { id: E2E_SKILL.vitest.id, scope: "global", origin: "eject" },
+      {
+        id: E2E_SKILL.vitest.id,
+        scope: "global",
+        origin: "eject",
+        displayName: E2E_SKILL.vitest.display,
+      },
     ]);
   });
 
@@ -168,13 +173,24 @@ describe("global-scope install tombstones project-owned skills and agents", () =
 
   it("leaves a purely-inherited global skill as a single active global entry", () => {
     expect(projectReact).toStrictEqual([
-      { id: E2E_SKILL.react.id, scope: "global", origin: "eject" },
+      {
+        id: E2E_SKILL.react.id,
+        scope: "global",
+        origin: "eject",
+        displayName: E2E_SKILL.react.display,
+      },
     ]);
   });
 
   it("writes a global tombstone for the project-owned skill, not a second active install", () => {
     expect(projectVitest).toStrictEqual([
-      { id: E2E_SKILL.vitest.id, scope: "global", origin: "eject", excluded: true },
+      {
+        id: E2E_SKILL.vitest.id,
+        scope: "global",
+        origin: "eject",
+        displayName: E2E_SKILL.vitest.display,
+        excluded: true,
+      },
       { id: E2E_SKILL.vitest.id, scope: "project", origin: "eject" },
     ]);
   });

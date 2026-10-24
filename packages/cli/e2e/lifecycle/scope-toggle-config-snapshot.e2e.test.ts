@@ -78,15 +78,42 @@ describe("scope toggle config snapshot", () => {
       );
 
       expect(await readSkillEntries(projectDir, E2E_SKILL.react.id)).toStrictEqual([
-        { id: E2E_SKILL.react.id, scope: "global", origin: "eject", excluded: true },
-        { id: E2E_SKILL.react.id, scope: "project", origin: "eject" },
+        {
+          id: E2E_SKILL.react.id,
+          scope: "global",
+          origin: "eject",
+          displayName: E2E_SKILL.react.display,
+          excluded: true,
+        },
+        {
+          id: E2E_SKILL.react.id,
+          scope: "project",
+          origin: "eject",
+          displayName: E2E_SKILL.react.display,
+        },
       ]);
       expect(await readSkillEntries(projectDir, E2E_SKILL.hono.id)).toStrictEqual([
-        { id: E2E_SKILL.hono.id, scope: "global", origin: "eject", excluded: true },
-        { id: E2E_SKILL.hono.id, scope: "project", origin: "eject" },
+        {
+          id: E2E_SKILL.hono.id,
+          scope: "global",
+          origin: "eject",
+          displayName: E2E_SKILL.hono.display,
+          excluded: true,
+        },
+        {
+          id: E2E_SKILL.hono.id,
+          scope: "project",
+          origin: "eject",
+          displayName: E2E_SKILL.hono.display,
+        },
       ]);
       expect(await readSkillEntries(fakeHome, E2E_SKILL.react.id)).toStrictEqual([
-        { id: E2E_SKILL.react.id, scope: "global", origin: "eject" },
+        {
+          id: E2E_SKILL.react.id,
+          scope: "global",
+          origin: "eject",
+          displayName: E2E_SKILL.react.display,
+        },
       ]);
 
       expect(
@@ -130,7 +157,14 @@ describe("scope toggle config snapshot", () => {
       expect(
         await readSkillEntries(projectDir, E2E_SKILL.hono.id),
         "the collapse must leave the inherited-global entry alone — no project entry, no tombstone",
-      ).toStrictEqual([{ id: E2E_SKILL.hono.id, scope: "global", origin: "eject" }]);
+      ).toStrictEqual([
+        {
+          id: E2E_SKILL.hono.id,
+          scope: "global",
+          origin: "eject",
+          displayName: E2E_SKILL.hono.display,
+        },
+      ]);
 
       const globalConfigAfter = await readTestFile(configTsPath(fakeHome));
       expect(globalConfigAfter, "global config.ts must be unchanged by a project-scope edit").toBe(

@@ -113,7 +113,9 @@ describe("edit from a directory that holds no installation", () => {
     expect(
       globalSkillsAfter.filter((skill) => skill.id === SPARE_SKILL.id),
       "the skill added from a bare directory belongs to the installation that was edited",
-    ).toStrictEqual([{ id: SPARE_SKILL.id, scope: "global", origin: "eject" }]);
+    ).toStrictEqual([
+      { id: SPARE_SKILL.id, scope: "global", origin: "eject", displayName: SPARE_SKILL.display },
+    ]);
   });
 
   it("compiles the global installation's own sub-agents, and only those", () => {
@@ -185,7 +187,9 @@ describe("edit from a directory that holds an installation", () => {
     expect(
       projectSkillsAfter.filter((skill) => skill.id === SPARE_SKILL.id),
       "the skill added from an installed directory belongs to the installation it was started in",
-    ).toStrictEqual([{ id: SPARE_SKILL.id, scope: "project", origin: "eject" }]);
+    ).toStrictEqual([
+      { id: SPARE_SKILL.id, scope: "project", origin: "eject", displayName: SPARE_SKILL.display },
+    ]);
   });
 
   it("narrows that installation's own config-types.ts to the skill the edit added", () => {

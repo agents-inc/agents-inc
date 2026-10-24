@@ -75,7 +75,14 @@ describe("a project-only sub-agent moved to global scope", () => {
       expect(
         await readSkillEntries(projectDir, E2E_SKILL.hono.id),
         "the fixture must hold a project-only skill — a dual-scope pair would make the move a collapse",
-      ).toStrictEqual([{ id: E2E_SKILL.hono.id, scope: "project", origin: "eject" }]);
+      ).toStrictEqual([
+        {
+          id: E2E_SKILL.hono.id,
+          scope: "project",
+          origin: "eject",
+          displayName: E2E_SKILL.hono.display,
+        },
+      ]);
       expect(
         await readAgentEntriesFor(projectDir, API_DEVELOPER),
         "the fixture must hold a project-only sub-agent",
@@ -133,7 +140,14 @@ describe("a project-only sub-agent moved to global scope", () => {
       expect(
         await readSkillEntries(projectDir, E2E_SKILL.hono.id),
         "the skill must stay recorded at project scope",
-      ).toStrictEqual([{ id: E2E_SKILL.hono.id, scope: "project", origin: "eject" }]);
+      ).toStrictEqual([
+        {
+          id: E2E_SKILL.hono.id,
+          scope: "project",
+          origin: "eject",
+          displayName: E2E_SKILL.hono.display,
+        },
+      ]);
 
       // The sub-agent is quoted: its bare name also matches the change summary row.
       expect(editOutput).toContain(STEP_TEXT.SKILL_ASSIGNED_TO_NO_AGENT);

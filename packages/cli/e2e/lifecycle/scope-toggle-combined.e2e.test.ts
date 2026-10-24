@@ -132,7 +132,14 @@ describe("dual-scope edit lifecycle -- combined scope toggles", () => {
       expect(
         await readSkillEntries(projectDir, E2E_SKILL.hono.id),
         "the collapsed pair must leave the inherited global api-framework-hono entry and nothing else",
-      ).toStrictEqual([{ id: E2E_SKILL.hono.id, scope: "global", origin: "eject" }]);
+      ).toStrictEqual([
+        {
+          id: E2E_SKILL.hono.id,
+          scope: "global",
+          origin: "eject",
+          displayName: E2E_SKILL.hono.display,
+        },
+      ]);
 
       await expect({ dir: projectDir }).toHaveCompiledAgent("web-developer");
       await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");

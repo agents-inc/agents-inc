@@ -46,7 +46,7 @@ import {
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
+import { buildSkillConfig } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { renderSkillMd } from "../../src/cli/lib/__tests__/content-generators.js";
 import { entryAt, firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
@@ -157,9 +157,18 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
 
     // "eject" is the only origin an added skill can have.
     const config = await loadConfigOrFail(env.projectDir);
-    expect(config.skills).toStrictEqual(
-      buildSkillConfigs([E2E_SKILL.react.id, EXTERNAL_ID], { scope: "project", origin: "eject" }),
-    );
+    expect(config.skills).toStrictEqual([
+      buildSkillConfig(E2E_SKILL.react.id, {
+        scope: "project",
+        origin: "eject",
+        displayName: E2E_SKILL.react.display,
+      }),
+      buildSkillConfig(EXTERNAL_ID, {
+        scope: "project",
+        origin: "eject",
+        displayName: EXTERNAL_DISPLAY,
+      }),
+    ]);
     expect(config.agents).toStrictEqual(buildAgentConfigs([WEB_DEV], { scope: "project" }));
 
     // Exhaustive: a copy that also reached HOME would pass a subset check.

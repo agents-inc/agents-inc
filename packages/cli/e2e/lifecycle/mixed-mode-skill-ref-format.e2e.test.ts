@@ -14,6 +14,7 @@ import {
   fileExists,
   isClaudeCLIAvailable,
   readTestFile,
+  matchedAsWritten,
 } from "../helpers/test-utils.js";
 import { applyFromSeed, e2eStackPayload, installFromSeed } from "../fixtures/e2e-stack-seed.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
@@ -95,13 +96,15 @@ describe.skipIf(!claudeAvailable)(
 
           // Either scope tolerated, so the test does not depend on where the install routes.
           expect(configContent).toMatch(
-            new RegExp(`id: '${E2E_SKILL.react.id}', scope: '(?:project|global)', origin: 'eject'`),
+            new RegExp(
+              `id: '${matchedAsWritten(E2E_SKILL.react.id)}',\n    scope: '(?:project|global)',\n    origin: 'eject',\n    displayName: '${matchedAsWritten(E2E_SKILL.react.display)}',\n`,
+            ),
           );
 
           // The toggle was scoped to react.
           expect(configContent).toMatch(
             new RegExp(
-              `id: '${E2E_SKILL.zustand.id}', scope: '(?:project|global)', origin: '${pluginSource!.marketplaceName}'`,
+              `id: '${matchedAsWritten(E2E_SKILL.zustand.id)}',\n    scope: '(?:project|global)',\n    origin: '${matchedAsWritten(pluginSource!.marketplaceName)}',\n    displayName: '${matchedAsWritten(E2E_SKILL.zustand.display)}',\n`,
             ),
           );
 

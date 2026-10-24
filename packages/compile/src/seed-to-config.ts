@@ -920,6 +920,7 @@ function toSeedSkillConfig({
       seedSkill.install === "eject"
         ? EJECT_SOURCE
         : sourceForSkill(catalogSkill),
+    displayName: catalogSkill.displayName,
   }
 }
 

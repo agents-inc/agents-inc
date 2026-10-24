@@ -210,7 +210,11 @@ describe("init --from <id>: project-scoped content at the global root", () => {
 
     const homeConfig = await loadConfigOrFail(env.fakeHome);
     expect(homeConfig.skills).toStrictEqual(
-      buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: "eject" }),
+      buildSkillConfigs([E2E_SKILL.react.id], {
+        scope: "global",
+        origin: "eject",
+        displayName: E2E_SKILL.react.display,
+      }),
     );
     expect(homeConfig.agents).toStrictEqual(buildAgentConfigs([WEB_DEV], { scope: "global" }));
     expect(await listFiles(skillsPath(env.fakeHome))).toStrictEqual([E2E_SKILL.react.id]);
@@ -250,7 +254,11 @@ describe("init --from <id>: project-scoped content at the global root", () => {
 
     const projectConfig = await loadConfigOrFail(env.projectDir);
     expect(projectConfig.skills).toStrictEqual(
-      buildSkillConfigs([E2E_SKILL.react.id], { scope: "project", origin: "eject" }),
+      buildSkillConfigs([E2E_SKILL.react.id], {
+        scope: "project",
+        origin: "eject",
+        displayName: E2E_SKILL.react.display,
+      }),
     );
     expect(projectConfig.agents).toStrictEqual(buildAgentConfigs([WEB_DEV], { scope: "project" }));
     expect(await listFiles(skillsPath(env.projectDir))).toStrictEqual([E2E_SKILL.react.id]);

@@ -261,6 +261,55 @@ describe("a global change propagated into a registered project", () => {
     ]);
   });
 
+  it("carries the name a global entry records into each registered project, and onto the mask it spreads from that entry", async () => {
+    const project = await registerProject(
+      "named",
+      buildProjectConfig({
+        name: "named",
+        skills: [buildSkillConfig(REACT, { scope: "project" })],
+        agents: buildAgentConfigs([WEB_DEVELOPER], { scope: "project" }),
+      }),
+    );
+
+    await propagateGlobalChangesToProjects(
+      globalInstall({
+        skills: [
+          buildSkillConfig(REACT, {
+            scope: "global",
+            origin: OTHER_MARKETPLACE,
+            displayName: "Acme React",
+          }),
+          buildSkillConfig(HONO, {
+            scope: "global",
+            origin: OTHER_MARKETPLACE,
+            displayName: "Acme Hono",
+          }),
+        ],
+        projects: [project],
+      }),
+      NO_AGENTS,
+      "claude",
+    );
+
+    expect(
+      (await projectConfigOf(project))?.skills,
+      "the inlined global entry and the mask the project's own React leaves over it both keep the name",
+    ).toStrictEqual([
+      buildSkillConfig(HONO, {
+        scope: "global",
+        origin: OTHER_MARKETPLACE,
+        displayName: "Acme Hono",
+      }),
+      buildSkillConfig(REACT, {
+        scope: "global",
+        origin: OTHER_MARKETPLACE,
+        displayName: "Acme React",
+        excluded: true,
+      }),
+      buildSkillConfig(REACT, { scope: "project" }),
+    ]);
+  });
+
   it("keeps its mask of a sub-agent as recorded, though the global install's entry now carries a model", async () => {
     const project = await registerProject(
       "masked-model",
