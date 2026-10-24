@@ -54,12 +54,6 @@ const TEST_ONLY_EXPORTS = [
   },
   {
     file: "src/cli/lib/installation/install-layout.ts",
-    name: "forgetTheProviderChosenForThisRun",
-    // A worker outlives a `--provider` choice, so specs need the reset a one-shot CLI does not.
-    posture: "test utility",
-  },
-  {
-    file: "src/cli/lib/installation/install-layout.ts",
     name: "ownedRoots",
     // A host role nothing asks until a second provider can be installed.
     posture: "unjudged",

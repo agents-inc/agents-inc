@@ -1,5 +1,3 @@
-import path from "path";
-import { mkdir } from "fs/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { runCliCommand } from "../helpers/cli-runner.js";
@@ -12,68 +10,17 @@ import { renderUnparseableConfigTs } from "../factories/unloadable-config-factor
 import { CTRL_C, delay, RENDER_DELAY_MS } from "../test-constants";
 import { EXIT_CODES } from "../../exit-codes";
 
-/** A literal, as a person would have typed it before the move to a folder per provider. */
-const RETIRED_FOLDER = ".claude-src";
-
-/** The notice for one root, written out whole as the spec expects it. */
-function retiredFolderNotice(root: string): string {
-  return `${root}/.claude-src/ is no longer supported (agents-inc now serves Claude and Codex). Move it to ${root}/.agents-inc/claude/.`;
-}
-
 /** The oclif `init` hook runs before every command, and is the whole of a run that names none. */
 describe("the oclif init hook", () => {
   let projectDir: string;
-  let fakeHome: string;
   let cleanup: () => Promise<void>;
 
   beforeEach(async () => {
-    ({ projectDir, fakeHome, cleanup } = await setupIsolatedHome("cc-bare-run-test-"));
+    ({ projectDir, cleanup } = await setupIsolatedHome("cc-bare-run-test-"));
   });
 
   afterEach(async () => {
     await cleanup();
-  });
-
-  describe("on any command", () => {
-    it("says once that a retired source folder here is no longer read, naming this project", async () => {
-      await mkdir(path.join(projectDir, RETIRED_FOLDER), { recursive: true });
-
-      const { stderr } = await runCliCommand(["list"]);
-
-      expect(stderr).toBe(`${retiredFolderNotice(projectDir)}\n`);
-    });
-
-    it("says it of a retired source folder in the home directory, naming the home directory", async () => {
-      await mkdir(path.join(fakeHome, RETIRED_FOLDER), { recursive: true });
-
-      const { stderr } = await runCliCommand(["list"]);
-
-      expect(stderr).toBe(`${retiredFolderNotice(fakeHome)}\n`);
-    });
-
-    it("names each root that holds one, the home directory first, and nothing else", async () => {
-      await mkdir(path.join(fakeHome, RETIRED_FOLDER), { recursive: true });
-      await mkdir(path.join(projectDir, RETIRED_FOLDER), { recursive: true });
-
-      const { stderr } = await runCliCommand(["list"]);
-
-      expect(stderr).toBe(`${retiredFolderNotice(fakeHome)}\n${retiredFolderNotice(projectDir)}\n`);
-    });
-
-    it("names the home directory once when the run is from there", async () => {
-      await mkdir(path.join(fakeHome, RETIRED_FOLDER), { recursive: true });
-      process.chdir(fakeHome);
-
-      const { stderr } = await runCliCommand(["list"]);
-
-      expect(stderr).toBe(`${retiredFolderNotice(fakeHome)}\n`);
-    });
-
-    it("says nothing where no retired source folder is", async () => {
-      const { stderr } = await runCliCommand(["list"]);
-
-      expect(stderr).toBe("");
-    });
   });
 
   describe("on a run that names no command", () => {

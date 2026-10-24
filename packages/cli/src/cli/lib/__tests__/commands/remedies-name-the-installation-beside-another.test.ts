@@ -88,10 +88,6 @@ describe("a remedy handed out over a project holding two installations", () => {
     });
   });
 
-  /**
-   * Through `dist/`, a run's `--provider` outlives it in the module that holds it, so the spec that
-   * names one runs last; the specs before it name none.
-   */
   describe("opening a shared id in the editor", () => {
     const SHARED_ID = "Shared1";
 
