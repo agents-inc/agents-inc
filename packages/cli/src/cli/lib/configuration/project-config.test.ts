@@ -29,7 +29,7 @@ import {
   buildProjectConfig,
 } from "../__tests__/factories/config-factories.js";
 import { sa } from "../__tests__/factories/skill-factories.js";
-import { buildSkillConfigs } from "../__tests__/helpers/skill-config-builders.js";
+import { buildSkillConfig, buildSkillConfigs } from "../__tests__/helpers/skill-config-builders.js";
 import { SINGLE_REACT_MATRIX, WEB_PAIR_MATRIX } from "../__tests__/mock-data/mock-matrices";
 import { STANDARD_FILES } from "../../consts";
 import { blankGlobalConfig } from "@workspace/compile/global-config";
@@ -440,6 +440,37 @@ describe("loading a config: refusals and defaults", () => {
     );
   });
 
+  /** The pair: the same entry, its name a number and then a string. */
+  it("refuses a skill entry whose display name is not a string, naming where it sits", async () => {
+    await writeRawTestConfig(
+      tempDir,
+      renderConfigTs({
+        ...buildProjectConfig(),
+        skills: [{ ...buildSkillConfig("web-framework-react"), displayName: 7 }],
+      }),
+    );
+
+    await expect(loadingTheProject()).rejects.toMatchObject({
+      name: "ConfigLoadError",
+      scope: "project",
+      reason: "skills.0.displayName: Invalid input: expected string, received number",
+    });
+  });
+
+  it("loads a skill entry whose display name is a string, keeping the name", async () => {
+    await writeRawTestConfig(
+      tempDir,
+      renderConfigTs({
+        ...buildProjectConfig(),
+        skills: [{ ...buildSkillConfig("web-framework-react"), displayName: "Acme React" }],
+      }),
+    );
+
+    expect((await loadingTheProject())?.config.skills).toStrictEqual([
+      { id: "web-framework-react", scope: "project", origin: "eject", displayName: "Acme React" },
+    ]);
+  });
+
   it("answers a configuration that is not an object with the schema's error and no warnings", () => {
     expect(validateProjectConfig(null)).toStrictEqual({
       valid: false,
@@ -554,6 +585,37 @@ describe("round-trip tests", () => {
       await expect(load).rejects.toThrow(/source/);
       await expect(load).rejects.toThrow(/origin/);
     });
+  });
+
+  /** Marketplace text written into an executed module: every character a quote can break on. */
+  it("writes a recorded display name and loads it back as written, quotes, backslash and newline included", async () => {
+    initializeMatrix(SINGLE_REACT_MATRIX);
+    const recorded = `It's "Acme" \\ React\nNext`;
+    const named = buildProjectConfig({
+      name: "named",
+      agents: [],
+      skills: buildSkillConfigs(["web-framework-react"], {
+        scope: "global",
+        origin: "acme-market",
+        displayName: recorded,
+      }),
+    });
+
+    const configDir = sourceFolderInUse(tempDir, "claude").dir;
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      path.join(configDir, STANDARD_FILES.CONFIG_TS),
+      generateConfigSource(named, matrix),
+    );
+
+    const loaded = await loadProjectConfig(tempDir);
+
+    expect(
+      loaded?.config.skills,
+      "the name must come back character for character, or the summary prints something else",
+    ).toStrictEqual([
+      { id: "web-framework-react", scope: "global", origin: "acme-market", displayName: recorded },
+    ]);
   });
 
   it("should round-trip config with options (description/author)", async () => {

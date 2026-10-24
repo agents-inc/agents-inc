@@ -31,6 +31,7 @@ export function buildSkillConfig<Id extends string>(
     id,
     scope: overrides?.scope ?? FACTORY_DEFAULT_SCOPE,
     origin: overrides?.origin ?? "eject",
+    ...(overrides?.displayName !== undefined && { displayName: overrides.displayName }),
     ...(overrides?.excluded !== undefined && { excluded: overrides.excluded }),
   };
 }

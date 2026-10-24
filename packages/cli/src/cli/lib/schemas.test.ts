@@ -13,7 +13,7 @@ import {
   createMockMarketplacePlugin,
 } from "./__tests__/factories/plugin-factories.js";
 import { readTestJson } from "./__tests__/helpers/config-io.js";
-import { buildSkillConfigs } from "./__tests__/helpers/skill-config-builders.js";
+import { buildSkillConfig, buildSkillConfigs } from "./__tests__/helpers/skill-config-builders.js";
 import { EJECT_SOURCE } from "../consts";
 import { AGENT_DEFS } from "./__tests__/mock-data/mock-agents.js";
 import { AGENT_ISOLATIONS, CACHE_TTLS } from "../types/matrix";
@@ -429,6 +429,56 @@ describe("the marketplace fields the loader schemas name", () => {
 
     expect(result.success).toBe(true);
     expect(result.data?.skills?.map((skill) => skill.origin)).toStrictEqual([EJECT_SOURCE]);
+  });
+});
+
+/** The name an install records on each skill entry, which every summary reads back. */
+describe("a skill entry's display name in config.ts", () => {
+  const RECORDED_NAME = "Acme React";
+
+  it("is kept as written", () => {
+    const result = projectConfigLoaderSchema.safeParse(
+      buildProjectConfig({
+        skills: buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          origin: "acme-market",
+          displayName: RECORDED_NAME,
+        }),
+      }),
+    );
+
+    expect(
+      result.data?.skills,
+      "a name the loader drops is a name no summary can print",
+    ).toStrictEqual([
+      {
+        id: "web-framework-react",
+        scope: "global",
+        origin: "acme-market",
+        displayName: RECORDED_NAME,
+      },
+    ]);
+  });
+
+  it("is refused where it is not a string, at the entry's own path", () => {
+    const result = projectConfigLoaderSchema.safeParse({
+      ...buildProjectConfig(),
+      skills: [{ ...buildSkillConfig("web-framework-react"), displayName: NON_STRING_FIELD_VALUE }],
+    });
+
+    expect(result.error?.issues.map((issue) => issue.path.join("."))).toStrictEqual([
+      "skills.0.displayName",
+    ]);
+  });
+
+  it("stays absent from an entry that records none", () => {
+    const result = projectConfigLoaderSchema.safeParse(
+      buildProjectConfig({ skills: buildSkillConfigs(["web-framework-react"]) }),
+    );
+
+    expect(result.data?.skills).toStrictEqual([
+      { id: "web-framework-react", scope: "project", origin: EJECT_SOURCE },
+    ]);
   });
 });
 

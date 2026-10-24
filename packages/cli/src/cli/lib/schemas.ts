@@ -273,6 +273,7 @@ const projectConfigFields = z
           id: z.string() as z.ZodType<SkillId>,
           scope: z.enum(["project", "global"]),
           origin: z.string(),
+          displayName: z.string().exactOptional(),
           excluded: z.boolean().exactOptional(),
         }),
       )
