@@ -40,7 +40,6 @@ import {
   STANDARD_DIRS,
   STANDARD_FILES,
   marketplaceManifestPath,
-  UI_SYMBOLS,
 } from "../../../consts";
 import {
   createMockMarketplace,
@@ -67,6 +66,7 @@ import {
 } from "../mock-data/mock-source-files.js";
 import { EXIT_CODES } from "../../exit-codes";
 import { firstElement } from "../helpers/element-at.js";
+import { matchedAsWritten } from "../helpers/matched-as-written.js";
 
 const INSTALLED_SKILLS_SUBDIR = path.join(CLAUDE_DIR, STANDARD_DIRS.SKILLS);
 const INSTALLED_AGENTS_SUBDIR = path.join(CLAUDE_DIR, "agents");
@@ -83,9 +83,12 @@ const ROW_SKILLS_INSTALLED = "Skills Installed";
 const ROW_PLUGINS_INSTALLED = "Plugins Installed";
 const ROW_MARKETPLACE_REACHABLE = "Marketplace Reachable";
 
+/** Mirrors `STEP_TEXT.DOCTOR_STATUS_SKIP`; the product's own glyph would move with the row. */
+const STATUS_SKIP = "–";
+
 /** One row standing down; the blanket notice has no row name or status column, so never matches. */
 function skippedRow(name: string): RegExp {
-  return new RegExp(`${name}\\s+${UI_SYMBOLS.SKIPPED}\\s+Skipped`);
+  return new RegExp(`${matchedAsWritten(name)}\\s+${matchedAsWritten(STATUS_SKIP)}\\s+Skipped`);
 }
 
 const CONFIGURED_AGENT_NAME = "web-developer";
@@ -684,7 +687,7 @@ describe("doctor content checks", () => {
 
       expect(stdout).toMatch(
         new RegExp(
-          `${ROW_SKILLS_RESOLVED}\\s+${UI_SYMBOLS.SKIPPED}\\s+Skipped — this row would only restate the marketplace and skill errors above\\n`,
+          `${matchedAsWritten(ROW_SKILLS_RESOLVED)}\\s+${matchedAsWritten(STATUS_SKIP)}\\s+Skipped — this row would only restate the marketplace and skill errors above\\n`,
         ),
       );
     });
@@ -1355,7 +1358,10 @@ describe("doctor content checks", () => {
         stdout,
         "a row that stands down must name what blocked it, not carry a blanket notice",
       ).toMatch(
-        new RegExp(`${ROW_SKILLS_RESOLVED}\\s+${UI_SYMBOLS.SKIPPED}\\s+Skipped[^\\n]*skill`, "i"),
+        new RegExp(
+          `${matchedAsWritten(ROW_SKILLS_RESOLVED)}\\s+${matchedAsWritten(STATUS_SKIP)}\\s+Skipped[^\\n]*skill`,
+          "i",
+        ),
       );
     });
 
@@ -1389,7 +1395,7 @@ describe("doctor content checks", () => {
         "a row that stands down must name what blocked it, not carry a blanket notice",
       ).toMatch(
         new RegExp(
-          `${ROW_PLUGINS_INSTALLED}\\s+${UI_SYMBOLS.SKIPPED}\\s+Skipped[^\\n]*plugin`,
+          `${matchedAsWritten(ROW_PLUGINS_INSTALLED)}\\s+${matchedAsWritten(STATUS_SKIP)}\\s+Skipped[^\\n]*plugin`,
           "i",
         ),
       );

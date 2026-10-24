@@ -18,6 +18,7 @@ import { renderUnparseableConfigTs } from "./__tests__/factories/unloadable-conf
 import { renderAgentMd } from "./__tests__/content-generators";
 import { writeRawTestConfig, writeTestTsConfig } from "./__tests__/helpers/config-io";
 import { useFakeHome } from "./__tests__/helpers/isolated-home";
+import { matchedAsWritten } from "./__tests__/helpers/matched-as-written";
 import { cleanupTempDir, createTempDir } from "./__tests__/test-fs-utils";
 import {
   cleanupTestSource,
@@ -111,7 +112,9 @@ describe("content-validator", () => {
       expect(validation.count).toBe(1);
       expect(validation.notes).toStrictEqual([
         expect.stringMatching(
-          new RegExp(`^marketplace \\(${marketplace.sourceDir}\\) — \\d+ skills?$`),
+          new RegExp(
+            `^${matchedAsWritten(`marketplace (${marketplace.sourceDir}) — `)}\\d+ skills?$`,
+          ),
         ),
       ]);
     });

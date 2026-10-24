@@ -20,7 +20,7 @@ import {
   buildSeedPayload,
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
-import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { DIRS, doctorRow, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
 /** `doctor` exits 0 on a `warn` row, so every assertion reads the row's own sentence. */
 
@@ -199,7 +199,13 @@ describe("doctor over a project holding a Claude and a Codex installation", () =
 
       const { exitCode, stdout } = await CLI.run(["doctor"], project);
 
-      expect(stdout).toMatch(/Installations\s+✓\s+2 installations here, each checked below\n/);
+      expect(stdout).toMatch(
+        doctorRow(
+          STEP_TEXT.DOCTOR_ROW_INSTALLATIONS,
+          STEP_TEXT.DOCTOR_STATUS_PASS,
+          `2 ${STEP_TEXT.DOCTOR_INSTALLATIONS_EACH_CHECKED}\n`,
+        ),
+      );
       expect(stdout).toMatch(/Summary: \d+ passed, 0 warnings, 0 errors\n/);
       expect(exitCode, stdout).toBe(EXIT_CODES.SUCCESS);
     },
@@ -226,8 +232,15 @@ describe("doctor over a project holding a Claude and a Codex installation", () =
           "    Placements Offered      ✓  Every configured skill is placeable",
         ].join("\n"),
       );
+      const agentCompiled = doctorRow(
+        STEP_TEXT.DOCTOR_ROW_AGENTS_COMPILED,
+        STEP_TEXT.DOCTOR_STATUS_PASS,
+        "1/1 agent compiled",
+      );
       expect(stdout).toMatch(
-        /The claude installation[\s\S]*Agents Compiled\s+✓\s+1\/1 agent compiled[\s\S]*The codex installation/,
+        new RegExp(
+          `The claude installation[\\s\\S]*${agentCompiled.source}[\\s\\S]*The codex installation`,
+        ),
       );
       expect(stdout).toContain(
         [

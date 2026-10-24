@@ -6,7 +6,7 @@ import { CLI } from "../fixtures/cli.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { e2eStackPayload, installFromSeed } from "../fixtures/e2e-stack-seed.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
-import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { DIRS, doctorRow, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { cleanupTempDir } from "../helpers/test-utils.js";
 import { createE2ESource, E2E_SOURCE, type E2ESource } from "../helpers/create-e2e-source.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
@@ -140,9 +140,7 @@ describe("doctor layered output", () => {
         "the orphan row compares file names against the config and opens none of them",
       ).toContain(STEP_TEXT.DOCTOR_ROW_NO_ORPHANS);
       expect(stdout).toMatch(
-        new RegExp(
-          `${STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED}\\s+${STEP_TEXT.DOCTOR_STATUS_SKIP}\\s+Skipped`,
-        ),
+        doctorRow(STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED, STEP_TEXT.DOCTOR_STATUS_SKIP, "Skipped"),
       );
       // The negatives only show the blanket skip did not happen; this positive names the blocking
       // pass.
@@ -219,7 +217,13 @@ describe("doctor in a skills source repository", () => {
       const { exitCode, stdout } = await CLI.run(["doctor"], { dir: source.sourceDir });
 
       expect(exitCode, stdout).toBe(EXIT_CODES.ERROR);
-      expect(stdout).toMatch(/Marketplace Repository\s+✗\s+Check threw\n/);
+      expect(stdout).toMatch(
+        doctorRow(
+          STEP_TEXT.DOCTOR_ROW_MARKETPLACE_REPOSITORY,
+          STEP_TEXT.DOCTOR_STATUS_FAIL,
+          "Check threw\n",
+        ),
+      );
       expect(stdout, "the row names the file it could not read").toContain(ownConfig);
       expect(stdout, "the report runs to its end").toContain(STEP_TEXT.DOCTOR_SUMMARY);
       expect(stdout).not.toContain(STEP_TEXT.DOCTOR_SKIP_NO_INSTALLATION);
@@ -288,9 +292,7 @@ describe("doctor in a project whose marketplace dangles a slug", () => {
       expect(stdout).toContain(STEP_TEXT.DOCTOR_OPERATIONAL_SECTION);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED);
       expect(stdout, "a warning disables no row").not.toMatch(
-        new RegExp(
-          `${STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED}\\s+${STEP_TEXT.DOCTOR_STATUS_SKIP}\\s+Skipped`,
-        ),
+        doctorRow(STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED, STEP_TEXT.DOCTOR_STATUS_SKIP, "Skipped"),
       );
     },
   );

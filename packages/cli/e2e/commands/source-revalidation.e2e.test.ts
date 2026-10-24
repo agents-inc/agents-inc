@@ -7,7 +7,12 @@ import {
   startTarballSourceServer,
   type TarballSourceServer,
 } from "../helpers/tarball-source-server.js";
-import { cleanupTempDir, createTempDir, writeProjectConfig } from "../helpers/test-utils.js";
+import {
+  cleanupTempDir,
+  createTempDir,
+  writeProjectConfig,
+  matchedAsWritten,
+} from "../helpers/test-utils.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
 /**
@@ -101,7 +106,7 @@ describe("remote source revalidation", () => {
       "one update is one line, however many times the command loaded the source",
     ).not.toMatch(
       new RegExp(
-        `${STEP_TEXT.SOURCE_HAS_NEWER_CONTENT}[\\s\\S]*${STEP_TEXT.SOURCE_HAS_NEWER_CONTENT}`,
+        `${matchedAsWritten(STEP_TEXT.SOURCE_HAS_NEWER_CONTENT)}[\\s\\S]*${matchedAsWritten(STEP_TEXT.SOURCE_HAS_NEWER_CONTENT)}`,
       ),
     );
     expect(changeRequests, "a moved source is re-downloaded").toContain(DOWNLOAD);
@@ -129,7 +134,7 @@ describe("remote source revalidation", () => {
       "one unreachable source is one warning, however many times the command loaded it",
     ).not.toMatch(
       new RegExp(
-        `${STEP_TEXT.SOURCE_UNREACHABLE_CACHED}[\\s\\S]*${STEP_TEXT.SOURCE_UNREACHABLE_CACHED}`,
+        `${matchedAsWritten(STEP_TEXT.SOURCE_UNREACHABLE_CACHED)}[\\s\\S]*${matchedAsWritten(STEP_TEXT.SOURCE_UNREACHABLE_CACHED)}`,
       ),
     );
   });

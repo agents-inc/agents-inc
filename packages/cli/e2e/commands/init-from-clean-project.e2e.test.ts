@@ -10,6 +10,7 @@ import {
   readTreeSnapshot,
   loadConfigOrFail,
   skillsPath,
+  matchedAsWritten,
 } from "../helpers/test-utils.js";
 import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
@@ -130,7 +131,7 @@ describe("init --from <id> into a clean project", () => {
     );
     expect(said).toMatch(
       new RegExp(
-        `${STEP_TEXT.SHARED_CONFIG_ADDED_TO_GLOBAL}[\\s\\S]*sub-agent ${WEB_DEV}: \\+ ${E2E_SKILL.hono.id}`,
+        `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_ADDED_TO_GLOBAL)}[\\s\\S]*${matchedAsWritten(`sub-agent ${WEB_DEV}: + ${E2E_SKILL.hono.id}`)}`,
       ),
     );
     expect(said, "a sub-agent the run adds a skill to is not kept as installed").not.toContain(

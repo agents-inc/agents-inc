@@ -20,7 +20,15 @@ import {
   readTestFile,
   skillsPath,
 } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
+import {
+  DIRS,
+  doctorRow,
+  EXIT_CODES,
+  FILES,
+  STEP_TEXT,
+  TERMINAL_SIZE,
+  TIMEOUTS,
+} from "../pages/constants.js";
 import {
   buildSeedExternalSkill,
   buildSeedPayload,
@@ -152,11 +160,27 @@ describe("doctor over a Claude installation and a Codex one carrying a long-name
 
       const { exitCode, said } = await doctor(project);
 
-      expect(said).toMatch(/Installations\s+✓\s+2 installations here, each checked below/);
+      expect(said).toMatch(
+        doctorRow(
+          STEP_TEXT.DOCTOR_ROW_INSTALLATIONS,
+          STEP_TEXT.DOCTOR_STATUS_PASS,
+          `2 ${STEP_TEXT.DOCTOR_INSTALLATIONS_EACH_CHECKED}`,
+        ),
+      );
+      const claudeResolved = doctorRow(
+        STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED,
+        STEP_TEXT.DOCTOR_STATUS_PASS,
+        "1/1 skill found",
+      );
+      const codexResolved = doctorRow(
+        STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED,
+        STEP_TEXT.DOCTOR_STATUS_PASS,
+        "2/2 skills found",
+      );
       expect(said, "each block resolves its own installation's skills").toMatch(
         new RegExp(
-          `The claude installation[\\s\\S]*?${STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED}\\s+✓\\s+1/1 skill found` +
-            `[\\s\\S]*The codex installation[\\s\\S]*?${STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED}\\s+✓\\s+2/2 skills found`,
+          `The claude installation[\\s\\S]*?${claudeResolved.source}` +
+            `[\\s\\S]*The codex installation[\\s\\S]*?${codexResolved.source}`,
         ),
       );
       expect(said, "no row reports the carried skill missing").not.toContain(

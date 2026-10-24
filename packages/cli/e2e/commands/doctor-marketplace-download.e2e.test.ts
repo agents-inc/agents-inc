@@ -19,8 +19,9 @@ import {
   writeAgentFile,
   writeProjectConfig,
   type InstallTree,
+  matchedAsWritten,
 } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { DIRS, doctorRow, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -44,19 +45,27 @@ const PUBLISHED_COUNT_LINE = ` ${E2E_SKILL_IDS.length} ${STEP_TEXT.DOCTOR_SKILLS
 const WITHDRAWN_COUNT_LINE = ` ${E2E_SKILL_IDS.length - 1} ${STEP_TEXT.DOCTOR_SKILLS_AVAILABLE}\n`;
 
 /** The marketplace row is the last: the blank line and the summary follow it. */
-const AFTER_THE_LAST_ROW = `\n\n {2}${STEP_TEXT.DOCTOR_SUMMARY}`;
+const AFTER_THE_LAST_ROW = `\n\n {2}${matchedAsWritten(STEP_TEXT.DOCTOR_SUMMARY)}`;
 
 const SAVED_COPY_SAID_REPLACED = new RegExp(
-  `\n {2,}${STEP_TEXT.DOCTOR_SAVED_COPY_REPLACED}${AFTER_THE_LAST_ROW}`,
+  `\n {2,}${matchedAsWritten(STEP_TEXT.DOCTOR_SAVED_COPY_REPLACED)}${AFTER_THE_LAST_ROW}`,
 );
 
 /** The count, then the one line saying how the marketplace was reached, and the row ends. */
 const NOTHING_SAID_PAST_HOW_IT_WAS_REACHED = new RegExp(
-  `${PUBLISHED_COUNT_LINE} {2,}[^\n]+${AFTER_THE_LAST_ROW}`,
+  `${matchedAsWritten(PUBLISHED_COUNT_LINE)} {2,}[^\n]+${AFTER_THE_LAST_ROW}`,
 );
 
-const SKILLS_SKIPPED = new RegExp(
-  `${STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED}\\s+${STEP_TEXT.DOCTOR_STATUS_SKIP}\\s+${STEP_TEXT.DOCTOR_SKILLS_SKIPPED_UNREACHABLE.replace(/[()]/g, "\\$&")}\n`,
+const SKILLS_SKIPPED = doctorRow(
+  STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED,
+  STEP_TEXT.DOCTOR_STATUS_SKIP,
+  `${STEP_TEXT.DOCTOR_SKILLS_SKIPPED_UNREACHABLE}\n`,
+);
+
+const CONNECTED_TO_REMOTE = doctorRow(
+  STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE,
+  STEP_TEXT.DOCTOR_STATUS_PASS,
+  STEP_TEXT.DOCTOR_SOURCE_REMOTE,
 );
 
 /** giget saves this branch's tarball a folder deeper than any other: `feature/x.tar.gz`. */
@@ -162,7 +171,7 @@ describe("a marketplace doctor downloads on every run", () => {
   it("counts what the marketplace serves on an ordinary run", () => {
     for (const run of [firstRun, lastRun]) {
       expect(run.exitCode, run.output).toBe(EXIT_CODES.SUCCESS);
-      expect(run.stdout).toMatch(/Marketplace Reachable\s+✓\s+Connected to remote: /);
+      expect(run.stdout).toMatch(CONNECTED_TO_REMOTE);
       expect(run.stdout).toContain(PUBLISHED_COUNT_LINE);
     }
   });
@@ -179,7 +188,7 @@ describe("a marketplace doctor downloads on every run", () => {
 
   it("counts the download, not a saved copy damaged on disk", () => {
     expect(overDamagedCopy.exitCode, overDamagedCopy.output).toBe(EXIT_CODES.SUCCESS);
-    expect(overDamagedCopy.stdout).toMatch(/Marketplace Reachable\s+✓\s+Connected to remote: /);
+    expect(overDamagedCopy.stdout).toMatch(CONNECTED_TO_REMOTE);
     expect(overDamagedCopy.stdout).toContain(PUBLISHED_COUNT_LINE);
     expect(overDamagedCopy.stdout, "the damaged copy is not counted").not.toContain(
       WITHDRAWN_COUNT_LINE,
@@ -201,8 +210,10 @@ describe("a marketplace doctor downloads on every run", () => {
     );
     expect(failedDownload.exitCode, failedDownload.output).toBe(EXIT_CODES.ERROR);
     expect(failedDownload.stdout).toMatch(
-      new RegExp(
-        `${STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE}\\s+${STEP_TEXT.DOCTOR_STATUS_FAIL}\\s+${STEP_TEXT.DOCTOR_MARKETPLACE_LOAD_FAILED}\n`,
+      doctorRow(
+        STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE,
+        STEP_TEXT.DOCTOR_STATUS_FAIL,
+        `${STEP_TEXT.DOCTOR_MARKETPLACE_LOAD_FAILED}\n`,
       ),
     );
     expect(failedDownload.stdout).toMatch(SKILLS_SKIPPED);
@@ -280,7 +291,7 @@ describe("a doctor run interrupted while it downloads the marketplace", () => {
 
   it("counts what the marketplace serves on the next run", () => {
     expect(nextRun.exitCode, nextRun.output).toBe(EXIT_CODES.SUCCESS);
-    expect(nextRun.stdout).toMatch(/Marketplace Reachable\s+✓\s+Connected to remote: /);
+    expect(nextRun.stdout).toMatch(CONNECTED_TO_REMOTE);
     expect(nextRun.stdout).toContain(PUBLISHED_COUNT_LINE);
   });
 
@@ -345,8 +356,10 @@ describe("a marketplace whose download fails once after it withdrew a skill", ()
         expect(failedRequests, "the download was the request refused").toContain(DOWNLOAD_REFUSED);
         expect(failed.exitCode, failed.output).toBe(EXIT_CODES.ERROR);
         expect(failed.stdout).toMatch(
-          new RegExp(
-            `${STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE}\\s+${STEP_TEXT.DOCTOR_STATUS_FAIL}\\s+Could not reach ${marketplaceOn(server)}\n`,
+          doctorRow(
+            STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE,
+            STEP_TEXT.DOCTOR_STATUS_FAIL,
+            `Could not reach ${marketplaceOn(server)}\n`,
           ),
         );
         expect(failed.stdout).toContain(STEP_TEXT.DOCTOR_DOWNLOAD_FAILED_SAVED_COPY);

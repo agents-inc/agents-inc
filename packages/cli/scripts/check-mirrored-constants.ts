@@ -13,6 +13,7 @@ const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..");
 const E2E_CONSTANTS = "e2e/pages/constants.ts";
 const EXIT_CODES_MODULE = "src/cli/lib/exit-codes.ts";
 const CONSTS = "src/cli/consts.ts";
+const DOCTOR_COMMAND = "src/cli/commands/doctor.ts";
 const INSTALL_LAYOUT = "src/cli/lib/installation/install-layout.ts";
 /** consts.ts only re-exports the path names; this declares them. */
 const COMPILE_PATHS = "../compile/src/paths.ts";
@@ -90,6 +91,31 @@ const MIRRORS: Mirror[] = [
     kind: "value",
     e2e: { file: E2E_CONSTANTS, symbol: "STEP_TEXT", path: ["DOCTOR_STATUS_FAIL"] },
     product: { file: CONSTS, symbol: "UI_SYMBOLS", path: ["CROSS"] },
+  },
+  // `UI_SYMBOLS.CHECK` and `.SKIPPED` hold these glyph constants by name, so the glyphs are read here.
+  {
+    name: "STEP_TEXT.DOCTOR_STATUS_PASS",
+    kind: "value",
+    e2e: { file: E2E_CONSTANTS, symbol: "STEP_TEXT", path: ["DOCTOR_STATUS_PASS"] },
+    product: { file: CONSTS, symbol: "CHECK_GLYPH", path: [] },
+  },
+  {
+    name: "STEP_TEXT.DOCTOR_STATUS_SKIP",
+    kind: "value",
+    e2e: { file: E2E_CONSTANTS, symbol: "STEP_TEXT", path: ["DOCTOR_STATUS_SKIP"] },
+    product: { file: CONSTS, symbol: "EN_DASH_GLYPH", path: [] },
+  },
+  {
+    name: "STEP_TEXT.DOCTOR_ROW_INSTALLATIONS",
+    kind: "value",
+    e2e: { file: E2E_CONSTANTS, symbol: "STEP_TEXT", path: ["DOCTOR_ROW_INSTALLATIONS"] },
+    product: { file: DOCTOR_COMMAND, symbol: "INSTALLATIONS_ROW_NAME", path: [] },
+  },
+  {
+    name: "STEP_TEXT.DOCTOR_ROW_MARKETPLACE_REPOSITORY",
+    kind: "value",
+    e2e: { file: E2E_CONSTANTS, symbol: "STEP_TEXT", path: ["DOCTOR_ROW_MARKETPLACE_REPOSITORY"] },
+    product: { file: DOCTOR_COMMAND, symbol: "SOURCE_REPO_ROW_NAME", path: [] },
   },
   {
     name: "DIRS.RETIRED_SOURCE",

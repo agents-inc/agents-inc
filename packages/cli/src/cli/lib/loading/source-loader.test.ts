@@ -88,6 +88,7 @@ import { SOURCE_ENV_VAR } from "../configuration/config";
 import { LOCAL_DEFAULTS } from "../metadata-keys";
 import type { LocalSkillDiscoveryResult } from "../skills";
 import { firstElement } from "../__tests__/helpers/element-at.js";
+import { matchedAsWritten } from "../__tests__/helpers/matched-as-written.js";
 import { typedEntries, typedKeys, typedValues } from "../../utils/typed-object";
 import { buildSkillConfigs } from "../__tests__/helpers/skill-config-builders.js";
 
@@ -2357,7 +2358,7 @@ describe("source-loader public catalogue collision guard", () => {
     // Ten of the twelve, in whatever order the skills were read, then the count of the rest.
     expect(refusal).toMatch(
       new RegExp(
-        `already owns:\\n(?:  (?:${collidingIds.join("|")})\\n){10}  \\.\\.\\. and 2 more\\n`,
+        `already owns:\\n(?:  (?:${collidingIds.map(matchedAsWritten).join("|")})\\n){10}  ${matchedAsWritten("... and 2 more")}\\n`,
       ),
     );
     expect(refusal).toContain(

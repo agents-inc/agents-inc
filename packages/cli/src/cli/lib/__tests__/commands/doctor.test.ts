@@ -16,14 +16,12 @@ import { renderUnparseableConfigTs } from "../factories/unloadable-config-factor
 import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
 import { saUnflagged } from "../factories/skill-factories.js";
 import { buildSkillConfigs } from "../helpers/skill-config-builders.js";
+import { matchedAsWritten } from "../helpers/matched-as-written.js";
 import { CUSTOM_HOUSE_TOOLING_SKILL } from "../mock-data/mock-skills.js";
-import {
-  CLAUDE_DIR,
-  LOCAL_SKILLS_PATH,
-  STANDARD_DIRS,
-  STANDARD_FILES,
-  UI_SYMBOLS,
-} from "../../../consts";
+import { CLAUDE_DIR, LOCAL_SKILLS_PATH, STANDARD_DIRS, STANDARD_FILES } from "../../../consts";
+
+/** Mirrors `STEP_TEXT.DOCTOR_STATUS_SKIP`; the product's own glyph would move with the row. */
+const STATUS_SKIP = "–";
 
 /** The installed pair a deleted configuration strands: one skill directory, one compiled agent. */
 const ORPHANED_SKILL_ID = "web-framework-react";
@@ -338,7 +336,7 @@ describe("doctor command", () => {
       expect(output).toContain(ORPHANED_SKILL_ID);
       expect(output).toContain(`${ORPHANED_AGENT_NAME}.md`);
       expect(output, "the row that names them cannot also report itself skipped").not.toMatch(
-        new RegExp(`No Orphans\\s+${UI_SYMBOLS.SKIPPED}\\s+Skipped`),
+        new RegExp(`No Orphans\\s+${matchedAsWritten(STATUS_SKIP)}\\s+Skipped`),
       );
       expect(output).toContain("Nothing declares the files above");
     });
@@ -348,7 +346,9 @@ describe("doctor command", () => {
       const output = stdout + (error?.message || "");
 
       // An empty directory with no configuration is the state `init` exists for.
-      expect(output).toMatch(new RegExp(`No Orphans\\s+${UI_SYMBOLS.SKIPPED}\\s+Skipped`));
+      expect(output).toMatch(
+        new RegExp(`No Orphans\\s+${matchedAsWritten(STATUS_SKIP)}\\s+Skipped`),
+      );
       expect(output).not.toContain("no configuration declares them");
     });
 
@@ -374,7 +374,9 @@ describe("doctor command", () => {
       const output = stdout + (error?.message || "");
 
       // `uninstall` refuses a directory with no provenance, so offering it would contradict it.
-      expect(output).toMatch(new RegExp(`No Orphans\\s+${UI_SYMBOLS.SKIPPED}\\s+Skipped`));
+      expect(output).toMatch(
+        new RegExp(`No Orphans\\s+${matchedAsWritten(STATUS_SKIP)}\\s+Skipped`),
+      );
       expect(output).not.toContain("no configuration declares them");
       expect(output).not.toContain("Nothing declares the files above");
 
@@ -405,7 +407,9 @@ describe("doctor command", () => {
       const output = stdout + (error?.message || "");
 
       // `uninstall` without config keeps unmarked agents, so offering this one would contradict it.
-      expect(output).toMatch(new RegExp(`No Orphans\\s+${UI_SYMBOLS.SKIPPED}\\s+Skipped`));
+      expect(output).toMatch(
+        new RegExp(`No Orphans\\s+${matchedAsWritten(STATUS_SKIP)}\\s+Skipped`),
+      );
       expect(output).not.toContain("no configuration declares them");
     });
 

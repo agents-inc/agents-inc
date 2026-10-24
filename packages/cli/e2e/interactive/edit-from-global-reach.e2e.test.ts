@@ -19,6 +19,7 @@ import {
   skillsPath,
   sourceFolderIn,
   writeProjectConfig,
+  matchedAsWritten,
 } from "../helpers/test-utils.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
@@ -274,14 +275,18 @@ describe("edit --from <id> and a global install the configuration leaves out", (
         planned,
         "a project apply must name the global skill it keeps though the configuration leaves it out",
       ).toMatch(
-        new RegExp(`${STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED}[\\s\\S]*${E2E_SKILL.vitest.id}`),
+        new RegExp(
+          `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED)}[\\s\\S]*${matchedAsWritten(E2E_SKILL.vitest.id)}`,
+        ),
       );
       expect(planned).not.toContain(realpathSync(fixture.projectB));
     });
 
     it("names the global sub-agent it keeps though the configuration leaves it out", () => {
       expect(planned).toMatch(
-        new RegExp(`${STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED}[\\s\\S]*sub-agent ${API_DEV}`),
+        new RegExp(
+          `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED)}[\\s\\S]*${matchedAsWritten(`sub-agent ${API_DEV}`)}`,
+        ),
       );
     });
 
@@ -397,7 +402,7 @@ describe("edit --from <id> and a global install the configuration leaves out", (
       for (const project of [fixture.projectA, fixture.projectB]) {
         expect(planned).toMatch(
           new RegExp(
-            `${STEP_TEXT.SHARED_CONFIG_REGISTERED_RECOMPILED}[\\s\\S]*${realpathSync(project)}`,
+            `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_REGISTERED_RECOMPILED)}[\\s\\S]*${matchedAsWritten(realpathSync(project))}`,
           ),
         );
       }

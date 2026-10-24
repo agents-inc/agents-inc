@@ -18,6 +18,7 @@ import {
   skillsPath,
   sourceFolderIn,
   writeProjectConfig,
+  matchedAsWritten,
 } from "../helpers/test-utils.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
@@ -565,7 +566,7 @@ describe("edit --from <id> interactive", () => {
           "the carried skill must be installed globally",
         ).not.toHaveLength(0);
         const namedAsKept = new RegExp(
-          `${STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED}[\\s\\S]*skill ${CARRIED_ID}`,
+          `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED)}[\\s\\S]*${matchedAsWritten(`skill ${CARRIED_ID}`)}`,
         );
         const launchHere = (): InteractivePrompt =>
           new InteractivePrompt(["edit", "--from", CARRIED_ID_GLOBAL], project.dir, {

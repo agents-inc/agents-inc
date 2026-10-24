@@ -21,7 +21,15 @@ import {
   readTestFile,
   skillsPath,
 } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
+import {
+  DIRS,
+  doctorRow,
+  EXIT_CODES,
+  FILES,
+  STEP_TEXT,
+  TERMINAL_SIZE,
+  TIMEOUTS,
+} from "../pages/constants.js";
 import { PROVIDERS, type Provider } from "../../src/cli/consts.js";
 import {
   buildSeedExternalSkill,
@@ -236,8 +244,10 @@ describe("doctor in a project under a home holding a Claude and a Codex global i
         `The global installation is on ${SOURCE_FOLDER[provider]}/`,
       );
       expect(said, "the inherited global's carried skill is found where it was copied").toMatch(
-        new RegExp(
-          `${STEP_TEXT.DOCTOR_ROW_SKILLS_INSTALLED}\\s+✓\\s+3/3 eject-mode skills installed`,
+        doctorRow(
+          STEP_TEXT.DOCTOR_ROW_SKILLS_INSTALLED,
+          STEP_TEXT.DOCTOR_STATUS_PASS,
+          "3/3 eject-mode skills installed",
         ),
       );
       expect(said, "no row reports a skill missing").not.toContain("(not found");

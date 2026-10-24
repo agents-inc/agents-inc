@@ -1,7 +1,7 @@
 import path from "path";
 import { writeFile, mkdir, rm } from "fs/promises";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { DIRS, doctorRow, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
   agentsPath,
   createLocalSkill,
@@ -33,8 +33,10 @@ import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-con
 /** `checkSourceReachable` counts what the E2E source carries. */
 const SOURCE_SKILL_COUNT_LINE = `${E2E_SKILL_IDS.length} ${STEP_TEXT.DOCTOR_SKILLS_AVAILABLE}`;
 
-const SKILLS_SKIPPED = new RegExp(
-  `${STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED}\\s+${STEP_TEXT.DOCTOR_STATUS_SKIP}\\s+${STEP_TEXT.DOCTOR_SKILLS_SKIPPED_UNREACHABLE.replace(/[()]/g, "\\$&")}\n`,
+const SKILLS_SKIPPED = doctorRow(
+  STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED,
+  STEP_TEXT.DOCTOR_STATUS_SKIP,
+  `${STEP_TEXT.DOCTOR_SKILLS_SKIPPED_UNREACHABLE}\n`,
 );
 
 /** A `string`: a hand-written config is unvalidated input. */
@@ -238,16 +240,20 @@ describe("doctor diagnostics", () => {
 
     it("says it connected while the marketplace answers", () => {
       expect(reached.exitCode, reached.stdout).toBe(EXIT_CODES.SUCCESS);
-      expect(reached.stdout).toMatch(/Marketplace Reachable\s+✓\s+Connected to remote: /);
+      expect(reached.stdout).toMatch(
+        doctorRow(
+          STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE,
+          STEP_TEXT.DOCTOR_STATUS_PASS,
+          STEP_TEXT.DOCTOR_SOURCE_REMOTE,
+        ),
+      );
     });
 
     it("fails the marketplace row while the marketplace cannot be reached, reading no saved copy", () => {
       expect(unreached.exitCode, unreached.output).toBe(EXIT_CODES.ERROR);
       expect(unreached.stdout).toContain(`Could not reach ${server.url}\n`);
       expect(unreached.stdout).toMatch(
-        new RegExp(
-          `${STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE}\\s+${STEP_TEXT.DOCTOR_STATUS_FAIL}\\s`,
-        ),
+        doctorRow(STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE, STEP_TEXT.DOCTOR_STATUS_FAIL),
       );
       expect(unreached.stdout).toMatch(SKILLS_SKIPPED);
       expect(unreached.output, "the saved copy never stands in for doctor").not.toContain(
@@ -314,7 +320,13 @@ describe("doctor diagnostics", () => {
 
       it("says it connected while the marketplace serves its content", () => {
         expect(reached.exitCode, reached.output).toBe(EXIT_CODES.SUCCESS);
-        expect(reached.stdout).toMatch(/Marketplace Reachable\s+✓\s+Connected to remote: /);
+        expect(reached.stdout).toMatch(
+          doctorRow(
+            STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE,
+            STEP_TEXT.DOCTOR_STATUS_PASS,
+            STEP_TEXT.DOCTOR_SOURCE_REMOTE,
+          ),
+        );
       });
 
       it.each([
@@ -324,8 +336,10 @@ describe("doctor diagnostics", () => {
         const { exitCode, output, stdout } = result();
         expect(exitCode, output).toBe(EXIT_CODES.ERROR);
         expect(stdout).toMatch(
-          new RegExp(
-            `${STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE}\\s+${STEP_TEXT.DOCTOR_STATUS_FAIL}\\s+${STEP_TEXT.DOCTOR_MARKETPLACE_LOAD_FAILED}\n`,
+          doctorRow(
+            STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE,
+            STEP_TEXT.DOCTOR_STATUS_FAIL,
+            `${STEP_TEXT.DOCTOR_MARKETPLACE_LOAD_FAILED}\n`,
           ),
         );
         expect(stdout).toContain(refusal(server.url));
@@ -438,7 +452,13 @@ describe("doctor diagnostics", () => {
 
       const { exitCode, stdout } = await CLI.run(["doctor"], { dir: tempDir });
 
-      expect(stdout).toMatch(/No Orphans\s+✓\s+No orphaned agent files\n/);
+      expect(stdout).toMatch(
+        doctorRow(
+          STEP_TEXT.DOCTOR_ROW_NO_ORPHANS,
+          STEP_TEXT.DOCTOR_STATUS_PASS,
+          `${STEP_TEXT.DOCTOR_NO_ORPHANED_AGENTS}\n`,
+        ),
+      );
       expect(exitCode, stdout).toBe(EXIT_CODES.SUCCESS);
     });
 
@@ -452,7 +472,13 @@ describe("doctor diagnostics", () => {
       const { exitCode, stdout } = await CLI.run(["doctor"], { dir: project.dir });
 
       expect(exitCode, stdout).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).toMatch(/No Orphans\s+✓\s+No orphaned agent files\n/);
+      expect(stdout).toMatch(
+        doctorRow(
+          STEP_TEXT.DOCTOR_ROW_NO_ORPHANS,
+          STEP_TEXT.DOCTOR_STATUS_PASS,
+          `${STEP_TEXT.DOCTOR_NO_ORPHANED_AGENTS}\n`,
+        ),
+      );
     });
 
     /**
@@ -485,7 +511,7 @@ describe("doctor diagnostics", () => {
 
       expect(exitCode).toBe(EXIT_CODES.ERROR);
       expect(stdout).toMatch(
-        new RegExp(`${STEP_TEXT.DOCTOR_ROW_NO_ORPHANS}\\s+${STEP_TEXT.DOCTOR_STATUS_FAIL}\\s`),
+        doctorRow(STEP_TEXT.DOCTOR_ROW_NO_ORPHANS, STEP_TEXT.DOCTOR_STATUS_FAIL),
       );
       expect(stdout).toContain(STEP_TEXT.DOCTOR_UNOWNED_INSTALL);
       for (const name of [...skillIds, ...agentFiles]) {

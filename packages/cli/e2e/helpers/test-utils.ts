@@ -36,6 +36,7 @@ import {
   readInstallTree,
 } from "../../src/cli/lib/__tests__/helpers/golden-tree.js";
 import { writeTestPluginManifest } from "../../src/cli/lib/__tests__/helpers/disk-writers.js";
+import { matchedAsWritten } from "../../src/cli/lib/__tests__/helpers/matched-as-written.js";
 import { buildClaudeTrustState } from "../../src/cli/lib/__tests__/factories/claude-settings-factories.js";
 import {
   cleanupTempDir,
@@ -179,6 +180,7 @@ export {
   cleanupTempDir,
   directoryExists,
   fileExists,
+  matchedAsWritten,
   normalizeGlobalConfig,
   normalizeInstallTree,
   parseCompiledAgentSections,

@@ -1,7 +1,7 @@
 import path from "path";
 import { mkdir } from "fs/promises";
 import { describe, it, expect, afterEach } from "vitest";
-import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
+import { doctorRow, EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
 import {
   cleanupTempDir,
   createTempDir,
@@ -46,9 +46,7 @@ describe("doctor command", () => {
 
     for (const row of CONFIG_DEPENDENT_ROWS) {
       expect(stdout).toMatch(
-        new RegExp(
-          `${row}\\s+${STEP_TEXT.DOCTOR_STATUS_SKIP}\\s+${STEP_TEXT.DOCTOR_SKIPPED_CONFIG_INVALID.replace(/[()]/g, "\\$&")}`,
-        ),
+        doctorRow(row, STEP_TEXT.DOCTOR_STATUS_SKIP, STEP_TEXT.DOCTOR_SKIPPED_CONFIG_INVALID),
       );
     }
     expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE);

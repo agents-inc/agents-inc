@@ -18,6 +18,7 @@ import {
   fileExists,
   loadConfigOrFail,
   readTestFile,
+  matchedAsWritten,
 } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { isClaudeCLIAvailable } from "../helpers/test-utils.js";
@@ -110,7 +111,7 @@ describe("config-scope integrity -- config-types Domain type includes config.dom
       // `[^{}]*` keeps each match inside the innermost object so braces stay balanced.
       const modifiedConfig = originalConfig.replace(
         new RegExp(
-          `(?:'[\\w-]+'\\s*:\\s*)?\\{[^{}]*\\bid\\s*:\\s*'${E2E_SKILL.hono.id}'[^{}]*\\},?\\s*`,
+          `(?:'[\\w-]+'\\s*:\\s*)?\\{[^{}]*\\bid\\s*:\\s*'${matchedAsWritten(E2E_SKILL.hono.id)}'[^{}]*\\},?\\s*`,
           "g",
         ),
         "",

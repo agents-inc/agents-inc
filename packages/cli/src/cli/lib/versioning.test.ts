@@ -12,6 +12,7 @@ import {
 } from "./versioning";
 import { getPluginManifestPath } from "./plugins/plugin-finder";
 import { silenceConsole } from "./__tests__/helpers/silence-console";
+import { matchedAsWritten } from "./__tests__/helpers/matched-as-written";
 import { createTempDir, cleanupTempDir } from "./__tests__/test-fs-utils";
 import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE, STANDARD_FILES } from "../consts";
 
@@ -338,7 +339,9 @@ describe("readEarlierBuild", () => {
     expect(await readEarlierBuild(pluginDir, getPluginManifestPath)).toBeNull();
     expect(consoleSpies.warn).toHaveBeenCalledExactlyOnceWith(
       expect.stringMatching(
-        new RegExp(`^  Warning: Failed to read plugin manifest at '${manifestPath}': .+`),
+        new RegExp(
+          `^${matchedAsWritten(`  Warning: Failed to read plugin manifest at '${manifestPath}': `)}.+`,
+        ),
       ),
     );
   });

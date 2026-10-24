@@ -15,6 +15,7 @@ import {
   serveDefaultMarketplaceHere,
   SHARED_CHECKOUT_ETAG,
 } from "./shared-marketplace-checkout.js";
+import { matchedAsWritten } from "./matched-as-written.js";
 
 // Assembled independently of the module under test, so a wrong address there can fail.
 function expectedCheckoutDir(cacheDir: string): string {
@@ -249,7 +250,7 @@ describe("serveDefaultMarketplaceHere", () => {
       const result = await downloadTemplate(DEFAULT_SOURCE, { dir, force: true, offline: false });
 
       expect(await readdir(dir)).toStrictEqual([STAND_IN_FILE]);
-      expect(result.tar).toMatch(new RegExp(`^${process.env[GITHUB_URL]}/`));
+      expect(result.tar).toMatch(new RegExp(`^${matchedAsWritten(`${process.env[GITHUB_URL]}/`)}`));
     } finally {
       await stopServing();
     }

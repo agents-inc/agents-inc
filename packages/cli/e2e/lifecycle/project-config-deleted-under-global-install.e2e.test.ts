@@ -11,11 +11,15 @@ import {
   fileExists,
   readTreeSnapshot,
   type TreeSnapshotEntry,
+  matchedAsWritten,
 } from "../helpers/test-utils.js";
-import { DIRS, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { DIRS, doctorRow, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 
-const CONFIG_ROW_PASSING = `${STEP_TEXT.DOCTOR_CONFIG_CHECK}\\s+✓\\s+`;
+const CONFIG_ROW_PASSING = doctorRow(
+  STEP_TEXT.DOCTOR_CONFIG_CHECK,
+  STEP_TEXT.DOCTOR_STATUS_PASS,
+).source;
 
 const CONFIG_RELATIVE = `${DIRS.SOURCE_CLAUDE}/${FILES.CONFIG_TS}`;
 
@@ -65,7 +69,7 @@ describe("doctor's Config Valid row under a live global installation", () => {
   it("labels a project's own config as this project's", () => {
     expect(ownConfig.stdout, ownConfig.output).toMatch(
       new RegExp(
-        `${CONFIG_ROW_PASSING}${STEP_TEXT.DOCTOR_CONFIG_THIS_PROJECT} ${CONFIG_RELATIVE} ${STEP_TEXT.DOCTOR_CONFIG_IS_VALID}`,
+        `${CONFIG_ROW_PASSING}${matchedAsWritten(`${STEP_TEXT.DOCTOR_CONFIG_THIS_PROJECT} ${CONFIG_RELATIVE} ${STEP_TEXT.DOCTOR_CONFIG_IS_VALID}`)}`,
       ),
     );
   });
@@ -73,7 +77,7 @@ describe("doctor's Config Valid row under a live global installation", () => {
   it("labels the config at the home directory as the global installation's, named from home", () => {
     expect(atHome.stdout, atHome.output).toMatch(
       new RegExp(
-        `${CONFIG_ROW_PASSING}${STEP_TEXT.DOCTOR_CONFIG_THE_GLOBAL_INSTALLATION} ~/${CONFIG_RELATIVE} ${STEP_TEXT.DOCTOR_CONFIG_IS_VALID}`,
+        `${CONFIG_ROW_PASSING}${matchedAsWritten(`${STEP_TEXT.DOCTOR_CONFIG_THE_GLOBAL_INSTALLATION} ~/${CONFIG_RELATIVE} ${STEP_TEXT.DOCTOR_CONFIG_IS_VALID}`)}`,
       ),
     );
   });
@@ -84,11 +88,13 @@ describe("doctor's Config Valid row under a live global installation", () => {
       neverConfigured.stdout,
       "the row names a config this directory does not have",
     ).not.toMatch(
-      new RegExp(`${CONFIG_ROW_PASSING}${CONFIG_RELATIVE} ${STEP_TEXT.DOCTOR_CONFIG_IS_VALID}`),
+      new RegExp(
+        `${CONFIG_ROW_PASSING}${matchedAsWritten(`${STEP_TEXT.DOCTOR_CONFIG_THIS_PROJECT} ${CONFIG_RELATIVE} ${STEP_TEXT.DOCTOR_CONFIG_IS_VALID}`)}`,
+      ),
     );
     expect(neverConfigured.stdout, neverConfigured.output).toMatch(
       new RegExp(
-        `${CONFIG_ROW_PASSING}${STEP_TEXT.DOCTOR_CONFIG_THIS_PROJECT} [^\\n]*${STEP_TEXT.DOCTOR_CONFIG_USING_GLOBAL} \\(~/${CONFIG_RELATIVE}\\)`,
+        `${CONFIG_ROW_PASSING}${matchedAsWritten(STEP_TEXT.DOCTOR_CONFIG_THIS_PROJECT)} [^\\n]*${matchedAsWritten(`${STEP_TEXT.DOCTOR_CONFIG_USING_GLOBAL} (~/${CONFIG_RELATIVE})`)}`,
       ),
     );
   });
@@ -100,11 +106,13 @@ describe("doctor's Config Valid row under a live global installation", () => {
         deleted.stdout,
         "the row calls the deleted project config valid — it read the global one",
       ).not.toMatch(
-        new RegExp(`${CONFIG_ROW_PASSING}${CONFIG_RELATIVE} ${STEP_TEXT.DOCTOR_CONFIG_IS_VALID}`),
+        new RegExp(
+          `${CONFIG_ROW_PASSING}${matchedAsWritten(`${STEP_TEXT.DOCTOR_CONFIG_THIS_PROJECT} ${CONFIG_RELATIVE} ${STEP_TEXT.DOCTOR_CONFIG_IS_VALID}`)}`,
+        ),
       );
       expect(deleted.stdout, deleted.output).toMatch(
         new RegExp(
-          `${CONFIG_ROW_PASSING}${STEP_TEXT.DOCTOR_CONFIG_THIS_PROJECT} [^\\n]*${STEP_TEXT.DOCTOR_CONFIG_USING_GLOBAL} \\(~/${CONFIG_RELATIVE}\\)`,
+          `${CONFIG_ROW_PASSING}${matchedAsWritten(STEP_TEXT.DOCTOR_CONFIG_THIS_PROJECT)} [^\\n]*${matchedAsWritten(`${STEP_TEXT.DOCTOR_CONFIG_USING_GLOBAL} (~/${CONFIG_RELATIVE})`)}`,
         ),
       );
     });
@@ -134,7 +142,11 @@ describe("doctor's Config Valid row under a live global installation", () => {
 
     it("finds nothing stranded while the project still has its own config", () => {
       expect(ownConfig.stdout, ownConfig.output).toMatch(
-        /No Orphans\s+✓\s+No orphaned agent files\n/,
+        doctorRow(
+          STEP_TEXT.DOCTOR_ROW_NO_ORPHANS,
+          STEP_TEXT.DOCTOR_STATUS_PASS,
+          `${STEP_TEXT.DOCTOR_NO_ORPHANED_AGENTS}\n`,
+        ),
       );
     });
 

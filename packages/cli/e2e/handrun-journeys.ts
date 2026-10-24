@@ -62,6 +62,7 @@ import {
   configTypesTsPath,
   createLocalSkill,
   listFiles,
+  matchedAsWritten,
   readCompiledAgents,
   readMarketplaceJson,
   readTreeSnapshot,
@@ -720,7 +721,10 @@ async function journeyMarketplaceAuthorArc(store: SeedConfigStore): Promise<void
   const beforeBuild = await CLI.run(["doctor"], repo);
   note(
     `doctor over the repository exit ${beforeBuild.exitCode}`,
-    firstLine(beforeBuild.output, new RegExp(STEP_TEXT.DOCTOR_SKIP_NO_INSTALLATION)),
+    firstLine(
+      beforeBuild.output,
+      new RegExp(matchedAsWritten(STEP_TEXT.DOCTOR_SKIP_NO_INSTALLATION)),
+    ),
   );
 
   const buildPlugins = await CLI.run(["build", "plugins"], repo);
@@ -760,7 +764,10 @@ async function journeyMarketplaceAuthorArc(store: SeedConfigStore): Promise<void
     const overInstall = await CLI.run(["doctor"], { dir: home, globalHome: home });
     note(
       `doctor over the installation exit ${overInstall.exitCode}`,
-      firstLine(overInstall.output, new RegExp(STEP_TEXT.DOCTOR_OPERATIONAL_SECTION)),
+      firstLine(
+        overInstall.output,
+        new RegExp(matchedAsWritten(STEP_TEXT.DOCTOR_OPERATIONAL_SECTION)),
+      ),
     );
     verdict(
       "journey 21 — doctor answers differently in the two cwds: the repository skips the operational layer at both ends of the build, the installation runs it",
@@ -950,7 +957,7 @@ async function journeySharedDirectoryOwnership(store: SeedConfigStore): Promise<
     const doctor = await CLI.run(["doctor"], at);
     note(
       `doctor exit ${doctor.exitCode}`,
-      firstLine(doctor.output, new RegExp(STEP_TEXT.DOCTOR_FOREIGN_SKILL_DIR)),
+      firstLine(doctor.output, new RegExp(matchedAsWritten(STEP_TEXT.DOCTOR_FOREIGN_SKILL_DIR))),
     );
     note("does it name the neighbour?", doctor.stdout.includes(FOREIGN_SKILL_DIR) ? "yes" : "no");
     verdict(
@@ -965,7 +972,10 @@ async function journeySharedDirectoryOwnership(store: SeedConfigStore): Promise<
     const agentsLeft = await listFiles(agentsPath(home));
     note(
       `uninstall exit ${uninstall.exitCode}`,
-      firstLine(uninstall.output, new RegExp(STEP_TEXT.UNINSTALL_AGENTS_KEPT_ONE)),
+      firstLine(
+        uninstall.output,
+        new RegExp(matchedAsWritten(STEP_TEXT.UNINSTALL_AGENTS_KEPT_ONE)),
+      ),
     );
     note("skill directories left", skillsLeft.join(", ") || "(none)");
     note("agent files left", agentsLeft.join(", ") || "(none)");

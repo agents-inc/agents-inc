@@ -3,7 +3,7 @@ import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
-import { cleanupTempDir, runCLI } from "../helpers/test-utils.js";
+import { cleanupTempDir, runCLI, matchedAsWritten } from "../helpers/test-utils.js";
 import type { TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { installDualScopeStack } from "../fixtures/e2e-stack-seed.js";
@@ -39,7 +39,9 @@ describe("doctor dual-scope diagnostics", () => {
 
       // The summary counts: "FAIL" and "Config" match too much.
       expect(stdout).toMatch(
-        new RegExp(`${STEP_TEXT.DOCTOR_SUMMARY}\\s+\\d+ passed, 0 warnings, 0 errors`),
+        new RegExp(
+          `${matchedAsWritten(STEP_TEXT.DOCTOR_SUMMARY)}\\s+\\d+ passed, 0 warnings, 0 errors`,
+        ),
       );
       expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_CHECK);
     },
@@ -63,7 +65,9 @@ describe("doctor dual-scope diagnostics", () => {
 
       // Which of the two: telling a warning from a recompilation notice is the subject.
       expect(combined).toMatch(
-        new RegExp(`${STEP_TEXT.DOCTOR_SUMMARY}\\s+\\d+ passed, [1-9]\\d* warnings?, 0 errors`),
+        new RegExp(
+          `${matchedAsWritten(STEP_TEXT.DOCTOR_SUMMARY)}\\s+\\d+ passed, [1-9]\\d* warnings?, 0 errors`,
+        ),
       );
       expect(combined).toContain("api-developer");
     },

@@ -21,7 +21,15 @@ import {
   flattenCliOutput,
   skillsPath,
 } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
+import {
+  DIRS,
+  doctorRow,
+  EXIT_CODES,
+  FILES,
+  STEP_TEXT,
+  TERMINAL_SIZE,
+  TIMEOUTS,
+} from "../pages/constants.js";
 import { PROVIDERS, type Provider } from "../../src/cli/consts.js";
 import {
   buildSeedExternalSkill,
@@ -174,14 +182,20 @@ describe("doctor in a folder holding no installation, under a global one carryin
         ),
       );
       expect(said, "every skill the inherited installation carries resolves").toMatch(
-        new RegExp(`${STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED}\\s+✓\\s+2/2 skills found`),
+        doctorRow(
+          STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED,
+          STEP_TEXT.DOCTOR_STATUS_PASS,
+          "2/2 skills found",
+        ),
       );
       expect(said, "no row reports the carried skill missing").not.toContain(
         `${CARRIED_ID} (not found`,
       );
       expect(said, "the marketplace the inherited configuration names is the one read").toMatch(
-        new RegExp(
-          `${STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE}\\s+✓\\s+${STEP_TEXT.DOCTOR_SOURCE_LOCAL}`,
+        doctorRow(
+          STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE,
+          STEP_TEXT.DOCTOR_STATUS_PASS,
+          STEP_TEXT.DOCTOR_SOURCE_LOCAL,
         ),
       );
       expect(exitCode, said).toBe(EXIT_CODES.SUCCESS);

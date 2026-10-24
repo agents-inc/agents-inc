@@ -18,6 +18,7 @@ import {
   loadConfigOrFail,
   readTreeSnapshot,
   skillsPath,
+  matchedAsWritten,
 } from "../helpers/test-utils.js";
 import { CLI_INVOKE_COMMAND, DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
@@ -390,7 +391,7 @@ describe("edit --from <id> in a project keeps the global install as it is", () =
 
       expect(planned).toMatch(
         new RegExp(
-          `${STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED}[\\s\\S]*skill ${OTHER_GLOBAL_SKILL}`,
+          `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED)}[\\s\\S]*${matchedAsWritten(`skill ${OTHER_GLOBAL_SKILL}`)}`,
         ),
       );
       expect(
@@ -409,7 +410,7 @@ describe("edit --from <id> in a project keeps the global install as it is", () =
       // Subject guard: something is kept, so a route could have been named.
       expect(planned).toMatch(
         new RegExp(
-          `${STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED}[\\s\\S]*skill ${OTHER_GLOBAL_SKILL}`,
+          `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED)}[\\s\\S]*${matchedAsWritten(`skill ${OTHER_GLOBAL_SKILL}`)}`,
         ),
       );
       expect(

@@ -21,6 +21,7 @@ import {
   listFiles,
   loadConfigOrFail,
   readTestFile,
+  matchedAsWritten,
 } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
@@ -196,7 +197,9 @@ describe("a global edit propagates to every registered project, from nothing", (
   it("names both registered projects the run recompiles", () => {
     const said = flattenCliOutput(editOutput);
     const named = (dir: string): RegExp =>
-      new RegExp(`${STEP_TEXT.SHARED_CONFIG_REGISTERED_RECOMPILED}[\\s\\S]*${realpathSync(dir)}`);
+      new RegExp(
+        `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_REGISTERED_RECOMPILED)}[\\s\\S]*${matchedAsWritten(realpathSync(dir))}`,
+      );
 
     expect(said, "the confirm must name the first registered project").toMatch(
       named(firstProjectDir),

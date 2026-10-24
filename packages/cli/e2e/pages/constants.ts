@@ -1,6 +1,8 @@
 // Mirrors product values instead of importing them, so an assertion fails when the product moves.
 // `scripts/check-mirrored-constants.ts` holds mirrored values to their source.
 
+import { matchedAsWritten } from "../../src/cli/lib/__tests__/helpers/matched-as-written.js";
+
 export const DIRS = {
   CLAUDE: ".claude",
   /** Mirrors `SOURCE_ROOT_DIR`. */
@@ -107,6 +109,15 @@ export const STEP_TEXT = {
   COMPILE_PASS_NO_SKILLS: "No skills found for", // "No skills found for global/project pass, skipping"
   SOURCE_HAS_NEWER_CONTENT: "Marketplace has newer content",
   SOURCE_UNREACHABLE_CACHED: "using the cached copy, which may be out of date",
+  // `createDetailedFetchError`, for a marketplace answering 404 and 403; the URL follows each.
+  MARKETPLACE_REPOSITORY_NOT_FOUND: "Repository not found:",
+  MARKETPLACE_ACCESS_DENIED: "Access denied to:",
+  // The same, for a 401, and for any status it has no message of its own for (a 410 among them).
+  MARKETPLACE_AUTHENTICATION_REQUIRED: "Authentication required for:",
+  MARKETPLACE_FETCH_FAILED: "Failed to fetch",
+  // `sourceRefusedUsingCache`: `<url> refused the request (<status>) — ` and then
+  // `SOURCE_UNREACHABLE_CACHED`.
+  MARKETPLACE_REFUSED_CACHED: "refused the request",
   // `extractAllSkills`.
   MARKETPLACE_METADATA_UNPARSEABLE: "unparseable metadata.yaml",
   MARKETPLACE_METADATA_NO_DISPLAY_NAME:
@@ -197,6 +208,8 @@ export const STEP_TEXT = {
   DOCTOR_CONFIG_THIS_PROJECT: "This project:",
   DOCTOR_CONFIG_THE_GLOBAL_INSTALLATION: "The global installation:",
   DOCTOR_CONFIG_USING_GLOBAL: "using the global installation's",
+  /** `UI_SYMBOLS.CHECK`. */
+  DOCTOR_STATUS_PASS: "\u2713",
   /** `UI_SYMBOLS.SKIPPED`. */
   DOCTOR_STATUS_SKIP: "\u2013",
   /** Mirrors `UI_SYMBOLS.CROSS`. */
@@ -210,8 +223,16 @@ export const STEP_TEXT = {
   DOCTOR_ROW_SOURCE_REACHABLE: "Marketplace Reachable",
   // `CONTENT_CHECKS` in commands/doctor.ts.
   DOCTOR_ROW_MARKETPLACES: "Marketplaces",
+  // `INSTALLATIONS_ROW_NAME` and `SOURCE_REPO_ROW_NAME` in commands/doctor.ts.
+  DOCTOR_ROW_INSTALLATIONS: "Installations",
+  DOCTOR_ROW_MARKETPLACE_REPOSITORY: "Marketplace Repository",
+  // Composed after the number of installations.
+  DOCTOR_INSTALLATIONS_EACH_CHECKED: "installations here, each checked below",
+  DOCTOR_NO_ORPHANED_AGENTS: "No orphaned agent files",
   DOCTOR_CONFIG_IS_VALID: "is valid",
   DOCTOR_SOURCE_LOCAL: "Connected to local:",
+  // The address follows the space.
+  DOCTOR_SOURCE_REMOTE: "Connected to remote: ",
   DOCTOR_SKILLS_AVAILABLE: "skills available",
   DOCTOR_ONE_SKILL_AVAILABLE: "1 skill available",
   // Whole: both halves are the claim (which marketplace, and that the network reached it).
@@ -349,11 +370,7 @@ export const STEP_TEXT = {
   // formatSourceDisplayName("eject").
   SOURCE_DISPLAY_EJECT: "Eject",
 
-  // Between the folder under a root and the destination under the same root.
-  RETIRED_SOURCE_FOLDER_UNSUPPORTED:
-    " is no longer supported (agents-inc now serves Claude and Codex). Move it to ",
   DOCTOR_ROW_LAYOUT: "Layout",
-  DOCTOR_LAYOUT_CURRENT: "on .agents-inc/claude/",
   // `codexProjectTrustMessage`.
   CODEX_PROJECT_TRUSTED: "Trusted this project in your Codex configuration",
   CODEX_PROJECT_TRUST_LEFT: "Left as you set it",
@@ -370,7 +387,7 @@ export const STEP_TEXT = {
 } as const;
 
 export const MANIFEST_REFUSAL_BUILDS_IN_ORDER = new RegExp(
-  `${STEP_TEXT.MANIFEST_REFUSAL_FIRST_BUILD}[\\s\\S]*${STEP_TEXT.MANIFEST_REFUSAL_SECOND_BUILD}`,
+  `${matchedAsWritten(STEP_TEXT.MANIFEST_REFUSAL_FIRST_BUILD)}[\\s\\S]*${matchedAsWritten(STEP_TEXT.MANIFEST_REFUSAL_SECOND_BUILD)}`,
 );
 
 export const REMOVED_MARKER = "-";
@@ -384,6 +401,31 @@ export const LOCAL_COPY_MARK = "⏏";
 /** One of the summary panel's rows: its mark, then the skill's display name or the sub-agent's. */
 export function panelRow(marker: string, name: string): string {
   return ` ${marker} ${name} `;
+}
+
+/**
+ * One of doctor's check rows: its name, its status mark, then the opening of its message, each
+ * matched as written. End `message` with "\n" to hold it whole; `.source` composes a longer pattern.
+ */
+export function doctorRow(
+  name: string,
+  status: (typeof STEP_TEXT)["DOCTOR_STATUS_PASS" | "DOCTOR_STATUS_FAIL" | "DOCTOR_STATUS_SKIP"],
+  message = "",
+): RegExp {
+  return new RegExp(
+    `${matchedAsWritten(name)}\\s+${matchedAsWritten(status)}\\s+${matchedAsWritten(message)}`,
+  );
+}
+
+/** How {@link oldSourceFolderIgnored} names HOME; a project is named by its absolute path. */
+export const HOME_SHORTHAND = "~";
+
+/** The line a run prints for a root holding an old `.claude-src/`; `readFrom` is the folder agents-inc reads in that root. */
+export function oldSourceFolderIgnored(
+  root: string,
+  readFrom: typeof DIRS.SOURCE_CLAUDE | typeof DIRS.SOURCE_CODEX,
+): string {
+  return `${root}/${DIRS.RETIRED_SOURCE}/ is ignored; agents-inc reads ${root}/${readFrom}/. Delete the old folder once you have kept anything you need from it.`;
 }
 
 /** Mirrors `CLI_INVOKE_COMMAND` in `src/cli/consts.ts`. */
@@ -455,6 +497,9 @@ export const PUBLIC_MARKETPLACE_NAME = "agents-inc";
 
 /** Mirrors `EJECT_SOURCE`. */
 export const EJECT_SOURCE_NAME = "eject";
+
+/** The display name `new marketplace` writes for the example skill it scaffolds. */
+export const SCAFFOLDED_SKILL_DISPLAY_NAME = "Example Skill";
 
 // Typed `string`: a namespaced fixture id is not a `SkillId`.
 export function e2eSkillId(bare: string): string {

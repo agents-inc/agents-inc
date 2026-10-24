@@ -19,7 +19,7 @@ import {
   readTestFile,
   skillsPath,
 } from "../helpers/test-utils.js";
-import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { doctorRow, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
 /** `doctor`'s orphan row names each stranded file, as an error because no command repairs it. */
 
@@ -176,7 +176,9 @@ describe("a global install whose config.ts was deleted", () => {
       const { stdout } = await CLI.run(["doctor"], { dir: fakeHome }, { env: { HOME: fakeHome } });
 
       // The row's other verdict is a warning because the next `compile` prunes what it names.
-      expect(stdout).toMatch(new RegExp(`${STEP_TEXT.DOCTOR_ROW_NO_ORPHANS}\\s+✗\\s`));
+      expect(stdout).toMatch(
+        doctorRow(STEP_TEXT.DOCTOR_ROW_NO_ORPHANS, STEP_TEXT.DOCTOR_STATUS_FAIL),
+      );
       expect(stdout).toContain(STEP_TEXT.DOCTOR_UNOWNED_INSTALL);
 
       // Named, not counted: the content layer already counts them.
