@@ -51,8 +51,11 @@ publishes to npm.
   working tree, history or a remote: `git add`, `commit`, `reset`, `stash` (push/pop/drop),
   `checkout`, `restore`, `clean`, `push`, `rebase`, `merge`, amend. The user curates staging
   deliberately (clarified by the owner 2026-08-09; the rule previously read as an absolute ban).
-  This rule is in `packages/cli/CLAUDE.md` as well, but it is not the CLI's rule and that file
-  does not load from here.
+  **The one exception is a `commit-plan` skill run** (owner, 2026-10-23: invoking it is the go):
+  read-only until its plan is confirmed, writes only per that plan, push and publish only on a
+  per-release confirm, and the authorization never passes to a sub-agent. This rule is in
+  `packages/cli/CLAUDE.md` as well, but it is not the CLI's rule and that file does not load from
+  here.
 - **A commit plan is one planner and minutes, never a multi-agent run** (owner, 2026-10-22). Group
   the tree by concern into about 10–20 commits a person can review. Don't fan out analysts,
   reviewers or build simulations over it. Don't plan around the staged index: the owner unstages

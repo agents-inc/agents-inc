@@ -127,7 +127,7 @@ path.join(dir, ".claude-plugin")                  path.join(dir, PLUGIN_MANIFEST
 
 **4.3 No magic numbers.** Name all numeric constants `SCREAMING_SNAKE_CASE`.
 
-**4.4 Group related constants in `as const` objects.** See `YAML_FORMATTING`, `UI_SYMBOLS`, `SCROLL_VIEWPORT` in `consts.ts`.
+**4.4 Group related constants in `as const` objects.** See `YAML_FORMATTING`, `UI_SYMBOLS` in `consts.ts`.
 
 **4.5 User-facing message strings go in `utils/messages.ts`.** Grouped by category: `ERROR_MESSAGES`, `SUCCESS_MESSAGES`, `STATUS_MESSAGES`, `INFO_MESSAGES`. One-off messages used in a single location can remain inline.
 
@@ -253,7 +253,7 @@ async function expectFlagAccepted(args: string[]): Promise<void> {
 
 **6.4** Use `SKILLS.*` from `test-fixtures.ts` for standard skill fixtures (e.g., `SKILLS.react`, `SKILLS.hono`). For custom skills not in the registry, use `createMockSkill(id, overrides?)` from `__tests__/factories/skill-factories.ts`. Do not define per-test skill factory functions. Available registry keys: `react`, `vue`, `zustand`, `pinia`, `scss`, `tailwind`, `vitest`, `hono`, `drizzle`, `authSecurity`, `antiOverEng` (methodology).
 
-**6.5** Use named constants from `test-constants.ts` for keyboard input (`ARROW_UP`, `ENTER`) and timing (`RENDER_DELAY_MS`, `INPUT_DELAY_MS`).
+**6.5** Use named constants from `test-constants.ts` for keyboard input (`ARROW_UP`, `ENTER`) and timing (`RENDER_DELAY_MS`, `INPUT_DELAY_MS`). A frame that changes on state set by an effect or a `resize` listener is awaited with `vi.waitFor` and a named timeout, never read once after `RENDER_DELAY_MS`: Ink renders that state on a React-scheduler task, which a busy worker starts late (`useInput` state renders within a microtask and is outside this rule). A fixed delay stays only where it is a precondition — past a hook's own timers, or before an absence check, which `vi.waitFor` would pass at once — with the wait after it.
 
 **6.6** Every exported utility function must have a test file.
 
@@ -801,6 +801,14 @@ grep -rPn '(directoryExists|fileExists)\((path\.)?dirname' src e2e scripts --inc
 **15.17 An artefact that ships to consumers narrows EVERY built-in table it inherits, not just some of them.** A published catalogue carries several tables the CLI supplies by default — relationship rules, category definitions, and anything else the built-ins seed — and they are one decision, not several: either the artefact advertises what its own marketplace actually holds, or it advertises the CLI's defaults. Narrowing one and not the others produces a catalogue that is internally inconsistent about what it is, and the inconsistency is invisible from inside either half. `narrowToShippedSlugs` in `lib/matrix/skill-resolution.ts` narrowed the RULES half against the slugs a source ships; the CATEGORIES half was not narrowed, **nothing said the two were one rule**, and a published catalogue advertised 102 categories its marketplace had nothing in for months. The tell is that each half reads correct on its own: the rules narrowing has a docblock explaining exactly why it is right, and the categories pass-through has no docblock at all, because nobody was ever asked the question. When adding a table to a shipped artefact, the question to answer in writing is "does this narrow with the others", and a `no` needs the reason beside it.
 
 **15.18 A spec over a published artefact asserts every block it carries, not the subset that happens to be right.** An artefact with three blocks and a headline claiming all three is discharged by asserting three, and a spec asserting two reads as full coverage — the reader sees a journey row marked COVERED and a spec that visibly checks the artefact, and has no way to see which block went unasked. This is the arity form of the assertion rules in `standards/e2e/anti-patterns.md`: the gap is in what the spec does NOT name, so no search for the defect can find it. The instance: a journey asserted two of three blocks of a published catalogue and the unasserted one was the wrong one — the narrowing defect above lived in exactly the block nothing looked at. **Enumerate the artefact's blocks from the artefact's own schema or writer, never from the spec's imagination**, so a fourth block added later reddens the spec instead of silently joining the unasserted set.
+
+**15.19 Only an answer from the marketplace vouches for a cached copy.** Three rules, all live in `lib/loading/source-fetcher.ts`:
+
+- **A library that can answer from its own cache is asked which it did.** giget extracts the tarball it saved, and says nothing, both when its download is refused and when its own ETag check passes. `gigetDownload` tells them apart by whether this download wrote the tarball (`savedTarball`).
+- **Only an ok status counts as an answer.** `fetch` resolves on every status, so a 404 with no ETag reads like a 200 with none. `withheld` checks the status before `fetchEtag` reads the header.
+- **An answer that cannot be compared downloads or refuses.** Doctor (`askingEachMarketplaceItself`) downloads whatever the marketplace answers, and refuses giget's tarball unless the answer carries the ETag it was saved under (`downloadPast`). `init --from` and `edit --from` (`stoppingOnARefusal`) stop on a status `postureOn` stops on, and keep the copy with a warning over one it keeps it over, over the saved copy and over giget's tarball alike (`askBeforeKeepingTheSavedTarball`).
+
+Every other load keeps the copy over a refusal, as the owner ruled.
 
 ## 16. Scope Awareness (project vs global)
 

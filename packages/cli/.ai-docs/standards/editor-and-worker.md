@@ -370,11 +370,26 @@ set(pruned)
 `droppedAnything` is shared with `reportPruning`, which already asked the same question to decide
 whether to report. One question asked in two shapes is two answers waiting to disagree.
 
-**Assert state identity, not storage.** `expect(useConfigStore.getState()).toBe(before)` is the
-assertion in `config-store.test.ts`, and identity is the fact underneath: this action's only route to
-`set` passes a freshly built object, so an unchanged identity means `set` was never reached — and
-`set` not reached is the write not reached, whatever storage happens to be attached. It also runs in
-the node environment that suite uses, where there is no `localStorage` to watch.
+**Assert both: the state is the same object, and the slot took no write.** A "writes nothing" spec
+runs on a watched slot (`storeOnAWatchedSlot` in `config-store.test.ts`) and ends with both:
+
+<!-- apps/editor source, formatted by the root config. -->
+<!-- prettier-ignore -->
+```ts
+expect(writes).toStrictEqual([])
+expect(store.getState()).toBe(before)
+```
+
+Each catches what the other cannot. Identity proves `set` was never reached, which is where the
+guard belongs: a guard moved into the storage adapter, skipping a write the slot already holds,
+passes the slot and fails identity. The slot proves nothing reached storage: `set((state) => state)`
+keeps identity and still writes (below). Two exceptions: a store with no slot (`catalog-store`) has only identity to
+check, and a guard at the storage door (`withoutWrites`, or a slot not yet read) is checked at the
+slot alone, because there `set` runs by design.
+
+Prove each such spec against the guard it is named for: remove that guard in a throwaway config,
+never in `src/`, and watch the spec fail. A guard added in front of another can take its spec over,
+and the spec stays green when its own guard goes.
 
 The population is every action that computes its next state from the current one rather than from its
 arguments:
@@ -390,12 +405,13 @@ population. `pruneToCatalog` above is the worked example, and `addExternal` and 
 what their returns save is a re-seat of the read model rather than a write. A rule read off that store
 alone would carry the shape and miss the reason.
 
-**One hit survives a deliberate reading rather than an oversight** — which is why it is recorded here
-instead of being left to be re-derived:
+**Two hits survive a deliberate reading rather than an oversight** — which is why they are recorded
+here instead of being left to be re-derived:
 
-| Hit                                 | Can it return an equal value?                                                                                                                                                  |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `remember` (`marketplace-store.ts`) | Reachable — a second successful load of the same marketplace on the same token — and harmless, because the store carries no `skipHydration`, so slot and memory never disagree |
+| Hit                                                                 | Can it return an equal value?                                                                                                                                                                                                                                                       |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `remember` (`marketplace-store.ts`)                                 | Reachable — a second successful load of the same marketplace on the same token — and harmless, because the store carries no `skipHydration`, so slot and memory never disagree                                                                                                      |
+| `setSkillOption` (`config-store.ts`), plugin on an eject-only skill | Reachable in the store, not from the UI: the options panel disables that segment and the cell draws a statement in place of the pair. Kept so the event says the skill stays eject (`config-store.test.ts` › "keeps an added skill at eject when plugin is asked for, and says so") |
 
 An equal value being reachable is not on its own the argument for an early return. What made `pruneToCatalog`'s return load-bearing is the window `skipHydration`
 opens, where the slot holds a configuration memory does not — and `marketplace-store` hydrates at
@@ -423,6 +439,12 @@ restore and the read that finishes it.** In that window the slot holds the only 
 configuration and memory holds none of it. `skipHydration` and `detachSavedConfig` defend it against
 reads and against shared addresses; neither covers a write arriving from the visitor's own address
 while a restore is parked.
+
+**Ask which saved configuration was read, never which marketplace was chosen.** A decision that
+reads a saved configuration or skips the read asks `savedConfigurationOnScreen()` in
+`config-store.ts` (or `marketplaceOnScreen()` in `use-marketplace-load.ts`, where an open link
+counts), because `useMarketplaceStore`'s `current` differs from it while a restore is parked: asking
+`current` skipped the read, and every edit after it was dropped without a word.
 
 ---
 
@@ -490,9 +512,10 @@ through. `detachSavedConfig` returns early on a falsy slot for exactly that reas
 
 **"Does the visitor's own data survive this?" is a question about the slot, not the screen.** Read
 `localStorage` back directly: a grid showing the right thing proves nothing about what was written
-under it, and in this defect the two disagreed. `storedConfig()` on the configure page object is the
-one read — `window.localStorage.getItem("agents-inc:config:v1")`, no store, no screen — and
-`apps/editor/e2e/specs/shared-link.spec.ts` asserts on it from both ends: "writes nothing to this
+under it, and in this defect the two disagreed. `storedConfig(marketplace = "")` on the configure
+page object is the one read — `localStorage.getItem` on that marketplace's own slot, `""` being the
+public catalogue's, no store, no screen — and `apps/editor/e2e/specs/shared-link.spec.ts` asserts
+on it from both ends: "writes nothing to this
 browser's saved configuration" edits while the shared address is open, and "writes no borrowed
 selection into their slot" edits after navigating back to the visitor's own address the way the
 notice tells them to.
@@ -897,6 +920,51 @@ blank guards ahead of the rate limiter, because those two reach no model and cos
 them charged a caller for work that never happened, and told somebody who pasted a long paragraph
 twice that they had made too many requests — a second wrong message caused by the first, describing
 neither. A limiter belongs above everything that SPENDS and below every guard that does not.
+
+---
+
+## A spec that counts a rate limiter stubs it, and keeps two callers its key must separate and two it must merge
+
+The worker's limiters are the `ratelimits` bindings in `apps/server/wrangler.jsonc`, and Miniflare
+counts them per wall-clock minute: `RateLimiterObject` buckets by
+`Math.floor(Date.now() / (period * 1e3))` and clears every key when that changes. A spec spending
+one for real is judged by the clock as well as by the code. A burst that straddles the minute turns
+a pass into a failure, which shows, or a catch into a pass, which does not:
+`apps/server/src/compose.test.ts` › "spends no allowance on a sentence it refuses for length" cannot
+fail on correct code, and against the real binding a burst crossing a minute also passes the mutant
+it exists for, a limiter moved above the length guard.
+
+1. **A spec whose verdict depends on the binding's count stubs it, whether or not it flakes.** The
+   stub counts per key, with no window, from state it builds across calls. It never compares the
+   key to a value the spec chose, which pins how the worker spells its keys. `stubAllowance` in
+   `compose.test.ts` is the shape. The accepted cost: no spec exercises the configured `limit`
+   values. Better Auth's sign-in limit (`customRules` in `apps/server/src/auth.ts`) is not a
+   binding, and `apps/server/src/auth.test.ts` counts it for real: it resets 60 seconds after the
+   last request it counted, so a fast burst cannot cross a reset.
+2. **Each stubbed limiter keeps one spec that sends its key two callers to separate and two to
+   merge, and asserts both.** A fresh stub per spec with one caller never sees a second key, so a
+   key of a constant, of the session or of the address stays green. The merge pair must differ in
+   everything the key must ignore, because two identical requests share any key read off the
+   request. `compose.test.ts` › "counts a person's calls across their sessions, and apart from
+   another person's at the same address" is an instance: two sign-ins of one person merge, another
+   person at the same address separates. It reads statuses, not the stub's calls, so renaming the
+   key leaves it green.
+3. **Replace a collaborator through its binding, never with `vi.mock`.** Under
+   `@cloudflare/vitest-pool-workers`, a `vi.mock` of a module `apps/server/src/index.ts` imports
+   replaces only the spec's own import; `SELF.fetch` and `app.request` still reach the real one. Spy
+   on the binding (`vi.spyOn(env.COMPOSE_CALLS, "limit")`), or hand `app.request` other bindings as
+   its third argument, as `compose.test.ts` › "asks through the AI Gateway when one is configured"
+   does. To plant a key mutant, use a vite `transform` hook in a throwaway config: it reaches the
+   worker's copy, and `vi.mock` does not.
+
+```
+grep -rn '\.limit(' apps/server/src --include='*.ts' | grep -v '\.test\.'
+grep -rn 'spyOn(env\.[A-Z_]*, "limit")' apps/server/src
+grep -rn 'vi\.mock' apps/server/src
+```
+
+The first lists the limited call sites, each owing a stub from the second and a two-caller spec. The
+third comes back empty.
 
 ---
 

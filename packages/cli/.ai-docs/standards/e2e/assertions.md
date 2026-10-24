@@ -752,7 +752,7 @@ expect(output).not.toMatch(/^\s*Sources?(\s|$)/m);
 
 ---
 
-Three further constraints apply to any negative assertion about **rendered output**. Each one, independently, produces an assertion that cannot fail.
+Two further constraints apply to any negative assertion about **rendered output**. Each one, independently, produces an assertion that cannot fail.
 
 ### 1. Never assert absence of text the session once legitimately drew
 
@@ -766,29 +766,15 @@ A `not.toContain("<bug shape>")` on a clipped viewport passes for free when the 
 
 Clearing the minimum-size gate is not evidence the content is visible.
 
-### 3. A counter is not its content
+## A counter is not its content
 
-Asserting that a scroll affordance's "N more above / below" numbers moved does not establish that anything scrolled. Assert a row the movement revealed. Disabling the scroll outright left both counter assertions green while the frame showed the unscrolled header.
+**Where a message reports a PARTITION, a spec asking "how many did this reach" asserts every operand.** A leading count can be narrower than the question. `recompileSummary` (`src/cli/utils/messages.ts`), printed by `reportRecompile` in `commands/compile.ts` and in `commands/edit.tsx`, reads `<n> agents rewritten, <m> unchanged`, with `compile`'s pass label before `agents`: the first number counts the agents this pass wrote, and an agent that compiled to the bytes already on disk is in `unchanged` (`rewritten: false` in `write-compiled-agents.ts`). Agents reached is the SUM. A spec asserting the leading count alone is green only while its fixture lands in that arm, and turns misleading when a later change moves the population into the other.
 
-**Where a message reports a PARTITION, a spec asking "how many did this reach" asserts every operand.** The fan-out line is the second worked example, and the trap here is not a counter standing in for content but a counter whose subject is **narrower than the question**. `propagatedRecompileSummary` (`src/cli/utils/messages.ts`) prints `Recompiled agents in <rewritten> registered project(s), <unchanged> unchanged` plus ` (<failed> failed)` when any failed, and the leading number counts projects this pass actually **rewrote** — a project the fan-out visited and left byte-identical is in `unchanged`. Projects reached is the SUM, and no single operand answers it. Two rows a reach assertion has to separate are ordered backwards by the leading number:
-
-| The run                               | The line                                     |
-| ------------------------------------- | -------------------------------------------- |
-| reached two projects, rewrote neither | `... in 0 registered projects, 2 unchanged`  |
-| reached ONE project, rewrote it       | `... in 1 registered project, 0 unchanged`   |
-| reached no project at all             | nothing printed — the reporter returns early |
-
-Measured: a first draft asserting `` `${STEP_TEXT.PROPAGATED_RECOMPILE} 2 registered projects` `` as proof that a global edit reached both registered projects went **red against a correct binary** — the run had reached both, and the real line read `0 registered projects, 2 unchanged`, because the removed global sub-agent shared no skill with either project's own one. The dangerous direction is the other one: a spec asserting the leading count alone is green on the day it is written, because the author picks whichever arm their fixture happens to produce, and only becomes misleading when a later change moves the population into the other arm.
-
-**Instead:** assert the whole pair, and let the constant carry the distinction. `STEP_TEXT.PROPAGATED_RECOMPILE_ONE`'s comment in `e2e/pages/constants.ts` now states that its count is projects rewritten rather than reached; `edit-global-propagates-to-every-registered-project.e2e.test.ts` and `global-fan-out-re-emit-is-byte-stable.e2e.test.ts` both assert `N registered projects, M unchanged` whole, and the first was mutation-checked — a `break` in `propagateGlobalChangesToProjects`' loop turns the line into `1 unchanged` and takes that assertion red with three others. `recompileSummary` (`N <subject> rewritten, M unchanged`) is the same shape one level down, asserted whole by `recompile-summary-honesty.e2e.test.ts`.
-
-The census, and each hit judged on whether its assertion MESSAGE claims reach while its sentinel proves a rewrite — `global-fan-out-re-emit-is-byte-stable` says "the fan-out must have reached the registered project" over `PROPAGATED_RECOMPILE_ONE`, which is the misreading in miniature even though the run does rewrite:
+**Instead:** assert the whole pair. `recompile-summary-honesty.e2e.test.ts` and `compile.e2e.test.ts` assert `<n> … rewritten, <m> unchanged` whole. The census lists only the mirror in `e2e/pages/constants.ts`:
 
 ```
-grep -rn 'PROPAGATED_RECOMPILE\|AGENTS_REWRITTEN' e2e --include='*.ts' | grep -v UNCHANGED
+grep -rn 'AGENTS_REWRITTEN' e2e --include='*.ts' | grep -v UNCHANGED
 ```
-
-This section extends [§ Assert the Surface That Retains the Value](#assert-the-surface-that-retains-the-value), which distinguishes WHICH surface holds a value but not whether the value was ever painted onto any of them. Full rationale, mutation evidence and the fixture-cardinality trap: [anti-patterns.md § Weak Assertions](./anti-patterns.md).
 
 ---
 

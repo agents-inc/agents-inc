@@ -7,7 +7,7 @@
 
 4. ALWAYS read [docs/architecture.md](../../docs/architecture.md) before working on an area of the codebase you have not worked in.
 
-5. NEVER run ANY git command that WRITES — no `git add`, `commit`, `reset`, `stash` (push/pop/drop), `checkout`, `restore`, `clean`, `push`, `rebase`, `merge`, amend. READ-ONLY git is allowed (owner clarification 2026-08-09): `git status`, `log`, `show`, `diff`, `blame`, `stash list` — use it to check history and verify changes. The user curates their staging area intentionally. This applies to sub-agents too — state both halves when delegating.
+5. NEVER run ANY git command that WRITES — no `git add`, `commit`, `reset`, `stash` (push/pop/drop), `checkout`, `restore`, `clean`, `push`, `rebase`, `merge`, amend. READ-ONLY git is allowed (owner clarification 2026-08-09): `git status`, `log`, `show`, `diff`, `blame`, `stash list` — use it to check history and verify changes. The user curates their staging area intentionally. This applies to sub-agents too — state both halves when delegating. The one exception is a `commit-plan` skill run, on the terms in the root `CLAUDE.md`.
 </critical-requirement>
 
 # Project Memory for Claude
@@ -18,7 +18,7 @@ This file provides behavioral rules and conventions. For how the codebase fits t
 
 ### Git & Workflow
 
-- NEVER run ANY git command that WRITES (`git add`, `commit`, `reset`, `stash` push/pop/drop, `checkout`, `restore`, `clean`, `push`, `rebase`, `merge`) — the user curates their staging area intentionally; if you think you need to discard working tree changes, ask the user how to proceed. Read-only git (`status`, `log`, `show`, `diff`, `blame`, `stash list`) is allowed — use it to verify rather than guess
+- NEVER run ANY git command that WRITES (`git add`, `commit`, `reset`, `stash` push/pop/drop, `checkout`, `restore`, `clean`, `push`, `rebase`, `merge`) — the user curates their staging area intentionally (a `commit-plan` skill run is the one exception — rule 5); if you think you need to discard working tree changes, ask the user how to proceed. Read-only git (`status`, `log`, `show`, `diff`, `blame`, `stash list`) is allowed — use it to verify rather than guess
 - NEVER use git worktrees (`isolation: "worktree"`). Reaffirmed by the owner 2026-09-03 — "I don't
   use worktrees" — after a rewrite briefly narrowed this to permit them on a compiled reviewing
   agent. That narrowing is withdrawn and no shipped agent carries the key. The CLI still SUPPORTS
@@ -41,7 +41,7 @@ This file provides behavioral rules and conventions. For how the codebase fits t
 - NEVER build multi-tier resolution fallbacks (try exact → try alias → try directory name). Data matches on the first lookup or it's an error.
 - NEVER fall back to `path.basename(dir)` as a skill ID — use `frontmatter.name` from `parseFrontmatter()`
 - NEVER derive `slug`, `domain` or `category` from a skill ID or directory path — **in product code, and in test factories and fixtures**. All three are stated metadata fields; look them up in one table and throw on a miss (`getCanonicalSkillTaxonomy()` in `__tests__/factories/skill-factories.ts` is the shape). The rule read as product-only while it named only `slug`, and both breaches lived in the test layer behind `as Domain` / `as CategoryPath` casts, deriving categories the shipped catalogue contradicts. Deriving a display name from the slug the lookup returned is fine; deriving anything from the id is not.
-- NEVER print a skill or agent `displayName` inside a block that describes the filesystem — anything under a "copied to:" / "compiled to:" / path header. Those entries are literal directory and file names, so use the id or the basename of the recorded `destPath`; a user must be able to copy any line out of such a block and `cd` into it. The init report printed `Reviewing/` and `CLI Reviewing/` for directories named `meta-reviewing-reviewing/` and `meta-reviewing-cli-reviewing/`. `displayName` is for selection UI, search results and change summaries only (the `+ Reviewing` / `~ Reviewing` lines in `edit.tsx` describe choices, not paths). This is the inverse of the `path.basename` rule above, not a restatement of it.
+- NEVER print a skill or agent `displayName` inside a block that describes the filesystem — anything under a "copied to:" / "compiled to:" / path header. Those entries are literal directory and file names, so use the id or the basename of the recorded `destPath`; a user must be able to copy any line out of such a block and `cd` into it. The init report printed `Reviewing/` and `CLI Reviewing/` for directories named `meta-reviewing-reviewing/` and `meta-reviewing-cli-reviewing/`. `displayName` is for selection UI, search results, change summaries and `list`'s rows only (the `+ Reviewing` / `~ Reviewing` lines in `edit.tsx` describe choices, not paths). This is the inverse of the `path.basename` rule above, not a restatement of it. The name is recorded at install: `init --from` and `edit --from` write it on each skill's `config.ts` entry, and a row drawn from an entry reads that record, then the seated catalogue, then the id (`getSkillEntryDisplayName` in `lib/matrix/matrix-provider.ts`). No command adds a side read — a marketplace, another scope's copies — to name a row.
 - NEVER add backward-compatibility shims or legacy fallbacks — the project is pre-1.0. Remove old code cleanly.
 - NEVER let plugin install per-skill failures silently produce orphan config entries. If `installPluginSkills` returns non-empty `failed`, hard-error (`this.error(..., { exit: EXIT_CODES.ERROR })`) BEFORE `writeConfigAndCompile` runs. Warnings for user context are fine; persisting `config.ts` entries claiming `origin: "<marketplace>"` for skills that never installed is not. Uninstall failures are diagnostic-only.
 
@@ -224,5 +224,5 @@ Items not already covered by NEVER/ALWAYS rules above:
 <critical-reminder>
 1. You do NOT write code. Delegate to sub-agents. Tell them to read CLAUDE.md.
 2. Trace ALL scenarios after any fix.
-3. NEVER run ANY git command that writes (add, commit, reset, stash, checkout, restore, clean, push). Read-only git is allowed. The user curates their staging area intentionally.
+3. NEVER run ANY git command that writes (add, commit, reset, stash, checkout, restore, clean, push). Read-only git is allowed. So is a `commit-plan` skill run (rule 5). The user curates their staging area intentionally.
 </critical-reminder>

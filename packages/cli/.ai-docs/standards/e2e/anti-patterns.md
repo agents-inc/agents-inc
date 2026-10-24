@@ -665,14 +665,6 @@ This is the same proof-of-execution rule [README.md](./README.md) § Critical Ru
 
 **Its positive twin fails for a reason it does not name.** A `toContain` on content that happened to fit the viewport when the spec was written is a coincidence, not an assertion: the catalogue grows, the content moves below the fold, and the failure reads as the subject being absent rather than as the viewport being too short for where it now sits. The tempting repair is a taller terminal, which buys exactly one more taxonomy edit. Bring the content into view instead, so the assertion holds at any viewport and any catalogue size.
 
-### A counter is not its content
-
-**What:** Proving a scroll happened by asserting the affordance's numbers moved — `more below` becoming `more above`, `12 more above` appearing.
-
-**Why:** The counters are the panel's own bookkeeping. They move whether or not the content does, so they are a different subject from the rows they count. Mutation evidence: pinning `contentMarginTop` to `0` in `use-panel-scroll.ts` (i.e. disabling the scroll entirely) left the frame reading `12 more above` **while showing the unscrolled header** — and both counter assertions stayed green. Only a direct assertion on a revealed row went red.
-
-**Instead:** assert a row that the movement revealed.
-
 ### Never call a spec a regression guard until you have watched it go red
 
 **What:** Writing a spec against a defect's reported symptom, seeing it pass after the fix, and shipping it as the guard.
@@ -681,7 +673,7 @@ This is the same proof-of-execution rule [README.md](./README.md) § Critical Ru
 
 1. **The fixture is smaller than production, so the defect's blast radius is different.** `createE2ESource()` writes far fewer stacks and skills than the real marketplace carries — [test-data.md § The fixture's cardinality is smaller than production's](./test-data.md) owns the numbers. For a size-dependent defect, how far it reaches scales with list length, so the assertion matching the reported symptom can pass against the unfixed binary while an unrelated-looking one is what goes red.
 
-2. **The assertion's subject is not painted in the captured frame** (the two rules above).
+2. **The assertion's subject is not painted in the captured frame** (the rule above).
 
 **Instead:** revert the fix in `src/`, run `npm run build`, run the spec, and confirm it is red **and red for the reason the test name claims**. Then restore. Record in the spec which assertion carries the red under this fixture, so the next reader does not "simplify" the spec down to the one that does not.
 
