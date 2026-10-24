@@ -45,9 +45,9 @@ A project's `config.ts` is written with the global installation inlined into it.
 ```typescript
 const skills: SkillConfig[] = [
   // global
-  { id: 'web-framework-react', scope: 'global', origin: 'agents-inc' },
+  { id: 'web-framework-react', scope: 'global', origin: 'agents-inc', displayName: 'React' },
   // project
-  { id: 'web-testing-vitest', scope: 'project', origin: 'agents-inc' },
+  { id: 'web-testing-vitest', scope: 'project', origin: 'agents-inc', displayName: 'Vitest' },
 ]
 ```
 

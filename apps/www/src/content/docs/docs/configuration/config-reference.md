@@ -54,14 +54,15 @@ The default export. Three of its fields are required.
 
 ## `SkillConfig`
 
-One entry per installed skill. Emitted in the order `id, scope, origin, excluded`.
+One entry per installed skill. Emitted in the order `id, scope, origin, displayName, excluded`.
 
-| Field      | Type                    | Required | What it does                                                                                                                       |
-| ---------- | ----------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `id`       | `SkillId`               | Yes      | Which skill, e.g. `'web-framework-react'`. Also the directory name it installs into.                                               |
-| `scope`    | `'project' \| 'global'` | Yes      | Which root it installs under — your project, or your home directory.                                                               |
-| `origin`   | `string`                | Yes      | Where it came from. `'eject'` means a copy you own; anything else is a marketplace name. See [below](#origin-and-what-it-decides). |
-| `excluded` | `boolean`               | No       | A tombstone. See [`excluded`, and what a tombstone is](#excluded-and-what-a-tombstone-is).                                         |
+| Field         | Type                    | Required | What it does                                                                                                                       |
+| ------------- | ----------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `id`          | `SkillId`               | Yes      | Which skill, e.g. `'web-framework-react'`. Also the directory name it installs into.                                               |
+| `scope`       | `'project' \| 'global'` | Yes      | Which root it installs under — your project, or your home directory.                                                               |
+| `origin`      | `string`                | Yes      | Where it came from. `'eject'` means a copy you own; anything else is a marketplace name. See [below](#origin-and-what-it-decides). |
+| `displayName` | `string`                | No       | The name the skill's marketplace gave it when `init --from` or `edit --from` installed it.                                         |
+| `excluded`    | `boolean`               | No       | A tombstone. See [`excluded`, and what a tombstone is](#excluded-and-what-a-tombstone-is).                                         |
 
 ## `AgentScopeConfig`
 

@@ -84,4 +84,4 @@ For private repositories, set the GIGET_AUTH environment variable:
   export GIGET_AUTH=ghp_your_github_token
 ```
 
-`npx agents-inc doctor` reports the same marketplace, alongside whatever else is wrong. Once a marketplace has been fetched once, a later command other than `doctor` that can't reach it falls back to the cached copy and warns rather than failing.
+`npx agents-inc doctor` reports the same marketplace, alongside whatever else is wrong. Once a marketplace has been fetched once, a later command other than `doctor` that can't reach it falls back to the cached copy and warns rather than failing. If it answers any 4xx but 405 instead, `init --from` and `edit --from` stop with its error, cached copy or not, and the other commands use the copy without a word; on a 5xx or 405 they all use the copy and warn.

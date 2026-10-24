@@ -38,9 +38,9 @@ import type {
 
 const skills: SkillConfig[] = [
   // project
-  { id: 'web-framework-react', scope: 'project', origin: 'agents-inc' },
-  { id: 'web-state-zustand', scope: 'project', origin: 'agents-inc' },
-  { id: 'api-framework-hono', scope: 'project', origin: 'agents-inc' },
+  { id: 'web-framework-react', scope: 'project', origin: 'agents-inc', displayName: 'React' },
+  { id: 'web-state-zustand', scope: 'project', origin: 'agents-inc', displayName: 'Zustand' },
+  { id: 'api-framework-hono', scope: 'project', origin: 'agents-inc', displayName: 'Hono' },
 ]
 
 const agents: AgentScopeConfig[] = [
@@ -76,11 +76,12 @@ The order is the writer's rather than the order you selected things in: the top-
 
 ## Skills
 
-Each skill entry carries three required fields and one optional one:
+Each skill entry carries three required fields and two optional ones:
 
 - **`id`** — The skill identifier (e.g., `'web-framework-react'`)
 - **`scope`** — `'project'` or `'global'`
 - **`origin`** — `'eject'` when the skill was copied into `.claude/skills/`, or the marketplace name (e.g., `'agents-inc'`) when it is installed as a plugin
+- **`displayName`** — Optional. The name the skill's marketplace gave it at install.
 - **`excluded`** — Optional. A tombstone rather than a deletion: the entry stays on record and the skill is treated as not installed. The CLI writes one where a project's own entry collides with a global install, and drops it once the collision is gone.
 
 The field is `origin`, not `source`. A config that still spells a skill entry's provenance `source`, or that carries a top-level `source` instead of `marketplace`, is refused at load with the rename named — the CLI does not read the old key and does not fall back to it.

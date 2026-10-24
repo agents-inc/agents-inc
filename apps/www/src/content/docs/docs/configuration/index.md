@@ -51,7 +51,7 @@ Four fields can be lifted into named `const`s — `skills`, `agents`, `stack` an
 import type { ProjectConfig, AgentScopeConfig, SkillConfig } from './config-types'
 
 const skills: SkillConfig[] = [
-  { id: 'web-framework-react', scope: 'project', origin: 'agents-inc' },
+  { id: 'web-framework-react', scope: 'project', origin: 'agents-inc', displayName: 'React' },
 ]
 
 const agents: AgentScopeConfig[] = [{ name: 'web-developer', scope: 'project' }]

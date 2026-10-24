@@ -73,10 +73,12 @@ Completed with 1 failure(s) — the changes above landed, these did not:
 
 A store on this machine (`localhost`, `127.x.x.x` or `[::1]`) also points every editor link the CLI prints or opens at the local editor, `http://localhost:5173/editor`.
 
-There's no refresh flag and no offline flag. Every load revalidates its cached copy of the marketplace against the remote with a five-second budget, and on failure uses the cache and warns (`doctor` fails its `Marketplace Reachable` row instead):
+There's no refresh flag and no offline flag. Every load revalidates its cached copy of the marketplace against the remote with a five-second budget, and when it can't reach the remote uses the cache and warns (`doctor` fails its `Marketplace Reachable` row instead):
 
 ```
 Could not reach github:acme/skills — using the cached copy, which may be out of date.
 ```
+
+A remote answering any 4xx but 405 stops `init --from` and `edit --from` with an error instead, and every other command but `doctor` uses the cache without a word. A 5xx or 405 lets them all use the cache, warning `<source> refused the request (<status>)` in place of `Could not reach <source>`.
 
 A cold cache has no fallback, so the first run on a fresh runner needs the network.

@@ -102,7 +102,10 @@ npx agents-inc list
 ```
 Installation: global
   Mode:    Plugin
-  Skills:  44
+  Skills:  3
+    React (global)
+    Zustand (global)
+    Vitest (global)
   Agents:  13
   Config:  /home/me/.agents-inc/claude/config.ts
   Agents:  /home/me/.claude/agents
