@@ -14,7 +14,11 @@ import {
 import { stubGetConfig } from "../support/sharing"
 
 import type { BuiltMarketplace, StandIns } from "../support/install"
-import type { SeedPayload } from "@workspace/matrix"
+import type {
+  AGENT_DEFINITIONS,
+  SeedModel,
+  SeedPayload,
+} from "@workspace/matrix"
 
 /**
  * The preview against a real `init --from <id>` of the same id: the file set,
@@ -52,6 +56,14 @@ const CARRIED_ID = `external-${HARBOR_STORE.category}-brainstorming`
 
 // Differs from HARBOR_STACK's, so a side taking the stack's shows.
 const LINK_DESCRIPTION = "Harbor checkout, as the team that shares it puts it."
+
+// Differs from the sub-agent's own, so a side taking the definition's shows.
+// The type refuses the model the definition names, so a regenerated catalogue
+// that moves it here fails the typecheck rather than leaving the row inert.
+const LINK_MODEL = "sonnet" satisfies Exclude<
+  SeedModel,
+  (typeof AGENT_DEFINITIONS)["web-developer"]["model"]
+>
 
 /** One configuration, minted as an id the browser opens and the CLI installs. */
 type Install = {
@@ -153,6 +165,21 @@ const INSTALLS: Install[] = [
         },
       },
       agents: { "web-developer": { scope: "project" } },
+    }),
+    shows: HARBOR_WIDGETS.displayName,
+  },
+  {
+    title: "a configuration naming a sub-agent's model over its definition's",
+    id: "HbrModl8",
+    payload: harbor({
+      skills: {
+        [HARBOR_WIDGETS.id]: {
+          install: "eject",
+          scope: "project",
+          assignments: { "web-developer": "preloaded" },
+        },
+      },
+      agents: { "web-developer": { scope: "project", model: LINK_MODEL } },
     }),
     shows: HARBOR_WIDGETS.displayName,
   },

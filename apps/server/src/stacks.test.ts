@@ -95,18 +95,32 @@ describe("the GitHub token never leaves the worker", () => {
 
 describe("the write rate limit on POST /configs", () => {
   // Each case brings its own `cf-connecting-ip`; the pool shares state across a
-  // file, so a shared key would make these order-dependent.
-  const post = (ip: string) =>
+  // file, so a shared key would make these order-dependent. `caller` is every
+  // other header, which is the caller's to choose.
+  const post = (
+    ip: string,
+    caller: Record<string, string> = { origin: WEB_ORIGIN }
+  ) =>
     SELF.fetch(`${BASE}/configs`, {
       method: "POST",
       headers: {
-        origin: WEB_ORIGIN,
+        ...caller,
         "content-type": "application/json",
         "cf-connecting-ip": ip,
       },
       // Not a valid payload: the limit runs before the body is parsed.
       body: JSON.stringify({ v: SEED_VERSION }),
     })
+
+  // One write per key, however the worker spells its keys.
+  const allowOneWritePerKey = () => {
+    const spent = new Set<string>()
+    vi.spyOn(env.CONFIG_WRITES, "limit").mockImplementation(({ key }) => {
+      const success = !spent.has(key)
+      spent.add(key)
+      return Promise.resolve({ success })
+    })
+  }
 
   // Stubbed: the binding's own window is the wall clock's minute, which a
   // burst cannot be held inside.
@@ -120,19 +134,31 @@ describe("the write rate limit on POST /configs", () => {
     expect((await post(ip)).status).toBe(429)
   })
 
-  // One write per key, however the worker spells its keys.
   it("limits each address apart, so one refused address leaves another let through", async () => {
-    const spent = new Set<string>()
-    vi.spyOn(env.CONFIG_WRITES, "limit").mockImplementation(({ key }) => {
-      const success = !spent.has(key)
-      spent.add(key)
-      return Promise.resolve({ success })
-    })
+    allowOneWritePerKey()
     const refusedAddress = "203.0.113.20"
 
     expect((await post(refusedAddress)).status).not.toBe(429)
     expect((await post(refusedAddress)).status).toBe(429)
     expect((await post("203.0.113.21")).status).not.toBe(429)
+  })
+
+  // The limit is per address. A key that also read the cookie or the user
+  // agent would let any caller past it by changing a header.
+  it("counts two callers at one address together, whatever else their requests carry", async () => {
+    allowOneWritePerKey()
+    const { cookie } = await seedSession(env)
+    const signedInEditor = {
+      origin: WEB_ORIGIN,
+      cookie,
+      "user-agent": "Mozilla/5.0",
+    }
+    const cli = { "user-agent": "agents-inc-cli" }
+    const sharedAddress = "203.0.113.22"
+
+    expect((await post(sharedAddress, signedInEditor)).status).not.toBe(429)
+    expect((await post(sharedAddress, cli)).status).toBe(429)
+    expect((await post("203.0.113.23", cli)).status).not.toBe(429)
   })
 
   // `retry-after` must also be exposed to a cross-origin reader. Pinned against

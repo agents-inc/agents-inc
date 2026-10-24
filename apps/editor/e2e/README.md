@@ -39,6 +39,12 @@ fails the spec.
   `support/catalog.ts` is the stack skill that reaches one sub-agent. Use it when a spec needs an
   installable project-scoped configuration.
 - **A payload fixture must be installable, not only parse.** `seedPayloadSchema` checks shape only.
+- **A choice the preview copies from the CLI needs a crossing row that sets both sources, to
+  different values.** Where `output-preview.ts` picks `a ?? b` and the CLI picks the same in its own
+  code, `preview-matches-install.spec.ts` sees the order flipped only in a row where both are set
+  and differ; a row setting one passes either way round. Where one source is catalogue data, hold
+  the difference in a type, as `LINK_MODEL` does, so a regenerated catalogue cannot make the row
+  inert.
 
 ## Conventions
 
