@@ -16,11 +16,12 @@ started. See the root `CLAUDE.md`.
 ## Next — REPO-44: tech debt and lint rules
 
 Steps 1 (lint-rules measurement) and 2 (CLI-923) landed 2026-10-15, step 8's first Stryker run in 0.170.2;
-steps 4-8 landed 2026-10-21 (step 3 removed by the owner; step 5's measured rules wait for the lint-rules package run);
+steps 4-8 landed 2026-10-21 (step 3, the CLAUDE.md and .ai-docs slim, is the owner's later call; step 5's measured rules wait for the lint-rules package run);
 the whole-repo expressive-ts rounds landed (lint-rules 2026-10-21; CLI rounds 1–2 in 0.171.0, round 3 2026-10-22).
-The wizard removal's loose ends were ruled on the decision cards and shipped in 0.172.0, now on npm; what was still
-short has landed since, uncommitted, with the owner's 2026-10-23 answers (gate green 2026-10-23). Next: commit
-round 2 as CLI 0.173.0 on the owner's go (lint-rules 0.2.0 is pushed); `plans/REPO-44-next.md`.
+The wizard removal's loose ends were ruled on the decision cards and shipped in 0.172.0; what was still short shipped
+in 0.173.0 (committed and pushed 2026-10-23; npm publish is the owner's). Now (2026-10-24): the owner's board answers
+of 2026-10-23/24, built row by row with tester-first specialist agents (cli.md, editor.md), and in lint-rules the accepted
+suggestions, the own-lint clean-up and the 58 accepted candidate rules (specs first); `plans/REPO-44-next.md`.
 Order: `plans/REPO-44-tech-debt-and-lint.md`. Open and queued, both repositories: [`outstanding.md`](./outstanding.md).
 
 ## 2026-10-04: the post-CLI-902 audit, rounds 1–6 landed
