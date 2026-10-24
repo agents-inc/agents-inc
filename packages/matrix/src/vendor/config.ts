@@ -25,6 +25,8 @@ export type SkillConfig = {
   scope: SkillScope;
   /** "eject" (the project's own copy) or a marketplace name. */
   origin: string;
+  /** The name the skill's source gave it at install; summaries print it. */
+  displayName?: string;
   excluded?: boolean;
 };
 
