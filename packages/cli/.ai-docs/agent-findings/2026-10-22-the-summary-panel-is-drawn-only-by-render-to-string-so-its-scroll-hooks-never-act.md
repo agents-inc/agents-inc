@@ -12,7 +12,12 @@ reporting_agent: cli-developer
 category: architecture
 domain: web
 root_cause: premise-expired
-status: open
+status: resolved
+resolved_by: >-
+  The owner chose deletion (2026-10-23, board q-summary-panel-scroll). usePanelScroll,
+  useMeasuredHeight, ScrollAffordance, SCROLL_VIEWPORT and their specs are deleted, and SummaryPanel
+  draws plain boxes (CLI-947). What it prints is pinned by summary-panel.test.tsx through
+  summaryPanelText and by e2e/interactive/init-from-prints-its-panel-whole.e2e.test.ts.
 ---
 
 ## What Was Wrong

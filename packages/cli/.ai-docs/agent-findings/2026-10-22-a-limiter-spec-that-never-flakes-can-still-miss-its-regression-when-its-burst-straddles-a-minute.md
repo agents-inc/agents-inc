@@ -10,11 +10,12 @@ reporting_agent: cli-developer
 category: testing
 domain: api
 root_cause: rule-not-specific-enough
-status: partial
-partial_note: >-
-  Both compose specs that counted the real COMPOSE_CALLS binding now stub it with a per-key
-  counter. No standard yet says a spec counting a windowed binding stubs it whether or not it
-  flakes.
+status: resolved
+resolved_by: >-
+  The compose specs stub COMPOSE_CALLS with a per-key counter (stubAllowance), and
+  standards/editor-and-worker.md, section "A spec that counts a rate limiter stubs it, and keeps
+  two callers its key must separate and two it must merge", rule 1, says a spec whose verdict
+  depends on a windowed binding's count stubs it whether or not it flakes.
 ---
 
 ## What Was Wrong

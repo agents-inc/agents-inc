@@ -10,7 +10,12 @@ reporting_agent: cli-developer
 category: testing
 domain: api
 root_cause: convention-undocumented
-status: open
+status: resolved
+resolved_by: >-
+  Rule 3 of the rate-limiter section in standards/editor-and-worker.md: replace a collaborator
+  through its binding or app.request's bindings argument, never vi.mock a module src/index
+  imports, and plant a key mutant through a vite transform hook in a throwaway config. Reproduced
+  under @cloudflare/vitest-pool-workers 0.20.1 through SELF.fetch and app.request alike.
 ---
 
 ## What Was Wrong

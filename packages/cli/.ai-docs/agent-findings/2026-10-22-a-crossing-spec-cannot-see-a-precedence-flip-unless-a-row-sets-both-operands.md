@@ -12,11 +12,12 @@ reporting_agent: cli-developer
 category: testing
 domain: e2e
 root_cause: rule-not-specific-enough
-status: partial
-partial_note: >-
-  The description instance is fixed and has a crossing row. No rule yet says that a
-  precedence copied into both runtimes needs a crossing row setting both operands, and the model
-  and effort sites below have none.
+status: resolved
+resolved_by: >-
+  CLI-949 (2026-10-23). The rule is in apps/editor/e2e/README.md › "Before adding a spec". The
+  model choice has crossing row HbrModl8 (red with the preview's order flipped, served out of
+  tree). The effort choice cannot be pinned while no agent definition sets an effort, and the
+  activation description is not a choice the CLI makes (it reads the installed SKILL.md).
 ---
 
 ## What Was Wrong

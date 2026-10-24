@@ -19,11 +19,10 @@ domain: cli
 root_cause: rule-not-specific-enough
 status: partial
 partial_note: >-
-  The root is named: since 4035099a `retiredSourceFolderUnsupported` prints
-  `path.join(root, RETIRED_SOURCE_FOLDER)` and its Move-it target under the same root, one line per
-  root that holds the folder. Pending: the case where that target already holds the live
-  installation is 2026-10-23-the-retired-folder-notice-says-move-it-onto-a-folder-that-already-holds-the-live-installation.md,
-  and the CLAUDE.md widening proposed below is not written.
+  Code side landed: every run prints one line per root holding the folder, HOME's as `~/.claude-src/`
+  and a project's by its absolute path (`retiredSourceFolderIgnored` in `utils/messages.ts`, over
+  `rootsHoldingTheRetiredSourceFolder` in `install-layout.ts`; CLI-931, owner 2026-10-24). Pending:
+  the CLAUDE.md widening proposed below is not written.
 ---
 
 ## What Was Wrong
@@ -60,3 +59,11 @@ The nearest rule is `packages/cli/CLAUDE.md`: "NEVER report a single path for ar
 split by scope". It names skills and agents, so it didn't reach this line. A proposed widening:
 "any path a command prints that came from a check of more than one root". This doesn't conflict
 with any NEVER/ALWAYS rule.
+
+## Correction
+
+2026-10-24. This file's `partial_note` said on 2026-10-23 that CLI-931 had deleted the notice, so no
+run named the folder. The owner replaced that ruling on 2026-10-24 before the deletion was
+committed (`git show HEAD:packages/cli/src/cli/hooks/init.ts` still carries the old notice). Every
+run now names each root holding the folder, as this finding proposed, and says it is ignored and
+which folder agents-inc reads there. The body above is left as written.

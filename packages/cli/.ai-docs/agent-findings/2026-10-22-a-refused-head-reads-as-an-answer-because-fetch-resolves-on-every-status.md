@@ -13,12 +13,11 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: rule-not-specific-enough
-status: partial
-partial_note: >-
-  Inside `askingEachMarketplaceItself` (doctor's load) a HEAD that is not ok, other than 405 or
-  501, now refuses the copy on both paths. Outside that scope a refused HEAD still reads as an
-  answer with no ETag, so other commands keep the copy with no warning. Whether they should warn
-  is an owner question, not asked yet.
+status: resolved
+resolved_by: >-
+  clean-code-standards.md 15.19 (CLI-948); init --from and edit --from stop on any 4xx but 405 and
+  warn over a 5xx or 405 (CLI-946, CLI-958); every other load warns over a 5xx or 405 and keeps
+  silent on a 4xx (CLI-962)
 ---
 
 ## What Was Wrong
@@ -52,19 +51,17 @@ proposed "only a HEAD that answers shows a download reached the marketplace". Th
 
 ## Fix Applied
 
-Inside the scope, `fetchEtag` throws `TarballWithheldError` for a response that is not `ok`,
-unless the status is 405 or 501. Those two refuse the HEAD method rather than the content: after a
-real download from such a host, refusing them would fail doctor on a tarball it had just fetched.
-On the saved-copy path, `classifyCachedCopy` details the error through `createDetailedFetchError`.
-On the download path, `recordFetchedCopy` writes the record first and then throws, and
-`downloadFreshCopy`'s existing catch details the error. Either way doctor's row reads
-`✗ Failed to load marketplace` with `Repository not found` / `Authentication required for` /
-`Access denied to`, the same as with no saved copy.
+Inside the scope, `fetchEtag` asks with a GET and throws `TarballWithheldError` for any response
+that is not `ok`, 405 and 501 included. On the saved-copy path, `classifyCachedCopy` details the
+error through `createDetailedFetchError`; on the download path, `downloadAnsweredFor` does, after
+`askAfterTheDownload`. Either way doctor's row reads `✗ Failed to load marketplace` with
+`Repository not found` / `Authentication required for` / `Access denied to`, the same as with no
+saved copy.
 
-`it.each(WITHHELD)` in `source-fetcher-revalidation.test.ts` pins both paths. Its regex is
-anchored, so a message wrapped twice fails it. The 405/501 specs pin the copy that is allowed.
-`a remote marketplace that answers but withholds its content` in `doctor-diagnostics.e2e.test.ts`
-drives the built CLI and real giget through `startTarballSourceServer`'s new `refuse(status)`.
+`it.each(WITHHELD)` in `source-fetcher-revalidation.test.ts` pins both paths, 405 and 501 among
+its rows. Its regex is anchored, so a message wrapped twice fails it. `a remote marketplace that
+answers $status, withholding its content` in `doctor-diagnostics.e2e.test.ts` drives the built CLI
+and real giget through `startTarballSourceServer`'s new `refuse(status)`.
 
 ## Proposed Standard
 
@@ -75,3 +72,7 @@ the statuses it accepts) at the call." Census command:
 2026-10-22 it named two sites: this one, and `publish-seed.ts`, which already checks `ok`. This is
 a proposal, checked against `CLAUDE.md`'s NEVER/ALWAYS rules (no conflict) but not against every
 standard.
+
+Corrected 2026-10-23: Fix Applied first said doctor exempted 405 and 501 and threw from
+`recordFetchedCopy`, and named the doctor describe by an older title. All three described the code
+of 2026-10-22. The standard landed, narrower than proposed, as `clean-code-standards.md` 15.19.

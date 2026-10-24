@@ -12,12 +12,13 @@ reporting_agent: web-developer
 category: architecture
 domain: web
 root_cause: missing-rule
-status: partial
-partial_note: >-
-  Code half landed: the load's landing (`landingFor`) and the stack path (`opensItsOwnConfiguration`)
-  ask `marketplaceOnScreen`, which is the slot actually read. Pending: no rule in
-  editor-and-worker.md says which of the two facts such a decision asks. The switch question's use
-  of the same check (`costOfPayload`) is also pinned by no spec.
+status: resolved
+resolved_by: >-
+  The load's landing (`landingFor`) and the stack path (`opensItsOwnConfiguration`) ask
+  `marketplaceOnScreen`, the slot actually read. The rule is in editor-and-worker.md (CLI-952,
+  2026-10-23). The switch question's use (`costOfPayload`) is pinned by CLI-953 (2026-10-23):
+  three specs in use-apply-stack-request.test.ts, with a restore parked and with a link open, are
+  red with the stored choice served back in costOfPayload or in opensItsOwnConfiguration.
 ---
 
 ## What Was Wrong

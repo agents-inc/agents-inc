@@ -14,7 +14,13 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: missing-rule
-status: open
+status: partial
+partial_note: >-
+  Code side landed: the line no longer says "Move it to". It says the old folder is ignored, names
+  the folder agents-inc reads under the same root, and tells the user to delete the old one once
+  they have kept what they need (`retiredSourceFolderIgnored` in `utils/messages.ts`; CLI-931,
+  owner 2026-10-24). Pending: the CLAUDE.md rule proposed below (a message telling the user to move
+  or rename something checks the destination first) is not written.
 ---
 
 ## What Was Wrong
@@ -61,3 +67,11 @@ user. The owner decides the wording. A general rule for `packages/cli/CLAUDE.md`
 tells the user to move or rename something checks the destination first, and words the case where
 it already exists separately. This adds no reader for the retired folder, so it does not conflict
 with the NEVER rule on backward-compatibility shims.
+
+## Correction
+
+2026-10-24. This file's `partial_note` said on 2026-10-23 that CLI-931 had deleted the notice, so
+nothing told the user to move the folder. The owner replaced that ruling on 2026-10-24 before the
+deletion was committed (`git show HEAD:packages/cli/src/cli/hooks/init.ts` still carries the old
+notice). The line now prints on every run with the wording proposed above, whether or not the
+folder agents-inc reads exists. The body above is left as written.

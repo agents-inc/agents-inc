@@ -11,10 +11,14 @@ reporting_agent: cli-developer
 category: testing
 domain: api
 root_cause: rule-not-specific-enough
-status: partial
-partial_note: >-
-  compose.test.ts now has a spec with a second sign-in and a second person at one address. No
-  standard yet says that a file stubbing a limiter keeps a spec with two callers.
+status: resolved
+resolved_by: >-
+  Each stubbed limiter has a spec with two callers its key must separate and two it must merge.
+  In compose.test.ts it is "counts a person's calls across their sessions, and apart from another
+  person's at the same address". In stacks.test.ts it is "counts two callers at one address
+  together, whatever else their requests carry", where a signed-in editor and the CLI share an
+  address; a CONFIG_WRITES key that also reads the cookie or the user agent fails it. Rule 2 of
+  the rate-limiter section in standards/editor-and-worker.md states the rule.
 ---
 
 ## What Was Wrong

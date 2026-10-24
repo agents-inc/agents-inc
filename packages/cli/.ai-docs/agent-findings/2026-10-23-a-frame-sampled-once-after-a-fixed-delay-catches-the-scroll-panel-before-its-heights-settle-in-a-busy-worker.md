@@ -15,11 +15,10 @@ reporting_agent: cli-developer
 category: testing
 domain: web
 root_cause: rule-not-specific-enough
-status: partial
-partial_note: >-
-  The scroll, summary-panel and measured-height specs now wait for the settled frame. Still open:
-  the resizedTo specs in use-terminal-dimensions-follows-the-terminal.test.tsx, the Math.max guard
-  in usePanelScroll that no spec reaches, and the standards line.
+status: resolved
+resolved_by: >-
+  The frame specs wait with vi.waitFor (CLI-865, CLI-955), the scrolling code and its specs are
+  deleted (CLI-947), and clean-code-standards.md 6.5 carries the rule.
 ---
 
 ## What Was Wrong
@@ -90,9 +89,24 @@ mount's retries stay, with the wait after them. All 32 specs in the three files 
 60, 100, 150 and 250, two runs each. Each mutant (no every-render effect, no resize listener, an
 off-by-one `hiddenBelow`) turns red the same specs after the fix as at HEAD.
 
+The two `resizedTo` specs (CLI-955) wait the same way, with a spec-local timeout. Mounting attaches
+the hook's listener synchronously, so no resize is lost; only the re-render is late, because Ink
+gives state set outside `useInput` default priority, which is a scheduler task. They were red at
+150 (one spec) and 250 (both), two runs each, and now pass up to 500. In a scratch copy of the hook,
+deleting the listener or the `||` fallback still turns its spec red. All seven census files, the
+two command specs included, pass at 150 and 250, twice each. State set through `useInput` reaches
+the frame within a microtask at any SLOW_MS.
+
 ## Proposed Standard
 
-`clean-code-standards.md` 6.5 names `RENDER_DELAY_MS` for timing and stops there. Add: a frame that
-effects settle over several renders is awaited with `vi.waitFor` and `SETTLE_TIMEOUT_MS`, never
-sampled after a fixed delay. A delay that keeps a spec past a hook's own timers stays, with the wait
-after it. This does not conflict with `CLAUDE.md`.
+`clean-code-standards.md` 6.5 names `RENDER_DELAY_MS` for timing and stops there. Append to it:
+
+> A frame that changes on state set by an effect or a `resize` listener is awaited with
+> `vi.waitFor` and a named timeout, never read once after `RENDER_DELAY_MS`: Ink renders that state
+> on a React-scheduler task, which a busy worker starts late (`useInput` state renders within a
+> microtask and is outside this rule). A fixed delay stays only where it is a precondition — past a
+> hook's own timers, or before an absence check, which `vi.waitFor` would pass at once — with the
+> wait after it.
+
+The first draft named the shared `SETTLE_TIMEOUT_MS`, which CLI-947 deleted. This does not conflict
+with `CLAUDE.md`.
