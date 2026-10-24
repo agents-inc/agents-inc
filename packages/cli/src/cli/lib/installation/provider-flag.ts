@@ -9,7 +9,7 @@ import { Flags } from "@oclif/core";
 
 import { PROVIDERS, EDITOR_URL, CLI_INVOKE_COMMAND, type Provider } from "../../consts.js";
 import { detectInstallations, type DetectedInstallation } from "./detect-installations.js";
-import { chooseProviderForThisRun } from "./install-layout.js";
+import { chooseProviderForThisRun, providerInUse } from "./install-layout.js";
 
 /** A factory because oclif mutates flag definitions, so commands must not share one. */
 export function providerFlag() {
@@ -24,6 +24,25 @@ export function providerFlag() {
 export function providerNamedBy(flagValue: string | undefined): Provider | undefined {
   if (flagValue === undefined) return undefined;
   return PROVIDERS.find((provider) => provider === flagValue);
+}
+
+const PROVIDER_FLAG = "--provider";
+const PROVIDER_FLAG_WITH_ITS_VALUE = `${PROVIDER_FLAG}=`;
+const END_OF_FLAGS = "--";
+
+/**
+ * For a run oclif has not parsed yet: `--provider <name>` or `--provider=<name>`, ahead of any
+ * `--`; a value naming no provider names none.
+ */
+export function providerNamedIn(argv: readonly string[]): Provider | undefined {
+  const end = argv.indexOf(END_OF_FLAGS);
+  const flags = end === -1 ? argv : argv.slice(0, end);
+
+  const spaced = flags.indexOf(PROVIDER_FLAG);
+  if (spaced !== -1) return providerNamedBy(flags[spaced + 1]);
+
+  const joined = flags.find((token) => token.startsWith(PROVIDER_FLAG_WITH_ITS_VALUE));
+  return providerNamedBy(joined?.slice(PROVIDER_FLAG_WITH_ITS_VALUE.length));
 }
 
 export function providerNeedsAConfigurationToInstall(): string {
@@ -119,12 +138,13 @@ export async function ambiguityFinding(cwd: string): Promise<string | null> {
   return ambiguousInstallation("every command that acts on one", providers, scopeRoot);
 }
 
-/** For `list`: names the other installation in the scope, or `null` when there is none. */
-export async function otherInstallationsInThisScope(
-  cwd: string,
-  showing: Provider,
-): Promise<string | null> {
+/**
+ * For `list`: names the other installation in the scope, or `null` when there is none. The one
+ * shown is read off the scope the roster came from, as `detectInstallation` reads it.
+ */
+export async function otherInstallationsInThisScope(cwd: string): Promise<string | null> {
   const { scopeRoot, providers } = await installationsInPlay(cwd);
+  const showing = providerInUse(scopeRoot);
   const others = providers.filter((provider) => provider !== showing);
   if (others.length === 0) return null;
 

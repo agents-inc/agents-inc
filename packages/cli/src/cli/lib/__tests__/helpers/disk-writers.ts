@@ -78,7 +78,7 @@ export async function writeSourceSkill(
   const domain = config.domain;
   const slug = config.slug;
   const metadata: Record<string, unknown> = {
-    displayName: config.id,
+    displayName: config.displayName,
     slug,
     category: config.category,
     domain,

@@ -13,7 +13,14 @@ import { captureOutput } from "@oclif/test";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { fileExists, directoryExists } from "../test-fs-utils";
 import { writeTestSkill, writeTestPluginManifest } from "../helpers/disk-writers.js";
-import { createMockSkill } from "../factories/skill-factories.js";
+import { createMockSkill, createTestSkill } from "../factories/skill-factories.js";
+import {
+  cleanupTestSource,
+  createTestSource,
+  inTestMarketplace,
+  TEST_MARKETPLACE_NAME,
+  type TestDirs,
+} from "../fixtures/create-test-source";
 import { createMockMatrix } from "../factories/matrix-factories.js";
 import {
   buildAgentConfigs,
@@ -1801,6 +1808,375 @@ describe("what uninstall says of plugins", () => {
       true,
     );
     expect(await directoryExists(path.join(pluginsDir, "someone-elses@marketplace"))).toBe(true);
+  });
+
+  /**
+   * The folder names the plugin one way and its install recorded another, so a row reading the
+   * folder's name read the folder. A kept entry recording no name reads the catalogue the run
+   * started with, so a run that seated the folder's catalogue in its place names that row by its id.
+   */
+  describe("with a plugin from a marketplace folder on this machine", () => {
+    /** The folder's name for it: no catalogue holds that name, and the id does not spell it. */
+    const FOLDER_PLUGIN = firstElement(
+      inTestMarketplace([
+        createTestSkill("api-framework-hono", "Lightweight web framework for the edge", {
+          displayName: "Folder Hono",
+        }),
+      ]),
+    );
+
+    let marketplace: TestDirs;
+
+    beforeEach(async () => {
+      marketplace = await createTestSource({ skills: [FOLDER_PLUGIN] });
+    });
+
+    afterEach(async () => {
+      await cleanupTestSource(marketplace);
+    });
+
+    it("names the plugin by the name its install recorded over the folder's, and a kept skill with no record by the catalogue", async () => {
+      const configPath = await createProjectConfig(projectDir, {
+        marketplace: marketplace.sourceDir,
+        marketplaceName: TEST_MARKETPLACE_NAME,
+        skills: [
+          ...buildSkillConfigs([FOLDER_PLUGIN.id], {
+            scope: "project",
+            origin: TEST_MARKETPLACE_NAME,
+            displayName: "Recorded Hono",
+          }),
+          ...buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+        ],
+      });
+      const pluginRef = `${FOLDER_PLUGIN.id}@${TEST_MARKETPLACE_NAME}`;
+      const pluginsDir = await installPlugins([pluginRef]);
+
+      const { stdout, stderr, error } = await runUninstall();
+
+      expect(error, stderr).toBeUndefined();
+      expect(
+        stdout,
+        "the install's record names the plugin it removes over its folder, and the catalogue the run started with names the global skill it keeps, which records no name",
+      ).toContain(
+        [
+          "│  Skills                                         │  Agents                    │",
+          "│                                                 │                            │",
+          "│   Project                                       │                            │",
+          "│  - Recorded Hono                                │                            │",
+          "│                                                 │                            │",
+          "│   Global                                        │                            │",
+          "│  • React ⏏                                      │                            │",
+          "└──────────────────────────────────────────────────────────────────────────────┘",
+        ].join("\n"),
+      );
+      expect(await directoryExists(path.join(pluginsDir, pluginRef))).toBe(false);
+      expect(await fileExists(configPath)).toBe(false);
+    });
+  });
+
+  /**
+   * A row drawn from a config entry reads the name its install recorded, which differs here from
+   * the catalogue's, so only the record can match; an entry recording none reads the catalogue.
+   */
+  describe("the name a row drawn from the config gives a skill", () => {
+    /** Remote, so nothing this run can read names its skills. */
+    const REMOTE_MARKETPLACE = "github:acme/skills";
+    const REMOTE_MARKETPLACE_NAME = "acme-plugins";
+
+    it("names a plugin from a marketplace it cannot read by the name its install recorded", async () => {
+      const configPath = await createProjectConfig(projectDir, {
+        marketplace: REMOTE_MARKETPLACE,
+        marketplaceName: REMOTE_MARKETPLACE_NAME,
+        skills: buildSkillConfigs(["api-framework-hono"], {
+          scope: "project",
+          origin: REMOTE_MARKETPLACE_NAME,
+          displayName: "Acme Hono",
+        }),
+      });
+      const pluginRef = `api-framework-hono@${REMOTE_MARKETPLACE_NAME}`;
+      const pluginsDir = await installPlugins([pluginRef]);
+
+      const { stdout, stderr, error } = await runUninstall();
+
+      expect(error, stderr).toBeUndefined();
+      expect(
+        stdout,
+        "the plugin it removes is named as its install recorded, not as the catalogue it started with",
+      ).toContain(
+        "│  - Acme Hono                                    │                            │",
+      );
+      expect(await directoryExists(path.join(pluginsDir, pluginRef))).toBe(false);
+      expect(await fileExists(configPath)).toBe(false);
+    });
+
+    it("names a global entry a project uninstall keeps by the name its install recorded, beside a removed plugin recording none named by the catalogue", async () => {
+      const configPath = await createProjectConfig(projectDir, {
+        skills: [
+          ...buildSkillConfigs(["api-framework-hono"], { scope: "project", origin: "marketplace" }),
+          ...buildSkillConfigs(["web-framework-react"], {
+            scope: "global",
+            displayName: "Acme React",
+          }),
+        ],
+      });
+      const pluginRef = "api-framework-hono@marketplace";
+      const pluginsDir = await installPlugins([pluginRef]);
+
+      const { stdout, stderr, error } = await runUninstall();
+
+      expect(error, stderr).toBeUndefined();
+      expect(
+        stdout,
+        "the kept global entry is named as its install recorded, and the removed plugin, recording no name, as the catalogue names it",
+      ).toContain(
+        [
+          "│   Project                                       │                            │",
+          "│  - Hono                                         │                            │",
+          "│                                                 │                            │",
+          "│   Global                                        │                            │",
+          "│  • Acme React ⏏                                 │                            │",
+          "└──────────────────────────────────────────────────────────────────────────────┘",
+        ].join("\n"),
+      );
+      expect(await directoryExists(path.join(pluginsDir, pluginRef))).toBe(false);
+      expect(await fileExists(configPath)).toBe(false);
+    });
+  });
+
+  /**
+   * The header names the marketplace of what the run removes, or of what it keeps when it removes
+   * no skill. The first two keep the same global copy, so only what they remove — a plugin, or a
+   * copy — can tell their headers apart.
+   */
+  describe("the marketplace the panel's header names", () => {
+    const PLUGINS_MARKETPLACE = "acme-plugins";
+
+    /** The panel's first three lines at the 80 columns a headless run measures, written out. */
+    const PANEL_FRAME_TOP =
+      "┌──────────────────────────────────────────────────────────────────────────────┐";
+    const PANEL_STACK_ROW =
+      "│  Stack none                                                                  │";
+    const HEADER_NAMING_THE_PLUGINS_MARKETPLACE = [
+      PANEL_FRAME_TOP,
+      "│  Marketplace acme-plugins                                                    │",
+      PANEL_STACK_ROW,
+    ].join("\n");
+    const HEADER_ALL_SKILLS_EJECTED = [
+      PANEL_FRAME_TOP,
+      "│  Marketplace All skills ejected                                              │",
+      PANEL_STACK_ROW,
+    ].join("\n");
+
+    it("names the marketplace of the plugin it removes, not every skill as ejected, when every skill it keeps is a copy", async () => {
+      const configPath = await createProjectConfig(projectDir, {
+        skills: [
+          ...buildSkillConfigs(["web-framework-react"], {
+            scope: "project",
+            origin: PLUGINS_MARKETPLACE,
+          }),
+          ...buildSkillConfigs(["api-framework-hono"], { scope: "global" }),
+        ],
+      });
+      const pluginRef = `web-framework-react@${PLUGINS_MARKETPLACE}`;
+      const pluginsDir = await installPlugins([pluginRef]);
+
+      const { stdout, stderr, error } = await runUninstall();
+
+      expect(error, stderr).toBeUndefined();
+      expect(stdout, "the panel removes the plugin").toContain(removedRow("React"));
+      expect(stdout, "the panel keeps the global copy").toContain("│  • Hono ⏏ ");
+      expect(
+        stdout,
+        "the header names the marketplace of the plugin the run removes, not the copies it keeps",
+      ).toContain(HEADER_NAMING_THE_PLUGINS_MARKETPLACE);
+      expect(
+        stdout,
+        "with a plugin among the removals, the header does not say every skill is ejected",
+      ).not.toContain("All skills ejected");
+      expect(await directoryExists(path.join(pluginsDir, pluginRef))).toBe(false);
+      expect(await fileExists(configPath)).toBe(false);
+    });
+
+    it("says every skill is ejected when it removes only a copy and keeps only a copy", async () => {
+      const configPath = await createProjectConfig(projectDir, {
+        skills: [
+          ...buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+          ...buildSkillConfigs(["api-framework-hono"], { scope: "global" }),
+        ],
+      });
+      const copyDir = await createCLISkill(
+        await createProjectSkillsDir(projectDir),
+        "web-framework-react",
+      );
+
+      const { stdout, stderr, error } = await runUninstall();
+
+      expect(error, stderr).toBeUndefined();
+      expect(stdout, "the panel removes the copy").toContain(removedRow("React ⏏"));
+      expect(stdout, "the panel keeps the global copy").toContain("│  • Hono ⏏ ");
+      expect(
+        stdout,
+        "with only copies removed and only copies kept, no skill in the panel names a marketplace",
+      ).toContain(HEADER_ALL_SKILLS_EJECTED);
+      expect(await directoryExists(copyDir)).toBe(false);
+      expect(await fileExists(configPath)).toBe(false);
+    });
+
+    /**
+     * The kept global plugin's marketplace is a second name the panel could carry. The owner ruled
+     * on 2026-10-24 to "Name the marketplace of what is removed", over naming every marketplace in
+     * the panel, so only what the run removes is named.
+     */
+    it("names the marketplace of the plugin it removes alone, not the marketplace of a global plugin it keeps", async () => {
+      const KEPT_PLUGINS_MARKETPLACE = "beta-plugins";
+      const configPath = await createProjectConfig(projectDir, {
+        skills: [
+          ...buildSkillConfigs(["web-framework-react"], {
+            scope: "project",
+            origin: PLUGINS_MARKETPLACE,
+          }),
+          ...buildSkillConfigs(["api-framework-hono"], {
+            scope: "global",
+            origin: KEPT_PLUGINS_MARKETPLACE,
+          }),
+        ],
+      });
+      const pluginRef = `web-framework-react@${PLUGINS_MARKETPLACE}`;
+      const pluginsDir = await installPlugins([pluginRef]);
+
+      const { stdout, stderr, error } = await runUninstall();
+
+      expect(error, stderr).toBeUndefined();
+      expect(stdout, "the panel removes the plugin").toContain(removedRow("React"));
+      expect(stdout, "the panel keeps the global plugin, which is no copy").toContain(
+        "│  • Hono                                         │",
+      );
+      expect(
+        stdout,
+        "the header names the marketplace of the plugin the run removes, and that one alone",
+      ).toContain(HEADER_NAMING_THE_PLUGINS_MARKETPLACE);
+      expect(
+        stdout,
+        "the marketplace of the global plugin the run keeps is not named beside it",
+      ).not.toContain(`Marketplace ${PLUGINS_MARKETPLACE} · ${KEPT_PLUGINS_MARKETPLACE}`);
+      expect(await directoryExists(path.join(pluginsDir, pluginRef))).toBe(false);
+      expect(await fileExists(configPath)).toBe(false);
+    });
+
+    it("names the marketplace of the plugins it removes when it keeps nothing", async () => {
+      const configPath = await createProjectConfig(projectDir, {
+        skills: buildSkillConfigs(["web-framework-react", "api-framework-hono"], {
+          scope: "project",
+          origin: PLUGINS_MARKETPLACE,
+        }),
+      });
+      const reactRef = `web-framework-react@${PLUGINS_MARKETPLACE}`;
+      const honoRef = `api-framework-hono@${PLUGINS_MARKETPLACE}`;
+      const pluginsDir = await installPlugins([reactRef, honoRef]);
+
+      const { stdout, stderr, error } = await runUninstall();
+
+      expect(error, stderr).toBeUndefined();
+      expect(stdout, "the panel removes both plugins").toContain(removedRow("React"));
+      expect(stdout, "the panel removes both plugins").toContain(removedRow("Hono"));
+      expect(
+        stdout,
+        "keeping nothing, the header names the marketplace of the plugins the run removes",
+      ).toContain(HEADER_NAMING_THE_PLUGINS_MARKETPLACE);
+      expect(await directoryExists(path.join(pluginsDir, reactRef))).toBe(false);
+      expect(await directoryExists(path.join(pluginsDir, honoRef))).toBe(false);
+      expect(await fileExists(configPath)).toBe(false);
+    });
+
+    /**
+     * For a run removing no skill the owner ruled on 2026-10-24: "Read the kept skills (as
+     * 0.173.0)".
+     */
+    it("names the marketplace of a global plugin it keeps when it removes only an agent and the config", async () => {
+      const configPath = await createProjectConfig(projectDir, {
+        agents: buildAgentConfigs(["web-developer"]),
+        skills: buildSkillConfigs(["api-framework-hono"], {
+          scope: "global",
+          origin: PLUGINS_MARKETPLACE,
+        }),
+      });
+      const agentPath = await createAgentFile(projectDir, "web-developer", { compiled: true });
+
+      const { stdout, stderr, error } = await runUninstall();
+
+      expect(error, stderr).toBeUndefined();
+      expect(stdout, "the panel removes the agent").toContain(removedRow("web-developer"));
+      expect(stdout, "the panel keeps the global plugin, which is no copy").toContain(
+        "│  • Hono                                         │",
+      );
+      expect(
+        stdout,
+        "removing no skill, the header names the marketplace of the global plugin the run keeps",
+      ).toContain(HEADER_NAMING_THE_PLUGINS_MARKETPLACE);
+      expect(await fileExists(agentPath)).toBe(false);
+      expect(await fileExists(configPath)).toBe(false);
+    });
+
+    it("says every skill is ejected when it removes only the config and keeps only a global copy", async () => {
+      const configPath = await createProjectConfig(projectDir, {
+        skills: buildSkillConfigs(["api-framework-hono"], { scope: "global" }),
+      });
+
+      const { stdout, stderr, error } = await runUninstall();
+
+      expect(error, stderr).toBeUndefined();
+      expect(stdout, "the panel keeps the global copy").toContain("│  • Hono ⏏ ");
+      expect(
+        stdout,
+        "removing no skill, the header reads the global copy the run keeps, which names no marketplace",
+      ).toContain(HEADER_ALL_SKILLS_EJECTED);
+      expect(await fileExists(configPath)).toBe(false);
+    });
+
+    describe("on a Codex project, which shares its plugins machine-wide", () => {
+      beforeEach(() => {
+        Object.assign(hostAt(projectDir), {
+          provider: "codex",
+          installsProjectScopedPlugins: false,
+        });
+      });
+
+      afterEach(() => {
+        Object.assign(hostAt(projectDir), {
+          provider: "claude",
+          installsProjectScopedPlugins: true,
+        });
+      });
+
+      it("names the marketplace of the plugin it keeps, removing none", async () => {
+        const configPath = await writeTestTsConfig(
+          projectDir,
+          buildSourceConfig({
+            marketplace: TEST_SOURCE,
+            skills: buildSkillConfigs(["web-framework-react"], {
+              scope: "global",
+              origin: PLUGINS_MARKETPLACE,
+            }),
+          }),
+          sourceFolderInUse(projectDir, "codex").relName,
+        );
+        const pluginRef = `web-framework-react@${PLUGINS_MARKETPLACE}`;
+        const pluginsDir = await installPlugins([pluginRef]);
+
+        const { stdout, stderr, error } = await runUninstall();
+
+        expect(error, stderr).toBeUndefined();
+        expect(stdout, "the panel keeps the plugin Codex shares machine-wide").toContain(
+          "│  • React                                        │",
+        );
+        expect(
+          stdout,
+          "removing no skill, the header names the marketplace of the plugin the project keeps",
+        ).toContain(HEADER_NAMING_THE_PLUGINS_MARKETPLACE);
+        expect(await directoryExists(path.join(pluginsDir, pluginRef))).toBe(true);
+        expect(await fileExists(configPath)).toBe(false);
+      });
+    });
   });
 
   describe("on a host that shares plugins machine-wide", () => {

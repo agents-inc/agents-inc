@@ -111,28 +111,21 @@ function buildRemovalPlan(target: UninstallTarget): RemovalPlan {
 
 /**
  * Its rows are the plan's, never the config's, so the panel names no removal the run will not
- * make. In a project the global entries its config copies stay, so they show as kept.
+ * make. In a project the global entries its config copies stay, so they show as kept. The header
+ * names the marketplace of what the run removes, or, removing no skill, of what it keeps.
  */
 function removalPanel(plan: RemovalPlan, target: UninstallTarget): SummaryPanelProps {
   const kept = target.scope === "project" ? globalEntriesOf(target.config) : NOTHING_KEPT;
+  const removed = removedSkills(plan, target);
   return {
     skillConfigs: kept.skills,
     agentConfigs: kept.agents,
-    installedSkillConfigs: [...removedSkills(plan, target), ...kept.skills],
+    installedSkillConfigs: [...removed, ...kept.skills],
     installedAgentConfigs: [...namedAgentRemovals(plan, target.scope).named, ...kept.agents],
     isInitMode: false,
-    skillNames: namesTheCopiesRecord(target.cliSkills),
     stackName: undefined,
+    headerSkillConfigs: removed.length > 0 ? removed : kept.skills,
   };
-}
-
-/** Uninstall loads no marketplace, so a skill the built-in catalogue lacks is named by its copy. */
-function namesTheCopiesRecord(cliSkills: CliSkill[]): ReadonlyMap<SkillId, string> {
-  return new Map(
-    cliSkills.flatMap(({ skillId, displayName }): [SkillId, string][] =>
-      displayName === undefined ? [] : [[skillId, displayName]],
-    ),
-  );
 }
 
 type PanelEntries = { skills: SkillConfig[]; agents: AgentScopeConfig[] };
@@ -157,13 +150,23 @@ function removedSkills(plan: RemovalPlan, target: UninstallTarget): SkillConfig[
   const marketplaceName = target.config?.marketplaceName;
   const copies = target.cliSkills
     .filter(({ dirName }) => copied.has(dirName))
-    .map(({ skillId }) => ({ id: skillId, scope: target.scope, origin: EJECT_SOURCE }));
+    .map((copy) => copyEntryOf(copy, target.scope));
   const pluginSkills = (target.config?.skills ?? [])
     .filter((skill) => !skill.excluded)
     .filter((skill) => pluginRefsOf(skill, marketplaceName).some((ref) => plugins.has(ref)))
     .map((skill) => ({ ...skill, scope: target.scope }));
 
   return uniqueBy([...copies, ...pluginSkills], (skill) => skill.id);
+}
+
+/** Drawn from disk, not config, so its row is named by the copy's own metadata.yaml. */
+function copyEntryOf({ skillId, displayName }: CliSkill, scope: SkillScope): SkillConfig {
+  return {
+    id: skillId,
+    scope,
+    origin: EJECT_SOURCE,
+    ...(displayName !== undefined && { displayName }),
+  };
 }
 
 /** A compiled file whose name no sub-agent carries is named by its path instead. */

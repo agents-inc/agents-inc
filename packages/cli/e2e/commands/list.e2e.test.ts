@@ -30,7 +30,10 @@ import {
 } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
 import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
+import {
+  buildSkillConfig,
+  buildSkillConfigs,
+} from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import type { ProjectHandle } from "../fixtures/project-handle.js";
 
 describe("list command", () => {
@@ -251,20 +254,46 @@ describe("list command", () => {
   });
 
   describe("with multiple skills installed", () => {
-    // Known gap: `list` shows counts, not skill ids.
-    it.fails("should show all skill IDs in output", { retry: 0 }, async () => {
-      const project = await ProjectBuilder.editable({
-        skills: [E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.zustand.id],
+    it("should list every skill by the name its install recorded, one line each with its scope", async () => {
+      tempDir = await createTempDir();
+      const projectDir = path.join(tempDir, "project");
+      const named = [E2E_SKILL.react, E2E_SKILL.vitest, E2E_SKILL.zustand];
+      await writeProjectConfig(projectDir, {
+        name: "named-install",
+        skills: named.map((skill) =>
+          buildSkillConfig(skill.id, { scope: "project", displayName: skill.display }),
+        ),
+        agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
+        selectedDomains: ["web"],
       });
-      tempDir = path.dirname(project.dir);
-      const projectDir = project.dir;
+      for (const skill of named) {
+        await createLocalSkill(projectDir, skill.id);
+      }
+      const configBefore = await readTestFile(configTsPath(projectDir));
 
       const { exitCode, stdout } = await CLI.run(["list"], { dir: projectDir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).toContain(E2E_SKILL.react.id);
-      expect(stdout).toContain(E2E_SKILL.vitest.id);
-      expect(stdout).toContain(E2E_SKILL.zustand.id);
+      expect(
+        stdout,
+        "each skill is one line under the count, named as its install recorded it",
+      ).toContain(
+        [
+          "  Skills:  3",
+          "    E2E React (project)",
+          "    E2E Vitest (project)",
+          "    E2E Zustand (project)",
+          "  Agents:  0",
+          "",
+        ].join("\n"),
+      );
+      expect(await readTestFile(configTsPath(projectDir)), "list must not rewrite config.ts").toBe(
+        configBefore,
+      );
+      expect(
+        (await readdir(skillsPath(projectDir))).sort(),
+        "list must not add or remove a skill directory",
+      ).toStrictEqual(named.map((skill) => skill.id).sort());
     });
   });
 

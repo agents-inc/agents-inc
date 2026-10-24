@@ -18,9 +18,10 @@ import type { ScopeKind } from "../lib/installation/source-scopes.js";
 import type { ConfigLoadError } from "../lib/configuration/project-config.js";
 import type { JoinedAgent } from "../lib/seed/seed-apply.js";
 import type { AgentChange, SettingChange } from "../lib/configuration/scope-diff.js";
-import { getSkillDisplayName } from "../lib/matrix/matrix-provider.js";
+import { getSkillEntryDisplayName } from "../lib/matrix/matrix-provider.js";
 import type { SkippedSkillAgents } from "@workspace/compile/seed-to-config";
 import { RETIRED_SOURCE_FOLDER } from "../lib/installation/install-layout.js";
+import { isHomeDirectory } from "../lib/installation/is-home-directory.js";
 import { charactersOutsideKebabCase } from "../lib/validate-kebab-name.js";
 import { inertLine, plural } from "./string.js";
 import type { AgentName, Category, SkillId } from "../types/index.js";
@@ -181,6 +182,11 @@ export function marketplaceRefreshFailed(marketplace: string, reason: string): s
 
 export function sourceUnreachableUsingCache(source: string): string {
   return `Could not reach ${source} — using the cached copy, which may be out of date.`;
+}
+
+/** The status alone: an HTTP/2 answer carries no reason phrase. */
+export function sourceRefusedUsingCache(source: string, status: number): string {
+  return `${source} refused the request (${status}) — using the cached copy, which may be out of date.`;
 }
 
 export function marketplacesRefreshFailed(marketplaces: string[]): string {
@@ -477,8 +483,14 @@ export function keptAsInstalledGlobally(
   ].join("\n");
 }
 
-function skillsMoved(verb: "gains" | "loses", skillIds: readonly SkillId[]): string[] {
-  return skillIds.length === 0 ? [] : [`${verb} ${listed(skillIds.map(getSkillDisplayName))}`];
+/** A skill no entry names reads the catalogue, then its id. */
+function skillsMoved(
+  verb: "gains" | "loses",
+  skillIds: readonly SkillId[],
+  namedBy: NonNullable<AgentChange["namedBy"]>,
+): string[] {
+  const names = skillIds.map((id) => getSkillEntryDisplayName(namedBy[id] ?? { id }));
+  return names.length === 0 ? [] : [`${verb} ${listed(names)}`];
 }
 
 /** Unset on either side is the default. */
@@ -496,10 +508,17 @@ function listed(names: readonly string[]): string {
 const SKILLS_REASSIGNED = "skills reassigned";
 
 /** One line under the panel for a sub-agent it marks `~`. */
-export function subAgentChanged({ name, scope, gains, loses, settings }: AgentChange): string {
+export function subAgentChanged({
+  name,
+  scope,
+  gains,
+  loses,
+  settings,
+  namedBy = {},
+}: AgentChange): string {
   const details = [
-    ...skillsMoved("gains", gains),
-    ...skillsMoved("loses", loses),
+    ...skillsMoved("gains", gains, namedBy),
+    ...skillsMoved("loses", loses, namedBy),
     ...settings.map(settingMoved),
   ];
   const where = scope === "global" ? " (global)" : "";
@@ -620,7 +639,8 @@ export function layoutIsCurrent(label: string, to: string): string {
   return `${label} is on ${to}/`;
 }
 
-/** The folder was Claude's, so its contents belong in Claude's folder under the same root. */
-export function retiredSourceFolderUnsupported(root: string): string {
-  return `${path.join(root, RETIRED_SOURCE_FOLDER)}/ is no longer supported (agents-inc now serves Claude and Codex). Move it to ${path.join(root, sourceDirName("claude"))}/.`;
+/** HOME is written `~`, a project by its absolute path. */
+export function retiredSourceFolderIgnored(root: string, provider: Provider): string {
+  const named = isHomeDirectory(root) ? "~" : root;
+  return `${path.join(named, RETIRED_SOURCE_FOLDER)}/ is ignored; agents-inc reads ${path.join(named, sourceDirName(provider))}/. Delete the old folder once you have kept anything you need from it.`;
 }

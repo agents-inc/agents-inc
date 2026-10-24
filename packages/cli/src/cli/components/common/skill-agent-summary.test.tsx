@@ -2,7 +2,7 @@ import { renderToString } from "ink";
 import { render } from "ink-testing-library";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SkillAgentSummary, type SkillAgentSummaryProps } from "./skill-agent-summary";
-import { EJECT_SOURCE, MIN_TERMINAL_SIZE } from "../../consts";
+import { MIN_TERMINAL_SIZE } from "../../consts";
 import { buildAgentConfigs } from "../../lib/__tests__/factories/config-factories";
 import { buildSkillConfigs } from "../../lib/__tests__/helpers/skill-config-builders";
 import { initializeMatrix } from "../../lib/matrix/matrix-provider";
@@ -405,30 +405,54 @@ describe("SkillAgentSummary component", () => {
     });
   });
 
-  /** A run that loads no catalogue reads each copy's own name off its metadata.yaml. */
-  describe("names the run read off each copy", () => {
-    it("draws a skill by the name it is given, and one it is given no name for by the catalogue's", () => {
+  /** One rule for every row: the name its entry records, else the catalogue's, else the id. */
+  describe("the name each skill row is drawn by", () => {
+    it("is the name its entry records, over the catalogue's", () => {
       const { lastFrame, unmount } = renderSummary({
-        installedSkillConfigs: buildSkillConfigs(
-          ["web-framework-react", "web-testing-react-testing-library"],
-          { origin: EJECT_SOURCE },
-        ),
-        skillNames: new Map([["web-testing-react-testing-library", "Testing Library"]]),
+        skillConfigs: buildSkillConfigs(["web-framework-react"], { displayName: "Acme React" }),
+        installedSkillConfigs: buildSkillConfigs(["web-state-zustand"], {
+          displayName: "Acme Zustand",
+        }),
       });
       cleanup = unmount;
 
       const output = lastFrame()!;
-      expect(output).toContain("- Testing Library ⏏");
-      expect(output).toContain("- React ⏏");
-      expect(output).not.toContain("web-testing-react-testing-library");
+      expect(output, "an arriving row is named by the entry the run writes").toContain(
+        "+ Acme React ⏏",
+      );
+      expect(output, "a leaving row is named by the entry the install recorded").toContain(
+        "- Acme Zustand ⏏",
+      );
+      expect(output).not.toContain("+ React");
+      expect(output).not.toContain("- Zustand");
     });
 
-    it("draws a name it is given on one line, whatever its metadata.yaml held", () => {
+    it("is the catalogue's for an entry that records none", () => {
+      const { lastFrame, unmount } = renderSummary({
+        skillConfigs: buildSkillConfigs(["web-framework-react"]),
+        installedSkillConfigs: buildSkillConfigs(["web-state-zustand"]),
+      });
+      cleanup = unmount;
+
+      const output = lastFrame()!;
+      expect(output).toContain("+ React ⏏");
+      expect(output).toContain("- Zustand ⏏");
+    });
+
+    it("is the id for an entry that records none, of a skill the catalogue lacks", () => {
+      const { lastFrame, unmount } = renderSummary({
+        skillConfigs: buildSkillConfigs(["api-framework-hono"]),
+      });
+      cleanup = unmount;
+
+      expect(lastFrame()).toContain("+ api-framework-hono ⏏");
+    });
+
+    it("is drawn on one line, whatever the record holds", () => {
       const { lastFrame, unmount } = renderSummary({
         installedSkillConfigs: buildSkillConfigs(["web-testing-react-testing-library"], {
-          origin: EJECT_SOURCE,
+          displayName: "Testing\nLibrary",
         }),
-        skillNames: new Map([["web-testing-react-testing-library", "Testing\nLibrary"]]),
       });
       cleanup = unmount;
 

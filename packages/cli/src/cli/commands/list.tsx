@@ -5,7 +5,7 @@ import { render } from "../components/render.js";
 
 import { BaseCommand } from "../base-command.js";
 import { CLI_INVOKE_COMMAND, CLI_COLORS, DEFAULT_BRANDING } from "../consts.js";
-import { chooseProviderForThisRun, providerInUse } from "../lib/installation/install-layout.js";
+import { chooseProviderForThisRun } from "../lib/installation/install-layout.js";
 import {
   otherInstallationsInThisScope,
   providerFlag,
@@ -18,8 +18,15 @@ import {
   type Installation,
 } from "../lib/installation/installation.js";
 import { loadProjectConfig } from "../lib/configuration/project-config.js";
+import { computeScopeDiff, type SkillDiffRow } from "../lib/configuration/scope-diff.js";
+import { getSkillEntryDisplayName } from "../lib/matrix/matrix-provider.js";
 import { SkillAgentSummary } from "../components/common/skill-agent-summary.js";
-import type { AgentScopeConfig, ProjectConfig, SkillConfig } from "../types/config.js";
+import type {
+  AgentScopeConfig,
+  ProjectConfig,
+  SkillConfig,
+  SkillScope,
+} from "../types/config.js";
 
 type ListViewProps = {
   mode: string;
@@ -27,6 +34,8 @@ type ListViewProps = {
   skillConfigs: SkillConfig[];
   agentConfigs: AgentScopeConfig[];
 };
+
+type ActiveRoster = Pick<ListViewProps, "skillConfigs" | "agentConfigs">;
 
 /** The label never shrinks: a value too long for the line wraps beside it instead. */
 const HeaderRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
@@ -89,8 +98,7 @@ export default class List extends BaseCommand {
       return;
     }
 
-    const cwd = process.cwd();
-    const line = await otherInstallationsInThisScope(cwd, providerInUse(cwd));
+    const line = await otherInstallationsInThisScope(process.cwd());
     if (line !== null) this.log(line);
   }
 
@@ -103,7 +111,10 @@ export default class List extends BaseCommand {
     if (!installation) return this.reportNoInstallation();
 
     const loaded = await loadProjectConfig(installation.projectDir);
-    if (!loaded?.config || !process.stdin.isTTY) return this.printInstallationInfo();
+    if (loaded === null) return this.printInstallationInfo([]);
+    if (!process.stdin.isTTY) {
+      return this.printInstallationInfo(skillLinesOf(activeRosterOf(loaded.config)));
+    }
 
     await showListView(installation, loaded.config);
   }
@@ -113,12 +124,12 @@ export default class List extends BaseCommand {
     this.log(`Run '${CLI_INVOKE_COMMAND} init' to create one.`);
   }
 
-  private async printInstallationInfo(): Promise<void> {
+  private async printInstallationInfo(skillLines: string[]): Promise<void> {
     const info = await getInstallationInfo();
     if (!info) return;
 
     this.log("");
-    this.log(formatInstallationDisplay(info));
+    this.log(formatInstallationDisplay(info, skillLines));
     this.log("");
   }
 }
@@ -128,11 +139,37 @@ async function showListView(installation: Installation, config: ProjectConfig): 
     <ListView
       mode={INSTALL_MODE_LABELS[installation.mode]}
       source={config.marketplace}
-      skillConfigs={config.skills.filter((skill) => !skill.excluded)}
-      agentConfigs={config.agents.filter((agent) => !agent.excluded)}
+      {...activeRosterOf(config)}
     />,
   );
 
   await waitUntilExit();
   clear();
+}
+
+function activeRosterOf(config: ProjectConfig): ActiveRoster {
+  return {
+    skillConfigs: config.skills.filter((skill) => !skill.excluded),
+    agentConfigs: config.agents.filter((agent) => !agent.excluded),
+  };
+}
+
+/** The panel's skill rows, read as it reads them: project rows first, each under the panel's name. */
+function skillLinesOf({ skillConfigs, agentConfigs }: ActiveRoster): string[] {
+  const { projectSkillRows, globalSkillRows } = computeScopeDiff({
+    currentSkills: skillConfigs,
+    currentAgents: agentConfigs,
+    installedSkillConfigs: skillConfigs,
+    installedAgentConfigs: agentConfigs,
+    isInitMode: false,
+  });
+
+  return [
+    ...projectSkillRows.map((row) => skillLine(row, "project")),
+    ...globalSkillRows.map((row) => skillLine(row, "global")),
+  ];
+}
+
+function skillLine(row: SkillDiffRow, scope: SkillScope): string {
+  return `${getSkillEntryDisplayName(row)} (${scope})`;
 }

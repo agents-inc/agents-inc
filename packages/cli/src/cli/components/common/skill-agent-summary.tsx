@@ -8,10 +8,8 @@ import type {
   ScopeDiffInput,
   SkillDiffRow,
 } from "../../lib/configuration/scope-diff.js";
-import { getSkillDisplayName } from "../../lib/matrix/matrix-provider.js";
+import { getSkillEntryDisplayName } from "../../lib/matrix/matrix-provider.js";
 import type { AgentScopeConfig, SkillConfig } from "../../types/config.js";
-import type { SkillId } from "../../types/skills.js";
-import { inertLine } from "../../utils/string.js";
 
 export type SkillAgentSummaryProps = Pick<
   ScopeDiffInput,
@@ -23,17 +21,7 @@ export type SkillAgentSummaryProps = Pick<
 > & {
   skillConfigs: SkillConfig[];
   agentConfigs: AgentScopeConfig[];
-  /** Read off each copy's metadata.yaml by a run that loads no marketplace to name them from. */
-  skillNames?: ReadonlyMap<SkillId, string>;
 };
-
-const NO_NAMES: ReadonlyMap<SkillId, string> = new Map();
-
-/** A name the run read stands over the catalogue's: it is what that copy says it is. */
-function skillNameOf(id: SkillId, names: ReadonlyMap<SkillId, string>): string {
-  const recorded = names.get(id);
-  return recorded === undefined ? getSkillDisplayName(id) : inertLine(recorded);
-}
 
 const TableHeader: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <Text bold color={CLI_COLORS.WARNING}>
@@ -78,13 +66,13 @@ const NAME_GUTTER_COLUMNS = 3;
  * A long name wraps under itself, beside a prefix that never shrinks, and carries its mark in its
  * own text: drawn beside the name, the mark covered its last letters.
  */
-const SkillRow: React.FC<{ row: SkillDiffRow; name: string }> = ({ row, name }) => (
+const SkillRow: React.FC<{ row: SkillDiffRow }> = ({ row }) => (
   <Box width="50%" paddingRight={NAME_GUTTER_COLUMNS}>
     <Box flexShrink={0}>
       <Text color={DIFF_COLOR[row.status]}>{DIFF_PREFIX[row.status]}</Text>
     </Box>
     <Text color={DIFF_COLOR[row.status]}>
-      {name}
+      {getSkillEntryDisplayName(row)}
       {row.source === EJECT_SOURCE && <EjectIcon />}
     </Text>
   </Box>
@@ -106,7 +94,6 @@ const agentRowKey = (row: AgentDiffRow): string =>
 export const SkillAgentSummary: React.FC<SkillAgentSummaryProps> = ({
   skillConfigs,
   agentConfigs,
-  skillNames = NO_NAMES,
   ...baseline
 }) => {
   const diff = computeScopeDiff({
@@ -137,7 +124,7 @@ export const SkillAgentSummary: React.FC<SkillAgentSummaryProps> = ({
             <ScopeLabel>Project</ScopeLabel>
             <Box flexWrap="wrap">
               {diff.projectSkillRows.map((row) => (
-                <SkillRow key={skillRowKey(row)} row={row} name={skillNameOf(row.id, skillNames)} />
+                <SkillRow key={skillRowKey(row)} row={row} />
               ))}
             </Box>
           </Box>
@@ -147,7 +134,7 @@ export const SkillAgentSummary: React.FC<SkillAgentSummaryProps> = ({
             <ScopeLabel>Global</ScopeLabel>
             <Box flexWrap="wrap">
               {diff.globalSkillRows.map((row) => (
-                <SkillRow key={skillRowKey(row)} row={row} name={skillNameOf(row.id, skillNames)} />
+                <SkillRow key={skillRowKey(row)} row={row} />
               ))}
             </Box>
           </Box>

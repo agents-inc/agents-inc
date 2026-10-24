@@ -43,7 +43,6 @@ import {
   registeredProjectUpdateSkipped,
   registeredProjectsUpdateFailed,
   registeredProjectsUpdated,
-  retiredSourceFolderUnsupported,
   savedSkillMetadataUnusableError,
   scopeBlockedStackAssignment,
   scopeLabel,
@@ -908,12 +907,6 @@ describe("the words a scope and a layout are named in", () => {
 
   it("says which folder a current layout is on", () => {
     expect(layoutIsCurrent("Skills", ".claude/skills")).toBe("Skills is on .claude/skills/");
-  });
-
-  it("refuses the retired source folder under the root that holds it, and names where it moves to there", () => {
-    expect(retiredSourceFolderUnsupported("/home/me/project")).toBe(
-      "/home/me/project/.claude-src/ is no longer supported (agents-inc now serves Claude and Codex). Move it to /home/me/project/.agents-inc/claude/.",
-    );
   });
 });
 

@@ -168,12 +168,17 @@ async function countDirEntries(dir: string, pred: (entry: Dirent) => boolean): P
   }
 }
 
-export function formatInstallationDisplay(info: InstallationInfo): string {
+/** `skillLines` name skills, so they sit under the count and never under a path line. */
+export function formatInstallationDisplay(
+  info: InstallationInfo,
+  skillLines: readonly string[] = [],
+): string {
+  const namedSkillLines = skillLines.map((line) => `\n    ${line}`).join("");
   const agentDirLines = info.agentDirs.map((dir) => `\n  Agents:  ${dir}`).join("");
 
   return `Installation: ${info.name}
   Mode:    ${INSTALL_MODE_LABELS[info.mode]}
-  Skills:  ${info.skillCount}
+  Skills:  ${info.skillCount}${namedSkillLines}
   Agents:  ${info.agentCount}
   Config:  ${info.configPath}${agentDirLines}`;
 }

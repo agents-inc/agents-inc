@@ -8,9 +8,7 @@ import { writeTestTsConfig } from "../helpers/config-io.js";
 import { standAtTerminal } from "../helpers/terminal-input.js";
 import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
 import { buildSkillConfig } from "../helpers/index.js";
-import { initializeMatrix } from "../../matrix/matrix-provider";
 import { forgetTheProviderChosenForThisRun } from "../../installation/install-layout.js";
-import { VITEST_MATRIX } from "../mock-data/mock-matrices";
 
 /**
  * Imported from source rather than run through `dist/`, so `--provider`'s choice for the run can be
@@ -39,7 +37,6 @@ describe("what list shows", () => {
 
   beforeEach(async () => {
     ({ projectDir, cleanup } = await setupIsolatedHome("cc-list-shows-test-"));
-    initializeMatrix(VITEST_MATRIX);
   });
 
   afterEach(async () => {
@@ -53,6 +50,7 @@ describe("what list shows", () => {
       "Installation: installation",
       "  Mode:    Eject",
       "  Skills:  1",
+      "    React (project)",
       "  Agents:  0",
       `  Config:  ${path.join(projectDir, folder, "config.ts")}`,
       "",

@@ -24,8 +24,7 @@ import type { SkillId } from "../../../types";
 import { EXIT_CODES } from "../../exit-codes";
 
 /**
- * A skill only on disk: no source ships it. Also the fixture the identity columns are read off,
- * since `createTestSource` writes each source skill's `displayName` as its id.
+ * A skill only on disk: no source ships it. Also the fixture the identity columns are read off.
  */
 const EJECTED_SKILL = {
   id: "web-testing-playwright-e2e",
@@ -354,17 +353,17 @@ describe("search command", () => {
 
         Found 4 skills matching "web"
 
-        ┌──────────────────────────────────┬──────────────────────────────────┬──────────────┬──────────────────┬──────────────────────────────────────────────┐
-        │ ID                               │ Name                             │ Origin       │ Category         │ Description                                  │
-        ├──────────────────────────────────┼──────────────────────────────────┼──────────────┼──────────────────┼──────────────────────────────────────────────┤
-        │ test-fixture-api-framework-hono  │ test-fixture-api-framework-hono  │ test-fixture │ api-api          │ Lightweight web framework for the edge       │
-        ├──────────────────────────────────┼──────────────────────────────────┼──────────────┼──────────────────┼──────────────────────────────────────────────┤
-        │ test-fixture-web-framework-react │ test-fixture-web-framework-react │ test-fixture │ web-framework    │ React framework for building user interfaces │
-        ├──────────────────────────────────┼──────────────────────────────────┼──────────────┼──────────────────┼──────────────────────────────────────────────┤
-        │ test-fixture-web-state-zustand   │ test-fixture-web-state-zustand   │ test-fixture │ web-client-state │ Bear necessities state management            │
-        ├──────────────────────────────────┼──────────────────────────────────┼──────────────┼──────────────────┼──────────────────────────────────────────────┤
-        │ test-fixture-web-testing-vitest  │ test-fixture-web-testing-vitest  │ test-fixture │ web-testing      │ Next generation testing framework            │
-        └──────────────────────────────────┴──────────────────────────────────┴──────────────┴──────────────────┴──────────────────────────────────────────────┘
+        ┌──────────────────────────────────┬─────────┬──────────────┬──────────────────┬──────────────────────────────────────────────┐
+        │ ID                               │ Name    │ Origin       │ Category         │ Description                                  │
+        ├──────────────────────────────────┼─────────┼──────────────┼──────────────────┼──────────────────────────────────────────────┤
+        │ test-fixture-api-framework-hono  │ Hono    │ test-fixture │ api-api          │ Lightweight web framework for the edge       │
+        ├──────────────────────────────────┼─────────┼──────────────┼──────────────────┼──────────────────────────────────────────────┤
+        │ test-fixture-web-framework-react │ React   │ test-fixture │ web-framework    │ React framework for building user interfaces │
+        ├──────────────────────────────────┼─────────┼──────────────┼──────────────────┼──────────────────────────────────────────────┤
+        │ test-fixture-web-testing-vitest  │ Vitest  │ test-fixture │ web-testing      │ Next generation testing framework            │
+        ├──────────────────────────────────┼─────────┼──────────────┼──────────────────┼──────────────────────────────────────────────┤
+        │ test-fixture-web-state-zustand   │ Zustand │ test-fixture │ web-client-state │ Bear necessities state management            │
+        └──────────────────────────────────┴─────────┴──────────────┴──────────────────┴──────────────────────────────────────────────┘
 
 
         "

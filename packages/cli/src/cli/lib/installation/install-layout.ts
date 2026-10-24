@@ -20,6 +20,7 @@ import {
 } from "../../consts.js";
 import type { AgentName } from "../../types/agents.js";
 import type { SkillScope } from "../../types/config.js";
+import { isHomeDirectory } from "./is-home-directory.js";
 
 /**
  * Where each (provider, scope) keeps its agents-inc source (`.agents-inc/<provider>/`) and the
@@ -47,9 +48,10 @@ export function sourceRootOf(root: string): SourceRoot {
 
 export const RETIRED_SOURCE_FOLDER = ".claude-src";
 
-/** The roots that hold the retired folder, each once, in the order given. */
-export function retiredSourceFolderIn(roots: readonly string[]): string[] {
-  return [...new Set(roots)].filter(holdsTheRetiredSourceFolder);
+/** HOME, then the run's directory unless it is HOME: those holding the retired folder. */
+export function rootsHoldingTheRetiredSourceFolder(cwd: string): string[] {
+  const roots = isHomeDirectory(cwd) ? [os.homedir()] : [os.homedir(), cwd];
+  return roots.filter(holdsTheRetiredSourceFolder);
 }
 
 function holdsTheRetiredSourceFolder(root: string): boolean {
@@ -74,7 +76,7 @@ export function chooseProviderForThisRun(provider: Provider): void {
   providerChosenForThisRun = provider;
 }
 
-/** For test processes that outlive one run. */
+/** The `init` hook's first act, so no run inherits an earlier run's choice. */
 export function forgetTheProviderChosenForThisRun(): void {
   providerChosenForThisRun = undefined;
 }

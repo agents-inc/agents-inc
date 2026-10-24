@@ -449,6 +449,57 @@ describe("computeScopeDiff, entries that stay where they are and still change", 
   });
 });
 
+/** The name an install recorded on an entry rides on the row built from that entry. */
+describe("computeScopeDiff, the name each skill row carries", () => {
+  const ZUSTAND = "web-state-zustand";
+  const VITEST = "web-testing-vitest";
+
+  it("takes a listed row's name from the current entry and a removed row's from the installed one", () => {
+    const diff = computeScopeDiff({
+      currentSkills: [
+        buildSkillConfig(SKILL_ID, { scope: "project", displayName: "Current React" }),
+        buildSkillConfig(VITEST, { scope: "global", displayName: "Current Vitest" }),
+      ],
+      currentAgents: [],
+      installedSkillConfigs: [
+        buildSkillConfig(SKILL_ID, { scope: "project", displayName: "Installed React" }),
+        buildSkillConfig(ZUSTAND, { scope: "project", displayName: "Installed Zustand" }),
+      ],
+      installedAgentConfigs: null,
+      isInitMode: false,
+    });
+
+    expect(diff.projectSkillRows).toStrictEqual([
+      { id: SKILL_ID, source: FACTORY_ORIGIN, status: "unchanged", displayName: "Current React" },
+      { id: ZUSTAND, source: FACTORY_ORIGIN, status: "removed", displayName: "Installed Zustand" },
+    ]);
+    expect(diff.globalSkillRows).toStrictEqual([
+      { id: VITEST, source: FACTORY_ORIGIN, status: "added", displayName: "Current Vitest" },
+    ]);
+  });
+
+  it("carries no name on a row whose entry records none", () => {
+    const diff = computeScopeDiff({
+      currentSkills: buildSkillConfigs([SKILL_ID], { scope: "project" }),
+      currentAgents: [],
+      installedSkillConfigs: [
+        buildSkillConfig(SKILL_ID, { scope: "project", displayName: "Installed React" }),
+        ...buildSkillConfigs([ZUSTAND], { scope: "project" }),
+      ],
+      installedAgentConfigs: null,
+      isInitMode: false,
+    });
+
+    expect(
+      diff.projectSkillRows,
+      "a row is named by its own entry, never by another entry in the same slot",
+    ).toStrictEqual([
+      { id: SKILL_ID, source: FACTORY_ORIGIN, status: "unchanged" },
+      { id: ZUSTAND, source: FACTORY_ORIGIN, status: "removed" },
+    ]);
+  });
+});
+
 describe("agentChange", () => {
   const REACT = "web-framework-react";
   const ZUSTAND = "web-state-zustand";

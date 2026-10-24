@@ -1,4 +1,4 @@
-import { difference, partition, unique } from "remeda";
+import { difference, indexBy, partition, unique } from "remeda";
 import type { AgentScopeConfig, SkillConfig, SkillScope } from "../../types/config";
 import type { AgentName, SkillId, StackAgentConfig } from "../../types/index";
 import { typedValues } from "../../utils/typed-object";
@@ -23,6 +23,8 @@ export type SkillDiffRow = {
   id: SkillId;
   source: string;
   status: Exclude<DiffRowStatus, "changed">;
+  /** The name the entry the row was drawn from records; absent where it records none. */
+  displayName?: string;
 };
 
 export type AgentDiffRow = {
@@ -156,7 +158,12 @@ function skillRowClassifier(
     id: skill.id,
     source: skill.origin,
     status: skillStatus(skill, installedSlots, installedOriginBySlot, overwritten),
+    ...recordedNameOf(skill),
   });
+}
+
+function recordedNameOf(skill: SkillConfig): Pick<SkillDiffRow, "displayName"> {
+  return skill.displayName === undefined ? {} : { displayName: skill.displayName };
 }
 
 function agentRowClassifier(
@@ -200,7 +207,7 @@ function agentStatus(
 }
 
 function toRemovedSkillRow(skill: SkillConfig): SkillDiffRow {
-  return { id: skill.id, source: skill.origin, status: "removed" };
+  return { id: skill.id, source: skill.origin, status: "removed", ...recordedNameOf(skill) };
 }
 
 function toRemovedAgentRow(agent: AgentScopeConfig): AgentDiffRow {
@@ -214,6 +221,8 @@ export type AgentChange = {
   gains: SkillId[];
   loses: SkillId[];
   settings: SettingChange[];
+  /** The entry each is named by: the run's for a skill it gains, the install's for one it loses. */
+  namedBy?: Partial<Record<SkillId, Pick<SkillConfig, "id" | "displayName">>>;
 };
 
 /** `undefined` where the setting is left to its default. */
@@ -238,6 +247,7 @@ export type AgentState = { agent: AgentScopeConfig; rows: StackAgentConfig | und
 
 type AgentsAndRows = {
   agents: AgentScopeConfig[];
+  skills: SkillConfig[];
   stack?: Partial<Record<string, StackAgentConfig>>;
 };
 
@@ -250,8 +260,26 @@ export function agentChangesAmong(
   return names.flatMap((name) => {
     const was = agentStateIn(before, name);
     const is = agentStateIn(after, name);
-    return was === undefined || is === undefined ? [] : [agentChange(was, is)];
+    if (was === undefined || is === undefined) return [];
+    return [namedByEntries(agentChange(was, is), before.skills, after.skills)];
   });
+}
+
+function namedByEntries(
+  change: AgentChange,
+  before: SkillConfig[],
+  after: SkillConfig[],
+): AgentChange {
+  const namedBy = {
+    ...activeEntriesOf(change.loses, before),
+    ...activeEntriesOf(change.gains, after),
+  };
+  return { ...change, namedBy };
+}
+
+function activeEntriesOf(skillIds: readonly SkillId[], skills: SkillConfig[]) {
+  const active = skills.filter((entry) => !entry.excluded && skillIds.includes(entry.id));
+  return indexBy(active, ({ id }) => id);
 }
 
 /** Its active entry, never the mask a project's own copy leaves; `undefined` where none is. */

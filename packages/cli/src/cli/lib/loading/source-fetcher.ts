@@ -31,7 +31,11 @@ import {
   writeFile,
 } from "../../utils/fs";
 import { log, verbose, warn } from "../../utils/logger";
-import { sourceUnreachableUsingCache, STATUS_MESSAGES } from "../../utils/messages";
+import {
+  sourceRefusedUsingCache,
+  sourceUnreachableUsingCache,
+  STATUS_MESSAGES,
+} from "../../utils/messages";
 import {
   DEFAULT_SOURCE,
   isLocalSource,
@@ -82,11 +86,17 @@ export class MarketplaceUnreachableError extends Error {
   }
 }
 
-/** The marketplace answered a load that must reach it, but without the tarball. */
+/**
+ * The marketplace answered without the tarball: a load that must reach it refuses every such
+ * answer, and every other load takes it as `postureOn` says.
+ */
 class TarballWithheldError extends Error {
+  readonly status: number;
+
   constructor({ status, statusText }: Response) {
     super(`the marketplace answered ${status} ${statusText}`.trimEnd());
     this.name = "TarballWithheldError";
+    this.status = status;
   }
 }
 
@@ -109,6 +119,54 @@ export function askingEachMarketplaceItself<T>(
 
 function mustAnswer(): boolean {
   return marketplaceMustAnswer.getStore() !== undefined;
+}
+
+const refusalStopsTheLoad = new AsyncLocalStorage<true>();
+
+/**
+ * Loads in `body` stop on a refusal of the version check that every other load keeps the saved copy
+ * over, as `postureOn` says. It shares the run's verdicts with every other load, so it wraps a run's
+ * first load of the marketplace.
+ */
+export function stoppingOnARefusal<T>(body: () => T): T {
+  return refusalStopsTheLoad.run(true, body);
+}
+
+function stopsOnARefusal(): boolean {
+  return refusalStopsTheLoad.getStore() !== undefined;
+}
+
+const METHOD_NOT_ALLOWED = 405;
+
+/**
+ * `stop`: the load fails with the refusal. `keep`: the saved copy stands in, and the run says so.
+ * `pass over`: the saved copy stands in, and the refusal goes unsaid.
+ */
+type RefusalPosture = "stop" | "keep" | "pass over";
+
+/**
+ * How this load takes a refusal. A load that must reach the marketplace stops on every one. Owner
+ * rulings, 2026-10-24, for the rest: a 5xx, or a 405 refusing the HEAD the check asks with, keeps the
+ * copy; any other 4xx stops a load in `stoppingOnARefusal` and is passed over by every other. Any
+ * other status is no refusal they name.
+ */
+function postureOn(status: number): RefusalPosture | undefined {
+  if (mustAnswer()) return "stop";
+  if (status === METHOD_NOT_ALLOWED || isServerError(status)) return "keep";
+  if (!isClientError(status)) return undefined;
+  return stopsOnARefusal() ? "stop" : "pass over";
+}
+
+const FIRST_CLIENT_ERROR = 400;
+const FIRST_SERVER_ERROR = 500;
+const PAST_THE_SERVER_ERRORS = 600;
+
+function isClientError(status: number): boolean {
+  return status >= FIRST_CLIENT_ERROR && status < FIRST_SERVER_ERROR;
+}
+
+function isServerError(status: number): boolean {
+  return status >= FIRST_SERVER_ERROR && status < PAST_THE_SERVER_ERRORS;
 }
 
 export function sanitizeSourceForCache(source: string): string {
@@ -216,7 +274,7 @@ async function fetchFromRemoteSource(source: string, subdir?: string): Promise<F
 
   if (await directoryExists(cacheDir)) {
     const verdict = await revalidateCachedCopy(cacheDir, source);
-    if (verdict === "current" || verdict === "unreachable") {
+    if (keepsTheCopy(verdict)) {
       verbose(`Using cached marketplace: ${cacheDir}`);
       return {
         path: cacheDir,
@@ -256,6 +314,7 @@ async function downloadFreshCopy(
     });
 
     verbose(`Downloaded to: ${result.dir}`);
+    if (savedTarball) await askBeforeKeepingTheSavedTarball(cacheDir, result, source);
     await recordFetchedCopy(cacheDir, result, savedTarball);
     markCopyCurrentForThisRun(cacheDir);
 
@@ -267,6 +326,46 @@ async function downloadFreshCopy(
     };
   } catch (error) {
     throw createDetailedFetchError(error, source);
+  }
+}
+
+/**
+ * giget answers a failed download with the tarball it saved, saying nothing, so the marketplace is
+ * asked before that tarball is kept: a refusal that stops the load keeps nothing giget extracted, and
+ * the tarball stands in for any other, or for no answer, said as it is for the saved copy.
+ */
+async function askBeforeKeepingTheSavedTarball(
+  cacheDir: string,
+  result: DownloadTemplateResult,
+  source: string,
+): Promise<void> {
+  const tar = tarballOf(result);
+  if (tar === undefined) return;
+
+  const answer = await answerAbout(tar);
+  if (answer === "answered") return;
+  if (answer === "unreachable") {
+    warn(sourceUnreachableUsingCache(source));
+    return;
+  }
+  if (stopsTheLoad(answer)) {
+    await remove(cacheDir);
+    throw answer;
+  }
+  announceTheCopyKept(answer, source);
+}
+
+/** The refusal itself where the marketplace answered with one. */
+async function answerAbout(
+  tar: string,
+): Promise<"answered" | "unreachable" | TarballWithheldError> {
+  try {
+    await fetchEtag(tar);
+    return "answered";
+  } catch (error) {
+    if (error instanceof TarballWithheldError) return error;
+    verbose(`Could not ask ${tar} about the tarball giget saved: ${getErrorMessage(error)}`);
+    return "unreachable";
   }
 }
 
@@ -488,8 +587,17 @@ function savedUnder(savedTarball: SavedTarball, record: SourceRevalidation): boo
 /**
  * `unrecorded`: no fetch record beside the cache, so it is re-fetched once, quietly.
  * `answered`: a load that must reach the marketplace downloads it whatever ETag it answered with.
+ * `refused`: the marketplace refused the version check, and `postureOn` keeps or passes it over.
  */
-type CacheVerdict = "current" | "superseded" | "unrecorded" | "answered" | "unreachable";
+type CacheVerdict =
+  "current" | "superseded" | "unrecorded" | "answered" | "unreachable" | "refused";
+
+/** The verdicts a load reads its saved copy under. */
+type CopyKept = Extract<CacheVerdict, "current" | "unreachable" | "refused">;
+
+function keepsTheCopy(verdict: CacheVerdict): verdict is CopyKept {
+  return verdict === "current" || verdict === "unreachable" || verdict === "refused";
+}
 
 type SourceRevalidation = z.infer<typeof sourceRevalidationSchema>;
 
@@ -510,7 +618,7 @@ function verdictsThisRun(): Map<string, Promise<CacheVerdict>> {
 }
 
 /** Silent for `unrecorded` and `answered`, which are housekeeping rather than news. */
-function announceRefetch(verdict: Exclude<CacheVerdict, "current" | "unreachable">): void {
+function announceRefetch(verdict: Exclude<CacheVerdict, CopyKept>): void {
   if (verdict === "superseded") {
     log(STATUS_MESSAGES.MARKETPLACE_HAS_NEWER_CONTENT);
   }
@@ -535,8 +643,9 @@ function markCopyCurrentForThisRun(cacheDir: string): void {
 }
 
 /**
- * Warns about an unreachable source here, where the verdict is memoised: once per run. A load that
- * must reach the marketplace asks even with no ETag to compare, and an unanswered one throws.
+ * Warns about an unreachable source, or a refusal kept over, here, where the verdict is memoised:
+ * once per run. A load that must reach the marketplace asks even with no ETag to compare, and an
+ * unanswered one throws.
  */
 async function classifyCachedCopy(cacheDir: string, source: string): Promise<CacheVerdict> {
   const record = await readFetchRecord(cacheDir);
@@ -550,12 +659,18 @@ async function classifyCachedCopy(cacheDir: string, source: string): Promise<Cac
   try {
     return judgeAnswer(record, await fetchEtag(record.tar));
   } catch (error) {
-    if (error instanceof TarballWithheldError) throw createDetailedFetchError(error, source);
+    if (error instanceof TarballWithheldError) return stopOrKeepTheCopy(error, source);
     verbose(`Could not revalidate ${record.tar}: ${getErrorMessage(error)}`);
     if (mustAnswer()) throw new MarketplaceUnreachableError(source, getErrorMessage(error));
     warn(sourceUnreachableUsingCache(source));
     return "unreachable";
   }
+}
+
+function stopOrKeepTheCopy(refusal: TarballWithheldError, source: string): "refused" {
+  if (stopsTheLoad(refusal)) throw createDetailedFetchError(refusal, source);
+  announceTheCopyKept(refusal, source);
+  return "refused";
 }
 
 /** A load that must reach the marketplace downloads it whatever else it answers; others keep it. */
@@ -587,8 +702,25 @@ async function fetchEtag(tar: string): Promise<string | undefined> {
     signal: AbortSignal.timeout(REVALIDATION_TIMEOUT_MS),
   });
   await response.body?.cancel();
-  if (mustAnswer() && !response.ok) throw new TarballWithheldError(response);
+  if (withheld(response)) throw new TarballWithheldError(response);
   return response.headers.get("etag") ?? undefined;
+}
+
+function withheld({ ok, status }: Response): boolean {
+  return !ok && postureOn(status) !== undefined;
+}
+
+function stopsTheLoad(refusal: TarballWithheldError): boolean {
+  return postureOn(refusal.status) === "stop";
+}
+
+/** Silent for a refusal passed over, which the ruling leaves unsaid; `verbose` still names it. */
+function announceTheCopyKept(refusal: TarballWithheldError, source: string): void {
+  if (postureOn(refusal.status) === "keep") {
+    warn(sourceRefusedUsingCache(source, refusal.status));
+    return;
+  }
+  verbose(`Keeping the saved copy of ${source} over its refusal: ${refusal.message}`);
 }
 
 /** Exported: `e2e/fixtures/default-source-cache.ts` seeds a cache and writes its record here. */

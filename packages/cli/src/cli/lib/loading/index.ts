@@ -17,6 +17,6 @@ export {
   loadSkillsMatrixFromSource,
 } from "./source-loader";
 
-export { fetchMarketplace } from "./source-fetcher";
+export { fetchMarketplace, stoppingOnARefusal } from "./source-fetcher";
 
 export { loadSkillsFromAllSources } from "./multi-source-loader";

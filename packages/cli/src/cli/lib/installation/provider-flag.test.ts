@@ -7,6 +7,7 @@ import {
   otherInstallationsInThisScope,
   providerFlag,
   providerNamedBy,
+  providerNamedIn,
   providerNeedsAConfigurationToInstall,
   providersInPlay,
   refuseAnAmbiguousInstallation,
@@ -64,6 +65,18 @@ describe("--provider", () => {
     expect(providerNamedBy("codex")).toBe("codex");
   });
 
+  it.each([
+    { argv: ["--from", "abc", "--provider", "codex"], named: "codex" },
+    { argv: ["--provider=codex", "--from", "abc"], named: "codex" },
+    { argv: ["--from", "abc", "--provider", "claude"], named: "claude" },
+    { argv: ["--from", "abc"], named: undefined },
+    { argv: ["--from", "abc", "--", "--provider", "codex"], named: undefined },
+    { argv: ["--provider", "gemini"], named: undefined },
+    { argv: ["--provider"], named: undefined },
+  ] as const)("reads $argv, ahead of oclif's parse, as naming $named", ({ argv, named }) => {
+    expect(providerNamedIn(argv)).toBe(named);
+  });
+
   it("explains that --provider needs a configuration to create an installation from", () => {
     expect(providerNeedsAConfigurationToInstall()).toBe(
       "--provider names which installation to create and needs the configuration to create it from, so it is only meaningful beside --from. Build one at http://localhost:5173/editor, then run 'npx agents-inc init --from <id> --provider <provider>'.",
@@ -106,7 +119,7 @@ describe("--provider", () => {
     });
 
     it("tells list which other installation the scope holds", async () => {
-      expect(await otherInstallationsInThisScope(project, "claude")).toBe(
+      expect(await otherInstallationsInThisScope(project)).toBe(
         `${project} holds 2 installations — claude and codex — and this is the claude one. Show another with --provider <claude|codex>.`,
       );
     });
@@ -127,7 +140,7 @@ describe("--provider", () => {
 
     it("has nothing to report to doctor or list", async () => {
       expect(await ambiguityFinding(project)).toBeNull();
-      expect(await otherInstallationsInThisScope(project, "claude")).toBeNull();
+      expect(await otherInstallationsInThisScope(project)).toBeNull();
     });
 
     it("reads that one as the only installation in play", async () => {

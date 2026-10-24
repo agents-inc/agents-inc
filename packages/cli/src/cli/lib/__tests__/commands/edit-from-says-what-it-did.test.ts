@@ -145,22 +145,22 @@ describe("what edit --from says", () => {
     expect(error).toBeUndefined();
     expect(stdout.startsWith("Fetching configuration Next...\nLoading skills...\n┌")).toBe(true);
     expect(stdout).toContain("│  Marketplace All skills ejected ");
-    expect(stdout).toContain(`│  + ${HONO} ⏏ `);
-    expect(stdout).toContain(` - ${REACT} ⏏ `);
+    expect(stdout).toContain("│  + Hono ⏏ ");
+    expect(stdout).toContain(" - React ⏏ ");
     expect(stdout).toContain("│  ~ web-developer ");
     expect(stdout).not.toContain("Into this project:");
     expect(stdout).not.toContain("Applying this configuration will remove:");
     expect(stdout).toContain(
       [
         "┘",
-        `~ web-developer: gains ${HONO}, loses ${REACT}, model default → opus`,
+        "~ web-developer: gains Hono, loses React, model default → opus",
         "",
         "Apply this configuration?",
         "y/N",
         "",
         "Changes:",
-        `  + ${HONO} [P]`,
-        `  - ${REACT} [P]`,
+        "  + Hono [P]",
+        "  - React [P]",
         "  ~ web-developer (agent: defaults → model opus)",
         "  ~ web-developer (agent: skills reassigned)",
         "",
@@ -388,7 +388,7 @@ describe("what edit --from says", () => {
         flattenCliOutput(
           [
             "┘",
-            `~ web-developer: gains ${HONO}`,
+            "~ web-developer: gains Hono",
             "Kept — named by this configuration, and this catalogue cannot place them:",
             `  skill ${unplaceable}`,
             "Run 'npx agents-inc update' to refresh this installation's marketplace, then apply the configuration again.",
@@ -451,7 +451,7 @@ describe("what edit --from says", () => {
       flattenCliOutput(
         [
           "┘",
-          `~ web-developer: gains ${HONO}`,
+          "~ web-developer: gains Hono",
           "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
           "  sub-agent api-developer",
           "Apply this configuration?",
@@ -585,15 +585,15 @@ describe("what edit --from says", () => {
     const { stdout, error } = await answered(["edit", "--from", "Next"], KEY_Y);
 
     expect(error).toBeUndefined();
-    expect(stdout).toContain(`│  - ${REACT} ⏏ `);
-    expect(stdout).toContain(`│  + ${REACT} ⏏ `);
+    expect(stdout).toContain("│  - React ⏏ ");
+    expect(stdout).toContain("│  + React ⏏ ");
     expect(stdout).toContain("│  - web-developer ");
     expect(stdout).toContain("│  + web-developer ");
     expect(stdout).toContain("┘\n\nApply this configuration?\n");
     expect(stdout).toContain(
       [
         "Changes:",
-        `  ~ ${REACT} ([P] → [G])`,
+        "  ~ React ([P] → [G])",
         "  ~ web-developer ([P] → [G])",
         "",
         "1 agent rewritten, 0 unchanged",
@@ -641,7 +641,7 @@ describe("what edit --from says", () => {
     expect(stdout).toContain(
       [
         "Changes:",
-        `  ~ ${REACT} ([P] → [G])`,
+        "  ~ React ([P] → [G])",
         "  ~ web-developer ([P] → [G])",
         "  ~ web-developer (agent: defaults → model opus)",
         "",
@@ -727,7 +727,7 @@ describe("what edit --from says", () => {
       [
         "Changes:",
         "  + api-developer (agent)",
-        `  + ${REACT} [P]`,
+        "  + React [P]",
         "",
         "1 agent rewritten, 0 unchanged",
       ].join("\n"),
@@ -741,8 +741,13 @@ describe("what edit --from says", () => {
     ).toBe(true);
     const projectConfig = await readTestTsConfig<ProjectConfig>(configPath());
     expect(projectConfig.skills.filter((skill) => skill.id === REACT)).toStrictEqual([
-      ...buildSkillConfigs([REACT], { scope: "global", origin: "eject", excluded: true }),
-      ...buildSkillConfigs([REACT], { scope: "project", origin: "eject" }),
+      ...buildSkillConfigs([REACT], {
+        scope: "global",
+        origin: "eject",
+        displayName: "React",
+        excluded: true,
+      }),
+      ...buildSkillConfigs([REACT], { scope: "project", origin: "eject", displayName: "React" }),
     ]);
   });
 
@@ -811,7 +816,7 @@ describe("what edit --from says", () => {
 
       expect(error).toBeUndefined();
       expect(stdout).toContain(
-        ["Changes:", `  + ${REACT} [P]`, "  + web-developer [P] (agent)", "", ""].join("\n"),
+        ["Changes:", "  + React [P]", "  + web-developer [P] (agent)", "", ""].join("\n"),
       );
       expect(await readFile(globalConfigPath(), "utf-8")).toBe(globalConfigBefore);
       expect(await fileExists(agentFile(projectDir))).toBe(true);
@@ -993,7 +998,7 @@ describe("what edit --from says", () => {
       flattenCliOutput(
         [
           "┘",
-          `~ api-developer (global): gains ${VITEST}`,
+          "~ api-developer (global): gains Vitest",
           "Added to sub-agents in the global install — each keeps everything it already has, since a project run only adds to the global install:",
           `  sub-agent api-developer: + ${VITEST}`,
           "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
@@ -1002,12 +1007,10 @@ describe("what edit --from says", () => {
         ].join("\n"),
       ),
     );
-    expect(stdout).toContain(` + ${VITEST} ⏏ `);
+    expect(stdout).toContain(" + Vitest ⏏ ");
     expect(stdout).toContain("│  ~ api-developer ");
     expect(stdout).toContain(
-      ["Changes:", `  + ${VITEST} [G]`, "  ~ api-developer [G] (agent: skills added)", ""].join(
-        "\n",
-      ),
+      ["Changes:", "  + Vitest [G]", "  ~ api-developer [G] (agent: skills added)", ""].join("\n"),
     );
   });
 
@@ -1051,7 +1054,7 @@ describe("what edit --from says", () => {
       flattenCliOutput(
         [
           "┘",
-          `~ api-developer (global): gains ${VITEST}`,
+          "~ api-developer (global): gains Vitest",
           "Added to sub-agents in the global install — each keeps everything it already has, since a project run only adds to the global install:",
           `  sub-agent api-developer: + ${VITEST}`,
           "Apply this configuration?",
@@ -1165,7 +1168,7 @@ describe("what edit --from says", () => {
     expect(error).toBeUndefined();
     expect(stdout).toContain("│  ~ api-developer ");
     expect(stdout).toContain(
-      ["┘", `~ api-developer: loses ${REACT}`, "", "Apply this configuration?"].join("\n"),
+      ["┘", "~ api-developer: loses React", "", "Apply this configuration?"].join("\n"),
     );
     expect(stdout).toContain(
       ["Changes:", "  ~ api-developer (agent: skills reassigned)", "", ""].join("\n"),
@@ -1554,7 +1557,12 @@ describe("what edit --from says without a terminal", () => {
         (skill) => skill.id === REACT,
       ),
     ).toStrictEqual(
-      buildSkillConfigs([REACT], { scope: "global", origin: "eject", excluded: true }),
+      buildSkillConfigs([REACT], {
+        scope: "global",
+        origin: "eject",
+        displayName: "React",
+        excluded: true,
+      }),
     );
     const before = {
       project: await readFile(configPath(), "utf-8"),
@@ -1768,8 +1776,8 @@ describe("what edit --from says of a skill written here", () => {
       flattenCliOutput(
         [
           "┘",
-          `~ web-developer: gains ${VUE}, loses ${REACT}`,
-          `~ api-developer: gains ${VUE}, loses ${REACT}`,
+          "~ web-developer: gains Vue Composition Api, loses React",
+          "~ api-developer: gains Vue Composition Api, loses React",
           "Kept — written here rather than installed, so a shared configuration never carried them:",
           `  skill ${REACT}`,
           `${REACT}: kept, no longer assigned to api-developer's web-framework`,

@@ -9,7 +9,7 @@ import { render } from "../components/render.js";
 import { BaseCommand } from "../base-command.js";
 import type { InstallSelection } from "@workspace/compile/seed-to-config";
 import { useTerminalDimensions } from "../components/hooks/use-terminal-dimensions.js";
-import { type SourceLoadResult } from "../lib/loading/index.js";
+import { stoppingOnARefusal, type SourceLoadResult } from "../lib/loading/index.js";
 import {
   loadSource,
   sayCapturedWarnings,
@@ -580,13 +580,15 @@ export default class Init extends BaseCommand {
     projectDir: string,
   ): Promise<{ sourceResult: SourceLoadResult; startupMessages: StartupMessage[] }> {
     try {
-      const loaded = await loadSource({
-        // The one load that may choose a marketplace rather than read the stored one.
-        caller: "init",
-        ...(flags.marketplace !== undefined && { sourceFlag: flags.marketplace }),
-        projectDir,
-        captureStartupMessages: true,
-      });
+      const loaded = await stoppingOnARefusal(() =>
+        loadSource({
+          // The one load that may choose a marketplace rather than read the stored one.
+          caller: "init",
+          ...(flags.marketplace !== undefined && { sourceFlag: flags.marketplace }),
+          projectDir,
+          captureStartupMessages: true,
+        }),
+      );
       return { sourceResult: loaded.sourceResult, startupMessages: loaded.startupMessages };
     } catch (error) {
       this.error(getErrorMessage(error), {
@@ -899,7 +901,11 @@ function joinedGlobalAgents(
   return agentChangesAmong(
     held.joined.map(({ agentName }) => agentName),
     installedGlobal,
-    { agents: held.result.agentConfigs, stack: held.result.assignedStack },
+    {
+      agents: held.result.agentConfigs,
+      skills: held.result.skills,
+      stack: held.result.assignedStack,
+    },
   );
 }
 

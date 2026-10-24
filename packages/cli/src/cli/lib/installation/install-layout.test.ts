@@ -12,7 +12,6 @@ import {
   hostCompilesAgent,
   providerInUse,
   isTheProviderOfANewInstallation,
-  retiredSourceFolderIn,
   skillsPathPrefix,
   sourceDir,
   sourceFolderInUse,
@@ -172,51 +171,6 @@ describe.skipIf(process.getuid?.() === 0)(
   },
 );
 
-describe("retiredSourceFolderIn", () => {
-  let root: string;
-
-  beforeEach(async () => {
-    root = await createTempDir("cc-retired-source-");
-  });
-
-  afterEach(async () => {
-    await cleanupTempDir(root);
-  });
-
-  const homeRoot = () => path.join(root, "home");
-  const projectRoot = () => path.join(root, "project");
-
-  beforeEach(async () => {
-    await Promise.all([homeRoot(), projectRoot()].map((dir) => mkdir(dir, { recursive: true })));
-  });
-
-  it("answers no root when none holds the retired folder", () => {
-    expect(retiredSourceFolderIn([homeRoot(), projectRoot()])).toStrictEqual([]);
-  });
-
-  it("answers each root alone when only that one holds it", async () => {
-    await mkdir(path.join(projectRoot(), ".claude-src"));
-
-    expect(retiredSourceFolderIn([homeRoot(), projectRoot()])).toStrictEqual([projectRoot()]);
-  });
-
-  it("answers both roots in the order it was given them when both hold it", async () => {
-    await mkdir(path.join(homeRoot(), ".claude-src"));
-    await mkdir(path.join(projectRoot(), ".claude-src"));
-
-    expect(retiredSourceFolderIn([homeRoot(), projectRoot()])).toStrictEqual([
-      homeRoot(),
-      projectRoot(),
-    ]);
-  });
-
-  it("answers a root given twice once", async () => {
-    await mkdir(path.join(homeRoot(), ".claude-src"));
-
-    expect(retiredSourceFolderIn([homeRoot(), homeRoot()])).toStrictEqual([homeRoot()]);
-  });
-});
-
 describe("isTheProviderOfANewInstallation", () => {
   it("is Claude, which a bare init creates in an empty root, and not Codex", () => {
     expect(isTheProviderOfANewInstallation("claude")).toBe(true);
@@ -321,11 +275,5 @@ describe.skipIf(process.getuid?.() === 0)("probes of a folder that cannot be rea
     await lockedDir(".agents-inc", "codex");
 
     expect(providerInUse(root)).toBe("codex");
-  });
-
-  it("finds no retired folder under a root it cannot look into", async () => {
-    const vault = await lockedDir("vault");
-
-    expect(retiredSourceFolderIn([vault])).toStrictEqual([]);
   });
 });

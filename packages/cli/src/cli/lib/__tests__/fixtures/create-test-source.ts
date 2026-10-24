@@ -243,7 +243,7 @@ export async function createTestSource(options: TestSourceOptions = {}): Promise
       category: skill.category,
       domain,
       // extractAllSkills requires displayName
-      displayName: skill.id,
+      displayName: skill.displayName,
       slug,
       contentHash,
     };
@@ -348,7 +348,7 @@ permissionMode: {{ agent.permissionMode }}
       if (!skill.skipMetadata) {
         // The fields every product path writes; `compile` refuses a local skill without them.
         const metadata: Record<string, unknown> = {
-          displayName: skill.id,
+          displayName: skill.displayName,
           author: skill.author,
           domain: skill.domain,
           category: skill.category,

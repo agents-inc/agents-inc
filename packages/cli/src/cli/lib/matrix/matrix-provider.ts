@@ -2,7 +2,14 @@ import { seatCatalog } from "@workspace/compile";
 
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 import { inertLine } from "../../utils/string";
-import type { Category, Domain, MergedSkillsMatrix, ResolvedSkill, SkillId } from "../../types";
+import type {
+  Category,
+  Domain,
+  MergedSkillsMatrix,
+  ResolvedSkill,
+  SkillConfig,
+  SkillId,
+} from "../../types";
 
 /** The current matrix — starts as BUILT_IN_MATRIX, replaced after local skill merge on startup */
 export let matrix: MergedSkillsMatrix = BUILT_IN_MATRIX;
@@ -27,6 +34,16 @@ export function getSkillById(id: SkillId): ResolvedSkill {
  */
 export function getSkillDisplayName(id: SkillId): string {
   return inertLine(matrix.skills[id]?.displayName ?? id);
+}
+
+/**
+ * A row drawn from a config entry: the name its install recorded, else the catalogue's, else the
+ * id. No command reads a marketplace to name a row.
+ */
+export function getSkillEntryDisplayName(entry: Pick<SkillConfig, "id" | "displayName">): string {
+  return entry.displayName === undefined
+    ? getSkillDisplayName(entry.id)
+    : inertLine(entry.displayName);
 }
 
 export function getCategoryDomain(category: string): Domain | undefined {

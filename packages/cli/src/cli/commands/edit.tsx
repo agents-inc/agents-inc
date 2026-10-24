@@ -57,15 +57,20 @@ import {
   copyingBesideGlobalPlugins,
   installingBesideGlobalCopies,
   keepsGlobalInstall,
+  type SkillMigration,
 } from "../lib/installation/mode-migrator.js";
-import { getSkillById, getSkillDisplayName } from "../lib/matrix/matrix-provider";
+import {
+  getSkillById,
+  getSkillDisplayName,
+  getSkillEntryDisplayName,
+} from "../lib/matrix/matrix-provider";
 import { type AuthoritativeScope, loadProjectConfig } from "../lib/configuration/index.js";
 import {
   activeAgentScopeMap,
   isActiveAt,
   isGlobalTombstone,
 } from "../lib/configuration/scope-predicates.js";
-import type { SourceLoadResult } from "../lib/loading/index.js";
+import { stoppingOnARefusal, type SourceLoadResult } from "../lib/loading/index.js";
 import { buildMarketplacePluginRef } from "../lib/plugins/index.js";
 import { deleteLocalSkill, migrateLocalSkillScope } from "../lib/skills/index.js";
 import type {
@@ -220,6 +225,19 @@ function sourceChangeLine(skillId: SkillId, change: ValueChange): string {
   return changeLine("~", getSkillDisplayName(skillId), ` (${from} \u2192 ${to})`);
 }
 
+/** Named by the entry it removes: its marketplace may no longer offer the skill. */
+function removedSkillLine(skillId: SkillId, oldSkills: SkillConfig[]): string {
+  const removed = installedEntryOf(skillId, oldSkills);
+  return changeLine("-", `${getSkillEntryDisplayName(removed)} ${formatScopeTag(removed.scope)}`);
+}
+
+/** A removed id is drawn from these very entries, so a miss is a bug, never a skill to skip. */
+function installedEntryOf(skillId: SkillId, oldSkills: SkillConfig[]): SkillConfig {
+  const entry = oldSkills.find((s) => s.id === skillId);
+  if (entry === undefined) throw new Error(`Removed skill '${skillId}' has no installed entry`);
+  return entry;
+}
+
 /** Empty for an id the list does not hold. */
 function scopeLabelOf(skillId: SkillId, skills: SkillConfig[]): string {
   const skill = skills.find((s) => s.id === skillId);
@@ -237,13 +255,11 @@ function changeSummaryLines(
 ): string[] {
   const addedSkill = (id: SkillId): string =>
     changeLine("+", `${inertLine(getSkillById(id).displayName)}${scopeLabelOf(id, newSkills)}`);
-  const removedSkill = (id: SkillId): string =>
-    changeLine("-", `${getSkillDisplayName(id)}${scopeLabelOf(id, oldSkills)}`);
   const joinedGlobalDetail = ` ${formatScopeTag("global")} (agent: skills added)`;
 
   return [
     ...changes.addedSkills.map(addedSkill),
-    ...changes.removedSkills.map(removedSkill),
+    ...changes.removedSkills.map((id) => removedSkillLine(id, oldSkills)),
     ...changes.addedAgents.map((name) => changeLine("+", name, AGENT_DETAIL)),
     ...changes.removedAgents.map((name) => changeLine("-", name, AGENT_DETAIL)),
     ...[...changes.sourceChanges].map(([id, change]) => sourceChangeLine(id, change)),
@@ -350,7 +366,7 @@ function changedSubAgents(
     ...changes.tuningChanges.keys(),
     ...changes.joinedGlobalAgents,
   ]).filter((name) => !arrivingOrLeaving.has(name));
-  const after = { agents: result.agentConfigs, stack: result.assignedStack };
+  const after = { agents: result.agentConfigs, skills: result.skills, stack: result.assignedStack };
   if (installedGlobal === null) return agentChangesAmong(changed, projectConfig, after);
 
   const [heldGlobal, ownedHere] = partition(changed, (name) => isHeldGlobally(name, result));
@@ -692,8 +708,9 @@ export default class Edit extends BaseCommand {
   ): Promise<void> {
     const { selection: activeSelection, oldSkills, oldAgents } = active;
     this.logChangeSummary(changes, activeSelection.skills, oldSkills);
-    await this.applyMigrations(changes, active, context, editRoot);
-    await this.applyScopeChanges(changes, activeSelection, context, editRoot);
+    const migrationPlan = migrationPlanOf(changes, active);
+    await this.applyMigrations(migrationPlan, context, editRoot);
+    await this.applyScopeChanges(migrationPlan.scopeChanges, context, editRoot);
     await this.applyCollapsedPairs(changes, context, editRoot);
     await this.applyPluginChanges(changes, activeSelection, oldSkills, context, editRoot);
     await this.copyNewLocalSkills(changes, activeSelection, context, editRoot);
@@ -1014,10 +1031,9 @@ export default class Edit extends BaseCommand {
     const { installation, config: projectConfig } = detected;
 
     try {
-      const { sourceResult, startupMessages } = await loadSource({
-        projectDir: installation.projectDir,
-        captureStartupMessages: true,
-      });
+      const { sourceResult, startupMessages } = await stoppingOnARefusal(() =>
+        loadSource({ projectDir: installation.projectDir, captureStartupMessages: true }),
+      );
       return { installation, projectConfig, sourceResult, startupMessages };
     } catch (error) {
       this.handleError(error);
@@ -1037,12 +1053,10 @@ export default class Edit extends BaseCommand {
   }
 
   private async applyMigrations(
-    changes: ConfigChanges,
-    active: ActiveEntries,
+    migrationPlan: MigrationPlan,
     context: EditContext,
     editRoot: EditRoot,
   ): Promise<void> {
-    const migrationPlan = migrationPlanOf(changes, active);
     if (migrationPlan.toEject.length === 0 && migrationPlan.toPlugin.length === 0) return;
 
     this.announceMigrations(migrationPlan);
@@ -1132,19 +1146,21 @@ export default class Edit extends BaseCommand {
   }
 
   /**
-   * A collapsed `[P][G]` pair is not a move: its project half is dropped
-   * ({@link applyCollapsedPairs}).
+   * Only moves that keep their mode: a switch lands at its new scope ({@link applyMigrations}). A
+   * collapsed `[P][G]` pair is not a move: its project half is dropped ({@link applyCollapsedPairs}).
    */
   private async applyScopeChanges(
-    changes: ConfigChanges,
-    filteredResult: InstallSelection,
+    scopeMoves: SkillMigration[],
     context: EditContext,
     editRoot: EditRoot,
   ): Promise<void> {
-    const scopeChanges = scopeMovesOf(changes);
-    await moveEjectedSkillCopies(scopeChanges, filteredResult.skills, editRoot.dir);
+    const [copyMoves, pluginMoves] = partition(
+      scopeMoves,
+      (move) => move.newSource === EJECT_SOURCE,
+    );
+    await moveEjectedSkillCopies(copyMoves, editRoot.dir);
 
-    if (!movesAPluginSkill(scopeChanges, filteredResult.skills)) return;
+    if (pluginMoves.length === 0) return;
 
     const marketplace = await this.requireMarketplaceOrExit(
       context.sourceResult,
@@ -1153,8 +1169,7 @@ export default class Edit extends BaseCommand {
     );
 
     const pluginScopeResult = await migratePluginSkillScopes(
-      scopeChanges,
-      filteredResult.skills,
+      pluginMoves,
       marketplace,
       editRoot.dir,
     );
@@ -1717,27 +1732,12 @@ function scopeMovesOf(changes: ConfigChanges): Map<SkillId, ScopeChange> {
 }
 
 async function moveEjectedSkillCopies(
-  scopeMoves: ReadonlyMap<SkillId, ScopeChange>,
-  skills: SkillConfig[],
+  copyMoves: SkillMigration[],
   projectDir: string,
 ): Promise<void> {
-  for (const [skillId, change] of scopeMoves) {
-    const skillConfig = skills.find((s) => s.id === skillId);
-    if (skillConfig?.origin === EJECT_SOURCE) {
-      await migrateLocalSkillScope(skillId, change.from, projectDir);
-    }
+  for (const move of copyMoves) {
+    await migrateLocalSkillScope(move.id, move.oldScope, projectDir);
   }
-}
-
-/** An ejected skill moves as files; a plugin one needs the marketplace to re-register it. */
-function movesAPluginSkill(
-  scopeMoves: ReadonlyMap<SkillId, ScopeChange>,
-  skills: SkillConfig[],
-): boolean {
-  return [...scopeMoves.keys()].some((skillId) => {
-    const skill = skills.find((s) => s.id === skillId);
-    return skill !== undefined && skill.origin !== EJECT_SOURCE;
-  });
 }
 
 type StaleAgent = { name: AgentName; scope: SkillScope };
@@ -1803,30 +1803,24 @@ type PluginScopeMigrationResult = {
 };
 
 async function migratePluginSkillScopes(
-  scopeChanges: Map<SkillId, ScopeChange>,
-  skills: Pick<SkillConfig, "id" | "origin">[],
+  pluginMoves: SkillMigration[],
   marketplace: string,
   projectDir: string,
 ): Promise<PluginScopeMigrationResult> {
   const host = hostAt(projectDir);
   const failed: PluginScopeMigrationResult["failed"] = [];
 
-  for (const [skillId, change] of scopeChanges) {
-    const skillConfig = skills.find((s) => s.id === skillId);
-    if (!skillConfig || skillConfig.origin === EJECT_SOURCE) {
-      continue;
-    }
-
-    const pluginRef = buildMarketplacePluginRef(skillId, marketplace);
+  for (const move of pluginMoves) {
+    const pluginRef = buildMarketplacePluginRef(move.id, marketplace);
 
     try {
       // global→project keeps the global registration, which other projects still use.
-      if (change.from === "project") {
+      if (move.oldScope === "project") {
         await host.uninstallPlugin(pluginRef, "project", projectDir);
       }
-      await host.installPlugin(pluginRef, change.to, projectDir);
+      await host.installPlugin(pluginRef, move.newScope, projectDir);
     } catch (error) {
-      failed.push({ id: skillId, error: getErrorMessage(error) });
+      failed.push({ id: move.id, error: getErrorMessage(error) });
     }
   }
 
