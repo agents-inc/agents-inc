@@ -25,9 +25,11 @@ import {
   fetchFromSource,
   fetchRecordPath,
   MarketplaceUnreachableError,
+  stoppingOnARefusal,
 } from "./source-fetcher";
 import { downloadTemplate } from "giget";
 import { marketplaceManifestPath } from "../../consts";
+import { matchedAsWritten } from "../__tests__/helpers/matched-as-written";
 import { log, warn } from "../../utils/logger";
 import { sourceUnreachableUsingCache, STATUS_MESSAGES } from "../../utils/messages";
 
@@ -91,6 +93,32 @@ const WITHHELD = [
 
 const NOT_FOUND = 404;
 
+/**
+ * A load that stops on a refusal stops on every 4xx but 405, and how each refusal opens. Sampled
+ * across the range, ends included, so a list of statuses standing in for the range fails.
+ */
+const STOPPING = [
+  { status: 400, opens: `Failed to fetch ${SOURCE}: the marketplace answered 400` },
+  { status: 401, opens: `Authentication required for: ${SOURCE}\n` },
+  { status: 403, opens: `Access denied to: ${SOURCE}\n` },
+  { status: 404, opens: `Repository not found: ${SOURCE}\n` },
+  { status: 407, opens: `Failed to fetch ${SOURCE}: the marketplace answered 407` },
+  { status: 410, opens: `Failed to fetch ${SOURCE}: the marketplace answered 410` },
+  { status: 429, opens: `Failed to fetch ${SOURCE}: the marketplace answered 429` },
+  { status: 451, opens: `Failed to fetch ${SOURCE}: the marketplace answered 451` },
+  { status: 499, opens: `Failed to fetch ${SOURCE}: the marketplace answered 499` },
+] as const;
+
+/** A server failing, or a host refusing the HEAD the check asks with: such a load keeps the copy. */
+const KEPT_OVER = [405, 500, 501, 502, 503, 504, 599] as const;
+
+const SERVICE_UNAVAILABLE = 503;
+
+/** Mirrors `sourceRefusedUsingCache`. */
+function refusedWarning(status: number): string {
+  return `${SOURCE} refused the request (${status}) — using the cached copy, which may be out of date.`;
+}
+
 const HEAD_METHOD_REFUSED = 405;
 
 function refusal(status: number): Response {
@@ -103,7 +131,7 @@ function refusingOnlyHead(served: Response): (url: string, init?: RequestInit) =
 }
 
 function opening(text: string): RegExp {
-  return new RegExp(`^${text}`);
+  return new RegExp(`^${matchedAsWritten(text)}`);
 }
 
 describe("source-fetcher revalidation", () => {
@@ -591,6 +619,10 @@ describe("source-fetcher revalidation", () => {
 
       expect(outside.fromCache).toBe(false);
       expect(JSON.parse(await readFile(recordPath, "utf-8"))).toStrictEqual({ tar: TARBALL });
+      expect(
+        warn,
+        "the copy is the one this run downloaded, so no stand-in's staleness is said",
+      ).not.toHaveBeenCalled();
     });
 
     it.each(WITHHELD)(
@@ -886,6 +918,331 @@ describe("source-fetcher revalidation", () => {
 
         expect(await replacedAskingItself()).toStrictEqual([]);
       });
+    });
+  });
+
+  describe("asked by a load that stops on a refusal", () => {
+    const stopping = () => stoppingOnARefusal(() => fetchFromSource(SOURCE));
+
+    it.each(STOPPING)(
+      "stops on the saved copy when the marketplace answers its version check $status, leaving the copy and its record",
+      async ({ status, opens }) => {
+        await seedCachedCopy({ tar: TARBALL, etag: CACHED_ETAG });
+        const fetchMock = vi.fn().mockResolvedValue(refusal(status));
+        vi.stubGlobal("fetch", fetchMock);
+
+        await expect(stopping()).rejects.toMatchObject({
+          message: expect.stringMatching(opening(opens)),
+        });
+
+        expect(fetchMock.mock.calls[0]?.[1]).toStrictEqual(
+          expect.objectContaining({ method: "HEAD" }),
+        );
+        expect(mockDownloadTemplate).not.toHaveBeenCalled();
+        expect(await readdir(cacheDir), "the copy stays for every other load").toStrictEqual([
+          ORPHAN_FILE,
+        ]);
+        expect(JSON.parse(await readFile(recordPath, "utf-8"))).toStrictEqual({
+          tar: TARBALL,
+          etag: CACHED_ETAG,
+        });
+      },
+    );
+
+    it("keeps the saved copy the marketplace vouches for", async () => {
+      await seedCachedCopy({ tar: TARBALL, etag: CACHED_ETAG });
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(headResponse(CACHED_ETAG)));
+
+      const result = await stopping();
+
+      expect(result.fromCache).toBe(true);
+      expect(result.unreachable).toBe(false);
+      expect(mockDownloadTemplate).not.toHaveBeenCalled();
+    });
+
+    it.each(KEPT_OVER)(
+      "keeps the saved copy and its record over a %i, and says the marketplace refused",
+      async (status) => {
+        await seedCachedCopy({ tar: TARBALL, etag: CACHED_ETAG });
+        vi.stubGlobal("fetch", vi.fn().mockResolvedValue(refusal(status)));
+
+        const result = await stopping();
+
+        expect(result.fromCache).toBe(true);
+        expect(result.path).toBe(cacheDir);
+        expect(warn).toHaveBeenCalledExactlyOnceWith(refusedWarning(status));
+        expect(mockDownloadTemplate).not.toHaveBeenCalled();
+        expect(await readdir(cacheDir)).toStrictEqual([ORPHAN_FILE]);
+        expect(JSON.parse(await readFile(recordPath, "utf-8"))).toStrictEqual({
+          tar: TARBALL,
+          etag: CACHED_ETAG,
+        });
+      },
+    );
+
+    it("says a refusal it keeps the copy over once however many times one run loads it", async () => {
+      await seedCachedCopy({ tar: TARBALL, etag: CACHED_ETAG });
+      const fetchMock = vi.fn().mockResolvedValue(refusal(SERVICE_UNAVAILABLE));
+      vi.stubGlobal("fetch", fetchMock);
+
+      await stopping();
+      const second = await stoppingOnARefusal(() => fetchFromSource(SOURCE, { subdir: "" }));
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(warn).toHaveBeenCalledExactlyOnceWith(refusedWarning(SERVICE_UNAVAILABLE));
+      expect(second.fromCache).toBe(true);
+    });
+
+    it.each(KEPT_OVER)(
+      "leaves a load outside it keeping the copy and its record over the same %i, and saying the marketplace refused",
+      async (status) => {
+        await seedCachedCopy({ tar: TARBALL, etag: CACHED_ETAG });
+        const fetchMock = vi.fn().mockResolvedValue(refusal(status));
+        vi.stubGlobal("fetch", fetchMock);
+
+        const outside = await fetchFromSource(SOURCE);
+
+        expect(fetchMock, "subject guard: the marketplace was asked").toHaveBeenCalledOnce();
+        expect(outside.fromCache).toBe(true);
+        expect(outside.path).toBe(cacheDir);
+        expect(warn).toHaveBeenCalledExactlyOnceWith(refusedWarning(status));
+        expect(mockDownloadTemplate).not.toHaveBeenCalled();
+        expect(await readdir(cacheDir)).toStrictEqual([ORPHAN_FILE]);
+        expect(JSON.parse(await readFile(recordPath, "utf-8"))).toStrictEqual({
+          tar: TARBALL,
+          etag: CACHED_ETAG,
+        });
+      },
+    );
+
+    it("leaves a load outside it saying a refusal once however many times one run loads it", async () => {
+      await seedCachedCopy({ tar: TARBALL, etag: CACHED_ETAG });
+      const fetchMock = vi.fn().mockResolvedValue(refusal(SERVICE_UNAVAILABLE));
+      vi.stubGlobal("fetch", fetchMock);
+
+      await fetchFromSource(SOURCE);
+      const second = await fetchFromSource(SOURCE, { subdir: "" });
+
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(warn).toHaveBeenCalledExactlyOnceWith(refusedWarning(SERVICE_UNAVAILABLE));
+      expect(second.fromCache).toBe(true);
+    });
+
+    it("keeps the saved copy and names its staleness when the marketplace cannot be reached", async () => {
+      await seedCachedCopy({ tar: TARBALL, etag: CACHED_ETAG });
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("fetch failed")));
+
+      const result = await stopping();
+
+      expect(result.fromCache).toBe(true);
+      expect(result.unreachable, "no answer is not a refusal").toBe(true);
+      expect(warn).toHaveBeenCalledWith(sourceUnreachableUsingCache(SOURCE));
+    });
+
+    it.each(STOPPING)(
+      "leaves a load outside it free to keep the copy the same $status stops, saying nothing of it",
+      async ({ status }) => {
+        await seedCachedCopy({ tar: TARBALL, etag: CACHED_ETAG });
+        const fetchMock = vi.fn().mockResolvedValue(refusal(status));
+        vi.stubGlobal("fetch", fetchMock);
+
+        const outside = await fetchFromSource(SOURCE);
+
+        expect(fetchMock, "subject guard: the marketplace was asked").toHaveBeenCalledOnce();
+        expect(outside.fromCache).toBe(true);
+        expect(outside.path).toBe(cacheDir);
+        expect(warn).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(STOPPING)(
+      "stops on the tarball giget saved when the marketplace answers $status, keeping nothing giget extracted",
+      async ({ status, opens }) => {
+        await rm(cacheDir, { recursive: true });
+        await seedGigetTarball(CACHED_ETAG);
+        vi.stubGlobal("fetch", vi.fn().mockResolvedValue(refusal(status)));
+        stubSavedTarballExtract();
+
+        await expect(stopping()).rejects.toMatchObject({
+          message: expect.stringMatching(opening(opens)),
+        });
+
+        expect(await readdir(path.dirname(cacheDir)), "no copy and no record").toStrictEqual([]);
+        expect(
+          await readFile(gigetTarballOf(MAIN), "utf-8"),
+          "giget's own tarball stays for every other load",
+        ).toBe(SAVED_TARBALL_CONTENT);
+      },
+    );
+
+    it("keeps the tarball giget saved when the marketplace answers for it", async () => {
+      await rm(cacheDir, { recursive: true });
+      await seedGigetTarball(CACHED_ETAG);
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(headResponse(CACHED_ETAG)));
+      stubSavedTarballExtract();
+
+      const result = await stopping();
+
+      expect(await readdir(result.path)).toStrictEqual([SAVED_FILE]);
+      expect(JSON.parse(await readFile(recordPath, "utf-8"))).toStrictEqual({
+        tar: TARBALL,
+        etag: CACHED_ETAG,
+      });
+    });
+
+    it.each(KEPT_OVER)(
+      "keeps the tarball giget saved over a %i, and says the marketplace refused",
+      async (status) => {
+        await rm(cacheDir, { recursive: true });
+        await seedGigetTarball(CACHED_ETAG);
+        vi.stubGlobal("fetch", vi.fn().mockResolvedValue(refusal(status)));
+        stubSavedTarballExtract();
+
+        const result = await stopping();
+
+        expect(await readdir(result.path)).toStrictEqual([SAVED_FILE]);
+        expect(JSON.parse(await readFile(recordPath, "utf-8"))).toStrictEqual({
+          tar: TARBALL,
+          etag: CACHED_ETAG,
+        });
+        expect(warn).toHaveBeenCalledExactlyOnceWith(refusedWarning(status));
+      },
+    );
+
+    it("keeps the tarball giget saved and names its staleness when the marketplace cannot be reached", async () => {
+      await rm(cacheDir, { recursive: true });
+      await seedGigetTarball(CACHED_ETAG);
+      const fetchMock = vi.fn().mockRejectedValue(new Error("fetch failed"));
+      vi.stubGlobal("fetch", fetchMock);
+      stubSavedTarballExtract();
+
+      const result = await stopping();
+
+      expect(
+        fetchMock,
+        "subject guard: the marketplace was asked about the tarball",
+      ).toHaveBeenCalled();
+      expect(await readdir(result.path)).toStrictEqual([SAVED_FILE]);
+      expect(JSON.parse(await readFile(recordPath, "utf-8"))).toStrictEqual({
+        tar: TARBALL,
+        etag: CACHED_ETAG,
+      });
+      expect(
+        warn,
+        "giget's tarball standing in for a marketplace nobody could ask is said as the saved copy is",
+      ).toHaveBeenCalledExactlyOnceWith(sourceUnreachableUsingCache(SOURCE));
+    });
+
+    it("leaves a load outside it keeping the tarball giget saved when the marketplace cannot be reached, and naming its staleness", async () => {
+      await rm(cacheDir, { recursive: true });
+      await seedGigetTarball(CACHED_ETAG);
+      const fetchMock = vi.fn().mockRejectedValue(new Error("fetch failed"));
+      vi.stubGlobal("fetch", fetchMock);
+      stubSavedTarballExtract();
+
+      const outside = await fetchFromSource(SOURCE);
+
+      expect(
+        fetchMock,
+        "subject guard: the marketplace was asked about the tarball",
+      ).toHaveBeenCalled();
+      expect(mockDownloadTemplate, "giget extracted the tarball it saved").toHaveBeenCalledOnce();
+      expect(await readdir(outside.path)).toStrictEqual([SAVED_FILE]);
+      expect(JSON.parse(await readFile(recordPath, "utf-8"))).toStrictEqual({
+        tar: TARBALL,
+        etag: CACHED_ETAG,
+      });
+      expect(
+        warn,
+        "giget's tarball standing in for a marketplace nobody could ask is said as the saved copy is",
+      ).toHaveBeenCalledExactlyOnceWith(sourceUnreachableUsingCache(SOURCE));
+    });
+
+    it("leaves a load outside it naming an unreachable marketplace's staleness over giget's tarball once however many times one run loads it", async () => {
+      await rm(cacheDir, { recursive: true });
+      await seedGigetTarball(CACHED_ETAG);
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("fetch failed")));
+      stubSavedTarballExtract();
+
+      await fetchFromSource(SOURCE);
+      const second = await fetchFromSource(SOURCE, { subdir: "" });
+
+      expect(mockDownloadTemplate, "the tarball is extracted once a run").toHaveBeenCalledOnce();
+      expect(warn).toHaveBeenCalledExactlyOnceWith(sourceUnreachableUsingCache(SOURCE));
+      expect(second.fromCache).toBe(true);
+    });
+
+    /**
+     * giget's refused download leaves the CLI no status to judge, so the marketplace is asked about
+     * the tarball: the asking is the subject guard for the silence.
+     */
+    it.each(STOPPING)(
+      "leaves a load outside it free to keep the tarball giget saved over the same $status, saying nothing of it",
+      async ({ status }) => {
+        await rm(cacheDir, { recursive: true });
+        await seedGigetTarball(CACHED_ETAG);
+        const fetchMock = vi.fn().mockResolvedValue(refusal(status));
+        vi.stubGlobal("fetch", fetchMock);
+        stubSavedTarballExtract();
+
+        const outside = await fetchFromSource(SOURCE);
+
+        expect(fetchMock, "subject guard: the marketplace was asked").toHaveBeenCalled();
+        expect(await readdir(outside.path)).toStrictEqual([SAVED_FILE]);
+        expect(JSON.parse(await readFile(recordPath, "utf-8"))).toStrictEqual({
+          tar: TARBALL,
+          etag: CACHED_ETAG,
+        });
+        expect(warn).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(KEPT_OVER)(
+      "leaves a load outside it keeping the tarball giget saved over the same %i, and saying the marketplace refused",
+      async (status) => {
+        await rm(cacheDir, { recursive: true });
+        await seedGigetTarball(CACHED_ETAG);
+        vi.stubGlobal("fetch", vi.fn().mockResolvedValue(refusal(status)));
+        stubSavedTarballExtract();
+
+        const outside = await fetchFromSource(SOURCE);
+
+        expect(await readdir(outside.path)).toStrictEqual([SAVED_FILE]);
+        expect(JSON.parse(await readFile(recordPath, "utf-8"))).toStrictEqual({
+          tar: TARBALL,
+          etag: CACHED_ETAG,
+        });
+        expect(warn).toHaveBeenCalledExactlyOnceWith(refusedWarning(status));
+      },
+    );
+
+    it("leaves a load outside it saying a refusal over giget's tarball once however many times one run loads it", async () => {
+      await rm(cacheDir, { recursive: true });
+      await seedGigetTarball(CACHED_ETAG);
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(refusal(SERVICE_UNAVAILABLE)));
+      stubSavedTarballExtract();
+
+      await fetchFromSource(SOURCE);
+      const second = await fetchFromSource(SOURCE, { subdir: "" });
+
+      expect(mockDownloadTemplate, "the tarball is extracted once a run").toHaveBeenCalledOnce();
+      expect(warn).toHaveBeenCalledExactlyOnceWith(refusedWarning(SERVICE_UNAVAILABLE));
+      expect(second.fromCache).toBe(true);
+    });
+
+    it("leaves a load outside it saying nothing of a refusal asked after a download it just made, recording no ETag", async () => {
+      await rm(cacheDir, { recursive: true });
+      const fetchMock = vi.fn().mockResolvedValue(refusal(SERVICE_UNAVAILABLE));
+      vi.stubGlobal("fetch", fetchMock);
+      stubDownload();
+
+      const outside = await fetchFromSource(SOURCE);
+
+      expect(fetchMock, "subject guard: the marketplace was asked").toHaveBeenCalledOnce();
+      expect(outside.fromCache, "no saved copy stood in").toBe(false);
+      expect(await readdir(outside.path)).toStrictEqual([FRESH_FILE]);
+      expect(JSON.parse(await readFile(recordPath, "utf-8"))).toStrictEqual({ tar: TARBALL });
+      expect(warn).not.toHaveBeenCalled();
     });
   });
 
