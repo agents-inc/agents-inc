@@ -521,9 +521,10 @@ async function writeWorkspaceFixture(files: Record<string, string>): Promise<Wor
   return { repository, packageRoot, findingsDir };
 }
 
+/** Without `isIgnored` the check reads the fixture's `.gitignore`, and no `.git` holds the fixture. */
 function checkWorkspace(
   { repository, packageRoot, findingsDir }: Workspace,
-  isIgnored: (file: string) => boolean,
+  isIgnored?: (file: string) => boolean,
 ): CheckResult {
   return check({
     findingsDir,
@@ -542,6 +543,15 @@ function writeEmptyFile(file: string): void {
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, "");
 }
+
+function writeGitignore(directory: string, patterns: string[]): void {
+  writeFileSync(path.join(directory, ".gitignore"), `${patterns.join("\n")}\n`);
+}
+
+const GENERATED_FILE_PATTERN = `packages/cli/${GENERATED_FILE}`;
+/** Anchored, as the repository's own pair is: an unanchored line would ignore a misreading too. */
+const PRIVATE_NOTES_PATTERN = "packages/cli/todo/*";
+const KEPT_NOTE = "packages/cli/todo/TODO.md";
 
 describe("a frontmatter value naming a path this repository does not carry", () => {
   it("is not reported when it climbs out of the repository to a file that is absent", async () => {
@@ -619,6 +629,44 @@ describe("a frontmatter value naming a path this repository does not carry", () 
   });
 });
 
+/** A `git archive` export and a CI checkout must get one verdict, and only the export lacks `.git`. */
+describe("a frontmatter value naming a path, in a tree no git repository holds", () => {
+  it("is not reported when the repository's own .gitignore ignores it", async () => {
+    const workspace = await writeWorkspaceFixture({
+      [FINDING_FILE]: findingWithFileList(AFFECTED_FILES, [GENERATED_FILE]),
+    });
+    writeGitignore(workspace.repository, [GENERATED_FILE_PATTERN]);
+
+    expect(
+      checkWorkspace(workspace).unresolved,
+      "the .gitignore travels with every export, so it answers what .git would have",
+    ).toStrictEqual([]);
+  });
+
+  it("is still reported beside it when it names an absent path the .gitignore does not ignore", async () => {
+    const workspace = await writeWorkspaceFixture({
+      [FINDING_FILE]: findingWithFileList(AFFECTED_FILES, [GENERATED_FILE, A_DELETED_FILE]),
+    });
+    writeGitignore(workspace.repository, [GENERATED_FILE_PATTERN]);
+
+    expect(checkWorkspace(workspace).unresolved).toStrictEqual([
+      { file: FINDING_FILE, key: AFFECTED_FILES, value: A_DELETED_FILE },
+    ]);
+  });
+
+  it("is still reported when a later ! line re-includes the path it names", async () => {
+    const workspace = await writeWorkspaceFixture({
+      [FINDING_FILE]: findingWithFileList(AFFECTED_FILES, [KEPT_NOTE]),
+    });
+    writeGitignore(workspace.repository, [PRIVATE_NOTES_PATTERN, `!${KEPT_NOTE}`]);
+
+    expect(
+      checkWorkspace(workspace).unresolved,
+      "git carries a re-included file, so its absence is a dangling reference",
+    ).toStrictEqual([{ file: FINDING_FILE, key: AFFECTED_FILES, value: KEPT_NOTE }]);
+  });
+});
+
 const A_DECLARED_SYMBOL = "writeConfigByScope";
 const A_DELETED_SYMBOL = "writeScopedConfigs";
 
@@ -680,6 +728,21 @@ describe("a backticked symbol inside a lifecycle note", () => {
     expect(
       asRepository.undeclared,
       "the only file declaring it is one git ignores, so the repository declares it nowhere",
+    ).toStrictEqual([{ file: FINDING_FILE, key: "partial_note", symbol: A_DECLARED_SYMBOL }]);
+  });
+
+  it("ignores a name declared only in a file the .gitignore ignores, in a tree no git repository holds", async () => {
+    const root = await writeSymbolFixture({
+      [FINDING_FILE]: finding({
+        status: "partial",
+        partial_note: `"Option A at the \`${A_DECLARED_SYMBOL}\` call sites is pending."`,
+      }),
+    });
+    writeGitignore(root, ["source/config-writer.ts"]);
+
+    expect(
+      checkFixture(root, path.join(root, "source")).undeclared,
+      "an export and a checkout must agree on which files declare names",
     ).toStrictEqual([{ file: FINDING_FILE, key: "partial_note", symbol: A_DECLARED_SYMBOL }]);
   });
 

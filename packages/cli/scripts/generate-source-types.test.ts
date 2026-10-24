@@ -2,10 +2,20 @@
  * Runs against fixture roots only: no CI job has the skills checkout the generator reads.
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from "vitest";
-import { mkdirSync, statSync, unlinkSync, writeFileSync, readFileSync, readdirSync } from "fs";
+import { spawnSync } from "child_process";
+import {
+  existsSync,
+  mkdirSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+  readFileSync,
+  readdirSync,
+} from "fs";
 import path from "path";
 import { stringify as stringifyYaml } from "yaml";
 
+import { EXIT_CODES } from "../src/cli/lib/exit-codes";
 import { createTempDir, cleanupTempDir } from "../src/cli/lib/__tests__/test-fs-utils";
 import { createMockExtractedSkill } from "../src/cli/lib/__tests__/factories/skill-factories.js";
 import { renderSkillMd } from "../src/cli/lib/__tests__/content-generators";
@@ -37,7 +47,25 @@ const DRIFTED_CONTENT = "// hand-edited after generation\n";
 /** Stands in for an emitted path git has never seen. */
 const ABSENT_FILE = "matrix.ts";
 
+const RUNNER = path.resolve(import.meta.dirname, "run-generate-source-types.ts");
+const CHECK_FLAG = "--check";
+const CHECK_SCRIPT = "generate:types:check";
+
+/** Newline-terminated or not; a stack trace is several. */
+const ONE_LINE = /^.+\n?$/;
+
+const FIXTURE_SKILL_METADATA = {
+  slug: "react",
+  category: "web-framework",
+  domain: "web",
+  displayName: "React",
+  cliDescription: "React framework skill",
+};
+
 const modifiedAt = (filePath: string): bigint => statSync(filePath, { bigint: true }).mtimeNs;
+
+const committedModifiedAt = (): bigint[] =>
+  readdirSync(GENERATED_DIR).map((name) => modifiedAt(path.join(GENERATED_DIR, name)));
 
 function writeFixtureSkill(
   skillsSource: string,
@@ -695,13 +723,7 @@ describe("check mode", () => {
   beforeAll(async () => {
     skillsSource = await createTempDir("types-check-skills-");
     cliRoot = await createTempDir("types-check-cli-");
-    writeFixtureSkill(skillsSource, "web-framework-react", {
-      slug: "react",
-      category: "web-framework",
-      domain: "web",
-      displayName: "React",
-      cliDescription: "React framework skill",
-    });
+    writeFixtureSkill(skillsSource, "web-framework-react", FIXTURE_SKILL_METADATA);
     writeFixtureAgent(cliRoot, "developer", "web-developer", "web");
   });
 
@@ -766,5 +788,70 @@ describe("check mode", () => {
       await check({ outDir: drifted, skillsSource, cliRoot }),
       "the verdict must come from the bytes, not from what a diff can see",
     ).toStrictEqual({ clean: false, drifted: [DRIFTED_FILE] });
+  });
+});
+
+// Spawned directly: `bun run` echoes the command, path included, onto stderr.
+describe("bun scripts/run-generate-source-types.ts --check <skills checkout>", () => {
+  const dirs: string[] = [];
+
+  afterEach(async () => {
+    await Promise.all(dirs.splice(0).map(cleanupTempDir));
+  });
+
+  async function scratchDir(prefix: string): Promise<string> {
+    const dir = await createTempDir(prefix);
+    dirs.push(dir);
+    return dir;
+  }
+
+  it.each([
+    {
+      folder: "a skills checkout that is not on disk",
+      within: (dir: string) => path.join(dir, "skills"),
+    },
+    { folder: "a folder holding no src/skills", within: (dir: string) => dir },
+  ])(
+    "refuses $folder in one line naming it and how to point the check at one",
+    async ({ within }) => {
+      const skillsSource = within(await scratchDir("types-check-missing-"));
+      const existedBefore = existsSync(skillsSource);
+      const committedBefore = committedModifiedAt();
+
+      const result = spawnSync("bun", [RUNNER, CHECK_FLAG, skillsSource], { encoding: "utf-8" });
+
+      expect(result.status, "a missing checkout must fail the check").toBeGreaterThan(
+        EXIT_CODES.SUCCESS,
+      );
+      expect(result.stdout, "a refusal prints nothing on stdout").toBe("");
+      expect(result.stderr, "one line, not a stack trace").toMatch(ONE_LINE);
+      expect(result.stderr, "the line names the folder it looked in").toContain(skillsSource);
+      expect(result.stderr, "the line says how to name another folder").toContain(CHECK_SCRIPT);
+      expect(existsSync(skillsSource), "the refusal creates nothing").toBe(existedBefore);
+      expect(committedModifiedAt()).toStrictEqual(committedBefore);
+    },
+  );
+
+  it("compares a skills checkout that is on disk against the committed types, as before", async () => {
+    const skillsSource = await scratchDir("types-check-present-");
+    writeFixtureSkill(skillsSource, "web-framework-react", FIXTURE_SKILL_METADATA);
+    const committedBefore = committedModifiedAt();
+
+    const result = spawnSync("bun", [RUNNER, CHECK_FLAG, skillsSource], { encoding: "utf-8" });
+
+    expect([result.status, result.stdout, result.stderr]).toStrictEqual([
+      EXIT_CODES.ERROR,
+      "",
+      [
+        `src/cli/types/generated is out of date against ${skillsSource}:`,
+        "  source-types.ts",
+        "  matrix.ts",
+        "  activation-descriptions.ts",
+        "",
+        "Run `bun run generate:types` in packages/cli and commit everything it writes.",
+        "",
+      ].join("\n"),
+    ]);
+    expect(committedModifiedAt()).toStrictEqual(committedBefore);
   });
 });

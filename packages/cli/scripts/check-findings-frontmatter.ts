@@ -6,7 +6,8 @@
  * says so instead of reading as a malformed finding.
  */
 import { spawnSync } from "child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "fs";
+import os from "os";
 import path from "path";
 
 import ts from "typescript";
@@ -70,20 +71,39 @@ const ROOT_CAUSE = "root_cause";
 export const AFFECTED_FILES = "affected_files";
 const DATE = "date";
 
+type ScanScope = {
+  findingsDir: string;
+  referenceRoots: string[];
+  sourceRoots: string[];
+  repositoryRoot: string;
+};
+
+type IsIgnored = (file: string) => boolean;
+
 export function check({
   findingsDir = FINDINGS_DIR,
   referenceRoots = [PACKAGE_ROOT, REPOSITORY_ROOT],
   sourceRoots = [REPOSITORY_ROOT],
   repositoryRoot = REPOSITORY_ROOT,
-  isIgnored = gitIgnoresUnder(),
+  isIgnored,
 }: {
   findingsDir?: string | undefined;
   referenceRoots?: string[] | undefined;
   sourceRoots?: string[] | undefined;
   repositoryRoot?: string | undefined;
-  /** Injected so a test needs no git repository. */
-  isIgnored?: ((file: string) => boolean) | undefined;
+  /** Injected so a test can name what is ignored without writing a `.gitignore`. */
+  isIgnored?: IsIgnored | undefined;
 } = {}): CheckResult {
+  const scope = { findingsDir, referenceRoots, sourceRoots, repositoryRoot };
+  if (isIgnored !== undefined) return scan(scope, isIgnored);
+
+  return withGitignoreOf(repositoryRoot, (ignoredByGitignore) => scan(scope, ignoredByGitignore));
+}
+
+function scan(
+  { findingsDir, referenceRoots, sourceRoots, repositoryRoot }: ScanScope,
+  isIgnored: IsIgnored,
+): CheckResult {
   const files = findingFiles(findingsDir);
   const witnessed = witnessOf(findingsDir, [...APPARATUS_FILES, ...files]);
   const enumValues = rootCauseEnumOf(findingsDir);
@@ -300,7 +320,7 @@ function fieldsOf(parsed: unknown): FrontmatterField[] {
 type ReferenceScope = {
   roots: string[];
   repositoryRoot: string;
-  isIgnored: (file: string) => boolean;
+  isIgnored: IsIgnored;
 };
 
 /** Judged by value under any key. Resolution is filtered first: a stat is cheaper than spawning git. */
@@ -387,11 +407,11 @@ const DATA_EXTENSION = ".json";
 const UNAUTHORED_DIRECTORIES = ["node_modules", "dist", ".git", "coverage", ".turbo"];
 
 /** Parsed identifiers plus JSON keys; parsed, so names in the suite's strings don't count as declared. */
-function declaredNamesUnder(roots: string[], isIgnored: (file: string) => boolean): Set<string> {
+function declaredNamesUnder(roots: string[], isIgnored: IsIgnored): Set<string> {
   return new Set(roots.flatMap((root) => namesUnder(root, isIgnored)));
 }
 
-function namesUnder(root: string, isIgnored: (file: string) => boolean): string[] {
+function namesUnder(root: string, isIgnored: IsIgnored): string[] {
   return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
     const entryPath = path.join(root, entry.name);
     if (entry.isDirectory()) {
@@ -407,44 +427,93 @@ function namesUnder(root: string, isIgnored: (file: string) => boolean): string[
   });
 }
 
-/**
- * A present path is answered from one cached `ls-files --ignored` listing per root (per-path
- * `check-ignore` is slow); an absent path asks `check-ignore`, which reads patterns alone. Outside a
- * working tree nothing is ignored.
- */
-function gitIgnoresUnder(): (file: string) => boolean {
-  const perRoot = new Map<string, string[]>();
+const THROWAWAY_GIT_DIR_PREFIX = "findings-gitignore-";
 
-  return (file) =>
-    existsSync(file) ? isListedAsIgnored(perRoot, file) : matchesIgnorePattern(file);
+const GIT_SUCCEEDED = 0;
+
+/**
+ * Git is asked through a throwaway git directory whose work tree is the repository, so only the
+ * `.gitignore` files the repository carries decide: a checkout, CI and a `git archive` export with
+ * no `.git` get one verdict, and this machine's own excludes give none.
+ */
+function withGitignoreOf<T>(repositoryRoot: string, use: (isIgnored: IsIgnored) => T): T {
+  const gitDir = mkdtempSync(path.join(os.tmpdir(), THROWAWAY_GIT_DIR_PREFIX));
+
+  try {
+    initEmptyGitDir(gitDir);
+
+    return use(
+      gitIgnoresUnder(repositoryRoot, gitOptionsReadingOnlyGitignore(gitDir, repositoryRoot)),
+    );
+  } finally {
+    rmSync(gitDir, { recursive: true, force: true });
+  }
 }
 
-function isListedAsIgnored(perRoot: Map<string, string[]>, file: string): boolean {
+function initEmptyGitDir(gitDir: string): void {
+  const result = spawnSync("git", ["init", "--quiet", "--bare", "--template=", gitDir], {
+    encoding: "utf-8",
+  });
+  if (result.status !== GIT_SUCCEEDED) throw new Error(gitFailure(result.stderr));
+}
+
+/** An empty index tracks nothing and the excludes file is null, so only `.gitignore` lines match. */
+function gitOptionsReadingOnlyGitignore(gitDir: string, repositoryRoot: string): string[] {
+  return [
+    `--git-dir=${gitDir}`,
+    `--work-tree=${repositoryRoot}`,
+    "-c",
+    `core.excludesFile=${os.devNull}`,
+  ];
+}
+
+/**
+ * A present path is answered from one cached `ls-files --ignored` listing per root (per-path
+ * `check-ignore` is slow); an absent path asks `check-ignore`, which reads patterns alone. The
+ * repository's `.gitignore` governs no path outside it.
+ */
+function gitIgnoresUnder(repositoryRoot: string, gitOptions: string[]): IsIgnored {
+  const perRoot = new Map<string, string[]>();
+
+  return (file) => {
+    if (isOutside(repositoryRoot, file)) return false;
+
+    return existsSync(file)
+      ? isListedAsIgnored(gitOptions, perRoot, file)
+      : matchesIgnorePattern(gitOptions, repositoryRoot, file);
+  };
+}
+
+function isListedAsIgnored(
+  gitOptions: string[],
+  perRoot: Map<string, string[]>,
+  file: string,
+): boolean {
   const directory = path.parse(file).root === file ? file : path.dirname(file);
-  const listing = nearestKnownRoot(perRoot, directory) ?? loadIgnoredUnder(perRoot, directory);
+  const listing =
+    nearestKnownRoot(perRoot, directory) ?? loadIgnoredUnder(gitOptions, perRoot, directory);
 
   return listing.some((ignored) => file === ignored || file.startsWith(`${ignored}${path.sep}`));
 }
 
 const IGNORED_BY_A_PATTERN = 0;
+const IGNORED_BY_NO_PATTERN = 1;
 
-function matchesIgnorePattern(file: string): boolean {
-  const result = spawnSync("git", [
-    "-C",
-    nearestExistingDirectory(file),
-    "check-ignore",
-    "--quiet",
-    "--",
-    file,
-  ]);
+function matchesIgnorePattern(gitOptions: string[], repositoryRoot: string, file: string): boolean {
+  const result = spawnSync(
+    "git",
+    ["-C", repositoryRoot, ...gitOptions, "check-ignore", "--quiet", "--", file],
+    { encoding: "utf-8" },
+  );
+  if (result.status === IGNORED_BY_A_PATTERN) return true;
+  if (result.status === IGNORED_BY_NO_PATTERN) return false;
 
-  return result.status === IGNORED_BY_A_PATTERN;
+  throw new Error(gitFailure(result.stderr));
 }
 
-function nearestExistingDirectory(file: string): string {
-  const parent = path.dirname(file);
-
-  return existsSync(parent) ? parent : nearestExistingDirectory(parent);
+/** A silent "not ignored" on a git failure is how an export once judged ignored paths as missing. */
+function gitFailure(stderr: string): string {
+  return `git could not say what the repository's .gitignore ignores: ${stderr.trim()}`;
 }
 
 function nearestKnownRoot(perRoot: Map<string, string[]>, dir: string): string[] | undefined {
@@ -455,19 +524,31 @@ function nearestKnownRoot(perRoot: Map<string, string[]>, dir: string): string[]
   return undefined;
 }
 
-function loadIgnoredUnder(perRoot: Map<string, string[]>, dir: string): string[] {
+function loadIgnoredUnder(
+  gitOptions: string[],
+  perRoot: Map<string, string[]>,
+  dir: string,
+): string[] {
   const result = spawnSync(
     "git",
-    ["-C", dir, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory"],
+    [
+      "-C",
+      dir,
+      ...gitOptions,
+      "ls-files",
+      "--others",
+      "--ignored",
+      "--exclude-standard",
+      "--directory",
+    ],
     { encoding: "utf-8" },
   );
-  const entries =
-    result.status === 0
-      ? result.stdout
-          .split("\n")
-          .filter((line) => line !== "")
-          .map((line) => path.resolve(dir, line.replace(/\/$/, "")))
-      : [];
+  if (result.status !== GIT_SUCCEEDED) throw new Error(gitFailure(result.stderr));
+
+  const entries = result.stdout
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => path.resolve(dir, line.replace(/\/$/, "")));
   perRoot.set(dir, entries);
 
   return entries;
