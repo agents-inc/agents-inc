@@ -1,3 +1,4 @@
+import { getRouteApi, useNavigate } from "@tanstack/react-router"
 import { useEffect, useRef } from "react"
 
 import { fetchSharedConfig } from "@/lib/api/configs"
@@ -54,6 +55,36 @@ const withDropped = (said: string | null, dropped: string[]) => {
 const restoreSavedCatalog = () =>
   seatCatalog(useMarketplaceStore.getState().current)
 
+const route = getRouteApi("/")
+
+// A load leaving a link opens this browser's own configuration first and names
+// what it could not place, so the bare address's opening is already done. Taken
+// by the next opening whatever its address: a leave from a closure whose
+// address had already moved on navigates nowhere, and must not skip a link.
+let leftByALoad = false
+
+const takeLeftByALoad = () => {
+  const left = leftByALoad
+  leftByALoad = false
+  return left
+}
+
+/**
+ * Takes a link off the address once this browser's own configuration is open,
+ * so a reload does not reopen the link, keeping what that opening said.
+ */
+export const useLeaveTheLink = () => {
+  const fromId = route.useSearch({ select: (search) => search.fromId })
+  const navigate = useNavigate({ from: "/" })
+
+  return () => {
+    if (!fromId) return
+
+    leftByALoad = true
+    void navigate({ search: (prev) => ({ ...prev, fromId: "" }) })
+  }
+}
+
 export const useCatalogFirst = (fromId: string): void => {
   // Keyed on the address, with no cancellation: under StrictMode a `stale` flag
   // would discard the one opening the ref permits, and nothing would load.
@@ -62,6 +93,9 @@ export const useCatalogFirst = (fromId: string): void => {
   useEffect(() => {
     if (opened.current === fromId) return
     opened.current = fromId
+
+    const left = takeLeftByALoad()
+    if (left && !fromId) return
 
     // The screen stays mounted across addresses, so the last one's notice,
     // recovery (whose endings close over its payload) and held entries are

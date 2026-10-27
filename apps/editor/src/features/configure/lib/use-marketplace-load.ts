@@ -1,5 +1,3 @@
-import { getRouteApi, useNavigate } from "@tanstack/react-router"
-
 import { activeMarketplace } from "@/stores/catalog-store"
 import {
   isSharedConfigurationOpen,
@@ -16,6 +14,7 @@ import {
   type Leaving,
 } from "./marketplace-switch"
 import { droppedNotice } from "./seat-catalog"
+import { useLeaveTheLink } from "./use-catalog-first"
 
 import type { MarketplaceRecovery } from "./seat-catalog"
 import type { PersistedConfig } from "@/stores/persisted-schema"
@@ -29,8 +28,6 @@ import type { Matrix } from "@workspace/matrix/matrix-schema"
 export type LoadTarget = { marketplace: string; matrix: Matrix }
 
 type Selection = Pick<PersistedConfig, "stackId" | "skills" | "agents">
-
-const route = getRouteApi("/")
 
 const PUBLIC_NAME = "the public catalogue"
 
@@ -65,19 +62,16 @@ export const stackElsewhereCost = (marketplace: string) =>
 
 /**
  * Opens the seated marketplace's own saved configuration, leaving whatever was
- * on screen where it was saved. A link's address left behind would reopen the
- * link on a reload.
+ * on screen where it was saved, and a link's address with it.
  */
 export const useOpenOwnConfiguration = () => {
-  const fromId = route.useSearch({ select: (search) => search.fromId })
-  const navigate = useNavigate({ from: "/" })
+  const leaveTheLink = useLeaveTheLink()
 
   return async () => {
     const { sayCatalogue } = useUiStore.getState()
     sayCatalogue(null)
     sayCatalogue(droppedNotice(await readSavedConfig()))
-
-    if (fromId) void navigate({ search: (prev) => ({ ...prev, fromId: "" }) })
+    leaveTheLink()
   }
 }
 

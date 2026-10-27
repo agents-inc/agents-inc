@@ -1,4 +1,11 @@
 import {
+  CATALOG_URL,
+  catalogUnauthorizedHandler,
+  catalogUnreachableHandler,
+  githubNotFound,
+  malformedCatalogHandler,
+} from "@workspace/api-mocks"
+import {
   MARKETPLACE_CANONICAL_REF,
   MARKETPLACE_REF,
   MARKETPLACE_TOKEN,
@@ -8,6 +15,7 @@ import {
   projectMintedPayload,
   projectOwnSkill,
 } from "@workspace/api-mocks/fixtures"
+import { HttpResponse, http } from "msw"
 
 import { expect, test } from "../fixtures"
 import { DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
@@ -17,6 +25,7 @@ import {
   BIGCO_REF,
   stubMarketplaceEstate,
 } from "../support/marketplace"
+import { stubWith } from "../support/stub"
 import {
   ACME_SKILL_ID,
   MARKETPLACE_IMPORT_ID,
@@ -27,6 +36,8 @@ import {
 } from "../support/sharing"
 
 import type { ConfigurePage } from "../pages/configure-page"
+import type { Page } from "@playwright/test"
+import type { RequestHandler } from "msw"
 
 // `ref` is typed; `stored` is what the slot holds and the switcher lists.
 const ACME = {
@@ -60,6 +71,9 @@ const LINK_NOT_SAVED =
   "This shared one is not saved here; its link still opens it."
 // What a load said while it cleared the configuration saved in this browser.
 const OVER_THE_SAVED_ONE = "and so will the one saved in this browser"
+// The two halves of what a switch that drops nothing says.
+const LOSES_NOTHING = "loses nothing"
+const CARRIES_THE_SELECTION = "carries every skill you have selected"
 
 const loadMarketplace = async (configure: ConfigurePage, ref: string) => {
   await configure.marketplaceButton.click()
@@ -235,8 +249,364 @@ test.describe("switching between saved marketplaces", () => {
 
     await configure.switchTo(ACME.stored).click()
 
-    await expect(configure.marketplaceSwitchDialog.description).toContainText(
-      "loses nothing"
+    const { description } = configure.marketplaceSwitchDialog
+    await expect(description).toContainText(LOSES_NOTHING)
+    await expect(description).toContainText(CARRIES_THE_SELECTION)
+  })
+})
+
+// What a refused switch says. Mirrored, not imported.
+const NOTHING_CHANGED = /nothing has changed/i
+// Opening the description, or after a sentence that has ended: never run on
+// from the cause.
+const AFTER_A_FINISHED_SENTENCE = /(^|[.!?]\s+)nothing has changed/i
+const ENDS_A_SENTENCE = /[.!?]$/
+// Where a token is typed: the Marketplace dialog's credential field.
+const POINTS_AT_THE_TOKEN = /load it from Marketplace/i
+const MENTIONS_A_TOKEN = /token/i
+
+// Every description of a target that was read opens this way.
+const READ_TARGET = `Switching to ${BIGCO.stored}`
+
+const FORBIDDEN = 403
+const SERVER_ERROR = 500
+
+type Refusal = {
+  refusal: string
+  answer: RequestHandler
+  // A phrase of the cause `fetchCatalog` names, so the refusal has landed.
+  names: string
+}
+
+// 401, 403 and 404: the statuses a token can change.
+const REFUSALS_A_TOKEN_CAN_LIFT: Refusal[] = [
+  {
+    refusal: "a 404, as GitHub gives for a private repository",
+    answer: http.get(CATALOG_URL, githubNotFound),
+    names: `${BIGCO.ref} could not be read (404)`,
+  },
+  {
+    refusal: "a 401, as GitHub gives for a token it no longer takes",
+    answer: catalogUnauthorizedHandler,
+    names: `${BIGCO.ref} could not be read (401)`,
+  },
+  {
+    refusal: "a 403",
+    answer: http.get(
+      CATALOG_URL,
+      () => new HttpResponse(null, { status: FORBIDDEN })
+    ),
+    names: `${BIGCO.ref} could not be read (403)`,
+  },
+]
+
+// The same answer comes back however the request is authorized.
+const REFUSALS_NO_TOKEN_LIFTS: Refusal[] = [
+  {
+    refusal: "no answer at all",
+    answer: catalogUnreachableHandler,
+    names: `${BIGCO.ref} is unreachable`,
+  },
+  {
+    refusal: "a server error",
+    answer: http.get(
+      CATALOG_URL,
+      () => new HttpResponse(null, { status: SERVER_ERROR })
+    ),
+    names: `${BIGCO.ref} could not be read (500)`,
+  },
+  {
+    refusal: "a catalogue that will not parse",
+    answer: malformedCatalogHandler,
+    names: `${BIGCO.ref} published an unreadable catalog.json`,
+  },
+]
+
+// The dialog reads the target before it offers the switch, so a saved
+// marketplace that can no longer be read is refused there. One sentence per
+// cause, and a token only where a token could change the answer.
+test.describe("what the switch dialog says before it can switch", () => {
+  test.beforeEach(async ({ configure, page }) => {
+    stubMarketplaceEstate(page)
+
+    await loadMarketplace(configure, BIGCO.ref)
+    await expect(configure.skill(BIGCO.skill).root).toBeVisible()
+    await loadMarketplace(configure, ACME.ref)
+    await expect(configure.skill(ACME.skill).root).toBeVisible()
+  })
+
+  test("says it is reading the target, and offers no switch until it has", async ({
+    configure,
+    page,
+  }) => {
+    let release = () => {}
+    const released = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    stubWith(page, [
+      http.get(CATALOG_URL, async () => {
+        await released
+        return HttpResponse.json(BIGCO_CATALOG)
+      }),
+    ])
+
+    await configure.switchTo(BIGCO.stored).click()
+    const dialog = configure.marketplaceSwitchDialog
+
+    await expect(dialog.description).toHaveText(
+      new RegExp(`^Reading .*${BIGCO.ref}…$`)
+    )
+    await expect(dialog.confirmButton).toBeHidden()
+
+    release()
+
+    await expect(dialog.description).toContainText(READ_TARGET)
+    await expect(dialog.confirmButton).toBeVisible()
+  })
+
+  for (const { refusal, answer, names } of [
+    ...REFUSALS_A_TOKEN_CAN_LIFT,
+    ...REFUSALS_NO_TOKEN_LIFTS,
+  ]) {
+    test(`says ${refusal} in a sentence of its own`, async ({
+      configure,
+      page,
+    }) => {
+      stubWith(page, [answer])
+
+      await configure.switchTo(BIGCO.stored).click()
+
+      const { description } = configure.marketplaceSwitchDialog
+      await expect(description).toContainText(names)
+      await expect(description).toContainText(NOTHING_CHANGED)
+      await expect(description).toHaveText(AFTER_A_FINISHED_SENTENCE)
+      await expect(description).toHaveText(ENDS_A_SENTENCE)
+    })
+  }
+
+  for (const { refusal, answer, names } of REFUSALS_A_TOKEN_CAN_LIFT) {
+    test(`offers a token for ${refusal}`, async ({ configure, page }) => {
+      stubWith(page, [answer])
+
+      await configure.switchTo(BIGCO.stored).click()
+
+      const { description } = configure.marketplaceSwitchDialog
+      await expect(description).toContainText(names)
+      await expect(description).toContainText(POINTS_AT_THE_TOKEN)
+    })
+  }
+
+  for (const { refusal, answer, names } of REFUSALS_NO_TOKEN_LIFTS) {
+    test(`offers no token for ${refusal}`, async ({ configure, page }) => {
+      stubWith(page, [answer])
+
+      await configure.switchTo(BIGCO.stored).click()
+
+      const { description } = configure.marketplaceSwitchDialog
+      await expect(description).toContainText(names)
+      await expect(description).not.toContainText(MENTIONS_A_TOKEN)
+    })
+  }
+
+  // The refusal is what a screen reader hears on opening.
+  test("announces the refusal as the dialog's description", async ({
+    configure,
+    page,
+  }) => {
+    stubWith(page, [catalogUnreachableHandler])
+
+    await configure.switchTo(BIGCO.stored).click()
+
+    await expect(
+      configure.marketplaceSwitchDialog.root
+    ).toHaveAccessibleDescription(new RegExp(`${BIGCO.ref} is unreachable`))
+  })
+
+  test("offers no switch, and Cancel leaves the catalogue and the choice alone", async ({
+    configure,
+    page,
+  }) => {
+    stubWith(page, [catalogUnreachableHandler])
+
+    await configure.switchTo(BIGCO.stored).click()
+    const dialog = configure.marketplaceSwitchDialog
+    await expect(dialog.description).toContainText(
+      `${BIGCO.ref} is unreachable`
+    )
+
+    await expect(dialog.confirmButton).toBeHidden()
+
+    await dialog.cancel()
+
+    await expect(dialog.root).toBeHidden()
+    await expect(configure.skill(ACME.skill).root).toBeVisible()
+    await expect(configure.marketplaceButton).toContainText(ACME.ref)
+    expect(await configure.chosenMarketplace()).toBe(ACME.stored)
+  })
+
+  // Not a refusal remembered: the next press reads the marketplace again.
+  test("reads it again on the next press, and switches once it answers", async ({
+    configure,
+    page,
+  }) => {
+    let refusing = true
+    stubWith(page, [
+      http.get(CATALOG_URL, () =>
+        refusing ? HttpResponse.error() : undefined
+      ),
+    ])
+
+    await configure.switchTo(BIGCO.stored).click()
+    const dialog = configure.marketplaceSwitchDialog
+    await expect(dialog.description).toContainText(
+      `${BIGCO.ref} is unreachable`
+    )
+    await dialog.cancel()
+    await expect(dialog.root).toBeHidden()
+
+    refusing = false
+    await configure.switchTo(BIGCO.stored).click()
+
+    await expect(dialog.description).toContainText(READ_TARGET)
+    await dialog.confirm()
+    await expect(configure.skill(BIGCO.skill).root).toBeVisible()
+    expect(await configure.chosenMarketplace()).toBe(BIGCO.stored)
+  })
+})
+
+// Refuses every read of `marketplace` until the spec lifts it; every other
+// repository falls through to the estate. Returns the lift.
+const refuseUntilLifted = (page: Page, marketplace: string) => {
+  let refusing = true
+  stubWith(page, [
+    http.get<{ owner: string; repo: string }>(CATALOG_URL, ({ params }) =>
+      refusing && `${params.owner}/${params.repo}` === marketplace
+        ? HttpResponse.error()
+        : undefined
+    ),
+  ])
+
+  return () => {
+    refusing = false
+  }
+}
+
+// Opened once the target is read: Switch is offered only then, so the
+// description is no longer "Reading …".
+const openReadSwitchTo = async (configure: ConfigurePage, stored: string) => {
+  await configure.switchTo(stored).click()
+  await expect(configure.marketplaceSwitchDialog.confirmButton).toBeVisible()
+}
+
+// What was parked on a marketplace that would not load replaces the screen
+// when a switch reaches that marketplace, so the switch never says it loses
+// nothing. With nothing parked it does: "says a switch with nothing selected
+// loses nothing", which proves the channel these negatives read.
+test.describe("switching to the marketplace a parked link waits on", () => {
+  // Acme and Bigco saved, Bigco chosen. The link names Acme, which refuses it
+  // until lifted; a pick is made on the link's screen.
+  test.beforeEach(async ({ configure, page }) => {
+    stubMarketplaceEstate(page)
+    stubGetConfig(page, MARKETPLACE_IMPORT_ID, MARKETPLACE_PAYLOAD)
+
+    await loadMarketplace(configure, ACME.ref)
+    await expect(configure.skill(ACME.skill).root).toBeVisible()
+    await loadMarketplace(configure, BIGCO.ref)
+    await expect(configure.skill(BIGCO.skill).root).toBeVisible()
+
+    const lift = refuseUntilLifted(page, ACME.ref)
+    await configure.goto(`?fromId=${MARKETPLACE_IMPORT_ID}`)
+    await expect(configure.marketplaceDialog.root).toBeVisible()
+    await configure.marketplaceDialog.cancel()
+    await expect(configure.importNotice).toContainText(ACME.ref)
+
+    await configure.skill(PUBLIC_SKILL).toggle()
+    expect(await configure.skill(PUBLIC_SKILL).isSelected()).toBe(true)
+    lift()
+  })
+
+  test("does not say the switch loses nothing", async ({ configure }) => {
+    await openReadSwitchTo(configure, ACME.stored)
+
+    const { description } = configure.marketplaceSwitchDialog
+    await expect(description).toContainText(ACME.ref)
+    await expect(description).not.toContainText(LOSES_NOTHING)
+    await expect(description).not.toContainText(CARRIES_THE_SELECTION)
+    await expect(description).toHaveText(ENDS_A_SENTENCE)
+  })
+
+  // The control: the link's own pick, which Acme's saved configuration does
+  // not hold, so this is the recovery and not another marketplace's opening.
+  test("finishes the link on the CTA", async ({ configure }) => {
+    await openReadSwitchTo(configure, ACME.stored)
+    await configure.marketplaceSwitchDialog.confirm()
+
+    await expect(configure.skill(ACME.skill).root).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+  })
+})
+
+test.describe("switching to the marketplace a parked stack waits on", () => {
+  const SAVED_STACK = "Weekday"
+
+  // Acme saved with a pick of its own, Bigco chosen with one. A saved stack
+  // built on Acme is applied while Acme refuses it, then the refusal lifts.
+  test.beforeEach(async ({ configure, page }) => {
+    stubMarketplaceEstate(page)
+
+    await loadMarketplace(configure, ACME.ref)
+    await expect(configure.skill(ACME.skill).root).toBeVisible()
+    await configure.skill(ACME.otherSkill).toggle()
+    await loadMarketplace(configure, BIGCO.ref)
+    await configure.marketplaceDialog.load()
+    await expect(configure.skill(BIGCO.skill).root).toBeVisible()
+    await configure.skill(BIGCO.skill).toggle()
+
+    await configure.saveStackDialog.seed([
+      { name: SAVED_STACK, payload: MARKETPLACE_PAYLOAD },
+    ])
+    const lift = refuseUntilLifted(page, ACME.ref)
+    await configure.goto()
+    await expect(configure.skill(BIGCO.skill).root).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+
+    await configure.stack(SAVED_STACK).click()
+    await configure.stackSwitchDialog.confirm()
+    await expect(configure.marketplaceDialog.root).toBeVisible()
+    await configure.marketplaceDialog.cancel()
+    await expect(configure.importNotice).toContainText(ACME.ref)
+    lift()
+  })
+
+  test("does not say the switch loses nothing", async ({ configure }) => {
+    await openReadSwitchTo(configure, ACME.stored)
+
+    const { description } = configure.marketplaceSwitchDialog
+    await expect(description).toContainText(ACME.ref)
+    await expect(description).not.toContainText(LOSES_NOTHING)
+    await expect(description).not.toContainText(CARRIES_THE_SELECTION)
+    await expect(description).toHaveText(ENDS_A_SENTENCE)
+  })
+
+  // The control: the stack in place of Acme's own saved pick, so this is the
+  // recovery and not another marketplace's opening.
+  test("applies the stack on the CTA, over Acme's own saved pick", async ({
+    configure,
+  }) => {
+    await openReadSwitchTo(configure, ACME.stored)
+    await configure.marketplaceSwitchDialog.confirm()
+
+    await expect(configure.skill(ACME.skill).root).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+    await expect(configure.skill(ACME.otherSkill).root).toHaveAttribute(
+      "aria-pressed",
+      "false"
     )
   })
 })
