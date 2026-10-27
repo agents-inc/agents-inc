@@ -3,11 +3,15 @@ import {
   CONFIG_WRITE_WINDOW_SECONDS,
   NO_STACK_BODY,
   RATE_LIMITED_BODY,
+  STACK_NAME_TAKEN_BODY,
   WORKER_EXPOSED_HEADERS,
 } from "@workspace/api-mocks/fixtures"
 import { SEED_VERSION } from "@workspace/matrix/seed"
+import { eq } from "drizzle-orm"
+import { drizzle } from "drizzle-orm/d1"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import { savedStacks } from "./db/app.schema"
 import { seedSession } from "./db/seed-session"
 
 // The OAuth round trip is not testable here (the editor's Playwright suite
@@ -206,17 +210,54 @@ const call = (cookie: string, path: string, init: RequestInit = {}) =>
     },
   })
 
-const save = (cookie: string, name: string) =>
+const save = (cookie: string, name: string, configId = "abcd1234") =>
   call(cookie, "/stacks", {
     method: "POST",
-    body: JSON.stringify({ name, configId: "abcd1234" }),
+    body: JSON.stringify({ name, configId }),
   })
 
-const listNames = async (cookie: string) => {
+const rename = (cookie: string, id: string, name: string) =>
+  call(cookie, `/stacks/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  })
+
+const idOf = async (saved: Response) => (await saved.json<{ id: string }>()).id
+
+const listRows = async (cookie: string) => {
   const response = await call(cookie, "/stacks")
-  const rows = await response.json<{ name: string }[]>()
-  return rows.map((row) => row.name)
+  return response.json<{ name: string }[]>()
 }
+
+const listNames = async (cookie: string) =>
+  (await listRows(cookie)).map((row) => row.name)
+
+// Newest first is decided by `updatedAt`, which two quick writes can share.
+const listNamesSorted = async (cookie: string) =>
+  (await listNames(cookie)).toSorted()
+
+// A row written past the routes: by a write the worker did not see, or before
+// a rule the routes now hold.
+const storeDirectly = async (userId: string, name: string) => {
+  const now = new Date().toISOString()
+  await drizzle(env.DATABASE).insert(savedStacks).values({
+    id: crypto.randomUUID(),
+    userId,
+    name,
+    configId: "abcd1234",
+    createdAt: now,
+    updatedAt: now,
+  })
+}
+
+const deleteDirectly = async (id: string) => {
+  await drizzle(env.DATABASE).delete(savedStacks).where(eq(savedStacks.id, id))
+}
+
+// Half of a surrogate pair, which `JSON.stringify` sends as its own escape.
+const HALF_A_PAIR = "x\ud800y"
+// The store keeps the half's three bytes and hands each back as U+FFFD.
+const HALF_A_PAIR_READ_BACK = "x���y"
 
 // `updatedAt` has millisecond resolution; waiting avoids a tie.
 const tick = async () => {
@@ -315,6 +356,30 @@ describe("a person's own stacks", () => {
     expect(saved.status).toBe(400)
     expect(await listNames(cookie)).toEqual([])
   })
+
+  it("refuses a name holding half of a surrogate pair, to a save and a rename", async () => {
+    const { cookie } = await seedSession(env)
+    const id = await idOf(await save(cookie, "whole"))
+
+    const saved = await save(cookie, HALF_A_PAIR)
+    const renamed = await rename(cookie, id, HALF_A_PAIR)
+
+    expect(saved.status).toBe(400)
+    expect(renamed.status).toBe(400)
+    expect(await listNames(cookie)).toStrictEqual(["whole"])
+  })
+
+  // The control beside it: a whole pair is one character.
+  it("saves and renames to a name whose surrogate pair is whole", async () => {
+    const { cookie } = await seedSession(env)
+    const saved = await save(cookie, "rocket \u{1F680}")
+    expect(saved.status).toBe(201)
+
+    const renamed = await rename(cookie, await idOf(saved), "\u{1F680} rocket")
+
+    expect(renamed.status).toBe(200)
+    expect(await listNames(cookie)).toStrictEqual(["\u{1F680} rocket"])
+  })
 })
 
 describe("one person's stacks are nobody else's", () => {
@@ -370,5 +435,308 @@ describe("one person's stacks are nobody else's", () => {
       (await call(theirs.cookie, `/stacks/${id}`, { method: "DELETE" })).status
     ).toBe(204)
     expect(await listNames(mine.cookie)).toEqual(["mine"])
+  })
+})
+
+// Owner ruling, 2026-10-24: the worker refuses a name the account already
+// holds, from any caller. Names compare as the editor's Save compares them,
+// trimmed and in any case (`sameName` in apps/editor's save-name.ts).
+describe("a name the account already holds", () => {
+  it("is refused a second save, with a 409 saying the name is taken", async () => {
+    const { cookie } = await seedSession(env)
+    await save(cookie, "mine")
+
+    const again = await save(cookie, "mine")
+
+    expect(again.status).toBe(409)
+    expect(await again.json()).toStrictEqual(STACK_NAME_TAKEN_BODY)
+    // The editor's dialog reads the refusal from another origin.
+    expect(again.headers.get("access-control-allow-origin")).toBe(WEB_ORIGIN)
+    expect(await listNames(cookie)).toStrictEqual(["mine"])
+  })
+
+  it("is refused in any case, and whatever spaces surround it", async () => {
+    const { cookie } = await seedSession(env)
+    await save(cookie, "Weekend Project")
+
+    const again = await save(cookie, "  weekend PROJECT  ")
+
+    expect(again.status).toBe(409)
+    expect(await listNames(cookie)).toStrictEqual(["Weekend Project"])
+  })
+
+  // SQLite's `lower()` and `NOCASE` fold ASCII letters only.
+  it("is refused in another case beyond ASCII, as the editor's Save refuses it", async () => {
+    const { cookie } = await seedSession(env)
+    await save(cookie, "Équipe")
+
+    const again = await save(cookie, "équipe")
+
+    expect(again.status).toBe(409)
+    expect(await listNames(cookie)).toStrictEqual(["Équipe"])
+  })
+
+  // Nothing is ever overwritten: not the config it points at, nor its times.
+  it("leaves the stack that holds it exactly as it was", async () => {
+    const { cookie } = await seedSession(env)
+    const held: unknown = await (await save(cookie, "mine", "first111")).json()
+
+    await save(cookie, "MINE", "second22")
+
+    expect(await listRows(cookie)).toStrictEqual([held])
+  })
+
+  // Two tabs, two machines or a double press still leave the account one.
+  it("goes to one of two saves sent together, and is refused to the other", async () => {
+    const { cookie } = await seedSession(env)
+
+    const answers = await Promise.all([
+      save(cookie, "mine"),
+      save(cookie, "mine"),
+    ])
+
+    expect(
+      answers.map((answer) => answer.status).toSorted((a, b) => a - b)
+    ).toStrictEqual([201, 409])
+    expect(await listNames(cookie)).toStrictEqual(["mine"])
+  })
+
+  it("is refused to a rename of another of the account's stacks", async () => {
+    const { cookie } = await seedSession(env)
+    await save(cookie, "first")
+    const second = await idOf(await save(cookie, "second"))
+
+    const renamed = await rename(cookie, second, "FIRST")
+
+    expect(renamed.status).toBe(409)
+    expect(await renamed.json()).toStrictEqual(STACK_NAME_TAKEN_BODY)
+    expect(await listNamesSorted(cookie)).toStrictEqual(["first", "second"])
+  })
+
+  it("moves with a rename, so the stack's new name is held", async () => {
+    const { cookie } = await seedSession(env)
+    const id = await idOf(await save(cookie, "first"))
+    await rename(cookie, id, "second")
+
+    const again = await save(cookie, "Second")
+
+    expect(again.status).toBe(409)
+    expect(await listNames(cookie)).toStrictEqual(["second"])
+  })
+
+  // The controls below already hold, and must go on holding.
+  it("is free again once its stack is renamed away", async () => {
+    const { cookie } = await seedSession(env)
+    const id = await idOf(await save(cookie, "first"))
+    await rename(cookie, id, "second")
+
+    const again = await save(cookie, "first")
+
+    expect(again.status).toBe(201)
+    expect(await listNamesSorted(cookie)).toStrictEqual(["first", "second"])
+  })
+
+  it("is free again once its stack is deleted", async () => {
+    const { cookie } = await seedSession(env)
+    const id = await idOf(await save(cookie, "mine"))
+    await call(cookie, `/stacks/${id}`, { method: "DELETE" })
+
+    const again = await save(cookie, "mine")
+
+    expect(again.status).toBe(201)
+    expect(await listNames(cookie)).toStrictEqual(["mine"])
+  })
+
+  it("can be given to its own stack in another case", async () => {
+    const { cookie } = await seedSession(env)
+    const id = await idOf(await save(cookie, "mine"))
+
+    const renamed = await rename(cookie, id, "MINE")
+
+    expect(renamed.status).toBe(200)
+    expect(await listNames(cookie)).toStrictEqual(["MINE"])
+  })
+
+  // `sameName` folds case and trims the ends; it does not touch the middle.
+  it("is not held by a name that differs inside", async () => {
+    const { cookie } = await seedSession(env)
+    await save(cookie, "my stack")
+
+    const other = await save(cookie, "my  stack")
+
+    expect(other.status).toBe(201)
+    expect(await listNamesSorted(cookie)).toStrictEqual([
+      "my  stack",
+      "my stack",
+    ])
+  })
+
+  it("is free to another person to save", async () => {
+    const mine = await seedSession(env)
+    const theirs = await seedSession(env)
+    await save(mine.cookie, "shared")
+
+    const saved = await save(theirs.cookie, "shared")
+
+    expect(saved.status).toBe(201)
+    expect(await listNames(mine.cookie)).toStrictEqual(["shared"])
+    expect(await listNames(theirs.cookie)).toStrictEqual(["shared"])
+  })
+
+  it("is free to another person to rename a stack to", async () => {
+    const mine = await seedSession(env)
+    const theirs = await seedSession(env)
+    await save(mine.cookie, "shared")
+    const id = await idOf(await save(theirs.cookie, "theirs"))
+
+    const renamed = await rename(theirs.cookie, id, "shared")
+
+    expect(renamed.status).toBe(200)
+    expect(await listNames(theirs.cookie)).toStrictEqual(["shared"])
+  })
+
+  // Nothing to rename is the answer before any name is weighed, so another
+  // person's id still reads as no id.
+  it("leaves another person's stack not found, under a name the caller holds", async () => {
+    const mine = await seedSession(env)
+    const theirs = await seedSession(env)
+    const id = await idOf(await save(mine.cookie, "mine"))
+    await save(theirs.cookie, "held")
+
+    const attempt = await rename(theirs.cookie, id, "held")
+
+    expect(attempt.status).toBe(404)
+    expect(await attempt.json()).toStrictEqual(NO_STACK_BODY)
+    expect(await listNames(mine.cookie)).toStrictEqual(["mine"])
+  })
+})
+
+// Saved before such names were refused; it never reads back as it was written.
+describe("an account holding a name with half of a surrogate pair", () => {
+  it("can still save a name it does not hold", async () => {
+    const { cookie, userId } = await seedSession(env)
+    await storeDirectly(userId, HALF_A_PAIR)
+
+    const saved = await save(cookie, "next")
+
+    expect(saved.status).toBe(201)
+    expect(await listNamesSorted(cookie)).toStrictEqual([
+      "next",
+      HALF_A_PAIR_READ_BACK,
+    ])
+  })
+
+  it("can still rename another of its stacks", async () => {
+    const { cookie, userId } = await seedSession(env)
+    const id = await idOf(await save(cookie, "first"))
+    await storeDirectly(userId, HALF_A_PAIR)
+
+    const renamed = await rename(cookie, id, "second")
+
+    expect(renamed.status).toBe(200)
+    expect(await listNamesSorted(cookie)).toStrictEqual([
+      "second",
+      HALF_A_PAIR_READ_BACK,
+    ])
+  })
+})
+
+const EXECUTIONS: ReadonlySet<PropertyKey> = new Set([
+  "all",
+  "first",
+  "raw",
+  "run",
+])
+
+// The statement, and any it binds to, lets `land` finish before it runs.
+const landingFirst = (
+  statement: D1PreparedStatement,
+  land: () => Promise<void>
+): D1PreparedStatement =>
+  new Proxy(statement, {
+    get(target, key): unknown {
+      const member: unknown = Reflect.get(target, key)
+      if (typeof member !== "function") return member
+      if (key === "bind") {
+        return (...values: unknown[]) =>
+          landingFirst(target.bind(...values), land)
+      }
+      if (!EXECUTIONS.has(key)) return member.bind(target)
+
+      return async (...args: unknown[]): Promise<unknown> => {
+        await land()
+        return Reflect.apply(member, target, args)
+      }
+    },
+  })
+
+// The race made certain: `land` runs after the worker's read and before the
+// first statement `isTheWrite` matches.
+const landBefore = (isTheWrite: RegExp, land: () => Promise<void>) => {
+  const prepare = env.DATABASE.prepare.bind(env.DATABASE)
+  let armed = true
+  let landed = false
+  vi.spyOn(env.DATABASE, "prepare").mockImplementation((query) => {
+    const statement = prepare(query)
+    if (!armed || !isTheWrite.test(query)) return statement
+    armed = false
+
+    return landingFirst(statement, async () => {
+      await land()
+      landed = true
+    })
+  })
+
+  return { landed: () => landed }
+}
+
+const THE_INSERT = /^insert into "saved_stacks"/
+const THE_UPDATE = /^update "saved_stacks"/
+
+describe("a write of the account's own landing between the worker's read and its write", () => {
+  it("takes the name from a save, which is refused", async () => {
+    const { cookie, userId } = await seedSession(env)
+    const race = landBefore(THE_INSERT, () => storeDirectly(userId, "ÉQUIPE"))
+
+    const saved = await save(cookie, "équipe")
+
+    expect(race.landed()).toBe(true)
+    expect(saved.status).toBe(409)
+    expect(await listNames(cookie)).toStrictEqual(["ÉQUIPE"])
+  })
+
+  it("leaves a save of another name saved", async () => {
+    const { cookie, userId } = await seedSession(env)
+    const race = landBefore(THE_INSERT, () => storeDirectly(userId, "other"))
+
+    const saved = await save(cookie, "mine")
+
+    expect(race.landed()).toBe(true)
+    expect(saved.status).toBe(201)
+    expect(await listNamesSorted(cookie)).toStrictEqual(["mine", "other"])
+  })
+
+  it("takes the name from a rename, which is refused", async () => {
+    const { cookie, userId } = await seedSession(env)
+    const id = await idOf(await save(cookie, "first"))
+    const race = landBefore(THE_UPDATE, () => storeDirectly(userId, "Shared"))
+
+    const renamed = await rename(cookie, id, "shared")
+
+    expect(race.landed()).toBe(true)
+    expect(renamed.status).toBe(409)
+    expect(await listNamesSorted(cookie)).toStrictEqual(["Shared", "first"])
+  })
+
+  it("leaves a rename not found when the write deletes its stack", async () => {
+    const { cookie } = await seedSession(env)
+    const id = await idOf(await save(cookie, "first"))
+    const race = landBefore(THE_UPDATE, () => deleteDirectly(id))
+
+    const renamed = await rename(cookie, id, "second")
+
+    expect(race.landed()).toBe(true)
+    expect(renamed.status).toBe(404)
+    expect(await listNames(cookie)).toStrictEqual([])
   })
 })

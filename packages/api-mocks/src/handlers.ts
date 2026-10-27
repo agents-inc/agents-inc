@@ -1,3 +1,4 @@
+import { sameStackName } from "@workspace/matrix"
 import {
   MAX_EXTERNAL_SKILL_BYTES,
   installableSeedPayloadSchema,
@@ -33,6 +34,7 @@ import {
   SIGNED_IN_SESSION,
   SKILL_INDEX,
   SKILL_INDEX_UNAVAILABLE_BODY,
+  STACK_NAME_TAKEN_BODY,
   STACK_RENAMED_AT,
   STALE_SKILL_INDEX,
   STORED_ID,
@@ -343,6 +345,7 @@ export const COMPOSE_URL = `${WORKER_ORIGIN}/compose`
 const STACK_URL = `${STACKS_URL}/:id`
 
 const NO_CONTENT = 204
+const NAME_TAKEN = 409
 const SERVER_ERROR = 500
 const MODEL_SILENT = 502
 
@@ -412,10 +415,20 @@ const readSignedInSession = http.get(SESSION_URL, () =>
 
 const listStacks = http.get(STACKS_URL, () => HttpResponse.json(SAVED_STACKS))
 
+const heldByAnotherStack = (name: string, renamedId?: string) =>
+  SAVED_STACKS.some(
+    (stack) => stack.id !== renamedId && sameStackName(stack.name, name)
+  )
+
+const nameTaken = () =>
+  HttpResponse.json(STACK_NAME_TAKEN_BODY, { status: NAME_TAKEN })
+
 const createStack = http.post<PathParams, { name: string; configId: string }>(
   STACKS_URL,
   async ({ request }) => {
     const { name, configId } = await request.json()
+    if (heldByAnotherStack(name)) return nameTaken()
+
     return HttpResponse.json(savedStack(name, configId), { status: CREATED })
   }
 )
@@ -424,6 +437,7 @@ const renameStack = http.patch<{ id: string }, { name: string }>(
   STACK_URL,
   async ({ params, request }) => {
     const { name } = await request.json()
+    if (heldByAnotherStack(name, params.id)) return nameTaken()
 
     return HttpResponse.json({
       ...SAVED_STACK,
@@ -459,12 +473,15 @@ export const stackNotFoundHandler = http.patch(STACK_URL, () =>
   HttpResponse.json(NO_STACK_BODY, { status: NOT_FOUND })
 )
 
+const stackRefusalOf = (status: number) => {
+  if (status === UNAUTHORIZED) return refuseUnauthorized()
+  if (status === NAME_TAKEN) return nameTaken()
+
+  return new HttpResponse(null, { status })
+}
+
 export const stackRefusedHandlerFor = (status: number) =>
-  http.post(STACKS_URL, () =>
-    status === UNAUTHORIZED
-      ? refuseUnauthorized()
-      : new HttpResponse(null, { status })
-  )
+  http.post(STACKS_URL, () => stackRefusalOf(status))
 
 export const stackRefusedHandler = stackRefusedHandlerFor(SERVER_ERROR)
 

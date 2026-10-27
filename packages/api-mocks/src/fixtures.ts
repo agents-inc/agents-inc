@@ -263,6 +263,10 @@ export const SAVED_STACKS = [SAVED_STACK, OTHER_SAVED_STACK]
 
 export const NO_STACK_BODY = { error: "not found" } as const
 
+// A 409: a save or rename under a name another of the account's stacks holds, compared as the
+// editor's `sameName` compares them.
+export const STACK_NAME_TAKEN_BODY = { error: "name taken" } as const
+
 // Ids are checked against the catalogue at import, as the worker filters the model's answer.
 const catalogueSkillId = (id: string) => {
   if (id in CATALOG.skillsById) return id

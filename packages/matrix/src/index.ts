@@ -127,6 +127,8 @@ export type {
   MatrixStack,
 } from "./matrix-schema"
 
+export { sameStackName } from "./stack-name"
+
 export {
   SKILL_INDEX_FRESHNESS_HEADER,
   skillIndexEntrySchema,

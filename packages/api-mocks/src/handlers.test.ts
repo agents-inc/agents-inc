@@ -26,6 +26,7 @@ import {
   NO_CONFIG_BODY,
   NO_STACK_BODY,
   OTHER_EXTERNAL_SKILL,
+  OTHER_SAVED_STACK,
   OUT_OF_SCOPE_PAYLOAD,
   OVERSIZED_EXTERNAL_SKILL,
   PRIVATE_MARKETPLACE_REF,
@@ -33,6 +34,7 @@ import {
   SAVED_STACK,
   SIGNED_IN_USER,
   SKILL_INDEX_UNAVAILABLE_BODY,
+  STACK_NAME_TAKEN_BODY,
   STACK_RENAMED_AT,
   STALE_SKILL_INDEX,
   STORED_ID,
@@ -662,6 +664,49 @@ describe("a signed-in browser", () => {
     })
   })
 
+  // As the worker does: trimmed, in any case, as the editor's `sameName` compares.
+  it("is refused a save under a name its stacks already hold, in any case", async () => {
+    const response = await responseTo(
+      signedInHandlers,
+      sendJson("POST", STACKS_URL, {
+        name: `  ${SAVED_STACK.name.toUpperCase()}  `,
+        configId: STORED_ID,
+      })
+    )
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toStrictEqual(STACK_NAME_TAKEN_BODY)
+  })
+
+  it("is refused a rename onto the name another of its stacks holds", async () => {
+    const response = await responseTo(
+      signedInHandlers,
+      sendJson("PATCH", `${STACKS_URL}/${SAVED_STACK.id}`, {
+        name: OTHER_SAVED_STACK.name.toLowerCase(),
+      })
+    )
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toStrictEqual(STACK_NAME_TAKEN_BODY)
+  })
+
+  // A stack's own name is not another stack's.
+  it("renames a stack to its own name in another case", async () => {
+    const name = SAVED_STACK.name.toUpperCase()
+
+    const response = await responseTo(
+      signedInHandlers,
+      sendJson("PATCH", `${STACKS_URL}/${SAVED_STACK.id}`, { name })
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toStrictEqual({
+      ...SAVED_STACK,
+      name,
+      updatedAt: STACK_RENAMED_AT,
+    })
+  })
+
   it("deletes a stack with a 204 and no body", async () => {
     const response = await responseTo(
       signedInHandlers,
@@ -714,6 +759,16 @@ describe("a refused stack save", () => {
 
     expect(response.status).toBe(401)
     expect(await response.json()).toStrictEqual(UNAUTHORIZED_BODY)
+  })
+
+  it("answers 409 with the worker's name-taken body", async () => {
+    const response = await responseTo(
+      [stackRefusedHandlerFor(409)],
+      sendJson("POST", STACKS_URL)
+    )
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toStrictEqual(STACK_NAME_TAKEN_BODY)
   })
 
   it("answers any other status with no body", async () => {
