@@ -39,11 +39,9 @@ levels up.
 
 Census for the same shape, read in full:
 `grep -rnE --include='*.ts' --include='*.tsx' --include='*.mjs' --include='*.js' "\.(includes|startsWith|endsWith|indexOf)\(['\"\`][/\\\\][a-zA-Z_.-]+[/\\\\]?['\"\`]\)" src scripts e2e ../compile/src ../matrix/src ../api/src ../../apps/server/src ../../apps/editor/src`.
-Besides `consts.ts`, it found two `file.includes("/__tests__/")` checks, in
-`config-types-background-data-has-one-constructor.test.ts` and
-`config-types-producers-name-one-loader.test.ts`. Both match paths relative to the package root (each
-`readSource` joins them onto `PACKAGE_ROOT`), so no parent folder reaches them. Left alone. The other
-hits were `endsWith("\n")` and `indexOf("\n")`, not path checks.
+Besides `consts.ts`, it found two `file.includes("/**tests**/")`checks, in`config-types-background-data-has-one-constructor.test.ts`and`config-types-producers-name-one-loader.test.ts`. Both match paths relative to the package root (each
+`readSource`joins them onto`PACKAGE_ROOT`), so no parent folder reaches them. Left alone. The other
+hits were `endsWith("\n")`and`indexOf("\n")`, not path checks.
 
 ## Proposed Standard
 

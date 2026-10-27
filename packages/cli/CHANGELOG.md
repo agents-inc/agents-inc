@@ -7,6 +7,54 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.175.0] - 2026-10-27
+
+**A project config that declares nothing is no longer an installation, a project under a home holding both tools reads only its own tool's global installation, `init --from` and `edit --from` refuse two more broken links before they ask, and an account refuses a second stack under a name it already holds**
+
+- CLI-971: a project `config.ts` that declares nothing is not an installation; `compile`, `edit`, `list`, `share`, `update` and `doctor` say the global installation stands in, and `uninstall` leaves the file alone.
+- CLI-984: a Codex project under a home holding both tools' global installations reads only the Codex one.
+- CLI-934: a skill the marketplace ships and could not load is skipped as one it `could not load`, and a skill folder with no `SKILL.md` is warned on every load.
+- CLI-972: the notices under the `init --from` and `edit --from` panel name each skill as the panel does.
+- CLI-935: `init --from` and `edit --from` refuse a project-only skill on a global sub-agent whether or not the skill loads, writing nothing.
+- CLI-936: they refuse a carried skill id longer than a folder name can be, before the panel, instead of crashing half-way.
+- CLI-987: the confirm panel keeps its `Marketplace` and `Stack` labels whole beside a name too long for the line.
+- CLI-988: a marketplace document's value written across lines stays on its one error line.
+- CLI-933: `eject skills --force` and `eject all --force` restore every skill an earlier eject wrote.
+- CLI-938: `doctor` keeps a download made in the same second as giget's saved copy, and other commands stop warning about a cached copy they just downloaded.
+- CLI-930: a source checkout under a folder whose name starts with `dist` finds its own files.
+- CLI-957: reading a marketplace folder no longer replaces the catalogue the rest of the run names skills from.
+- CLI-939: the docs say a saved marketplace copy with no version stamp is checked only by `doctor`, and how to refresh it.
+- CLI-941: `doctor`'s config check names every state of the config; its verdicts are unchanged.
+- CLI-942: four metadata keys nothing read are gone.
+- CLI-985: the detected installation no longer carries `skillsDir`.
+- CLI-940: the e2e config writer accepts a project config carrying its global inline.
+- CLI-981: the `edit --from` plugin-switch specs pin every plugin-host call, and the old-folder specs share one writer.
+- CLI-983: `init --from`'s specs run behind a stand-in `claude`.
+- CLI-989: no spec reaches the developer's real `claude`.
+- CLI-986: a command spec's first Ink render in a test worker no longer fails its first attempt.
+- CLI-990: `list` and the startup config check are pinned for a Codex project under a home holding both tools.
+- SERVER-10: the worker refuses a stack save or rename under a name the account already holds, in any case, with a 409.
+- SERVER-11: an editor sign-in lasts 90 days, renewed on use.
+- SERVER-07: the worker's CORS check runs once per request.
+- SERVER-09: the server dev spec no longer depends on the developer's `wrangler` cache.
+- SERVER-12: the id-hashing spec finds its own qualifying stack id.
+- EDITOR-111: while the account's stacks cannot be read, Save sends nothing and says `Saving needs your account's stacks first.`, with Retry; a name the account holds is refused in place.
+- EDITOR-112: a failed read of the account's stack list reaches error monitoring.
+- EDITOR-113: a sign-in that ends mid-read is treated as a list that could not be read.
+- EDITOR-98: the Switch marketplace refusal reads as two sentences and offers a token only for 401, 403 or 404.
+- EDITOR-100: the Switch marketplace dialog no longer says "loses nothing" when a waiting link or stack would replace the screen.
+- EDITOR-114: leaving a shared link by loading another marketplace keeps the notice of what could not be placed.
+- EDITOR-99: the accounts specs pass reliably, and the e2e dev server runs without live reload.
+- EDITOR-115: the rail's six sign-in and sign-out refusal lines are pinned word for word.
+- WWW-17: the site's tests fail on a new-tab link without `rel="noopener noreferrer"`.
+- REPO-42: a spec runs the real pre-push hook and fails if it stops running a suite it must.
+- REPO-46: CI's Node setup steps use `actions/setup-node@v7`.
+- REPO-47: how two stack names compare has one definition, in `@workspace/matrix`.
+- REPO-48: a change to a file outside `packages/cli` that a CLI spec reads reruns the CLI's tests.
+- REPO-44: the standards, the journey page and the findings follow the code.
+
+See [changelogs/0.175.0.md](./changelogs/0.175.0.md) for full details.
+
 ## [0.174.0] - 2026-10-24
 
 **Every summary names a skill by the display name its install recorded, `init --from` and `edit --from` stop when a marketplace refuses the version check, every command says an old `.claude-src/` is ignored, and the editor says when an account's stacks could not be read, with Retry**

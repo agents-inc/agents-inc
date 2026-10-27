@@ -1449,9 +1449,7 @@ describe("source-loader: the catalogue a read leaves seated", () => {
       "the read returned the folder's own catalogue",
     ).toStrictEqual(FIXTURE_SKILLS.map((skill) => skill.id).toSorted());
     expect(matrix, "the CLI's seat still holds the caller's catalogue").toBe(BUILT_IN_MATRIX);
-    expect(seatedCatalog(), "the shared builder's seat moves with the CLI's").toBe(
-      BUILT_IN_MATRIX,
-    );
+    expect(seatedCatalog(), "the shared builder's seat moves with the CLI's").toBe(BUILT_IN_MATRIX);
     expect(getSkillDisplayName("web-framework-react")).toBe("React");
   });
 

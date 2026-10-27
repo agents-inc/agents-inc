@@ -1214,8 +1214,7 @@ describe("what eject says", () => {
       let edited: string;
       let configBefore: string;
 
-      const readConfig = () =>
-        readFile(getProjectConfigPath(dirs.projectDir, "claude"), "utf-8");
+      const readConfig = () => readFile(getProjectConfigPath(dirs.projectDir, "claude"), "utf-8");
 
       beforeEach(async () => {
         skillsDir = path.join(dirs.projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);

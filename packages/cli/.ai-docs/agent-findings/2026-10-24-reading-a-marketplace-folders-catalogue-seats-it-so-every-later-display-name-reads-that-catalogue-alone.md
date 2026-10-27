@@ -109,5 +109,6 @@ read-only loader.
   In `catalogue-seat.test.ts`: "a load refused after reading the folder leaves the caller's
   catalogue seated". `lib/__tests__/commands/build/marketplace-catalog.test.ts` › `stacks` reddens
   if the seat is removed while the filter still reads it.
+
 - **No output changed.** The `catalog.json` that `build marketplace` writes for a fixture
   marketplace shipping its own stack was compared byte for byte before and after.

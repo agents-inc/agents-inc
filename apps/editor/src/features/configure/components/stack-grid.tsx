@@ -385,9 +385,7 @@ export function StackListNotice(
 
   if (!unread) return null
 
-  return (
-    <RetryLine {...props} reading={reading} onRetry={() => void retry()} />
-  )
+  return <RetryLine {...props} reading={reading} onRetry={() => void retry()} />
 }
 
 function RetryLine({

@@ -53,13 +53,13 @@ The fix was checked from outside the tree with a config that is the editor's own
 
 ```ts
 // apps/editor/vite.e2e.config.ts
-import { defineConfig, mergeConfig } from "vite"
+import { defineConfig, mergeConfig } from "vite";
 
-import editor from "./vite.config"
+import editor from "./vite.config";
 
 export default defineConfig(async (env) =>
-  mergeConfig(await editor(env), { server: { hmr: false } })
-)
+  mergeConfig(await editor(env), { server: { hmr: false } }),
+);
 ```
 
 `playwright.config.ts`'s webServer command then becomes
