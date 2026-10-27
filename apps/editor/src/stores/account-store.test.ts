@@ -6,8 +6,10 @@ import {
   STACKS_URL,
   STORED_ID,
   STORED_PAYLOAD,
+  UNAUTHORIZED_BODY,
   savedStack,
   signedInHandlers,
+  stackRefusedHandlerFor,
 } from "@workspace/api-mocks"
 import { configMockServer } from "@workspace/api-mocks/node"
 import { HttpResponse, http, type PathParams } from "msw"
@@ -441,6 +443,91 @@ describe("an account whose list could not be read", () => {
       expect({ before, after: listRefusal() }).toStrictEqual({
         before: "refused",
         after: null,
+      })
+    })
+  })
+
+  // The owner's ruling: a list read answering 401 after the session read
+  // vouched for one is a session that ended mid-load. That is a list the
+  // editor couldn't read, not an empty account; nor is it a sign-out.
+  describe("on a session that ended between the sign-in check and the read", () => {
+    const UNAUTHORIZED = 401
+
+    const sessionEnded = () =>
+      HttpResponse.json(UNAUTHORIZED_BODY, { status: UNAUTHORIZED })
+
+    // A session that ended refuses the writes too. Ahead of `recordWrites`.
+    const writesRefusedToo = () =>
+      configMockServer.use(stackRefusedHandlerFor(UNAUTHORIZED))
+
+    it("carries no save into it", async () => {
+      listFailing(sessionEnded)
+      const { posted } = recordWrites()
+      carriedEarlier()
+
+      await useAccountStore.getState().refresh()
+
+      expect(posted).toStrictEqual([])
+    })
+
+    it("holds why the list could not be read", async () => {
+      listFailing(sessionEnded)
+
+      await useAccountStore.getState().refresh()
+
+      expect(useAccountStore.getState().listRefusal).not.toBeNull()
+    })
+
+    // Refused writes would leave every save owed, and the next good read
+    // would ask a new name for stacks the account already holds.
+    it("marks no save as still owed, though the writes are refused too", async () => {
+      listFailing(sessionEnded)
+      recordWrites()
+      writesRefusedToo()
+      carriedEarlier()
+
+      await useAccountStore.getState().refresh()
+
+      expect(useSavedStackStore.getState().owed).toStrictEqual([])
+    })
+
+    it("asks no new name once the list reads again, listing the saves", async () => {
+      listFailing(sessionEnded)
+      recordWrites()
+      writesRefusedToo()
+      carriedEarlier()
+      await useAccountStore.getState().refresh()
+
+      accountNowLists([savedStack("B"), savedStack("A")])
+      await useAccountStore.getState().refresh()
+
+      expect(useAccountStore.getState().clashes).toStrictEqual([])
+    })
+
+    // Held back, not given up, as for any list that could not be read.
+    it("carries each save once a later read finds the account empty", async () => {
+      listFailing(sessionEnded)
+      const { named } = recordWrites()
+      withLocalSaves(local("B", STORED_PAYLOAD), local("A", STORED_PAYLOAD))
+      await useAccountStore.getState().refresh()
+
+      accountNowLists([])
+      await useAccountStore.getState().refresh()
+
+      expect(named).toStrictEqual(["A", "B"])
+    })
+
+    // The allowed case: the choice not taken would drop to the signed-out
+    // view.
+    it("is ready, and still names who is signed in", async () => {
+      listFailing(sessionEnded)
+
+      await useAccountStore.getState().refresh()
+
+      const { ready, session } = useAccountStore.getState()
+      expect({ ready, name: session?.user.name }).toStrictEqual({
+        ready: true,
+        name: SIGNED_IN_USER.name,
       })
     })
   })

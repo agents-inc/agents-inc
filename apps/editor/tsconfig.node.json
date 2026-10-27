@@ -6,6 +6,7 @@
   // Listed so type-aware ESLint can parse them.
   "include": [
     "vite.config.ts",
+    "vite.e2e.config.ts",
     "vitest.config.ts",
     "vitest.mutation.config.ts",
     "vitest.setup.ts",

@@ -52,7 +52,7 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: `bun run dev --port ${PORT} --strictPort`,
+    command: `bun run dev --config vite.e2e.config.ts --port ${PORT} --strictPort`,
     url: BASE_URL,
     reuseExistingServer: false,
     stdout: "ignore",

@@ -16,9 +16,21 @@ import { saveStack } from "./save-stack"
 const NAME = "Weekday"
 
 beforeEach(() => {
-  useAccountStore.setState({ session: null, stacks: [] })
+  useAccountStore.setState({ session: null, stacks: [], listRefusal: null })
   useSavedStackStore.setState({ saves: [], owed: [] })
 })
+
+// Every request a save made, so a spec can say it posted nothing.
+const requestsDuring = async <T>(save: () => Promise<T>) => {
+  const seen: string[] = []
+  const listen = ({ request }: { request: Request }) => {
+    seen.push(`${request.method} ${request.url}`)
+  }
+  configMockServer.events.on("request:start", listen)
+  const outcome = await save()
+  configMockServer.events.removeListener("request:start", listen)
+  return { outcome, seen }
+}
 
 describe("saveStack", () => {
   it("keeps the stack in this browser for a visitor who is signed out", async () => {
@@ -41,4 +53,25 @@ describe("saveStack", () => {
     ])
     expect(useSavedStackStore.getState().saves).toStrictEqual([])
   })
+})
+
+// Owner ruling, 2026-10-24: while the account's list is unread, the name may
+// be one it holds, so Save waits for a read. The signed-in save above is the
+// allowed case.
+describe("saveStack while the account's list could not be read", () => {
+  for (const listRefusal of ["refused", "unreachable"] as const) {
+    it(`posts nothing, and keeps nothing in this browser, after a read that was ${listRefusal}`, async () => {
+      configMockServer.use(...signedInHandlers)
+      useAccountStore.setState({ session: SIGNED_IN_SESSION, listRefusal })
+
+      const { outcome, seen } = await requestsDuring(() =>
+        saveStack(NAME, STORED_PAYLOAD)
+      )
+
+      expect(outcome.ok).toBe(false)
+      expect(seen).toStrictEqual([])
+      expect(useAccountStore.getState().stacks).toStrictEqual([])
+      expect(useSavedStackStore.getState().saves).toStrictEqual([])
+    })
+  }
 })

@@ -18,21 +18,22 @@ const savedStackSchema = z.object({
 export type RemoteStack = z.infer<typeof savedStackSchema>
 
 /**
- * `signed-out` is the only refusal that names an action; the worker answers 401
- * for it.
+ * `signed-out` and `taken` name an action: sign in, or pick another name. The
+ * worker answers 401 and 409 for them.
  */
-export type StackRefusal = "signed-out" | "refused" | "unreachable"
+export type StackRefusal = "signed-out" | "taken" | "refused" | "unreachable"
 
 export type StackResult =
   { ok: true; stack: RemoteStack } | { ok: false; refusal: StackRefusal }
 
-// A 401 lists nothing rather than refusing, so no read refuses as signed out.
-export type ListRefusal = Exclude<StackRefusal, "signed-out">
+// Only a write can meet a name.
+export type ListRefusal = Exclude<StackRefusal, "taken">
 
 type StackListResult =
   { ok: true; stacks: RemoteStack[] } | { ok: false; refusal: ListRefusal }
 
 const SIGNED_OUT = 401
+const NAME_TAKEN = 409
 
 /** An empty list is an answer about the account, so a failed read refuses. */
 export const listStacks = async (): Promise<StackListResult> => {
@@ -43,16 +44,23 @@ export const listStacks = async (): Promise<StackListResult> => {
     // may answer.
     const { status } = response
 
-    if (!response.ok)
-      return status === SIGNED_OUT
-        ? { ok: true, stacks: [] }
-        : { ok: false, refusal: "refused" }
+    if (!response.ok) {
+      // Not reported: a lapsed session is ordinary.
+      if (status === SIGNED_OUT) return { ok: false, refusal: "signed-out" }
+
+      reportIssue("Stack list GET failed", { status })
+      return { ok: false, refusal: "refused" }
+    }
 
     const parsed = z.array(savedStackSchema).safeParse(await response.json())
-    return parsed.success
-      ? { ok: true, stacks: parsed.data }
-      : { ok: false, refusal: "refused" }
+    if (!parsed.success) {
+      reportIssue("Stack list returned an unreadable body")
+      return { ok: false, refusal: "refused" }
+    }
+
+    return { ok: true, stacks: parsed.data }
   } catch {
+    reportIssue("Stack list GET could not reach the worker")
     return { ok: false, refusal: "unreachable" }
   }
 }
@@ -64,13 +72,15 @@ export const createStack = async (
   try {
     const response = await api.stacks.$post({ json: { name, configId } })
 
-    // Read before narrowing: the route declares only 201 and 401, but anything
-    // may answer.
+    // Read before narrowing: the route declares only 201, 401 and 409, but
+    // anything may answer.
     const { status } = response
 
     if (!response.ok) {
-      // Not reported: a lapsed session is ordinary.
+      // Not reported: a lapsed session is ordinary, and a name in use is the
+      // person's to change.
       if (status === SIGNED_OUT) return { ok: false, refusal: "signed-out" }
+      if (status === NAME_TAKEN) return { ok: false, refusal: "taken" }
 
       reportIssue("Stack POST rejected", { status })
       return { ok: false, refusal: "refused" }

@@ -1,10 +1,20 @@
 import type { Locator } from "@playwright/test"
 
-import { STACKS_URL } from "@workspace/api-mocks"
+import {
+  SIGN_OUT_URL,
+  STACKS_URL,
+  signInRateLimitedHandler,
+  signInRefusedHandler,
+  signInUnreachableHandler,
+  signOutRefusedHandler,
+  signOutUnreachableHandler,
+  stackRefusedHandlerFor,
+} from "@workspace/api-mocks"
 import {
   MARKETPLACE_CANONICAL_REF,
   MARKETPLACE_TOKEN,
   PRIVATE_MARKETPLACE_REF,
+  UNAUTHORIZED_BODY,
 } from "@workspace/api-mocks/fixtures"
 import { HttpResponse, http } from "msw"
 
@@ -69,6 +79,17 @@ const stackRequests = (page: TestPage) => {
   return asked
 }
 
+// Every line the page reported through the app's issue seam from here on.
+const issuesReported = (page: TestPage) => {
+  const issues: string[] = []
+
+  page.on("console", (message) => {
+    if (message.text().startsWith("[issue]")) issues.push(message.text())
+  })
+
+  return issues
+}
+
 // The one fixed wait: the claim is that nothing was thrown in this window.
 const LONG_ENOUGH_TO_THROW_MS = 500
 
@@ -87,9 +108,12 @@ const localSave = (configure: ConfigurePage, name: string) =>
 const accountRow = (configure: ConfigurePage, name: string) =>
   configure.stack(name).filter({ hasText: IN_THE_ACCOUNT })
 
-// By attribute: a modal hides everything else from role queries.
+// By attribute: a modal hides everything else from role queries. A toast is a
+// dialog too, one marked not modal, so it is left out.
 const openDialogs = (page: TestPage) =>
-  page.locator('[role="dialog"], [role="alertdialog"]')
+  page.locator(
+    '[role="dialog"]:not([aria-modal="false"]), [role="alertdialog"]:not([aria-modal="false"])'
+  )
 
 // The account's list answering only on `release`, so a sign-in can land while
 // something else is already on screen. Given no `stacks`, it then falls through
@@ -134,12 +158,25 @@ const holdPageLoad = async (page: TestPage) => {
   return { release }
 }
 
-// Seeded after a first visit: `localStorage` belongs to the served origin.
+const ORIGIN_ONLY_PATH = "/origin-only"
+
+// `localStorage` belongs to the served origin, so a seed lands here before the
+// app's first load reads it. Under load a boot costs seconds of the budget.
+const atTheOrigin = async (page: TestPage) => {
+  stubWith(page, [
+    http.get(`*${ORIGIN_ONLY_PATH}`, () =>
+      HttpResponse.html("<!doctype html>")
+    ),
+  ])
+  await page.goto(ORIGIN_ONLY_PATH)
+  return new ConfigurePage(page)
+}
+
 const arriveHolding = async (
   page: TestPage,
   saves: { name: string; payload: unknown }[]
 ) => {
-  const configure = await arrive(page)
+  const configure = await atTheOrigin(page)
   await configure.saveStackDialog.seed(saves)
   await configure.goto()
   return configure
@@ -565,10 +602,26 @@ const listThisBuildCannotRead = () =>
     }))
   )
 
+// The line a failure owes the app's issue seam, which in the development build
+// this suite serves is a console warning and its context.
+const SERVER_ERROR_REPORTED = `[issue] Stack list GET failed {status: ${SERVER_ERROR}}`
+
 const FAILED_READS = [
-  { failure: "a server error", answer: serverError },
-  { failure: "no answer at all", answer: () => HttpResponse.error() },
-  { failure: "a list this build cannot read", answer: listThisBuildCannotRead },
+  {
+    failure: "a server error",
+    answer: serverError,
+    reported: SERVER_ERROR_REPORTED,
+  },
+  {
+    failure: "no answer at all",
+    answer: () => HttpResponse.error(),
+    reported: "[issue] Stack list GET could not reach the worker {}",
+  },
+  {
+    failure: "a list this build cannot read",
+    answer: listThisBuildCannotRead,
+    reported: "[issue] Stack list returned an unreadable body {}",
+  },
 ]
 
 // Holding B (newest) and A, both carried in by a first sign-in. `created`
@@ -690,18 +743,21 @@ const unreadAfterAFirstSignIn = async (
 }
 
 // Signed in to an empty account, holding B (newest) and A, on a load whose list
-// read fails: a first sign-in nothing has been carried for yet.
-const firstSignInUnread = async (page: TestPage) => {
+// read meets `answer`: a first sign-in nothing has been carried for yet.
+const firstSignInUnread = async (
+  page: TestPage,
+  answer: () => Response = serverError
+) => {
   stubCreateConfig(page)
   const account = stubSignedIn(page)
   const list = stackListFailing(page)
-  const configure = await arrive(page)
+  const configure = await atTheOrigin(page)
   await configure.saveStackDialog.seed([
     { name: "B", payload: STORED_PAYLOAD },
     { name: "A", payload: STORED_PAYLOAD },
   ])
 
-  list.fail(serverError)
+  list.fail(answer)
   await reload(configure)
 
   return { configure, list, ...account }
@@ -831,6 +887,71 @@ test.describe("a signed-in load whose account list cannot be read", () => {
   })
 })
 
+// The owner's ruling: a list that could not be read is reported to monitoring
+// as the editor's sibling reads report theirs, a refusal with its status.
+test.describe("a signed-in load whose account list cannot be read, in monitoring", () => {
+  for (const { failure, answer, reported } of FAILED_READS) {
+    test(`reports ${failure}`, async ({ page }) => {
+      const { configure, list } = await carriedByAFirstSignIn(page)
+      const issues = issuesReported(page)
+
+      list.fail(answer)
+      await reload(configure)
+      await expect(configure.stackListFailure).toBeVisible()
+
+      await expect.poll(() => issues).toStrictEqual([reported])
+    })
+  }
+
+  test("reports a Retry that fails too", async ({ page }) => {
+    const { configure, list } = await carriedByAFirstSignIn(page)
+    const issues = issuesReported(page)
+
+    list.fail(serverError)
+    await reload(configure)
+    await expect.poll(() => issues).toStrictEqual([SERVER_ERROR_REPORTED])
+
+    const refused = page.waitForResponse(
+      (response) =>
+        response.url().startsWith(STACKS_URL) &&
+        response.request().method() === "GET"
+    )
+    await configure.stackListRetry.click()
+    await refused
+
+    await expect
+      .poll(() => issues)
+      .toStrictEqual([SERVER_ERROR_REPORTED, SERVER_ERROR_REPORTED])
+  })
+
+  // The allowed cases. The tests above show the listener hears a report, so
+  // its silence here is a read that had nothing to report.
+  test("reports nothing on a load that reads the list", async ({ page }) => {
+    const { configure } = await carriedByAFirstSignIn(page)
+    const issues = issuesReported(page)
+
+    await reload(configure)
+    await showsEachSaveOnce(configure)
+
+    expect(issues).toStrictEqual([])
+  })
+
+  test("reports nothing more once Retry reads the list", async ({ page }) => {
+    const { configure, list } = await carriedByAFirstSignIn(page)
+    const issues = issuesReported(page)
+
+    list.fail(serverError)
+    await reload(configure)
+    await expect.poll(() => issues).toStrictEqual([SERVER_ERROR_REPORTED])
+
+    list.recover()
+    await configure.stackListRetry.click()
+    await showsEachSaveOnce(configure)
+
+    expect(issues).toStrictEqual([SERVER_ERROR_REPORTED])
+  })
+})
+
 test.describe("a first sign-in whose account list cannot be read", () => {
   test("shows this browser's saves and says it couldn't load the account's, carrying none in", async ({
     page,
@@ -879,8 +1000,51 @@ test.describe("a first sign-in whose account list cannot be read", () => {
   })
 })
 
+// Every save the page sent the account, answered or not: a write refused 409
+// is stored nowhere, so `created` cannot show it was sent.
+const stackPosts = (page: TestPage) => {
+  const posted: string[] = []
+
+  page.on("request", (request) => {
+    if (request.url().startsWith(STACKS_URL) && request.method() === "POST")
+      posted.push((request.postDataJSON() as { name: string }).name)
+  })
+
+  return posted
+}
+
+// The account holds "Weekday" and this browser holds nothing, on a load whose
+// list read fails: the grid can show no name the account holds.
+const unreadHoldingWeekday = async (page: TestPage) => {
+  stubCreateConfig(page)
+  const account = stubSignedIn(page, [stack("Weekday")])
+  const list = stackListFailing(page)
+  list.fail(serverError)
+  const minted = captureCreateConfig(page)
+  const posted = stackPosts(page)
+
+  const configure = await arrive(page)
+  await expect(configure.stackListFailure).toBeVisible()
+
+  return { configure, list, minted, posted, ...account }
+}
+
+// Saves `name` while the list is unread, and waits for Save to say it needs
+// the account's stacks first.
+const savedWhileUnread = async (configure: ConfigurePage, name: string) => {
+  const dialog = await openSaveDialog(configure)
+  await dialog.fill(name)
+  await dialog.save()
+  await expect(dialog.needsTheList).toBeVisible()
+
+  return dialog
+}
+
 // The editor guide refuses in place a name the grid shows, and meanwhile the
-// grid shows this browser's saves.
+// grid shows this browser's saves. The owner's ruling (2026-10-24): any other
+// name may be one the account holds, so Save says it needs the account's
+// stacks first and offers the grid's Retry, posting nothing. The allowed case
+// is "signed in": a load that reads the list saves at once.
 test.describe("saving while the account's list cannot be read", () => {
   test("refuses the name of a save this browser holds, posting nothing", async ({
     page,
@@ -898,17 +1062,319 @@ test.describe("saving while the account's list cannot be read", () => {
     expect(created.map((body) => body.name)).toStrictEqual(["A", "B"])
   })
 
-  test("saves a name nobody holds to the account", async ({ page }) => {
+  test("says it needs the account's stacks first, with Retry, posting nothing", async ({
+    page,
+  }) => {
     const { configure, created } = await unreadAfterAFirstSignIn(page)
+    const minted = captureCreateConfig(page)
+    const posted = stackPosts(page)
 
     const dialog = await openSaveDialog(configure)
-    await dialog.saveAs("Client work")
+    await dialog.fill("Client work")
+    await dialog.save()
 
-    expect(created.map((body) => body.name)).toStrictEqual([
-      "A",
-      "B",
-      "Client work",
-    ])
+    await expect(dialog.needsTheList).toBeVisible()
+    await expect(dialog.retryButton).toBeEnabled()
+    await expect(dialog.nameInput).toHaveValue("Client work")
+    expect(minted).toStrictEqual([])
+    expect(posted).toStrictEqual([])
+    expect(created.map((body) => body.name)).toStrictEqual(["A", "B"])
+  })
+
+  test("posts nothing under a name only the account holds", async ({
+    page,
+  }) => {
+    const { configure, minted, posted } = await unreadHoldingWeekday(page)
+
+    const dialog = await openSaveDialog(configure)
+    await dialog.fill("Weekday")
+    await dialog.save()
+
+    await expect(dialog.needsTheList).toBeVisible()
+    await expect(dialog.root).toBeVisible()
+    expect(minted).toStrictEqual([])
+    expect(posted).toStrictEqual([])
+  })
+
+  // Nothing takes focus when it says so, as with the grid's line.
+  test("reads it out", async ({ page }) => {
+    const { configure } = await unreadHoldingWeekday(page)
+
+    const dialog = await savedWhileUnread(configure, "Client work")
+
+    await expect(dialog.needsTheListAnnouncement).toBeVisible()
+  })
+
+  test("refuses in place a name the account holds, posting nothing, once Retry reads the list", async ({
+    page,
+  }) => {
+    const { configure, list, minted, posted } = await unreadHoldingWeekday(page)
+    const dialog = await savedWhileUnread(configure, "Weekday")
+
+    list.recover()
+    await dialog.retryButton.click()
+    await expect(dialog.needsTheList).toBeHidden()
+    await dialog.save()
+
+    await expect(dialog.alert).toHaveText(UNIQUE("Weekday"))
+    await expect(dialog.nameInput).toHaveAttribute("aria-invalid", "true")
+    expect(minted).toStrictEqual([])
+    expect(posted).toStrictEqual([])
+  })
+
+  // Retry reads the list and saves nothing itself: Save is pressed again. The
+  // grid's line goes too, as the one refresh both Retries ask for.
+  test("saves a name nobody holds to the account once Retry reads the list", async ({
+    page,
+  }) => {
+    const { configure, list, created, posted } =
+      await unreadHoldingWeekday(page)
+    const dialog = await savedWhileUnread(configure, "Client work")
+
+    list.recover()
+    await dialog.retryButton.click()
+    await expect(dialog.needsTheList).toBeHidden()
+    await dialog.save()
+
+    await expect(dialog.root).toBeHidden()
+    expect(posted).toStrictEqual(["Client work"])
+    expect(created.map((body) => body.name)).toStrictEqual(["Client work"])
+    await expect(accountRow(configure, "Client work")).toBeVisible()
+    await expect(accountRow(configure, "Weekday")).toBeVisible()
+    await expect(configure.stackListFailure).toBeHidden()
+  })
+
+  // Retry's refusal is awaited: the first failure's words would otherwise
+  // satisfy the assertion before Retry answered.
+  test("says so again, keeping the keyboard on Retry, when Retry fails too", async ({
+    page,
+  }) => {
+    const { configure, minted, posted } = await unreadHoldingWeekday(page)
+    const dialog = await savedWhileUnread(configure, "Weekday")
+
+    const refused = page.waitForResponse(
+      (response) =>
+        response.url().startsWith(STACKS_URL) &&
+        response.request().method() === "GET"
+    )
+    await dialog.retryButton.press("Enter")
+    await refused
+
+    await expect(dialog.needsTheList).toBeVisible()
+    await expect(dialog.retryButton).toBeFocused()
+    expect(minted).toStrictEqual([])
+    expect(posted).toStrictEqual([])
+  })
+
+  // Retry goes once the list reads; the keyboard must not fall to the page
+  // behind the modal, nor to the grid it hides.
+  test("keeps the keyboard in the dialog once Retry reads the list", async ({
+    page,
+  }) => {
+    const { configure, list } = await unreadHoldingWeekday(page)
+    const dialog = await savedWhileUnread(configure, "Client work")
+
+    list.recover()
+    await dialog.retryButton.press("Enter")
+    await expect(dialog.needsTheList).toBeHidden()
+
+    await expect
+      .poll(() =>
+        dialog.root.evaluate((root) => root.contains(document.activeElement))
+      )
+      .toBe(true)
+  })
+})
+
+const UNAUTHORIZED = 401
+
+// The worker's answer to any route behind sign-in once the session is gone.
+const sessionEnded = () =>
+  HttpResponse.json(UNAUTHORIZED_BODY, { status: UNAUTHORIZED })
+
+// The owner's ruling (2026-10-24): a list read answered "not signed in" after
+// the sign-in check passed is a session that ended mid-load, and a list the
+// editor couldn't read rather than an empty account. Nothing is carried in or
+// marked owed, and the grid and Save say so as for any list that could not be
+// read. The choice not taken was the signed-out view.
+test.describe("a signed-in load whose list read finds the session ended", () => {
+  test("says it couldn't load your saved stacks, with Retry", async ({
+    page,
+  }) => {
+    const { configure } = await unreadAfterAFirstSignIn(page, sessionEnded)
+
+    await expect(configure.stackListFailure).toBeVisible()
+    await expect(configure.stackListRetry).toBeEnabled()
+  })
+
+  // Sent rather than stored: the account holds both names, so a write would
+  // be refused 409 and `created` could not show it was sent.
+  test("shows each of this browser's saves once, sending the account none", async ({
+    page,
+  }) => {
+    const { configure, list } = await carriedByAFirstSignIn(page)
+    const posted = stackPosts(page)
+
+    list.fail(sessionEnded)
+    await reload(configure)
+
+    expect(posted).toStrictEqual([])
+    for (const name of ["A", "B"]) {
+      await expect(localSave(configure, name)).toBeVisible()
+      await expect(configure.stack(name)).toHaveCount(1)
+    }
+  })
+
+  // A session that ended refuses the writes too, which would leave both saves
+  // owed, and the next load would ask a new name for stacks the account
+  // already holds.
+  test("leaves nothing owed though the writes are refused too, and the next load asks no new name", async ({
+    page,
+  }) => {
+    const { configure, list } = await carriedByAFirstSignIn(page)
+    const dialog = configure.saveStackDialog
+
+    list.fail(sessionEnded)
+    stubWith(page, [stackRefusedHandlerFor(UNAUTHORIZED)])
+    await reload(configure)
+
+    expect(await dialog.owed()).toStrictEqual([])
+
+    list.recover()
+    await reload(configure)
+
+    await showsEachSaveOnce(configure)
+    await expect(dialog.root).toBeHidden()
+  })
+
+  test("shows the account's stacks, each once, and says no more, on a Retry once the account answers", async ({
+    page,
+  }) => {
+    const { configure, created, list } = await unreadAfterAFirstSignIn(
+      page,
+      sessionEnded
+    )
+    await expect(configure.stackListRetry).toBeVisible()
+
+    list.recover()
+    await configure.stackListRetry.click()
+
+    await showsEachSaveOnce(configure)
+    await expect(configure.stackListFailure).toBeHidden()
+    expect(created.map((body) => body.name)).toStrictEqual(["A", "B"])
+  })
+
+  test("on a first sign-in, shows this browser's saves and says it couldn't load the account's, carrying none in", async ({
+    page,
+  }) => {
+    const { configure, created } = await firstSignInUnread(page, sessionEnded)
+
+    expect(created).toStrictEqual([])
+    await expect(configure.stackListFailure).toBeVisible()
+    await expect(localSave(configure, "A")).toBeVisible()
+    await expect(localSave(configure, "B")).toBeVisible()
+  })
+
+  test("Save says it needs the account's stacks first, posting nothing", async ({
+    page,
+  }) => {
+    const { configure } = await unreadAfterAFirstSignIn(page, sessionEnded)
+    const minted = captureCreateConfig(page)
+    const posted = stackPosts(page)
+
+    const dialog = await openSaveDialog(configure)
+    await dialog.fill("Client work")
+    await dialog.save()
+
+    await expect(dialog.needsTheList).toBeVisible()
+    await expect(dialog.nameInput).toHaveValue("Client work")
+    expect(minted).toStrictEqual([])
+    expect(posted).toStrictEqual([])
+  })
+
+  // The allowed case: the choice not taken would sign the page out.
+  test("still names who is signed in, offering no sign-in", async ({
+    page,
+  }) => {
+    const { configure } = await unreadAfterAFirstSignIn(page, sessionEnded)
+
+    await expect(configure.accountName).toHaveText(SIGNED_IN_USER.name)
+    await expect(configure.signInButton).toBeHidden()
+  })
+})
+
+// Read, but before another caller (the CLI, another browser) saved the name:
+// only the worker can tell. Install after `stubSignedIn`.
+const answersAStaleList = (page: TestPage, stacks: SavedStack[]) =>
+  stubWith(page, [http.get(STACKS_URL, () => HttpResponse.json(stacks))])
+
+// The owner's ruling (2026-10-24): the worker refuses a name the account
+// holds, and the save dialog says so in place.
+test.describe("a name the account took after its list was read", () => {
+  test("is refused in place on the field, the name kept and the grid gaining nothing", async ({
+    page,
+  }) => {
+    stubCreateConfig(page)
+    const { created } = stubSignedIn(page, [stack("Weekday")])
+    answersAStaleList(page, [])
+    const configure = await arrive(page)
+
+    const dialog = await openSaveDialog(configure)
+    await dialog.fill("weekday")
+    await dialog.save()
+
+    await expect(dialog.alert).toHaveText(UNIQUE("weekday"))
+    await expect(dialog.nameInput).toHaveAttribute("aria-invalid", "true")
+    await expect(dialog.nameInput).toHaveAccessibleDescription(
+      UNIQUE("weekday")
+    )
+    await expect(dialog.nameInput).toHaveValue("weekday")
+    await expect(dialog.root).toBeVisible()
+    expect(created).toStrictEqual([])
+
+    await dialog.cancel()
+    await expect(configure.stack("weekday")).toHaveCount(0)
+  })
+
+  // The allowed case: the refusal is the name's, not the save's.
+  test("saves once the name is changed to one nobody holds", async ({
+    page,
+  }) => {
+    stubCreateConfig(page)
+    const { created } = stubSignedIn(page, [stack("Weekday")])
+    answersAStaleList(page, [])
+    const configure = await arrive(page)
+
+    const dialog = await openSaveDialog(configure)
+    await dialog.fill("Weekday")
+    await dialog.save()
+    await expect(dialog.alert).toBeVisible()
+    await dialog.saveAs("Weekday 2")
+
+    expect(created.map((body) => body.name)).toStrictEqual(["Weekday 2"])
+    await expect(accountRow(configure, "Weekday 2")).toBeVisible()
+  })
+
+  // The same dialog, asking an owed save for a new name.
+  test("is refused in place when an owed save is renamed to it, which stays owed", async ({
+    page,
+  }) => {
+    stubCreateConfig(page)
+    const { created } = stubSignedIn(page, [stack("alpha"), stack("Alpha 2")])
+    const configure = await atTheOrigin(page)
+    const dialog = configure.saveStackDialog
+    await dialog.seed([{ name: "Alpha", payload: STORED_PAYLOAD }], ["Alpha"])
+    answersAStaleList(page, [stack("alpha")])
+    await configure.goto()
+    await expect(dialog.nameInput).toHaveValue("Alpha")
+
+    await dialog.fill("Alpha 2")
+    await dialog.save()
+
+    await expect(dialog.alert).toHaveText(UNIQUE("Alpha 2"))
+    await expect(dialog.nameInput).toHaveAttribute("aria-invalid", "true")
+    expect(created).toStrictEqual([])
+    expect(await dialog.owed()).toStrictEqual(["Alpha"])
   })
 })
 
@@ -946,7 +1412,7 @@ const owingBeside = async (
 ) => {
   stubCreateConfig(page)
   const { created } = stubSignedIn(page, stacks)
-  const configure = await arrive(page)
+  const configure = await atTheOrigin(page)
   const dialog = configure.saveStackDialog
   await dialog.seed(saves, owed)
   await configure.goto()
@@ -955,14 +1421,15 @@ const owingBeside = async (
 }
 
 // Owing "Alpha" to an account listing "alpha", whose list is held until
-// `release` so a confirm can open before the sign-in lands.
+// `release` so a confirm can open before the sign-in lands. `arrange` runs
+// before the app's first load.
 const owingWithTheListHeld = async (
   page: TestPage,
   arrange: (configure: ConfigurePage) => Promise<void> = async () => {}
 ) => {
   stubCreateConfig(page)
   stubSignedIn(page, [stack("alpha")])
-  const configure = await arrive(page)
+  const configure = await atTheOrigin(page)
   await configure.saveStackDialog.seed(
     [{ name: "Alpha", payload: STORED_PAYLOAD }],
     ["Alpha"]
@@ -1016,7 +1483,7 @@ test.describe("an owed save whose name the account now lists", () => {
     stubCreateConfig(page)
     stubSignedIn(page, [stack("alpha")])
     const list = stackListFailing(page)
-    const configure = await arrive(page)
+    const configure = await atTheOrigin(page)
     const dialog = configure.saveStackDialog
     await dialog.seed([{ name: "Alpha", payload: STORED_PAYLOAD }], ["Alpha"])
     list.fail(serverError)
@@ -1077,9 +1544,11 @@ test.describe("an owed save whose name the account now lists", () => {
   test("reaches the screen with the dialog already open over the stacks", async ({
     page,
   }) => {
-    const { configure, dialog } = await owingThenListed(page, ["Alpha"])
-    await dialog.cancel()
-    await expect(dialog.root).toBeHidden()
+    stubCreateConfig(page)
+    stubSignedIn(page, [stack("alpha")])
+    const configure = await atTheOrigin(page)
+    const dialog = configure.saveStackDialog
+    await dialog.seed([{ name: "Alpha", payload: STORED_PAYLOAD }], ["Alpha"])
     const { release } = await holdPageLoad(page)
 
     const arriving = configure.goto()
@@ -1403,6 +1872,92 @@ test.describe("a sign-in the worker will not serve", () => {
 
     expect(thrown).toStrictEqual([])
     await expect(configure.accountName).toHaveText(SIGNED_IN_USER.name)
+  })
+})
+
+const TOO_MANY = 429
+
+// api-mocks has the sign-in limiter only.
+const signOutRateLimitedHandler = http.post(
+  SIGN_OUT_URL,
+  () => new HttpResponse(null, { status: TOO_MANY })
+)
+
+// Literal lines, never read from the rail, so a swapped table or a wrong
+// action reddens a row.
+const SIGN_IN_REFUSALS = [
+  {
+    failure: "a rate limit",
+    refuse: signInRateLimitedHandler,
+    line: "Too many tries — wait a minute",
+  },
+  {
+    failure: "a server error",
+    refuse: signInRefusedHandler,
+    line: "Sign-in was refused",
+  },
+  {
+    failure: "no answer at all",
+    refuse: signInUnreachableHandler,
+    line: "Could not reach sign-in",
+  },
+]
+
+const SIGN_OUT_REFUSALS = [
+  {
+    failure: "a rate limit",
+    refuse: signOutRateLimitedHandler,
+    line: "Too many tries — wait a minute",
+  },
+  {
+    failure: "a server error",
+    refuse: signOutRefusedHandler,
+    line: "Sign-out was refused",
+  },
+  {
+    failure: "no answer at all",
+    refuse: signOutUnreachableHandler,
+    line: "Could not reach sign-out",
+  },
+]
+
+test.describe("what the rail says when the worker will not serve", () => {
+  for (const { failure, refuse, line } of SIGN_IN_REFUSALS) {
+    test(`a sign-in meeting ${failure} says "${line}"`, async ({ page }) => {
+      stubWith(page, [refuse])
+      const configure = await arrive(page)
+
+      await configure.signInButton.click()
+
+      await expect(configure.accountNotice).toHaveText(line)
+    })
+  }
+
+  for (const { failure, refuse, line } of SIGN_OUT_REFUSALS) {
+    test(`a sign-out meeting ${failure} says "${line}"`, async ({ page }) => {
+      stubSignedIn(page)
+      stubWith(page, [refuse])
+      const configure = await arrive(page)
+
+      await configure.signOutButton.click()
+
+      await expect(configure.accountNotice).toHaveText(line)
+    })
+  }
+
+  // The control: the same locator, present and then gone, on the same action.
+  test("the line goes once a sign-out goes through", async ({ page }) => {
+    stubSignedIn(page)
+    stubWith(page, [signOutRefusedHandler])
+    const configure = await arrive(page)
+    await configure.signOutButton.click()
+    await expect(configure.accountNotice).toHaveText("Sign-out was refused")
+
+    stubSignedOut(page)
+    await configure.signOutButton.click()
+
+    await expect(configure.signInButton).toBeVisible()
+    await expect(configure.accountNotice).toHaveCount(0)
   })
 })
 

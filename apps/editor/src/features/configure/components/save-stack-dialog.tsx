@@ -29,7 +29,12 @@ import { useSavedStackStore, type SavedStack } from "@/stores/saved-stack-store"
 import { useUiStore } from "@/stores/ui-store"
 
 import { FIELD_INSET, Field, Note } from "./dialog-field"
-import { CLEARED_SCRATCH_NAME, SCRATCH_NAME, STACKS_GRID } from "./stack-grid"
+import {
+  CLEARED_SCRATCH_NAME,
+  SCRATCH_NAME,
+  STACKS_GRID,
+  StackListNotice,
+} from "./stack-grid"
 
 const PROBLEM_SENTENCES = {
   empty: () => "Give this stack a name.",
@@ -50,6 +55,10 @@ const sentenceFor = (failure: Failure, typed: string) =>
   isProblem(failure)
     ? PROBLEM_SENTENCES[failure](typed.trim())
     : SAVE_NARRATIONS[failure]
+
+// Save waits for the account's list only until one is read.
+const standingRefusal = (refused: Failure | null, listUnread: boolean) =>
+  refused === "list-unread" && !listUnread ? null : refused
 
 // An owed save is renamed locally too, so every local name is taken then.
 const useTakenNames = (owed: SavedStack | undefined) => {
@@ -178,6 +187,7 @@ function SaveStackForm({
 }) {
   const taken = useTakenNames(owed)
   const carryRenamed = useAccountStore((state) => state.carryRenamed)
+  const listUnread = useAccountStore((state) => state.listRefusal !== null)
   const messageId = useId()
   const [draft, setDraft] = useState(() => draftFor(owed))
   // Reset in place, not remounted, so focus stays in the field.
@@ -190,7 +200,11 @@ function SaveStackForm({
   const { typed, checking, refused } = draft
   const checked = validateSaveName(typed, taken)
   const problem = checking && !checked.ok ? checked.problem : null
-  const failure = problem ?? refused
+  const failure = problem ?? standingRefusal(refused, listUnread)
+  const waitsForList = failure === "list-unread"
+  // Every failure but the wait is a sentence describing the field; a name the
+  // account refused marks it invalid, as one refused here does.
+  const said = waitsForList ? null : failure
 
   const rename = (next: string) =>
     setDraft((current) => ({ ...current, typed: next, refused: null }))
@@ -224,18 +238,28 @@ function SaveStackForm({
             value={typed}
             placeholder="e.g. client work"
             aria-label="Name"
-            aria-invalid={problem !== null}
-            aria-describedby={failure ? messageId : undefined}
+            aria-invalid={said !== null && isProblem(said)}
+            aria-describedby={said ? messageId : undefined}
             autoComplete="off"
             readOnly={saving}
             onChange={(event) => rename(event.target.value)}
           />
         </Field>
 
-        {failure && (
+        {said && (
           <div id={messageId}>
-            <Note>{sentenceFor(failure, typed)}</Note>
+            <Note>{sentenceFor(said, typed)}</Note>
           </div>
+        )}
+        {/* The grid's Retry, since the modal hides it. The field takes the
+            keyboard once the list reads, so it stays in the dialog. */}
+        {waitsForList && (
+          <StackListNotice
+            slot="save-list-notice"
+            className="pt-3.5"
+            words={SAVE_NARRATIONS["list-unread"]}
+            handsKeyboardTo={nameInput}
+          />
         )}
       </DialogBody>
 

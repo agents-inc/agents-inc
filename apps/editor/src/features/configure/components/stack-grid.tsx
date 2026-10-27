@@ -145,6 +145,8 @@ const WHY_NOT_ADOPTED = {
     "a project-scoped skill is assigned to a sub-agent resting at global scope. Apply it, then fix the marked rows under assign skills",
   "out-of-date":
     "this page is out of date. Reload, and it will be carried over",
+  taken:
+    "your account already has a stack by its name. You'll be asked for a new one next time",
   refused: "your account would not take it. It will be carried over next time",
   unreachable:
     "your account could not be reached. It will be carried over next time",
@@ -285,7 +287,12 @@ export function StackGrid() {
 
   return (
     <>
-      <StackListNotice handsKeyboardTo={stacksRef} />
+      <StackListNotice
+        slot="stack-list-notice"
+        className="pt-4 pb-3"
+        words={STACK_LIST_NOT_LOADED}
+        handsKeyboardTo={stacksRef}
+      />
       {/* Not dismissible: hiding it would hide the saves it explains. */}
       {hasRefusals && (
         <p
@@ -351,13 +358,21 @@ export function StackGrid() {
   )
 }
 
-// Signed in, while the account's list cannot be read; the grid shows this
-// browser's saves meanwhile. Retry is another refresh.
-function StackListNotice({
-  handsKeyboardTo,
-}: {
+type RetryLineProps = {
+  slot: string
+  className: string
+  words: string
+  reading: boolean
+  onRetry: () => void
   handsKeyboardTo: RefObject<HTMLElement | null>
-}) {
+}
+
+// Signed in, while the account's list cannot be read; the grid shows this
+// browser's saves meanwhile, and Save waits. Retry is another refresh, so
+// every line goes at once when one works.
+export function StackListNotice(
+  props: Omit<RetryLineProps, "reading" | "onRetry">
+) {
   const unread = useAccountStore((state) => state.listRefusal !== null)
   const refresh = useAccountStore((state) => state.refresh)
   const [reading, setReading] = useState(false)
@@ -371,14 +386,7 @@ function StackListNotice({
   if (!unread) return null
 
   return (
-    <RetryLine
-      slot="stack-list-notice"
-      className="pt-4 pb-3"
-      words={STACK_LIST_NOT_LOADED}
-      reading={reading}
-      onRetry={() => void retry()}
-      handsKeyboardTo={handsKeyboardTo}
-    />
+    <RetryLine {...props} reading={reading} onRetry={() => void retry()} />
   )
 }
 
@@ -389,14 +397,7 @@ function RetryLine({
   reading,
   onRetry,
   handsKeyboardTo,
-}: {
-  slot: string
-  className: string
-  words: string
-  reading: boolean
-  onRetry: () => void
-  handsKeyboardTo: RefObject<HTMLElement | null>
-}) {
+}: RetryLineProps) {
   const retryRef = useRef<HTMLButtonElement>(null)
   const handKeyboardOn = useEffectEvent(() => handsKeyboardTo.current?.focus())
 

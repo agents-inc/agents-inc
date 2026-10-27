@@ -8,7 +8,9 @@ bun run test:visual         # the appearance suite (Argos)
 ```
 
 Playwright starts its own dev server on port 5199 (`EDITOR_E2E_PORT` moves it). It never reuses a
-server that is already running, because that would test a different tree.
+server that is already running, because that would test a different tree. It serves with HMR off
+(`vite.e2e.config.ts`), because a source file saved mid-run would otherwise reach the page a spec is
+driving and reset its stores.
 
 | Path          | Holds                                                                            |
 | ------------- | -------------------------------------------------------------------------------- |
@@ -26,6 +28,9 @@ fails the spec.
 - **Every spec starts signed out.** `fixtures.ts` installs `authHandlers` and `composeHandlers` as
   the initial set. For a session, use `support/auth.ts` and build your own `ConfigurePage`, because
   the `configure` fixture navigates before any stub you add.
+- **Seed `localStorage` at a bare origin page, not after a boot, and count page loads.** Under load
+  each load costs several seconds of the 30 s budget, so a test that needs four is near the limit.
+  `atTheOrigin` in `specs/accounts.spec.ts` stubs an empty page on the origin for this.
 - **Accessibility:** `specs/a11y.spec.ts` runs axe over the assembled page. Every state
   `visual.spec.ts` captures needs an audit there. The held-out rules are listed in that spec.
   `color-contrast` is a permanent ruling; the others are tracked defects.
@@ -60,6 +65,9 @@ fails the spec.
 - **Only the topmost modal is in the accessibility tree.** To check that a dialog is still open
   behind another, use a CSS locator (`InstallDialog.sheet`), then re-assert by role after the top
   dialog closes. `filter({ hasText })` matches substrings, so it can claim the wrong dialog.
+- **A toast is a dialog to a role selector.** Base UI gives each toast `role="dialog"` (or
+  `alertdialog`) and `aria-modal="false"`, so a count of open dialogs leaves out
+  `[aria-modal="false"]`.
 - **Check overlap with geometry:** compare two `boundingBox()` reads against the container. Neither
   `toBeVisible()` nor a click can see an overlap. `position: fixed` is wrong in this layout because
   the page centres past its max width (`src/routes/route-components.tsx`). Use `sticky`.

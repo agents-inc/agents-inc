@@ -2,6 +2,7 @@ import {
   COMPOSE_URL,
   SIGN_IN_URL,
   STACKS_URL,
+  STACK_NAME_TAKEN_BODY,
   authHandlers,
   composeRefusedHandlerFor,
   composeTooLongHandler,
@@ -30,6 +31,7 @@ export { savedStack as stack }
 export type { SavedStack }
 
 const CREATED = 201
+const NAME_TAKEN = 409
 const SERVICE_UNAVAILABLE = 503
 
 const DEFAULT_COMPOSE_REASON = "Chosen for you."
@@ -42,11 +44,17 @@ type StackBody = { name: string; configId: string }
  */
 export const stubSignedOut = (page: Page) => stubWith(page, authHandlers)
 
+// The worker's comparison, mirrored rather than imported from the editor's
+// Save, so the stub cannot agree with a change it is meant to catch.
+const sameName = (a: string, b: string) =>
+  a.trim().toLowerCase() === b.trim().toLowerCase()
+
 /**
  * Signed in with these stacks. Returns the stored `POST /stacks` bodies and
- * `refusing` (names answered 503). Ahead of the signed-in set. The grid reads
- * each stack's payload, so the config store answers too: an id stubbed with
- * `stubGetConfig` before or after still wins.
+ * `refusing` (names answered 503). A name one of the account's stacks holds is
+ * answered 409 and stored nowhere, as the worker answers it. Ahead of the
+ * signed-in set. The grid reads each stack's payload, so the config store
+ * answers too: an id stubbed with `stubGetConfig` before or after still wins.
  */
 export const stubSignedIn = (page: Page, stacks: SavedStack[] = []) => {
   const created: StackBody[] = []
@@ -59,6 +67,8 @@ export const stubSignedIn = (page: Page, stacks: SavedStack[] = []) => {
       const body = await request.json()
       if (refusing.has(body.name))
         return new HttpResponse(null, { status: SERVICE_UNAVAILABLE })
+      if (current.some((held) => sameName(held.name, body.name)))
+        return HttpResponse.json(STACK_NAME_TAKEN_BODY, { status: NAME_TAKEN })
 
       created.push(body)
 

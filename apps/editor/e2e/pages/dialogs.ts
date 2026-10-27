@@ -417,6 +417,11 @@ export type StoredSave = { id: string; name: string; payload: unknown }
 
 type StoredSlot = { saves: StoredSave[]; owed?: string[] }
 
+// Words for the owner's "Save says it needs the account's stacks first"
+// (2026-10-24), said while the account's list cannot be read. The ruling gave
+// the meaning; the wording is the tests'.
+const SAVE_NEEDS_THE_LIST = "Saving needs your account's stacks first."
+
 // The rail Save's dialog. Signed in it stays open through the write; sign-in
 // also opens it for a name clash.
 export class SaveStackDialog {
@@ -428,6 +433,11 @@ export class SaveStackDialog {
   // The header's ✕.
   readonly closeButton: Locator
   readonly alert: Locator
+  readonly needsTheList: Locator
+  // Read out as the dialog's other refusals are: its words in an alert.
+  readonly needsTheListAnnouncement: Locator
+  // The grid line's Retry, offered where Save says it: a modal hides the grid.
+  readonly retryButton: Locator
 
   constructor(private readonly page: Page) {
     this.root = page.getByRole("dialog", { name: "Save stack" })
@@ -451,6 +461,14 @@ export class SaveStackDialog {
       .locator('[data-slot="dialog-header"]')
       .getByRole("button", { name: "Close", exact: true })
     this.alert = this.root.getByRole("alert")
+    this.needsTheList = this.root.getByText(SAVE_NEEDS_THE_LIST)
+    this.needsTheListAnnouncement = this.alert.filter({
+      hasText: SAVE_NEEDS_THE_LIST,
+    })
+    this.retryButton = this.root.getByRole("button", {
+      name: "Retry",
+      exact: true,
+    })
   }
 
   async fill(name: string) {
