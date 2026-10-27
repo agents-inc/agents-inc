@@ -53,6 +53,18 @@ type PanelHeaderProps = {
   stackName: string | undefined;
 };
 
+/** Only the value shrinks, so a name longer than its line cannot eat the label's last letters. */
+const HeaderRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <Box flexDirection="row" columnGap={1}>
+    <Box flexShrink={0}>
+      <Text color={CLI_COLORS.WARNING} bold>
+        {label}
+      </Text>
+    </Box>
+    <Text color={CLI_COLORS.NEUTRAL}>{value}</Text>
+  </Box>
+);
+
 const PanelHeader: React.FC<PanelHeaderProps> = ({ sourceNames, stackName }) => (
   <Box
     flexDirection="column"
@@ -66,18 +78,8 @@ const PanelHeader: React.FC<PanelHeaderProps> = ({ sourceNames, stackName }) => 
     paddingBottom={1}
     marginBottom={1}
   >
-    <Box flexDirection="row" columnGap={1}>
-      <Text color={CLI_COLORS.WARNING} bold>
-        Marketplace
-      </Text>
-      <Text color={CLI_COLORS.NEUTRAL}>{sourceNames}</Text>
-    </Box>
-    <Box flexDirection="row" columnGap={1}>
-      <Text color={CLI_COLORS.WARNING} bold>
-        Stack
-      </Text>
-      <Text color={CLI_COLORS.NEUTRAL}>{stackName ?? "none"}</Text>
-    </Box>
+    <HeaderRow label="Marketplace" value={sourceNames} />
+    <HeaderRow label="Stack" value={stackName ?? "none"} />
   </Box>
 );
 

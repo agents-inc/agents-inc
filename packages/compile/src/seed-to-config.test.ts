@@ -654,4 +654,116 @@ describe("a shared configuration with nowhere to write an assignment", () => {
       ].join("\n")
     )
   })
+
+  // A skill whose metadata.yaml will not load never reaches the catalogue, so here it is one the
+  // catalogue lacks: the pair is the payload's, whatever this catalogue can install.
+  const UNLOADED = "nope-skill"
+
+  it("is refused when the project skill is one this catalogue cannot install, naming its pair", () => {
+    expect(() =>
+      seedToInstallSelection(
+        buildSeedPayload({
+          skills: {
+            [UNLOADED]: {
+              install: "eject",
+              scope: "project",
+              assignments: { [WEB_DEV]: "lazy" },
+            },
+          },
+          agents: {},
+        }),
+        SEED_CATALOG
+      )
+    ).toThrow(
+      [
+        "This configuration cannot be installed: a project-scoped skill never reaches a sub-agent " +
+          "that rests at global scope, so these assignments have nowhere to be written:",
+        `  ${UNLOADED} -> ${WEB_DEV}`,
+        "Re-share it with each sub-agent above pinned to the project, or each skill above at global scope.",
+      ].join("\n")
+    )
+  })
+
+  it("names the pair of a skill it cannot install beside the pair of one it can", () => {
+    expect(() =>
+      seedToInstallSelection(
+        buildSeedPayload({
+          skills: {
+            [REACT]: {
+              install: "plugin",
+              scope: "project",
+              assignments: { [WEB_DEV]: "lazy" },
+            },
+            [UNLOADED]: {
+              install: "eject",
+              scope: "project",
+              assignments: { "web-tester": "lazy" },
+            },
+          },
+          agents: {},
+        }),
+        SEED_CATALOG
+      )
+    ).toThrow(
+      [
+        "This configuration cannot be installed: a project-scoped skill never reaches a sub-agent " +
+          "that rests at global scope, so these assignments have nowhere to be written:",
+        `  ${REACT} -> ${WEB_DEV}`,
+        `  ${UNLOADED} -> web-tester`,
+        "Re-share it with each sub-agent above pinned to the project, or each skill above at global scope.",
+      ].join("\n")
+    )
+  })
+
+  it("control: installs, without it, a project sub-agent that a project skill it cannot install names", () => {
+    const decoded = seedToInstallSelection(
+      buildSeedPayload({
+        skills: {
+          [UNLOADED]: {
+            install: "eject",
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          },
+        },
+        agents: { [WEB_DEV]: { scope: "project" } },
+      }),
+      SEED_CATALOG
+    )
+
+    expect({
+      skills: decoded.result.skills,
+      agentConfigs: decoded.result.agentConfigs,
+      assignedStack: decoded.result.assignedStack,
+      skippedSkillIds: decoded.skippedSkillIds,
+    }).toStrictEqual({
+      skills: [],
+      agentConfigs: [{ name: WEB_DEV, scope: "project" }],
+      assignedStack: {},
+      skippedSkillIds: [UNLOADED],
+    })
+  })
+
+  it("control: is not refused for a project skill it cannot install on a sub-agent nobody ships or one switched off", () => {
+    const decoded = seedToInstallSelection(
+      buildSeedPayload({
+        skills: {
+          [UNLOADED]: {
+            install: "eject",
+            scope: "project",
+            assignments: { "ghost-agent": "lazy", "api-developer": "lazy" },
+          },
+        },
+        agents: { "api-developer": { on: false } },
+      }),
+      SEED_CATALOG
+    )
+
+    expect({
+      selectedAgents: decoded.result.selectedAgents,
+      skippedSkillIds: decoded.skippedSkillIds,
+    }).toStrictEqual({
+      selectedAgents: [],
+      skippedSkillIds: [UNLOADED],
+    })
+  })
 })

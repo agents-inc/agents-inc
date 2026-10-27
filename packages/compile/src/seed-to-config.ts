@@ -728,27 +728,27 @@ type PlacedAssignment = {
   assignment: SkillAssignment
 }
 
-type UnwritableAssignment = { skillId: SkillId; agent: AgentName }
+type UnwritableAssignment = { skillId: string; agent: AgentName }
 
 type AssignmentRow =
   | ({ kind: "placed" } & PlacedAssignment)
-  | ({ kind: "unwritable" } & UnwritableAssignment)
   | { kind: "unknownAgent"; agentName: string }
 
 /**
- * A shared configuration in the shape `init --from` installs. Unknown ids are skipped, never
- * fatal, so a rename cannot break older links; a sub-agent a skipped skill names is installed
- * without it. Assignments become `assignedStack`, which replaces the derived stack. An unwritable
- * pair is the one fatal case: nothing downstream filters `assignedStack`.
+ * A shared configuration in the shape `init --from` installs. An id this catalogue cannot install
+ * is skipped, so a rename cannot break older links, and a sub-agent it names is installed without
+ * it. Assignments become `assignedStack`, which replaces the derived stack. The one fatal case is
+ * an unwritable pair, judged over the payload whether its skill installs or not: nothing downstream
+ * filters `assignedStack`, and a skipped skill's sub-agent still installs at its own scope.
  */
 export function seedToInstallSelection(
   payload: SeedPayload,
   catalog: CompileCatalog
 ): SeedMapping {
   const agentMap = readAgentMap(payload.agents)
+  refuseUnwritableAssignments(payload.skills, agentMap)
   const { installable, skipped } = resolveSeedSkills(payload.skills, catalog)
   const rows = installable.flatMap((skill) => assignmentRows(skill, agentMap))
-  refuseUnwritableAssignments(rows)
 
   const placed = rows.filter((row) => row.kind === "placed")
   const carried = new Set(agentsCarriedIn(placed, agentMap))
@@ -785,11 +785,36 @@ export function seedToInstallSelection(
   }
 }
 
-function refuseUnwritableAssignments(rows: AssignmentRow[]): void {
-  const unwritable = rows.filter((row) => row.kind === "unwritable")
+function refuseUnwritableAssignments(
+  seedSkills: SeedPayload["skills"],
+  agentMap: SeedAgentMap
+): void {
+  const unwritable = unwritableAssignmentsOf(seedSkills, agentMap)
   if (unwritable.length > 0) {
     throw new Error(unwritableAssignmentsError(unwritable))
   }
+}
+
+function unwritableAssignmentsOf(
+  seedSkills: SeedPayload["skills"],
+  agentMap: SeedAgentMap
+): UnwritableAssignment[] {
+  return Object.entries(seedSkills).flatMap(([skillId, seedSkill]) =>
+    agentsNamedBy(seedSkill, agentMap)
+      .filter((agent) => !isWritablePair(seedSkill, agent, agentMap))
+      .map((agent) => ({ skillId, agent }))
+  )
+}
+
+function isWritablePair(
+  seedSkill: SeedSkill,
+  agent: AgentName,
+  agentMap: SeedAgentMap
+): boolean {
+  return isScopePairCompatible(
+    seedSkill.scope,
+    seedAgentScope(agentMap.known.get(agent))
+  )
 }
 
 /** By a skill that installs, or switched on. */
@@ -809,7 +834,7 @@ function withAgentsSkippedSkillsName(
   return [
     ...new Set([
       ...carried,
-      ...skipped.flatMap((skill) => agentsNamedBy(skill, agentMap)),
+      ...skipped.flatMap((skill) => agentsNamedBy(skill.seedSkill, agentMap)),
     ]),
   ]
 }
@@ -829,7 +854,7 @@ type SkippedSeedSkill = { skillId: string; seedSkill: SeedSkill }
 
 /** Each sub-agent this catalog ships that the skill names and the configuration leaves on. */
 function agentsNamedBy(
-  { seedSkill }: SkippedSeedSkill,
+  seedSkill: SeedSkill,
   agentMap: SeedAgentMap
 ): AgentName[] {
   return Object.keys(seedSkill.assignments)
@@ -842,7 +867,7 @@ function agentsOnlyItCarried(
   agentMap: SeedAgentMap,
   carried: ReadonlySet<AgentName>
 ): SkippedSkillAgents[] {
-  const agentNames = agentsNamedBy(skill, agentMap).filter(
+  const agentNames = agentsNamedBy(skill.seedSkill, agentMap).filter(
     (name) => !carried.has(name)
   )
 
@@ -940,6 +965,7 @@ function assignmentRows(
     .filter(isDefined)
 }
 
+/** Every pair here is writable: `refuseUnwritableAssignments` has refused the payload otherwise. */
 function assignmentRow(
   skill: InstallableSeedSkill,
   agentName: string,
@@ -948,11 +974,6 @@ function assignmentRow(
 ): AssignmentRow | undefined {
   if (agentMap.switchedOff.has(agentName)) return undefined
   if (!isAgentName(agentName)) return { kind: "unknownAgent", agentName }
-
-  const agentScope = seedAgentScope(agentMap.known.get(agentName))
-  if (!isScopePairCompatible(skill.seedSkill.scope, agentScope)) {
-    return { kind: "unwritable", skillId: skill.id, agent: agentName }
-  }
 
   return {
     kind: "placed",

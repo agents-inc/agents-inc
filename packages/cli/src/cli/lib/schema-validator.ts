@@ -1,16 +1,14 @@
 import { z } from "zod";
 
-import { stripTerminalControls } from "../utils/string";
+import { inertLine } from "../utils/string";
 
 /** Sanitised here: every part of the rendered text comes from the refused, untrusted document. */
 export function formatZodIssue(issue: z.ZodIssue): string {
-  const path = stripTerminalControls(issue.path.join("."));
   if (issue.code === "unrecognized_keys") {
-    return `Unrecognized key: "${stripTerminalControls(issue.keys.join('", "'))}"`;
+    return `Unrecognized key: "${inertLine(issue.keys.join('", "'))}"`;
   }
-  return path
-    ? `${path}: ${stripTerminalControls(issue.message)}`
-    : stripTerminalControls(issue.message);
+  const path = inertLine(issue.path.join("."));
+  return path ? `${path}: ${inertLine(issue.message)}` : inertLine(issue.message);
 }
 
 export function formatZodErrors(error: z.ZodError): string[] {

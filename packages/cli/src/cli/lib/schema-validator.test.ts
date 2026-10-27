@@ -83,6 +83,68 @@ describe("formatZodIssue", () => {
   });
 });
 
+/** Printed on a line of its own, it would read as the CLI's; folded into its line, it is a quote. */
+const FORGED_LINE = "Marketplace verified.";
+
+const KEY_ACROSS_LINES = `homepage\n${FORGED_LINE}`;
+
+/** An escape right before the break: removing the break first would let the escape eat the space. */
+const KEY_ACROSS_LINES_BEHIND_AN_ESCAPE = `homepage${ESCAPE}\n${FORGED_LINE}`;
+
+const SLUG_REFUSAL_ACROSS_LINES = `'react\n${FORGED_LINE}' is not a slug the public catalogue carries`;
+
+const SLUG_REFUSAL_ON_ONE_LINE = `'react ${FORGED_LINE}' is not a slug the public catalogue carries`;
+
+describe("formatZodIssue, a value the document wrote across lines", () => {
+  it("names an unrecognised key on the one line", () => {
+    const issue: z.ZodIssue = {
+      code: "unrecognized_keys",
+      path: [],
+      keys: [KEY_ACROSS_LINES],
+      message: `Unrecognized key: "${KEY_ACROSS_LINES}"`,
+    };
+
+    expect(formatZodIssue(issue)).toBe(`Unrecognized key: "homepage ${FORGED_LINE}"`);
+  });
+
+  it("keeps the space where an escape stood before the line break", () => {
+    const issue: z.ZodIssue = {
+      code: "unrecognized_keys",
+      path: [],
+      keys: [KEY_ACROSS_LINES_BEHIND_AN_ESCAPE],
+      message: "Unrecognized key",
+    };
+
+    expect(formatZodIssue(issue)).toBe(`Unrecognized key: "homepage ${FORGED_LINE}"`);
+  });
+
+  it("renders a path through a key the document chose on the one line", () => {
+    const issue: z.ZodIssue = {
+      code: "custom",
+      path: ["agentSkills", KEY_ACROSS_LINES, 0],
+      message: INERT_SENTENCE,
+    };
+
+    expect(formatZodIssue(issue)).toBe(`agentSkills.homepage ${FORGED_LINE}.0: ${INERT_SENTENCE}`);
+  });
+
+  it("renders a message quoting the value under its path on the one line", () => {
+    const issue: z.ZodIssue = {
+      code: "custom",
+      path: ["slug"],
+      message: SLUG_REFUSAL_ACROSS_LINES,
+    };
+
+    expect(formatZodIssue(issue)).toBe(`slug: ${SLUG_REFUSAL_ON_ONE_LINE}`);
+  });
+
+  it("does the same where there is no path to render it under", () => {
+    const issue: z.ZodIssue = { code: "custom", path: [], message: SLUG_REFUSAL_ACROSS_LINES };
+
+    expect(formatZodIssue(issue)).toBe(SLUG_REFUSAL_ON_ONE_LINE);
+  });
+});
+
 describe("formatZodIssue, several unrecognised keys", () => {
   it("names each one, quoted, in one sentence", () => {
     const issue: z.ZodIssue = {

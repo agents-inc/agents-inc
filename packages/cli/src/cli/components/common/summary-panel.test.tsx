@@ -4,6 +4,7 @@ import {
   ALL_SKILLS_EJECTED_LABEL,
   DEFAULT_PUBLIC_SOURCE_NAME,
   EJECT_SOURCE,
+  MIN_TERMINAL_SIZE,
   formatSourceDisplayName,
 } from "../../consts";
 import { buildAgentConfigs } from "../../lib/__tests__/factories/config-factories";
@@ -20,6 +21,12 @@ const DEFAULT_MARKETPLACE_LABEL = formatSourceDisplayName(DEFAULT_PUBLIC_SOURCE_
 const CUSTOM_MARKETPLACE = "acme-skills";
 const OTHER_MARKETPLACE = "zeta-skills";
 const JOINED_MARKETPLACES = `${CUSTOM_MARKETPLACE} · ${OTHER_MARKETPLACE}`;
+
+/** Kebab-case like every marketplace name, so it has no space to wrap at. */
+const LONG_MARKETPLACE =
+  "acme-corporation-internal-agent-skills-marketplace-for-platform-engineering-teams-and-contractors";
+const LONG_STACK_NAME =
+  "Next.js Full-Stack With Hono, Drizzle, Better Auth, React Query, Zustand and Vitest Testing";
 
 const NOTHING_SELECTED: SummaryPanelProps = {
   skillConfigs: [],
@@ -153,6 +160,81 @@ describe("SummaryPanel component", () => {
     it("should render a stack of none when it is given no stack", () => {
       const output = printedPanel();
       expect(output).toContain("Stack none");
+    });
+  });
+
+  /**
+   * Each name is longer than the line beside its label at both widths. A label sharing a row with
+   * such a name keeps its gap and every letter only when the name alone may shrink. The control is
+   * names that fit: pinned here at 80 columns, and under "header" above at 100.
+   */
+  describe("header, beside names longer than their line", () => {
+    const LONG_NAMES: Partial<SummaryPanelProps> = {
+      skillConfigs: buildSkillConfigs([SKILLS.react.id], { origin: LONG_MARKETPLACE }),
+      stackName: LONG_STACK_NAME,
+    };
+
+    it("keeps both labels a space from names that fit their line at 80 columns", () => {
+      const text = summaryPanelText(
+        {
+          ...NOTHING_SELECTED,
+          skillConfigs: buildSkillConfigs([SKILLS.react.id], { origin: CUSTOM_MARKETPLACE }),
+          stackName: STACK_NAME,
+        },
+        MIN_TERMINAL_SIZE.COLS,
+      );
+
+      expect(text).toMatchInlineSnapshot(`
+        "┌──────────────────────────────────────────────────────────────────────────────┐
+        │  Marketplace acme-skills                                                     │
+        │  Stack Next.js Full-Stack                                                    │
+        │                                                                              │
+        │  ──────────────────────────────────────────────────────────────────────────  │
+        │                                                                              │
+        │  Skills                                         │  Agents                    │
+        │                                                 │                            │
+        │   Project                                       │                            │
+        │  + React                                        │                            │
+        └──────────────────────────────────────────────────────────────────────────────┘"
+      `);
+    });
+
+    it("keeps both labels whole and wraps each name under itself at 80 columns", () => {
+      const text = summaryPanelText({ ...NOTHING_SELECTED, ...LONG_NAMES }, MIN_TERMINAL_SIZE.COLS);
+
+      expect(text).toMatchInlineSnapshot(`
+        "┌──────────────────────────────────────────────────────────────────────────────┐
+        │  Marketplace acme-corporation-internal-agent-skills-marketplace-for-platfor  │
+        │              m-engineering-teams-and-contractors                             │
+        │  Stack Next.js Full-Stack With Hono, Drizzle, Better Auth, React Query,      │
+        │        Zustand and Vitest Testing                                            │
+        │                                                                              │
+        │  ──────────────────────────────────────────────────────────────────────────  │
+        │                                                                              │
+        │  Skills                                         │  Agents                    │
+        │                                                 │                            │
+        │   Project                                       │                            │
+        │  + React                                        │                            │
+        └──────────────────────────────────────────────────────────────────────────────┘"
+      `);
+    });
+
+    it("keeps both labels whole and wraps each name under itself at 100 columns", () => {
+      expect(printedPanel(LONG_NAMES)).toMatchInlineSnapshot(`
+        "┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+        │  Marketplace acme-corporation-internal-agent-skills-marketplace-for-platform-engineering-teams-  │
+        │              and-contractors                                                                     │
+        │  Stack Next.js Full-Stack With Hono, Drizzle, Better Auth, React Query, Zustand and Vitest       │
+        │        Testing                                                                                   │
+        │                                                                                                  │
+        │  ──────────────────────────────────────────────────────────────────────────────────────────────  │
+        │                                                                                                  │
+        │  Skills                                                       │  Agents                          │
+        │                                                               │                                  │
+        │   Project                                                     │                                  │
+        │  + React                                                      │                                  │
+        └──────────────────────────────────────────────────────────────────────────────────────────────────┘"
+      `);
     });
   });
 

@@ -56,6 +56,17 @@ const NESTED_ID = "house/react";
 /** Sets the window title, which a terminal does wherever the directory is named. */
 const TERMINAL_CONTROL_ID = "external-x\u001b]0;PWNED\u0007";
 
+/** The most bytes one directory name may hold where an install lands: ext4's `NAME_MAX`. */
+const DIRECTORY_NAME_MAX_BYTES = 255;
+const MINTED_ID_PREFIX = "external-web-framework-";
+/** ASCII, so its characters are its bytes. */
+const LONGEST_ID = MINTED_ID_PREFIX.padEnd(DIRECTORY_NAME_MAX_BYTES, "a");
+const OVERLONG_ID = `${LONGEST_ID}a`;
+/** Two UTF-8 bytes per character, so these fall well under the limit in characters. */
+const TWO_BYTE_CHARACTER = "\u00e9";
+const LONGEST_TWO_BYTE_ID = `${MINTED_ID_PREFIX}${TWO_BYTE_CHARACTER.repeat(116)}`;
+const OVERLONG_TWO_BYTE_ID = `${LONGEST_TWO_BYTE_ID}a`;
+
 const PINNED_TO_PROJECT = { scope: "project" } as const;
 
 /** An ejected skill's metadata: `forkedFrom` has no `path`, as `copySkillTo` writes it. */
@@ -327,6 +338,57 @@ describe("registerExternalSkills", () => {
     expect(() => registerExternalSkills(payload, matrix, projectDir)).toThrow(
       JSON.stringify(PARENT_ESCAPING_ID),
     );
+  });
+
+  describe("a carried skill's id, against the longest name a directory may have", () => {
+    function carrying(...ids: string[]) {
+      return buildSeedPayload({
+        skills: Object.fromEntries(ids.map((id) => [id, buildSeedSkill()])),
+        external: Object.fromEntries(ids.map((id) => [id, buildSeedExternalSkill()])),
+      });
+    }
+
+    it("holds the byte counts these specs are named for", () => {
+      expect(
+        [LONGEST_ID, OVERLONG_ID, LONGEST_TWO_BYTE_ID, OVERLONG_TWO_BYTE_ID].map((id) => [
+          id.length,
+          Buffer.byteLength(id, "utf8"),
+        ]),
+      ).toStrictEqual([
+        [255, 255],
+        [256, 256],
+        [139, 255],
+        [140, 256],
+      ]);
+    });
+
+    it("refuses an id one byte longer, naming it, before seating any", () => {
+      expect(() =>
+        registerExternalSkills(carrying(EXTERNAL_ID, OVERLONG_ID), matrix, projectDir),
+      ).toThrow(OVERLONG_ID);
+      // The well-sized one is refused with it, so nothing reaches the decode.
+      expect(matrix.skills[EXTERNAL_ID]).toBeUndefined();
+      expect(matrix.skills).not.toHaveProperty([OVERLONG_ID]);
+    });
+
+    it("refuses an id short in characters whose UTF-8 bytes overrun the limit, naming it", () => {
+      expect(() =>
+        registerExternalSkills(carrying(OVERLONG_TWO_BYTE_ID), matrix, projectDir),
+      ).toThrow(OVERLONG_TWO_BYTE_ID);
+      expect(matrix.skills).not.toHaveProperty([OVERLONG_TWO_BYTE_ID]);
+    });
+
+    it("control: seats ids exactly as long as a directory name may be, in characters and in bytes", () => {
+      const installs = registerExternalSkills(
+        carrying(LONGEST_ID, LONGEST_TWO_BYTE_ID),
+        matrix,
+        projectDir,
+      );
+
+      expect(installs.map(({ id }) => id)).toStrictEqual([LONGEST_ID, LONGEST_TWO_BYTE_ID]);
+      expect(matrix.skills).toHaveProperty([LONGEST_ID]);
+      expect(matrix.skills).toHaveProperty([LONGEST_TWO_BYTE_ID]);
+    });
   });
 });
 

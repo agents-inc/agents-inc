@@ -172,6 +172,28 @@ function notADirectoryNameError(ids: string[]): string {
   ].join("\n");
 }
 
+/** ext4's `NAME_MAX`, in UTF-8 bytes; a name within it fits Windows' 255 UTF-16 units too. */
+const DIRECTORY_NAME_MAX_BYTES = 255;
+
+function overrunsADirectoryName(id: string): boolean {
+  return Buffer.byteLength(id, "utf8") > DIRECTORY_NAME_MAX_BYTES;
+}
+
+function externalIdsTooLongForADirectory(payload: SeedPayload): string[] {
+  return Object.keys(payload.external ?? {}).filter(overrunsADirectoryName);
+}
+
+function tooLongForADirectoryError(ids: string[]): string {
+  return [
+    "This configuration cannot be installed: these skills travel inside it under ids longer " +
+      "than a directory name may be:",
+    ...ids.map((id) => `  ${JSON.stringify(id)}`),
+    "A skill id is the directory the skill is written into, and a directory name may hold at " +
+      `most ${String(DIRECTORY_NAME_MAX_BYTES)} bytes, so none of these could be written. ` +
+      "Re-share it without each skill above.",
+  ].join("\n");
+}
+
 /**
  * Writes carried skills into `matrix` in place so the decode can resolve them. Every refusal runs
  * before anything is seated, so a refused run leaves the matrix untouched. The id is checked first:
@@ -184,6 +206,9 @@ export function registerExternalSkills(
 ): ExternalSkillInstall[] {
   const notDirectoryNames = externalIdsNamingNoDirectory(payload);
   if (notDirectoryNames.length > 0) throw new Error(notADirectoryNameError(notDirectoryNames));
+
+  const tooLong = externalIdsTooLongForADirectory(payload);
+  if (tooLong.length > 0) throw new Error(tooLongForADirectoryError(tooLong));
 
   const externals = selectedExternals(payload);
   const asPlugin = askedForAsPlugin(externals);
