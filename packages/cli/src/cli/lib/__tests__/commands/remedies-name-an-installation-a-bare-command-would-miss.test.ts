@@ -24,8 +24,7 @@ import { forgetTheProviderChosenForThisRun } from "../../installation/install-la
 import { EXIT_CODES } from "../../exit-codes";
 
 /**
- * Imported from source rather than run through `dist/`, so a `--provider` one spec names is
- * forgotten before the next: a dist module's state would outlive the spec that set it. The
+ * Imported from source, so a `--provider` one spec names is forgotten before the next. The
  * `edit --from` applies run through `dist/`, as the other apply specs do, and name no provider.
  */
 const { default: Compile } = await import("../../../commands/compile.js");

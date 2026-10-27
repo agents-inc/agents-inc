@@ -1,5 +1,5 @@
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir } from "fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -7,15 +7,9 @@ import {
   createTempDir,
   readTreeSnapshot,
   runCLI,
-  writeConfigTypes,
-  writeProjectConfigIn,
+  writeRetiredSourceFolder,
 } from "../helpers/test-utils.js";
-import { DIRS, STEP_TEXT } from "../pages/constants.js";
-import { buildProjectConfig } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-
-/** A user's file in the retired folder, which no run may touch. */
-const KEPT_IN_THE_RETIRED_FOLDER = path.join("agents", "my-agent", "identity.md");
-const KEPT_IN_THE_RETIRED_FOLDER_BODY = "An agent the user wrote under the retired folder.\n";
+import { STEP_TEXT } from "../pages/constants.js";
 
 describe("the retired source folder", () => {
   let tempDir: string;
@@ -37,25 +31,13 @@ describe("the retired source folder", () => {
     await mkdir(home, { recursive: true });
   }
 
-  async function retiredFolderIn(root: string, name: string): Promise<void> {
-    await writeProjectConfigIn(
-      root,
-      DIRS.RETIRED_SOURCE,
-      buildProjectConfig({ name, skills: [], agents: [] }),
-    );
-    await writeConfigTypes(root, DIRS.RETIRED_SOURCE);
-    const kept = path.join(root, DIRS.RETIRED_SOURCE, KEPT_IN_THE_RETIRED_FOLDER);
-    await mkdir(path.dirname(kept), { recursive: true });
-    await writeFile(kept, KEPT_IN_THE_RETIRED_FOLDER_BODY);
-  }
-
   async function run(args: string[], cwd: string = projectDir) {
     return runCLI(args, cwd, { env: { HOME: home } });
   }
 
   it("is ignored: a project holding only it has no config, and the folder is left untouched", async () => {
     await scopes();
-    await retiredFolderIn(projectDir, "retired-project");
+    await writeRetiredSourceFolder(projectDir);
     const before = await readTreeSnapshot(projectDir);
 
     const { combined } = await run(["doctor"]);

@@ -23,11 +23,30 @@
       "dependsOn": ["build"],
       "cache": false
     },
-    // The commands suites also load dist/. The extra inputs are trees the checkers
-    // read outside this package, so a change there invalidates the cached run.
+    // The commands suites also load dist/. The extra inputs are the files specs read
+    // outside this package, so a change to one alone invalidates the cached run;
+    // scripts/test-task-hashes-the-files-its-specs-read.test.ts holds the list.
+    // Unhashed: the findings-frontmatter check's scan of the whole repository.
     "test": {
       "dependsOn": ["build"],
-      "inputs": ["$TURBO_DEFAULT$", "../../todo/**", "../../CLAUDE.md"]
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "../../todo/**",
+        "../../CLAUDE.md",
+        "../../README.md",
+        "../../package.json",
+        "../../docs/**",
+        "../../.husky/*",
+        "../../.github/**",
+        "../../apps/*/package.json",
+        "../../apps/*/tsconfig*.json",
+        "../../apps/*/vitest.config.*",
+        "../../apps/*/eslint.config.*",
+        "../../packages/*/package.json",
+        "../../packages/*/tsconfig*.json",
+        "../../packages/*/vitest.config.*",
+        "../../packages/*/eslint.config.*"
+      ]
     }
   }
 }

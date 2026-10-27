@@ -1,5 +1,4 @@
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { ProjectBuilder } from "../fixtures/project-builder.js";
@@ -7,20 +6,17 @@ import {
   cleanupTempDir,
   compactCliOutput,
   readTreeSnapshot,
-  writeConfigTypes,
-  writeProjectConfigIn,
+  writeRetiredSourceFolder,
 } from "../helpers/test-utils.js";
 import { DashboardSession } from "../pages/dashboard-session.js";
 import {
   DIRS,
   EXIT_CODES,
-  FILES,
   HOME_SHORTHAND,
   STEP_TEXT,
   TIMEOUTS,
   oldSourceFolderIgnored,
 } from "../pages/constants.js";
-import { buildProjectConfig } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 
 /**
  * CLI-931, owner 2026-10-24: every run prints one line per root holding an old `.claude-src/`,
@@ -36,10 +32,6 @@ import { buildProjectConfig } from "../../src/cli/lib/__tests__/factories/config
  * fixture (a write into the old folder after the snapshot), which reddens them and nothing else.
  */
 
-/** A file the user wrote under the old folder, which no run may touch. */
-const USERS_FILE = path.join(DIRS.AGENTS, "my-agent", FILES.IDENTITY_MD);
-const USERS_FILE_BODY = "An agent the user wrote under the old folder.\n";
-
 describe("an old .claude-src folder, at a terminal", () => {
   let tempDir: string | undefined;
   let dashboard: DashboardSession | undefined;
@@ -53,27 +45,14 @@ describe("an old .claude-src folder, at a terminal", () => {
     }
   });
 
-  /** What an older release left behind: its config pair, and a file the user wrote there. */
-  async function oldFolderIn(root: string): Promise<void> {
-    await writeProjectConfigIn(
-      root,
-      DIRS.RETIRED_SOURCE,
-      buildProjectConfig({ name: "old-layout", skills: [], agents: [] }),
-    );
-    await writeConfigTypes(root, DIRS.RETIRED_SOURCE);
-    const kept = path.join(root, DIRS.RETIRED_SOURCE, USERS_FILE);
-    await mkdir(path.dirname(kept), { recursive: true });
-    await writeFile(kept, USERS_FILE_BODY);
-  }
-
   it(
     "is named as ignored above the dashboard a run naming no command opens, HOME's line first, and is left as it was",
     { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
       const { project, globalHome } = await ProjectBuilder.dualScope();
       tempDir = path.dirname(project.dir);
-      await oldFolderIn(project.dir);
-      await oldFolderIn(globalHome.dir);
+      await writeRetiredSourceFolder(project.dir);
+      await writeRetiredSourceFolder(globalHome.dir);
       const before = {
         project: await readTreeSnapshot(project.dir),
         home: await readTreeSnapshot(globalHome.dir),

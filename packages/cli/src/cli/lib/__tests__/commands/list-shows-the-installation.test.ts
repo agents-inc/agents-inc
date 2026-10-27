@@ -11,9 +11,8 @@ import { buildSkillConfig } from "../helpers/index.js";
 import { forgetTheProviderChosenForThisRun } from "../../installation/install-layout.js";
 
 /**
- * Imported from source rather than run through `dist/`, so `--provider`'s choice for the run can be
- * forgotten between specs: a dist module's state would outlive the spec that set it. The terminal
- * specs go through `runCliCommand`, whose stdout answers Ink's write callbacks.
+ * Imported from source, so `--provider`'s choice for the run can be forgotten between specs. The
+ * terminal specs go through `runCliCommand`, whose stdout answers Ink's write callbacks.
  */
 const { default: List } = await import("../../../commands/list.js");
 

@@ -14,10 +14,8 @@ import { providerInUse, sourceFolderInUse } from "../../src/cli/lib/installation
 import { stampProvenanceMarker } from "../../src/cli/lib/agents/agent-provenance.js";
 import { loadInstalledConfig } from "../../src/cli/lib/configuration/project-config.js";
 import { matrix } from "../../src/cli/lib/matrix/matrix-provider.js";
-import {
-  generateConfigSource,
-  type ConfigSourceOptions,
-} from "../../src/cli/lib/configuration/config-writer.js";
+import { generateConfigSource } from "../../src/cli/lib/configuration/config-writer.js";
+import { splitConfigByScope } from "../../src/cli/lib/configuration/config-generator.js";
 import {
   renderAgentMd,
   renderAgentYaml,
@@ -38,6 +36,7 @@ import {
 import { writeTestPluginManifest } from "../../src/cli/lib/__tests__/helpers/disk-writers.js";
 import { matchedAsWritten } from "../../src/cli/lib/__tests__/helpers/matched-as-written.js";
 import { buildClaudeTrustState } from "../../src/cli/lib/__tests__/factories/claude-settings-factories.js";
+import { buildProjectConfig } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import {
   cleanupTempDir,
   createTempDir as createTempDirBase,
@@ -215,11 +214,15 @@ export async function recordInstallSource(baseDirs: string[], source: string): P
   );
 }
 
+// The spread-import form (`globalImportPath`) is not offered: its reread holds the imported global's
+// fields as the project's own, so the round-trip guard below could never accept it.
+type InlinedGlobalOptions = { isProjectConfig: true; globalConfig: ProjectConfig };
+
 // Written through the product's own writer, so specs assert on the shape the CLI really emits.
 export async function writeProjectConfig(
   baseDir: string,
   config: Partial<FixtureProjectConfig> & Pick<FixtureProjectConfig, "name">,
-  options?: ConfigSourceOptions,
+  options?: InlinedGlobalOptions,
 ): Promise<void> {
   await writeProjectConfigIn(baseDir, sourceFolderRelIn(baseDir), config, options);
 }
@@ -229,7 +232,7 @@ export async function writeProjectConfigIn(
   baseDir: string,
   sourceFolder: string,
   config: Partial<FixtureProjectConfig> & Pick<FixtureProjectConfig, "name">,
-  options?: ConfigSourceOptions,
+  options?: InlinedGlobalOptions,
 ): Promise<void> {
   const resolved: FixtureProjectConfig = { skills: [], agents: [], ...config };
   const configDir = path.join(baseDir, sourceFolder);
@@ -247,12 +250,12 @@ async function refuseUnreachableConfig(
   baseDir: string,
   configPath: string,
   source: string,
-  options: ConfigSourceOptions | undefined,
+  options: InlinedGlobalOptions | undefined,
 ): Promise<void> {
   const reread = await loadInstalledConfig(baseDir);
   if (!reread || reread.configPath !== configPath) return;
 
-  const again = generateConfigSource(reread.config, matrix, options);
+  const again = generateConfigSource(withoutInlinedGlobal(reread.config, options), matrix, options);
   if (again === source) return;
 
   throw new Error(
@@ -261,6 +264,14 @@ async function refuseUnreachableConfig(
       `something the fixture stated — most often a stack category taken from a skill id's prefix ` +
       `rather than looked up. Written:\n${source}\nRe-written after loading:\n${again}`,
   );
+}
+
+// An inlined global reads back as part of the project; the product splits it off before writing.
+function withoutInlinedGlobal(
+  config: ProjectConfig,
+  options: InlinedGlobalOptions | undefined,
+): ProjectConfig {
+  return options ? splitConfigByScope(config).project : config;
 }
 
 export async function writeConfigTypes(
@@ -280,6 +291,25 @@ export async function writeCorruptConfig(baseDir: string, source: string): Promi
   const configDir = sourceFolderIn(baseDir);
   await mkdir(configDir, { recursive: true });
   await writeFile(path.join(configDir, STANDARD_FILES.CONFIG_TS), source);
+}
+
+/** What an older release left in `root`: its config pair, and an agent the user wrote there. */
+export async function writeRetiredSourceFolder(root: string): Promise<void> {
+  await writeProjectConfigIn(
+    root,
+    DIRS.RETIRED_SOURCE,
+    buildProjectConfig({ name: "old-layout", skills: [], agents: [] }),
+  );
+  await writeConfigTypes(root, DIRS.RETIRED_SOURCE);
+  const usersAgent = path.join(
+    root,
+    DIRS.RETIRED_SOURCE,
+    DIRS.AGENTS,
+    "my-agent",
+    FILES.IDENTITY_MD,
+  );
+  await mkdir(path.dirname(usersAgent), { recursive: true });
+  await writeFile(usersAgent, "An agent the user wrote under the old folder.\n");
 }
 
 export function stripAnsi(text: string): string {

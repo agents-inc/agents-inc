@@ -23,8 +23,8 @@ import {
 } from "../../installation/install-layout.js";
 
 /**
- * Imported from source rather than run through `dist/`, so the provider `--provider` chose for the
- * run can be forgotten between specs: a dist module's state would outlive the spec that set it.
+ * Imported from source, so the provider `--provider` chose for the run can be forgotten between
+ * specs.
  */
 const { default: Init } = await import("../../../commands/init.js");
 

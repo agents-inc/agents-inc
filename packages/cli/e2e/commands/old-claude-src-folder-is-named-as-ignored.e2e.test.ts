@@ -1,5 +1,5 @@
 import path from "path";
-import { mkdir, rm, writeFile } from "fs/promises";
+import { mkdir, rm } from "fs/promises";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { expectOnlySourceFolder } from "../assertions/source-folder-assertions.js";
@@ -19,8 +19,7 @@ import {
   readInstallTree,
   readTestFile,
   readTreeSnapshot,
-  writeConfigTypes,
-  writeProjectConfigIn,
+  writeRetiredSourceFolder,
   type InstallTree,
   type TreeSnapshotEntry,
 } from "../helpers/test-utils.js";
@@ -34,7 +33,6 @@ import {
   oldSourceFolderIgnored,
 } from "../pages/constants.js";
 import type { Provider } from "../../src/cli/consts.js";
-import { buildProjectConfig } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
@@ -72,10 +70,6 @@ type Roots = { project: string; home: string };
 
 type Trees = Record<keyof Roots, Record<string, TreeSnapshotEntry>>;
 
-/** A file the user wrote under the old folder, which no run may touch. */
-const USERS_FILE = path.join(DIRS.AGENTS, "my-agent", FILES.IDENTITY_MD);
-const USERS_FILE_BODY = "An agent the user wrote under the old folder.\n";
-
 describe("an old .claude-src folder, in the project or in HOME", () => {
   let tempDir: string | undefined;
 
@@ -100,19 +94,6 @@ describe("an old .claude-src folder, in the project or in HOME", () => {
     await mkdir(roots.project, { recursive: true });
     await mkdir(roots.home, { recursive: true });
     return roots;
-  }
-
-  /** What an older release left behind: its config pair, and a file the user wrote there. */
-  async function oldFolderIn(root: string): Promise<void> {
-    await writeProjectConfigIn(
-      root,
-      DIRS.RETIRED_SOURCE,
-      buildProjectConfig({ name: "old-layout", skills: [], agents: [] }),
-    );
-    await writeConfigTypes(root, DIRS.RETIRED_SOURCE);
-    const kept = path.join(root, DIRS.RETIRED_SOURCE, USERS_FILE);
-    await mkdir(path.dirname(kept), { recursive: true });
-    await writeFile(kept, USERS_FILE_BODY);
   }
 
   function run(args: string[], { project, home }: Roots): Promise<CLIResult> {
@@ -186,7 +167,7 @@ describe("an old .claude-src folder, in the project or in HOME", () => {
     oldFolderRoots: readonly string[],
   ): Promise<{ without: CLIResult; withOld: CLIResult; before: Trees }> {
     const without = await run(args, roots);
-    for (const root of oldFolderRoots) await oldFolderIn(root);
+    for (const root of oldFolderRoots) await writeRetiredSourceFolder(root);
     const before = await treesOf(roots);
     const withOld = await run(args, roots);
     return { without, withOld, before };
@@ -314,8 +295,8 @@ describe("an old .claude-src folder, in the project or in HOME", () => {
     const without = await run(["compile"], roots);
     const compiledWithout = await readCompiledAgents(roots.project);
     const leftWithout = await contentOf(roots);
-    await oldFolderIn(roots.home);
-    await oldFolderIn(roots.project);
+    await writeRetiredSourceFolder(roots.home);
+    await writeRetiredSourceFolder(roots.project);
     const oldFoldersBefore = await oldFoldersOf(roots);
 
     const withOld = await run(["compile"], roots);
@@ -545,8 +526,8 @@ describe("an old .claude-src folder, in the project or in HOME", () => {
 
         const without = await installInBoth();
         await emptied(roots);
-        await oldFolderIn(roots.home);
-        await oldFolderIn(roots.project);
+        await writeRetiredSourceFolder(roots.home);
+        await writeRetiredSourceFolder(roots.project);
         const oldFoldersBefore = await oldFoldersOf(roots);
         const withOld = await installInBoth();
 

@@ -799,12 +799,10 @@ describe("what edit --from says of plugins", () => {
     expect(await directoryExists(skillsDirAt(projectDir)), "the project has no local copy").toBe(
       false,
     );
-    // Not the whole call list: the switch and the scope move each ask (the spec below).
     expect(
-      vi.mocked(hostAt(projectDir).installPlugin),
-      "React's plugin is installed in this project",
-    ).toHaveBeenCalledWith(...atProject(REACT));
-    expect(hostCalls().removed, "nothing is removed").toStrictEqual([]);
+      hostCalls(),
+      "the host installs React's plugin in this project once, and removes nothing",
+    ).toStrictEqual({ installed: [atProject(REACT)], removed: [] });
   });
 
   it("asks the host once for a plugin it installs beside its global copy", async () => {
@@ -860,13 +858,9 @@ describe("what edit --from says of plugins", () => {
     ).toStrictEqual(globalSkillsBefore);
     expect(await directoryExists(globalReactCopy()), "the global copy stays").toBe(true);
     expect(await directoryExists(honoCopy), "Hono's plugin replaces its local copy").toBe(false);
-    const installed = vi.mocked(hostAt(projectDir).installPlugin);
-    expect(installed, "Hono's plugin is installed in this project").toHaveBeenCalledWith(
-      ...atProject(HONO),
-    );
-    expect(installed, "React's plugin is installed in this project").toHaveBeenCalledWith(
-      ...atProject(REACT),
-    );
-    expect(hostCalls().removed, "nothing is removed").toStrictEqual([]);
+    expect(
+      hostCalls(),
+      "the host installs each plugin in this project once, and removes nothing",
+    ).toStrictEqual({ installed: [atProject(REACT), atProject(HONO)], removed: [] });
   });
 });
