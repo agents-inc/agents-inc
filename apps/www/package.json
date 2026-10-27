@@ -11,7 +11,7 @@
     "lint": "eslint",
     "typecheck": "astro check",
     "//test": "The site-claim checks, cheapest-to-fix first. Most read dist/, hence the build dependency in turbo.json.",
-    "test": "bun scripts/check-apex-redirect.ts && bun scripts/check-type-scale.ts && bun scripts/check-webfont-delivery.ts && bun scripts/check-cli-claims.ts && bun scripts/check-editor-address.ts && bun scripts/check-syntax-theme.ts"
+    "test": "bun scripts/check-new-tab-links.ts && bun scripts/check-apex-redirect.ts && bun scripts/check-type-scale.ts && bun scripts/check-webfont-delivery.ts && bun scripts/check-cli-claims.ts && bun scripts/check-editor-address.ts && bun scripts/check-syntax-theme.ts"
   },
   "//dependencies": "font-preloads.astro imports the fontsource packages for their file URLs, so they are declared rather than hoisted. This note sits at top level because bun resolves `//` keys inside `dependencies` as packages.",
   "dependencies": {
