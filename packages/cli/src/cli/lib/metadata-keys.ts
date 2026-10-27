@@ -7,11 +7,7 @@ type MetadataField = keyof z.infer<typeof metadataValidationSchema>;
 
 export const METADATA_KEYS = {
   DISPLAY_NAME: "displayName",
-  CLI_DESCRIPTION: "cliDescription",
   CATEGORY: "category",
-  FORKED_FROM: "forkedFrom",
-  CONTENT_HASH: "contentHash",
-  USAGE_GUIDANCE: "usageGuidance",
   CUSTOM: "custom",
 } as const satisfies Record<string, MetadataField>;
 

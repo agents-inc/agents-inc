@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { spawnSync } from "child_process";
 import path from "path";
 import { chmod, mkdir, rm, writeFile, readFile, readdir, utimes } from "fs/promises";
 import { createTempDir, cleanupTempDir, fileExists } from "../__tests__/test-fs-utils";
+import { delay } from "../__tests__/test-constants";
 import { sanitizeSourceForCache } from "./source-fetcher";
 
 let mockCacheDir: string;
@@ -48,16 +50,33 @@ const SAVED_FILE = "saved-skill.md";
 const GIGET_TEMPLATE = "org-repo";
 const GIGET_VERSION = "main";
 
-/** A ref as giget's github provider resolves it: `version` names the tarball it saves. */
-type GigetRef = { source: string; tar: string; version: string };
+/**
+ * A ref as giget's github provider resolves it: `template` names the folder its tarballs are saved
+ * in, `version` the tarball.
+ */
+type GigetRef = { source: string; tar: string; template: string; version: string };
 
-const MAIN: GigetRef = { source: SOURCE, tar: TARBALL, version: GIGET_VERSION };
+const MAIN: GigetRef = {
+  source: SOURCE,
+  tar: TARBALL,
+  template: GIGET_TEMPLATE,
+  version: GIGET_VERSION,
+};
 
 /** giget saves this branch's tarball a folder deeper than any other: `feature/x.tar.gz`. */
 const SLASHED_BRANCH: GigetRef = {
   source: `${SOURCE}#feature/x`,
   tar: "https://api.github.com/repos/org/repo/tarball/feature/x",
+  template: GIGET_TEMPLATE,
   version: "feature/x",
+};
+
+/** Another marketplace under the same provider, so giget saves its tarball beside MAIN's folder. */
+const OTHER_MARKETPLACE: GigetRef = {
+  source: "github:org/other",
+  tar: "https://api.github.com/repos/org/other/tarball/main",
+  template: "org-other",
+  version: GIGET_VERSION,
 };
 
 /** Saved by an earlier run: older than anything a download in this test writes. */
@@ -115,11 +134,20 @@ const KEPT_OVER = [405, 500, 501, 502, 503, 504, 599] as const;
 const SERVICE_UNAVAILABLE = 503;
 
 /** Mirrors `sourceRefusedUsingCache`. */
-function refusedWarning(status: number): string {
-  return `${SOURCE} refused the request (${status}) — using the cached copy, which may be out of date.`;
+function refusedWarning(status: number, source: string = SOURCE): string {
+  return `${source} refused the request (${status}) — using the cached copy, which may be out of date.`;
 }
 
 const HEAD_METHOD_REFUSED = 405;
+
+/** Mirrors `GIGET_FOLDER_LOCK`. */
+const GIGET_FOLDER_LOCK = "agents-inc.lock";
+
+/** What follows the process id in a lock this run did not take. */
+const HOLDER_THIS_RUN_NEVER_ISSUED = "a-holder-left-by-a-killed-run";
+
+/** Past the marks a load writes before its download: the second load's, while the first's runs. */
+const SECOND_LOAD_HEAD_START_MS = 250;
 
 function refusal(status: number): Response {
   return new Response(null, { status });
@@ -155,8 +183,13 @@ describe("source-fetcher revalidation", () => {
     return path.join(mockCacheDir, "sources", sanitizeSourceForCache(source));
   }
 
-  function gigetTarballOf({ version }: GigetRef): string {
-    return path.join(tempDir, "xdg", "giget", "github", GIGET_TEMPLATE, `${version}.tar.gz`);
+  /** Where giget saves every github marketplace's tarballs, each in its template's folder. */
+  function gigetProviderFolder(): string {
+    return path.join(tempDir, "xdg", "giget", "github");
+  }
+
+  function gigetTarballOf({ template, version }: GigetRef): string {
+    return path.join(gigetProviderFolder(), template, `${version}.tar.gz`);
   }
 
   afterEach(async () => {
@@ -203,7 +236,7 @@ describe("source-fetcher revalidation", () => {
       await writeFile(`${tarball}.json`, JSON.stringify({}));
       const dir = await extractionDir(options);
       await writeFile(path.join(dir, FRESH_FILE), FRESH_CONTENT);
-      return { source, dir, tar: ref.tar, name: GIGET_TEMPLATE, version: ref.version };
+      return { source, dir, tar: ref.tar, name: ref.template, version: ref.version };
     };
   }
 
@@ -215,7 +248,7 @@ describe("source-fetcher revalidation", () => {
     return async (source, options) => {
       const dir = await extractionDir(options);
       await writeFile(path.join(dir, SAVED_FILE), "content from the tarball giget saved");
-      return { source, dir, tar: ref.tar, name: GIGET_TEMPLATE, version: ref.version };
+      return { source, dir, tar: ref.tar, name: ref.template, version: ref.version };
     };
   }
 
@@ -1310,6 +1343,329 @@ describe("source-fetcher revalidation", () => {
         tar: SLASHED_BRANCH.tar,
         etag: PUBLISHED_ETAG,
       });
+    });
+  });
+
+  /**
+   * A filesystem storing whole seconds leaves a file giget rewrites within the second it last wrote
+   * it at the time it already had: stood in for by setting each time giget writes back to the second
+   * its saved tarball and record carry. ctime, which no process can set, still moves here. The host
+   * refuses the HEAD giget asks with, so giget records no ETag and fetches on every run.
+   */
+  describe("a tarball giget rewrites within the second it wrote the last, on a filesystem storing whole seconds", () => {
+    const askingItself = () => askingEachMarketplaceItself(() => fetchFromSource(SOURCE));
+
+    /** A marketplace that has not moved serves the bytes giget saved. */
+    const DOWNLOADED_TARBALLS = [
+      { serves: "content that moved on", bytes: FETCHED_TARBALL_CONTENT },
+      { serves: "the content giget saved", bytes: SAVED_TARBALL_CONTENT },
+    ] as const;
+
+    /** As init and edit load from the marketplace (`stoppingOnARefusal`), and as every other load. */
+    const OUTSIDE_DOCTOR = [
+      { load: "a load outside doctor", stopsOnARefusal: false },
+      { load: "a load that stops on a refusal", stopsOnARefusal: true },
+    ] as const;
+
+    function loadingOutsideDoctor(stopsOnARefusal: boolean): ReturnType<typeof fetchFromSource> {
+      const load = () => fetchFromSource(SOURCE);
+      return stopsOnARefusal ? stoppingOnARefusal(load) : load();
+    }
+
+    async function standAtTheSavedSecond(file: string): Promise<void> {
+      await utimes(file, EARLIER_RUN, EARLIER_RUN);
+    }
+
+    /** giget's fetch past a refused HEAD: the tarball, a record with no ETag, then the extract. */
+    function downloadingWithinTheSavedSecond(bytes: string): GigetAnswer {
+      return async (source, options) => {
+        const tarball = gigetTarballOf(MAIN);
+        await writeFile(tarball, bytes);
+        await writeFile(`${tarball}.json`, JSON.stringify({}));
+        await standAtTheSavedSecond(tarball);
+        await standAtTheSavedSecond(`${tarball}.json`);
+        const dir = await extractionDir(options);
+        await writeFile(path.join(dir, FRESH_FILE), FRESH_CONTENT);
+        return { source, dir, tar: TARBALL, name: GIGET_TEMPLATE, version: GIGET_VERSION };
+      };
+    }
+
+    beforeEach(async () => {
+      await rm(cacheDir, { recursive: true });
+      await seedGigetTarball();
+      await standAtTheSavedSecond(`${gigetTarballOf(MAIN)}.json`);
+      vi.stubGlobal("fetch", vi.fn(refusingOnlyHead(headResponse(PUBLISHED_ETAG))));
+    });
+
+    it.each(DOWNLOADED_TARBALLS)(
+      "keeps the download when doctor must reach a marketplace serving $serves",
+      async ({ bytes }) => {
+        mockDownloadTemplate.mockImplementation(downloadingWithinTheSavedSecond(bytes));
+
+        const result = await askingItself();
+
+        expect(result).toStrictEqual({
+          path: cacheDir,
+          fromCache: false,
+          unreachable: false,
+          source: SOURCE,
+        });
+        expect(await readdir(cacheDir)).toStrictEqual([FRESH_FILE]);
+        expect(JSON.parse(await readFile(recordPath, "utf-8"))).toStrictEqual({
+          tar: TARBALL,
+          etag: PUBLISHED_ETAG,
+        });
+      },
+    );
+
+    it("keeps a download giget wrote in a later second when doctor must reach the marketplace", async () => {
+      stubDownload();
+
+      const result = await askingItself();
+
+      expect(result).toStrictEqual({
+        path: cacheDir,
+        fromCache: false,
+        unreachable: false,
+        source: SOURCE,
+      });
+      expect(await readdir(cacheDir)).toStrictEqual([FRESH_FILE]);
+      expect(JSON.parse(await readFile(recordPath, "utf-8"))).toStrictEqual({
+        tar: TARBALL,
+        etag: PUBLISHED_ETAG,
+      });
+    });
+
+    it("refuses the tarball giget saved in that second when doctor must reach the marketplace and giget extracts it unfetched", async () => {
+      stubSavedTarballExtract();
+
+      await expect(askingItself()).rejects.toMatchObject({
+        name: "MarketplaceUnreachableError",
+        source: SOURCE,
+        reason: DOWNLOAD_FAILED,
+      });
+
+      expect(await readdir(path.dirname(cacheDir)), "no copy and no record").toStrictEqual([]);
+    });
+
+    it.each(OUTSIDE_DOCTOR)(
+      "says no refusal over the download when $load fetches within that second",
+      async ({ stopsOnARefusal }) => {
+        mockDownloadTemplate.mockImplementation(
+          downloadingWithinTheSavedSecond(FETCHED_TARBALL_CONTENT),
+        );
+
+        const result = await loadingOutsideDoctor(stopsOnARefusal);
+
+        expect(result.fromCache, "no saved copy stood in").toBe(false);
+        expect(await readdir(cacheDir)).toStrictEqual([FRESH_FILE]);
+        expect(JSON.parse(await readFile(recordPath, "utf-8"))).toStrictEqual({ tar: TARBALL });
+        expect(
+          warn,
+          "the copy is the one this run downloaded, so no stand-in's refusal is said",
+        ).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(OUTSIDE_DOCTOR)(
+      "says no refusal over a download giget wrote in a later second when $load fetches it",
+      async ({ stopsOnARefusal }) => {
+        stubDownload();
+
+        const result = await loadingOutsideDoctor(stopsOnARefusal);
+
+        expect(result.fromCache).toBe(false);
+        expect(await readdir(cacheDir)).toStrictEqual([FRESH_FILE]);
+        expect(JSON.parse(await readFile(recordPath, "utf-8"))).toStrictEqual({ tar: TARBALL });
+        expect(warn).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(OUTSIDE_DOCTOR)(
+      "says the marketplace refused when $load keeps the tarball giget saved in that second",
+      async ({ stopsOnARefusal }) => {
+        stubSavedTarballExtract();
+
+        const result = await loadingOutsideDoctor(stopsOnARefusal);
+
+        expect(await readdir(result.path)).toStrictEqual([SAVED_FILE]);
+        expect(warn).toHaveBeenCalledExactlyOnceWith(refusedWarning(HEAD_METHOD_REFUSED));
+      },
+    );
+  });
+
+  /**
+   * Two marketplaces under giget's one github folder, as two runs on one machine load them. The host
+   * refuses every request, so each download fails and giget extracts the tarball it saved for that
+   * marketplace, writing nothing.
+   */
+  describe("two marketplaces downloading at once", () => {
+    const BOTH = [MAIN, OTHER_MARKETPLACE] as const;
+
+    function gigetFolderLock(): string {
+      return path.join(gigetProviderFolder(), GIGET_FOLDER_LOCK);
+    }
+
+    /** Each saved record reads as giget wrote it, and nothing is left beside giget's own files. */
+    async function expectGigetCacheAsSaved(): Promise<void> {
+      for (const ref of BOTH) {
+        expect(await readFile(`${gigetTarballOf(ref)}.json`, "utf-8")).toBe(
+          JSON.stringify({ etag: CACHED_ETAG }),
+        );
+        expect(await readdir(path.dirname(gigetTarballOf(ref)))).toStrictEqual([
+          `${GIGET_VERSION}.tar.gz`,
+          `${GIGET_VERSION}.tar.gz.json`,
+        ]);
+      }
+      expect((await readdir(gigetProviderFolder())).sort()).toStrictEqual([
+        OTHER_MARKETPLACE.template,
+        MAIN.template,
+      ]);
+    }
+
+    beforeEach(async () => {
+      await rm(cacheDir, { recursive: true });
+      await Promise.all(BOTH.map((ref) => seedGigetTarball(CACHED_ETAG, ref)));
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(refusal(HEAD_METHOD_REFUSED)));
+    });
+
+    it("says each marketplace refused, and leaves giget's records as saved, when the second downloads while the first still is", async () => {
+      let firstDownloading = () => {};
+      const firstStarted = new Promise<void>((resolve) => {
+        firstDownloading = resolve;
+      });
+      let failFirst = () => {};
+      const firstFailing = new Promise<void>((resolve) => {
+        failFirst = resolve;
+      });
+      let secondDownloading = () => {};
+      const secondStarted = new Promise<void>((resolve) => {
+        secondDownloading = resolve;
+      });
+      mockDownloadTemplate.mockImplementation(async (source, options) => {
+        if (source === OTHER_MARKETPLACE.source) {
+          secondDownloading();
+          return extractingSaved(OTHER_MARKETPLACE)(source, options);
+        }
+        firstDownloading();
+        await firstFailing;
+        return extractingSaved(MAIN)(source, options);
+      });
+
+      const first = fetchFromSource(MAIN.source);
+      await firstStarted;
+      const second = fetchFromSource(OTHER_MARKETPLACE.source);
+      await Promise.race([secondStarted, delay(SECOND_LOAD_HEAD_START_MS)]);
+      failFirst();
+
+      expect(await Promise.all([first, second])).toStrictEqual(
+        BOTH.map(({ source }) => ({
+          path: cacheDirOf(source),
+          fromCache: false,
+          unreachable: false,
+          source,
+        })),
+      );
+      expect(warn).toHaveBeenCalledTimes(BOTH.length);
+      expect(warn).toHaveBeenCalledWith(refusedWarning(HEAD_METHOD_REFUSED, MAIN.source));
+      expect(warn).toHaveBeenCalledWith(
+        refusedWarning(HEAD_METHOD_REFUSED, OTHER_MARKETPLACE.source),
+      );
+      await expectGigetCacheAsSaved();
+    });
+
+    it("keeps another marketplace's download whole while a run discards the giget folder of one that moved on", async () => {
+      await mkdir(cacheDir, { recursive: true });
+      await seedCachedCopy({ tar: TARBALL, etag: CACHED_ETAG });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((url: string) =>
+          url === TARBALL ? headResponse(PUBLISHED_ETAG) : refusal(HEAD_METHOD_REFUSED),
+        ),
+      );
+      let otherDownloading = () => {};
+      const otherStarted = new Promise<void>((resolve) => {
+        otherDownloading = resolve;
+      });
+      let failOther = () => {};
+      const otherFailing = new Promise<void>((resolve) => {
+        failOther = resolve;
+      });
+      mockDownloadTemplate.mockImplementation(async (source, options) => {
+        if (source === MAIN.source) return downloading(MAIN)(source, options);
+        otherDownloading();
+        await otherFailing;
+        return extractingSaved(OTHER_MARKETPLACE)(source, options);
+      });
+
+      const other = fetchFromSource(OTHER_MARKETPLACE.source);
+      await otherStarted;
+      const movedOn = fetchFromSource(MAIN.source);
+      await delay(SECOND_LOAD_HEAD_START_MS);
+      failOther();
+
+      const [otherResult, movedOnResult] = await Promise.all([other, movedOn]);
+      expect(await readdir(otherResult.path)).toStrictEqual([SAVED_FILE]);
+      expect(await readdir(movedOnResult.path)).toStrictEqual([FRESH_FILE]);
+      expect(warn).toHaveBeenCalledExactlyOnceWith(
+        refusedWarning(HEAD_METHOD_REFUSED, OTHER_MARKETPLACE.source),
+      );
+      expect(await readFile(`${gigetTarballOf(OTHER_MARKETPLACE)}.json`, "utf-8")).toBe(
+        JSON.stringify({ etag: CACHED_ETAG }),
+      );
+      expect(await readFile(gigetTarballOf(MAIN), "utf-8")).toBe(FETCHED_TARBALL_CONTENT);
+      expect((await readdir(gigetProviderFolder())).sort()).toStrictEqual([
+        OTHER_MARKETPLACE.template,
+        MAIN.template,
+      ]);
+    });
+
+    it("downloads past a lock on giget's folder that a run since ended left, leaving none behind", async () => {
+      await writeFile(gigetFolderLock(), String(spawnSync(process.execPath, ["-e", ""]).pid));
+      stubSavedTarballExtract();
+
+      const result = await fetchFromSource(SOURCE);
+
+      expect(await readdir(result.path)).toStrictEqual([SAVED_FILE]);
+      expect(warn).toHaveBeenCalledExactlyOnceWith(refusedWarning(HEAD_METHOD_REFUSED));
+      await expectGigetCacheAsSaved();
+    });
+
+    /** As a container restarted over the same cache folder hands a new run its killed run's id. */
+    it("downloads past a lock naming this run's own process id that it never took, leaving none behind", async () => {
+      await writeFile(gigetFolderLock(), `${process.pid} ${HOLDER_THIS_RUN_NEVER_ISSUED}`);
+      stubSavedTarballExtract();
+
+      const result = await fetchFromSource(SOURCE);
+
+      expect(await readdir(result.path)).toStrictEqual([SAVED_FILE]);
+      expect(warn).toHaveBeenCalledExactlyOnceWith(refusedWarning(HEAD_METHOD_REFUSED));
+      await expectGigetCacheAsSaved();
+    });
+
+    it("takes over a lock held longer than any download, putting back the records its holder marked", async () => {
+      let firstDownloading = () => {};
+      const firstStarted = new Promise<void>((resolve) => {
+        firstDownloading = resolve;
+      });
+      mockDownloadTemplate.mockImplementation(async (source, options) => {
+        if (source === OTHER_MARKETPLACE.source) {
+          return extractingSaved(OTHER_MARKETPLACE)(source, options);
+        }
+        firstDownloading();
+        return new Promise<never>(() => {});
+      });
+
+      void fetchFromSource(MAIN.source);
+      await firstStarted;
+      await utimes(gigetFolderLock(), EARLIER_RUN, EARLIER_RUN);
+      const second = await fetchFromSource(OTHER_MARKETPLACE.source);
+
+      expect(await readdir(second.path)).toStrictEqual([SAVED_FILE]);
+      expect(warn).toHaveBeenCalledExactlyOnceWith(
+        refusedWarning(HEAD_METHOD_REFUSED, OTHER_MARKETPLACE.source),
+      );
+      await expectGigetCacheAsSaved();
     });
   });
 });

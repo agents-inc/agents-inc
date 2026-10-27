@@ -1,7 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { readFileSync } from "fs";
-import { rename, stat } from "fs/promises";
+import { open, rename, stat } from "fs/promises";
+import { setTimeout as sleep } from "timers/promises";
 import { isRecord } from "../../utils/type-guards.js";
 import { downloadTemplate, type DownloadTemplateOptions, type DownloadTemplateResult } from "giget";
 import os from "os";
@@ -257,12 +258,10 @@ function gigetCacheRoot(): string {
 /** Clears giget's tarball/ETag cache so downloadTemplate() fetches fresh. */
 async function clearGigetCache(source: string): Promise<void> {
   const gigetDir = getGigetCacheDir(source);
-  if (!gigetDir) return;
+  if (!gigetDir || !(await directoryExists(gigetDir))) return;
 
-  if (await directoryExists(gigetDir)) {
-    verbose(`Clearing giget cache: ${gigetDir}`);
-    await remove(gigetDir);
-  }
+  verbose(`Clearing giget cache: ${gigetDir}`);
+  await holdingGigetFolder(path.dirname(gigetDir), () => remove(gigetDir));
 }
 
 async function fetchFromRemoteSource(source: string, subdir?: string): Promise<FetchResult> {
@@ -431,7 +430,9 @@ async function downloadPast(
     throw new MarketplaceUnreachableError(source, ONLY_A_SAVED_COPY_CAME_BACK);
   }
 
-  await withTarballSetAside(savedTarball.path, download);
+  await holdingGigetFolder(gigetProviderDir(source), () =>
+    withTarballSetAside(savedTarball.path, download),
+  );
 }
 
 /**
@@ -523,6 +524,8 @@ const gigetTarballRecordSchema = z.object({ etag: z.string().min(1).optional() }
  * giget answers a failed download with the tarball it saved earlier, and its own ETag match the
  * same way: it extracts the saved tarball, writes nothing to its cache and says nothing. So a
  * tarball this download did not write is the saved one, carrying the ETag giget saved it under.
+ * Which it wrote is read off the records marked before it ran, never a tarball's time, which a
+ * filesystem keeping whole seconds leaves unmoved by a rewrite within the second.
  */
 async function gigetDownload(
   source: string,
@@ -530,15 +533,28 @@ async function gigetDownload(
   options: DownloadTemplateOptions,
 ): Promise<GigetDownload> {
   const providerDir = gigetProviderDir(source);
-  const timesBefore = await tarballTimes(providerDir);
-  const result = await downloadTemplate(fullSource, options);
+  return holdingGigetFolder(providerDir, () =>
+    downloadOverMarkedRecords(providerDir, fullSource, options),
+  );
+}
 
-  const tarball = path.join(providerDir, gigetTarballOf(result));
-  const writtenByThisDownload = timesBefore.get(tarball) !== (await modifiedAt(tarball));
-  if (writtenByThisDownload) return { result };
+async function downloadOverMarkedRecords(
+  providerDir: string,
+  fullSource: string,
+  options: DownloadTemplateOptions,
+): Promise<GigetDownload> {
+  const marks = await markSavedRecords(providerDir);
+  try {
+    const result = await downloadTemplate(fullSource, options);
 
-  verbose(`giget extracted the tarball it saved earlier, not a download: ${tarball}`);
-  return { result, savedTarball: { path: tarball, etag: await etagSavedWith(tarball) } };
+    const tarball = path.join(providerDir, gigetTarballOf(result));
+    if (await writtenByThisDownload(marks.get(tarball))) return { result };
+
+    verbose(`giget extracted the tarball it saved earlier, not a download: ${tarball}`);
+    return { result, savedTarball: { path: tarball, etag: await etagSavedWith(tarball) } };
+  } finally {
+    await Promise.all([...marks.values()].map(unmark));
+  }
 }
 
 /** Every remote source names its provider: `validateSourceFormat` refuses one that does not. */
@@ -548,15 +564,197 @@ function gigetProviderDir(source: string): string {
   return path.join(gigetCacheRoot(), provider);
 }
 
-/** Keyed by path, as `gigetTarballOf` locates the one a download extracted. */
-async function tarballTimes(providerDir: string): Promise<ReadonlyMap<string, number | undefined>> {
-  const tarballs = await glob(GIGET_TARBALLS, providerDir);
-  const paths = tarballs.map((tarball) => path.join(providerDir, tarball));
-  return new Map(await Promise.all(paths.map(async (at) => [at, await modifiedAt(at)] as const)));
+/**
+ * Held by one run at a time, from before it marks, sets aside or removes anything in giget's folder
+ * until all of it is back: a download marks every saved tarball's record there, so another run in
+ * between would read that mark as giget's rewrite, or put back a record already gone.
+ */
+const GIGET_FOLDER_LOCK = "agents-inc.lock";
+
+/** Fails where the file is there already: whoever creates the lock holds it. */
+const EXCLUSIVE_CREATE = "wx";
+
+const LOCK_RETRY_MS = 100;
+
+/** Past any download's length: its holder's process id may since name another process. */
+const LOCK_ABANDONED_MS = 10 * 60 * 1000;
+
+/** The giget folder held here, so a download inside a hold does not wait on its own lock. */
+const gigetFolderHeld = new AsyncLocalStorage<string>();
+
+/** Every holder this process is waiting with or holding a lock as. */
+const holdersInThisProcess = new Set<string>();
+
+/** `holder` opens with its process id, so a waiting run can tell whether that process still runs. */
+type FolderLock = { path: string; holder: string };
+
+async function holdingGigetFolder<T>(folder: string, body: () => Promise<T>): Promise<T> {
+  if (gigetFolderHeld.getStore() === folder) return body();
+
+  const lock = lockFor(folder);
+  try {
+    await lockGigetFolder(folder, lock);
+    return await gigetFolderHeld.run(folder, body);
+  } finally {
+    await letGo(lock);
+  }
 }
 
-async function modifiedAt(file: string): Promise<number | undefined> {
-  return (await fileExists(file)) ? (await stat(file)).mtimeMs : undefined;
+/** This process's from before the lock names it, so no waiter here takes it for an ended run's. */
+function lockFor(folder: string): FolderLock {
+  const holder = `${process.pid} ${randomUUID()}`;
+  holdersInThisProcess.add(holder);
+  return { path: path.join(folder, GIGET_FOLDER_LOCK), holder };
+}
+
+/**
+ * This process's until it is removed, so no waiter here takes it over mid-release; one that could not
+ * be removed is left for the next hold to take over.
+ */
+async function letGo({ path: lockPath, holder }: FolderLock): Promise<void> {
+  try {
+    await removeLockHeldBy(lockPath, holder);
+  } finally {
+    holdersInThisProcess.delete(holder);
+  }
+}
+
+async function lockGigetFolder(folder: string, lock: FolderLock): Promise<void> {
+  await ensureDir(folder);
+  while (!(await created(lock))) {
+    const holder = await readFileOptional(lock.path);
+    if (await abandoned(lock.path, holder)) {
+      verbose(`Taking over the lock on ${folder}: its run ended, or held it past any download`);
+      await removeLockHeldBy(lock.path, holder);
+    } else {
+      await sleep(LOCK_RETRY_MS);
+    }
+  }
+}
+
+/** Created empty, then written through `writeFile` as every write is: until then it names no process. */
+async function created({ path: lockPath, holder }: FolderLock): Promise<boolean> {
+  try {
+    await (await open(lockPath, EXCLUSIVE_CREATE)).close();
+  } catch (error) {
+    if (failedWith(error, "EEXIST")) return false;
+    throw error;
+  }
+  await writeFile(lockPath, holder);
+  return true;
+}
+
+async function abandoned(lockPath: string, holder: string): Promise<boolean> {
+  return holderEnded(holder) || (await outlastedAnyDownload(lockPath));
+}
+
+/**
+ * A lock created but not yet written names no process, so it is not taken for ended. One naming this
+ * process under a holder it is not using was left by an ended process that had the same id.
+ */
+function holderEnded(holder: string): boolean {
+  const pid = Number.parseInt(holder, 10);
+  if (pid === process.pid) return !holdersInThisProcess.has(holder);
+  return pid > 0 && !processRunning(pid);
+}
+
+async function outlastedAnyDownload(lockPath: string): Promise<boolean> {
+  const age = await ageOf(lockPath);
+  return age !== undefined && age > LOCK_ABANDONED_MS;
+}
+
+/** Signal 0 signals nothing and fails only where no such process is: EPERM is another user's. */
+function processRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return !failedWith(error, "ESRCH");
+  }
+}
+
+/** Undefined once it is gone: its holder let it go since it was read. */
+async function ageOf(file: string): Promise<number | undefined> {
+  try {
+    return Date.now() - (await stat(file)).mtimeMs;
+  } catch (error) {
+    if (failedWith(error, "ENOENT")) return undefined;
+    throw error;
+  }
+}
+
+/** Read again first: a run that took it over as abandoned holds it now. */
+async function removeLockHeldBy(lockPath: string, holder: string): Promise<void> {
+  if ((await readFileOptional(lockPath)) === holder) await remove(lockPath);
+}
+
+function failedWith(error: unknown, code: string): boolean {
+  return isRecord(error) && error.code === code;
+}
+
+/**
+ * A saved tarball's record, marked so that giget's rewrite of it shows. `held`: a record was there,
+ * kept untouched beside the marked one, so it goes back as it was, time and all.
+ */
+type MarkedRecord = { record: string; marked: string; held: boolean };
+
+/** Whitespace to JSON, so giget reads the record unchanged; `JSON.stringify` never opens with it. */
+const RECORD_MARK = "\n";
+
+/** What giget reads a tarball's absent record as. */
+const NO_RECORD = "{}";
+
+/** Named apart from `SET_ASIDE_SUFFIX`, so a put-back never takes the file doctor set aside. */
+const UNMARKED_SUFFIX = ".unmarked";
+
+/** Keyed by path, as `gigetTarballOf` locates the one a download extracted. */
+async function markSavedRecords(providerDir: string): Promise<ReadonlyMap<string, MarkedRecord>> {
+  const tarballs = await glob(GIGET_TARBALLS, providerDir);
+  const paths = tarballs.map((tarball) => path.join(providerDir, tarball));
+  return new Map(await Promise.all(paths.map(async (at) => [at, await markRecordOf(at)] as const)));
+}
+
+async function markRecordOf(tarball: string): Promise<MarkedRecord> {
+  const record = gigetRecordOf(tarball);
+  await putBackLeftUnmarked(record);
+  const held = await fileExists(record);
+  const marked = `${RECORD_MARK}${await readFileOptional(record, NO_RECORD)}`;
+  if (held) await rename(record, unmarkedOf(record));
+  await writeFile(record, marked);
+  return { record, marked, held };
+}
+
+/** Under the lock no running download has a record marked: one kept here outlived its run. */
+async function putBackLeftUnmarked(record: string): Promise<void> {
+  if (await fileExists(unmarkedOf(record))) await rename(unmarkedOf(record), record);
+}
+
+function unmarkedOf(record: string): string {
+  return `${record}${UNMARKED_SUFFIX}`;
+}
+
+/** A tarball no record was marked for was not saved before this download, so it wrote it. */
+async function writtenByThisDownload(mark: MarkedRecord | undefined): Promise<boolean> {
+  return mark === undefined || (await rewritten(mark));
+}
+
+/**
+ * giget writes a tarball's record only once the download of it completes, and removes none, so a
+ * record gone since it was marked is read as left alone.
+ */
+async function rewritten({ record, marked }: MarkedRecord): Promise<boolean> {
+  return (await readFileOptional(record, marked)) !== marked;
+}
+
+/** A record giget rewrote stays; one it left marked is put back as it was. */
+async function unmark(mark: MarkedRecord): Promise<void> {
+  const { record, held } = mark;
+  if (await rewritten(mark)) {
+    if (held) await remove(unmarkedOf(record));
+    return;
+  }
+  if (held) await rename(unmarkedOf(record), record);
+  else await remove(record);
 }
 
 /** Narrowed from giget's untyped result, as `downloadTemplate` names the tarball it extracts. */

@@ -27,11 +27,14 @@ export {
 
 export type { Provider } from "@workspace/compile";
 
+const BUILD_DIR = "dist";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Built dist/ is flat (one level up); src/cli/ is two.
-const isInDist = __dirname.includes("/dist");
+// Built dist/ is flat (one level up); src/cli/ is two. Only the folder this module sits in
+// decides it: a "dist" further up a checkout's path is not the build.
+const isInDist = path.basename(__dirname) === BUILD_DIR;
 export const PROJECT_ROOT = isInDist
   ? path.resolve(__dirname, "..")
   : path.resolve(__dirname, "../..");
