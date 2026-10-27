@@ -33,11 +33,11 @@ import {
   providerNamedBy,
   refuseAnAmbiguousInstallation,
 } from "../lib/installation/provider-flag.js";
-import { copySkillsToLocalFlattened, type CopiedSkill } from "../lib/skills/index.js";
+import { copyMarketplaceSkillsToLocalFlattened, type CopiedSkill } from "../lib/skills/index.js";
 import { INCOMPLETE_WORK_RECOVERY, INFO_MESSAGES } from "../utils/messages.js";
 import { getErrorMessage } from "../utils/errors.js";
 import { bytewise, plural } from "../utils/string.js";
-import type { MergedSkillsMatrix } from "../types/index.js";
+import type { MergedSkillsMatrix, ResolvedSkill } from "../types/index.js";
 
 const EJECT_TYPES = ["agent-partials", "templates", "skills", "all"] as const;
 type EjectType = (typeof EJECT_TYPES)[number];
@@ -249,8 +249,8 @@ export default class Eject extends BaseCommand {
   }
 
   /**
-   * Writes a minimal config so `compile` works afterwards. A refusal is reported as incomplete
-   * work rather than thrown, because the ejection has already landed.
+   * Writes a minimal config where there is none. A refusal is reported as incomplete work rather
+   * than thrown, because the ejection has already landed.
    */
   private async ensureConfig(
     projectDir: string,
@@ -520,8 +520,9 @@ type EjectSkillsResult =
     };
 
 /**
- * Only the loaded marketplace's own non-local skills: others' skills are not on disk here. One
- * already in the destination is skipped first, as the local copy may be the one there.
+ * Only the loaded marketplace's own skills, each copied from the marketplace: others' are not on
+ * disk here. One already in the destination is skipped unless --force; a local copy anywhere else
+ * is the user's own and is left out either way.
  */
 async function ejectSkills(options: EjectSkillsOptions): Promise<EjectSkillsResult> {
   const { destinationDir, force, sourceResult, matrix } = options;
@@ -529,7 +530,9 @@ async function ejectSkills(options: EjectSkillsOptions): Promise<EjectSkillsResu
   const marketplaceSkillIds = [...sourceResult.marketplaceSkillIds];
   const alreadyThere = force ? [] : await alreadyIn(destinationDir, marketplaceSkillIds);
   const notThere = marketplaceSkillIds.filter((skillId) => !alreadyThere.includes(skillId));
-  const skillIds = notThere.filter((skillId) => !matrix.skills[skillId]?.local);
+  const skillIds = notThere.filter(
+    (skillId) => !isLocalCopyElsewhere(matrix.skills[skillId], destinationDir),
+  );
 
   if (skillIds.length === 0 && alreadyThere.length > 0) {
     return {
@@ -544,7 +547,11 @@ async function ejectSkills(options: EjectSkillsOptions): Promise<EjectSkillsResu
 
   await ensureDir(destinationDir);
 
-  const copiedSkills = await copySkillsToLocalFlattened(skillIds, destinationDir, sourceResult);
+  const copiedSkills = await copyMarketplaceSkillsToLocalFlattened(
+    skillIds,
+    destinationDir,
+    sourceResult,
+  );
 
   const sourceLabel = sourceResult.isLocal
     ? sourceResult.sourcePath
@@ -556,6 +563,13 @@ async function ejectSkills(options: EjectSkillsOptions): Promise<EjectSkillsResu
     skippedSkillCount: alreadyThere.length,
     sourceLabel,
   };
+}
+
+/** Local, and not the copy at `<destinationDir>/<id>`, which is where an eject writes the skill. */
+function isLocalCopyElsewhere(skill: ResolvedSkill | undefined, destinationDir: string): boolean {
+  if (!skill?.local) return false;
+  if (!skill.localPath) return true;
+  return path.resolve(skill.localPath) !== path.resolve(destinationDir, skill.id);
 }
 
 /** Where the host of the installation `projectDir` roots reads skills. */

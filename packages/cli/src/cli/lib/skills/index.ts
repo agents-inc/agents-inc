@@ -1,6 +1,10 @@
 export { type ForkedFromMetadata, readForkedFromMetadata } from "./skill-metadata";
 
-export { type CopiedSkill, copySkillsToLocalFlattened } from "./skill-copier";
+export {
+  type CopiedSkill,
+  copyMarketplaceSkillsToLocalFlattened,
+  copySkillsToLocalFlattened,
+} from "./skill-copier";
 
 export {
   compileSkillPlugin,

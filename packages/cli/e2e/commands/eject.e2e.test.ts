@@ -12,6 +12,7 @@ import {
 import {
   cleanupFixture,
   cleanupTempDir,
+  compactCliOutput,
   configTsPath,
   createTempDir,
   directoryExists,
@@ -474,24 +475,92 @@ describe("eject command", () => {
     expect(output).toContain("already exist");
   });
 
-  // Known bug: a re-eject with --force exits 0, but `copySkillsToLocalFlattened` returns nothing,
-  // so no "skills ejected" line.
-  it.fails("should overwrite existing skills with --force", { retry: 0 }, async () => {
-    tempDir = await createTempDir();
+  /**
+   * An earlier eject's copies load as local skills. Both the eject's skill filter and the copier
+   * pass over a local skill (the copier records one already at its destination in place), so the
+   * restored SKILL.md, not the success line, shows that --force overwrote anything. The edit is
+   * appended: a SKILL.md without its frontmatter no longer loads as a local skill, so replacing the
+   * whole file would make the edited skill the one skill copied.
+   */
+  describe("over an earlier eject, after the user edited a skill it wrote", () => {
+    const EDITED_SKILL = E2E_SKILL.react.id;
+    const USERS_OWN_EDIT = "the user's own edit to an ejected skill";
 
-    const { exitCode: setupExitCode } = await CLI.run(
-      ["eject", "skills"],
-      await projectUnderGlobalSource(tempDir),
-    );
-    expect(setupExitCode).toBe(EXIT_CODES.SUCCESS);
+    let project: ProjectHandle;
+    let editedSkillMd: string;
+    let asEjected: string;
+    let edited: string;
+    let configBefore: string;
 
-    const { exitCode, stdout } = await CLI.run(
-      ["eject", "skills", "--force"],
-      await projectUnderGlobalSource(tempDir),
-    );
+    async function ejectThenEdit(type: "skills" | "all"): Promise<void> {
+      tempDir = await createTempDir();
+      project = await projectUnderGlobalSource(tempDir);
+      const first = await CLI.run(["eject", type], project);
+      expect(first.exitCode, flattenCliOutput(first.output)).toBe(EXIT_CODES.SUCCESS);
 
-    expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(stdout).toContain("skills ejected");
+      editedSkillMd = path.join(skillsPath(tempDir), EDITED_SKILL, FILES.SKILL_MD);
+      asEjected = await readTestFile(editedSkillMd);
+      expect(asEjected, "the first eject wrote the skill's own SKILL.md").toContain(EDITED_SKILL);
+      edited = `${asEjected}\n${USERS_OWN_EDIT}\n`;
+      await writeFile(editedSkillMd, edited);
+      configBefore = await readTestFile(configTsPath(tempDir));
+    }
+
+    it("should keep the edit when the second eject skills has no --force", async () => {
+      await ejectThenEdit("skills");
+
+      const { exitCode, output } = await CLI.run(["eject", "skills"], project);
+
+      expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
+      expect(compactCliOutput(output)).toContain(
+        compactCliOutput(
+          `Skills already exist at ${skillsPath(tempDir)}. Use --force to overwrite.`,
+        ),
+      );
+      expect(await readTestFile(editedSkillMd)).toBe(edited);
+      expect((await listFiles(skillsPath(tempDir))).sort()).toStrictEqual(
+        [...E2E_SKILL_IDS].sort(),
+      );
+      expect(await readTestFile(configTsPath(tempDir))).toBe(configBefore);
+    });
+
+    it("should overwrite the edited skill with eject skills --force, counting every skill", async () => {
+      await ejectThenEdit("skills");
+
+      const { exitCode, stdout, output } = await CLI.run(["eject", "skills", "--force"], project);
+
+      expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
+      expect(stdout, flattenCliOutput(output)).toContain(
+        `${E2E_SKILL_IDS.length} skills ejected to ${skillsPath(tempDir)}`,
+      );
+      expect(
+        await readTestFile(editedSkillMd),
+        "--force must put the marketplace's SKILL.md back over the edit",
+      ).toBe(asEjected);
+      expect((await listFiles(skillsPath(tempDir))).sort()).toStrictEqual(
+        [...E2E_SKILL_IDS].sort(),
+      );
+      expect(await readTestFile(configTsPath(tempDir))).toBe(configBefore);
+    });
+
+    it("should overwrite the edited skill with eject all --force, counting every skill", async () => {
+      await ejectThenEdit("all");
+
+      const { exitCode, stdout, output } = await CLI.run(["eject", "all", "--force"], project);
+
+      expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
+      expect(stdout, flattenCliOutput(output)).toContain(
+        `${E2E_SKILL_IDS.length} skills ejected to ${skillsPath(tempDir)}`,
+      );
+      expect(
+        await readTestFile(editedSkillMd),
+        "--force must put the marketplace's SKILL.md back over the edit",
+      ).toBe(asEjected);
+      expect((await listFiles(skillsPath(tempDir))).sort()).toStrictEqual(
+        [...E2E_SKILL_IDS].sort(),
+      );
+      expect(await readTestFile(configTsPath(tempDir))).toBe(configBefore);
+    });
   });
 
   it("should eject templates to custom output directory", async () => {

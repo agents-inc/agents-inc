@@ -161,6 +161,27 @@ export async function copySkillsToLocalFlattened(
   );
 }
 
+/** The marketplace's own copy of each, even of a skill whose matrix entry is a local copy. */
+export async function copyMarketplaceSkillsToLocalFlattened(
+  marketplaceSkillIds: SkillId[],
+  localSkillsDir: string,
+  sourceResult: SourceLoadResult,
+): Promise<CopiedSkill[]> {
+  return copyEachSkill(marketplaceSkillIds, (skillId) =>
+    copySkillToLocalFlattened(
+      marketplaceSkillOf(skillId, sourceResult),
+      localSkillsDir,
+      sourceResult,
+    ),
+  );
+}
+
+function marketplaceSkillOf(skillId: SkillId, sourceResult: SourceLoadResult): ResolvedSkill {
+  const skill = sourceResult.marketplaceSkills[skillId];
+  if (!skill) throw new Error(`Not one of the marketplace's skills: ${skillId}`);
+  return skill;
+}
+
 /**
  * From the source, unless the skill is a local one the user did not point at a remote source;
  * that one is copied from where it lives, or recorded in place when it already lives there.

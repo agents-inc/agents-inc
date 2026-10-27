@@ -1190,12 +1190,77 @@ describe("what eject says", () => {
         recursive: true,
       });
 
-      const { stderr, error } = await runCliCommand(["eject", "skills", "--force"]);
+      const { stderr, error } = await runCliCommand([
+        "eject",
+        "skills",
+        "--output",
+        path.join(dirs.tempDir, "again"),
+      ]);
 
       expect(error).toBeUndefined();
       expect(flattenCliOutput(stderr)).toBe(
         "Warning: No skills found in the marketplace to eject.",
       );
+    });
+
+    /**
+     * The edit keeps the frontmatter: a SKILL.md without one no longer loads as a local skill, so
+     * the skill passed over as an earlier eject's copy would be copied after all.
+     */
+    describe("over an earlier eject into the installation's skills folder, after the user edited a skill", () => {
+      let skillsDir: string;
+      let editedSkillMd: string;
+      let asEjected: string;
+      let edited: string;
+      let configBefore: string;
+
+      const readConfig = () =>
+        readFile(getProjectConfigPath(dirs.projectDir, "claude"), "utf-8");
+
+      beforeEach(async () => {
+        skillsDir = path.join(dirs.projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
+        editedSkillMd = path.join(skillsDir, EDITED_SKILL_ID, STANDARD_FILES.SKILL_MD);
+        await runCliCommand(["eject", "skills"]);
+        asEjected = await readFile(editedSkillMd, "utf-8");
+        edited = `${asEjected}\n${USERS_OWN_SKILL_EDIT}\n`;
+        await writeFile(editedSkillMd, edited);
+        configBefore = await readConfig();
+      });
+
+      it("keeps the edit without --force, saying the skills are already there", async () => {
+        const { stdout, stderr, error } = await runCliCommand(["eject", "skills"]);
+
+        expect(error).toBeUndefined();
+        expect(stdout).toBe([...HEADER, ...ENDING].join("\n"));
+        expect(compactCliOutput(stderr)).toBe(
+          compactCliOutput(
+            `Warning: Skills already exist at ${skillsDir}. Use --force to overwrite.`,
+          ),
+        );
+        expect(await readFile(editedSkillMd, "utf-8")).toBe(edited);
+        expect(await readConfig()).toBe(configBefore);
+      });
+
+      it("copies every skill over them with --force, saying so", async () => {
+        const { stdout, stderr, error } = await runCliCommand(["eject", "skills", "--force"]);
+
+        expect(error).toBeUndefined();
+        expect(stderr).toBe("");
+        expect(stdout).toBe(
+          [
+            ...HEADER,
+            `✓ 4 skills ejected to ${skillsDir} from ${dirs.sourceDir}`,
+            "You can now customize skill content locally.",
+            ...ENDING,
+          ].join("\n"),
+        );
+        expect(
+          await readFile(editedSkillMd, "utf-8"),
+          "--force must put the marketplace's SKILL.md back over the edit",
+        ).toBe(asEjected);
+        expect([...(await readdir(skillsDir))].sort()).toStrictEqual(MARKETPLACE_SKILL_IDS);
+        expect(await readConfig()).toBe(configBefore);
+      });
     });
 
     it("counts the skills it copied, naming where from, and refuses to copy over them again", async () => {
@@ -1404,6 +1469,34 @@ describe("what eject says", () => {
 
       expect(error).toBeUndefined();
       expect(await readFile(template, "utf-8")).not.toBe(USERS_OWN_TEMPLATE);
+    });
+
+    it("copies every skill over the ones the first eject all wrote, on eject all --force", async () => {
+      const skillsDir = path.join(dirs.projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
+      const editedSkillMd = path.join(skillsDir, EDITED_SKILL_ID, STANDARD_FILES.SKILL_MD);
+      const configPath = getProjectConfigPath(dirs.projectDir, "claude");
+      const asEjected = await readFile(editedSkillMd, "utf-8");
+      // Appended, so the frontmatter that makes it load as a local skill stays.
+      await writeFile(editedSkillMd, `${asEjected}\n${USERS_OWN_SKILL_EDIT}\n`);
+      const configBefore = await readFile(configPath, "utf-8");
+
+      const { stdout, stderr, error } = await runCliCommand(["eject", "all", "--force"]);
+
+      expect(error).toBeUndefined();
+      expect(stderr).toBe("");
+      expect(stdout).toContain(
+        [
+          `✓ 4 skills ejected to ${skillsDir} from ${dirs.sourceDir}`,
+          "You can now customize skill content locally.",
+          ...ENDING,
+        ].join("\n"),
+      );
+      expect(
+        await readFile(editedSkillMd, "utf-8"),
+        "--force must put the marketplace's SKILL.md back over the edit",
+      ).toBe(asEjected);
+      expect([...(await readdir(skillsDir))].sort()).toStrictEqual(MARKETPLACE_SKILL_IDS);
+      expect(await readFile(configPath, "utf-8")).toBe(configBefore);
     });
   });
 
