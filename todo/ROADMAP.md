@@ -13,6 +13,14 @@ started. See the root `CLAUDE.md`.
 
 ---
 
+## Queued — the owner's board answers of 2026-10-26
+
+On hold (owner, 2026-10-27): no new agents start until the owner says; then built tester-first, at most 5 agents at once. CLI: CLI-971 (a line per command), CLI-979,
+CLI-982, CLI-991, CLI-945, CLI-885, CLI-887, CLI-918, CLI-992, CLI-993, CLI-994, CLI-845 (the note), CLI-875 (rule a), CLI-319
+(research only); the 11 backlog bugs CLI-901, CLI-911, CLI-912, CLI-916, CLI-917, CLI-921, EDITOR-58, EDITOR-62, EDITOR-74,
+EDITOR-93, EDITOR-96. Editor: EDITOR-61, EDITOR-90 (remove the focus-state check). Site: WWW-01. Server: SERVER-13. The other
+28 backlog rows are parked; 30 rows retired (archive.md, 2026-10-26).
+
 ## Next — REPO-44: tech debt and lint rules
 
 Steps 1 (lint-rules measurement) and 2 (CLI-923) landed 2026-10-15, step 8's first Stryker run in 0.170.2;
@@ -34,13 +42,13 @@ fix it, and repeat. Six rounds have landed (0.166.0).
 
 **Open, filed 2026-10-04:**
 
-- **CLI:** CLI-910 to CLI-912, CLI-916, CLI-917 and CLI-921 (the doubled cancel message). CLI-913 landed
+- **CLI:** CLI-911, CLI-912, CLI-916, CLI-917 and CLI-921 (the doubled cancel message), queued 2026-10-26; CLI-910 retired with the wizard rows. CLI-913 landed
   2026-10-04 (`.claude-src/` support dropped); CLI-908, CLI-909 and CLI-915 in 0.172.0.
 - **CLI, deferred by owner:** CLI-914 (`CLAUDE_CONFIG_DIR`).
 - **CLI, parked with Codex:** CLI-920.
-- **Owner rulings owed:** CLI-918 and CLI-919.
+- **Ruled 2026-10-26:** CLI-918 queued (also update installed plugins); CLI-919 retired (keep the full list).
 - **Editor, logged but not fixed by owner ruling:** EDITOR-80 to EDITOR-89, plus EDITOR-91 and EDITOR-92.
-- **Editor, owner rulings owed:** EDITOR-90.
+- **Editor, ruled 2026-10-26:** EDITOR-90 queued (remove the focus-state check).
 
 ---
 
@@ -56,8 +64,6 @@ full gates are green on this tree, and the account is in [archive.md](./archive.
 - **CLI-904:** custom marketplaces beyond today's rules;
 - **CLI-905:** `init --ui --marketplace` opening the editor on that marketplace;
 - **CLI-906:** `config.ts` recording several marketplaces.
-
-**Found by the final review:** CLI-907, a false requirement warning in projects that predates CLI-902.
 
 **The tree is uncommitted.** Read `git status`, not this line.
 
@@ -240,7 +246,7 @@ those dates. The programme then ran in three phases:
   both cases — each test built both ends of the comparison with the same producer.
 - **Phase C — the remaining findings.** 294 triaged with 33 classifications refuted on re-check.
   Fixes landed in seven groups; 131 findings were deleted; the rest are parked as **CLI-554**
-  (3 features, after the guards-are-not-features ruling returned 54 of the original 58 to scope), **EDITOR-50** (7), and **CLI-555** (12 open rulings).
+  (3 features, after the guards-are-not-features ruling returned 54 of the original 58 to scope), **EDITOR-50** (7; retired 2026-10-26: its lead item landed as EDITOR-48 and the other six were never listed), and **CLI-555** (12 open rulings).
 
 - **Phase D — the session's own output audited, then verified, then fixed.** Three audits (docs,
   tests, journeys) against the assumption that the session's own changes were wrong, on the same
@@ -380,10 +386,6 @@ The site is deployed and `/skills` is live. **With no audience, wrong documentat
 — so none of this is urgent, and it is cheapest to write the docs once the go-live legs have settled
 what they describe rather than twice.
 
-One row is a defect rather than a gap, and it is the cheapest thing here: **WWW-11** (the CLI README
-links `guides/importing-skills.md`, a guide deliberately deleted when `import skill` retired — the
-fix is deleting the row, not writing the page back). It is live on the published npm page.
-
 Two rows are missing gates rather than missing work, and both were filed after a hand-diff found
 something no checker could have: **WWW-12** (`check-cli-claims.ts` reads one page while CLI claims
 now live on several) and **WWW-13** (nothing gates the search modal's styling, and it mounts at
@@ -440,8 +442,8 @@ corrections ledger are in
 and was deleted when the second pass finished.
 **All eight ready rows landed 2026-09-02** — CLI-854, CLI-855, CLI-856, CLI-867, CLI-870 (was
 CLI-857), EDITOR-66, EDITOR-67 and EDITOR-69, each with an `archive.md` entry. A verification pass
-proved seven of them real by mutation and un-landed none. **What remains open** is CLI-869,
-EDITOR-70, EDITOR-71, EDITOR-72 and REPO-42, all filed by those lanes; plus the docs and test-gap
+proved seven of them real by mutation and un-landed none. **What remains open** is EDITOR-71,
+EDITOR-72 (REPO-42 landed 2026-10-26), all filed by those lanes; plus the docs and test-gap
 follow-ups the verification pass named.
 
 ## In flight — the summoner context-engineering programme (started 2026-09-03)
@@ -459,13 +461,13 @@ lenses and continue until one turns up nothing; the verifier is never the fixer.
 | Phase                                                  | Rows             | State                                                           |
 | ------------------------------------------------------ | ---------------- | --------------------------------------------------------------- |
 | The two summoners, the template and the four standards | —                | **landed 2026-09-03** — see `archive.md`; final gates all green |
-| Migrate the other sixteen agents to the same voice     | CLI-871          | ready, not started                                              |
+| Migrate the other sixteen agents to the same voice     | CLI-871          | landed (retired 2026-10-26)                                     |
 | Follow-ups the programme raised                        | CLI-872, CLI-873 | ready, not started                                              |
 | Decisions returned to the owner                        | CLI-875          | `Investigate` — needs a ruling before it is work                |
 
 ## In flight — the editor v6 design programme (started 2026-08-26)
 
-**EDITOR-09** is no longer design-gated: the design folder was refreshed in place on 2026-08-25 and
+**EDITOR-09** retired 2026-10-26: every phase landed (D as EDITOR-54); what is left is phase E, EDITOR-56. It was no longer design-gated: the design folder was refreshed in place on 2026-08-25 and
 the programme is running. Phases, decisions and the live dispatch log are in
 [`plans/editor-v6/`](./plans/editor-v6/) — **that folder is canonical for this work, not this
 section**, which only orders it.
@@ -483,7 +485,7 @@ section**, which only orders it.
 
 **Four rows were found landed-but-open while Phase G was closing**, all staged before it began:
 EDITOR-76 and EDITOR-79 were finished and are retired with archive lines; EDITOR-77 and EDITOR-78
-each had half built and were narrowed rather than deleted. Worth stating as a pattern rather than as
+each had half built and were narrowed rather than deleted (EDITOR-78 has since landed and is retired). Worth stating as a pattern rather than as
 four incidents — the rule is that a row goes when it lands, and a batch staged across sessions is
 exactly where that gets missed.
 

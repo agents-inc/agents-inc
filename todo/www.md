@@ -23,14 +23,10 @@ blocks a commit. What blocks a _deploy_ is in [`repo.md`](./repo.md), not here.
 
 | ID                               | Task                                                                                        | Status           | Type    | Complexity |
 | -------------------------------- | ------------------------------------------------------------------------------------------- | ---------------- | ------- | ---------- |
-| WWW-01 (was editor-todo item 8)  | Docs site: reference is per-group not per-command, and there is no Releases section         | Ready for Dev    | feature | medium     |
-| WWW-11 (new, 2026-08-27)         | The CLI README links a guide that was deliberately deleted — `guides/importing-skills.md`   | Ready for Dev    | docs    | trivial    |
-| WWW-12 (new, 2026-08-27)         | `check-cli-claims.ts` reads one page, and CLI claims now live on several                    | Ready for Dev    | test    | medium     |
-| WWW-13 (new, 2026-08-27)         | Nothing gates the search modal's styling, and it is the one surface a browser must open     | Ready for Dev    | test    | medium     |
-| WWW-02 (was editor-todo item 9)  | Landing page: the free-and-open-source block does not do its job, and two a11y defects      | Ready for Dev    | feature | easy       |
+| WWW-01 (was editor-todo item 8)  | (owner 2026-10-26, card q-gap-releases-section: "Add a Releases section") Docs site: reference is per-group not per-command, and there is no Releases section | Ready for Dev — queued | feature | medium     |
+| WWW-12 (new, 2026-08-27)         | (owner 2026-10-26, card q-gap-backlog: "Queue the 11 bugs, park the rest") `check-cli-claims.ts` reads one page, and CLI claims now live on several | Parked | test    | medium     |
+| WWW-13 (new, 2026-08-27)         | (owner 2026-10-26, card q-gap-backlog: "Queue the 11 bugs, park the rest") Nothing gates the search modal's styling, and it is the one surface a browser must open | Parked | test    | medium     |
 | WWW-03 (was editor-todo item 10) | Apex path split — **the repository half has landed; what is left is the dashboard cutover** | Needs Assistance | feature | complex    |
-| WWW-06 (was editor-todo item 14) | The landing page's video slot is empty; you supply the recording                            | Needs Assistance | feature | easy       |
-| WWW-17 (new, 2026-10-23, round-3 lane X6)  | Nothing checks that a built `target="_blank"` link keeps `rel="noopener noreferrer"`: add a `scripts/check-*.ts` over `dist/**/*.html` to `test` | Ready for Dev | test | easy |
 
 ---
 
@@ -150,25 +146,6 @@ live and would date any inventory taken now. Re-derive before starting:
 `sed -n '68,80p' apps/www/scripts/check-cli-claims.ts`
 
 ---
-
-#### WWW-11: The CLI README links a guide that was deliberately deleted
-
-`packages/cli/README.md`'s **Guides** table has a row **Importing third-party skills** pointing at
-`apps/www/src/content/docs/docs/guides/importing-skills.md`. That file does not exist. It was
-deleted in `5898ef23`, after the `import skill` command itself retired in `95738763`, and
-[`archive.md`](./archive.md) records **D-14** — "import skills from third-party marketplaces" —
-retired as superseded by the editor's Add skill dialog.
-
-**The fix is deleting the row, not writing the page back.** What the row advertised is covered
-today by `guides/writing-custom-skills.md`, which describes the editor's Add skill dialog carrying a
-GitHub-sourced skill inline into the configuration `init --from <id>` installs.
-
-The link is live on the **already-published npm page** as well as on GitHub, so it 404s for anyone
-who follows it. Note `sidebar: order: 6` is vacant in `guides/` — that is the slot the deleted page
-held, and nothing needs to fill it.
-
-Re-derive before working: `ls apps/www/src/content/docs/docs/guides/` and
-`grep -n "importing-skills" packages/cli/README.md`
 
 ---
 
@@ -407,53 +384,6 @@ repository should publish `.ai-docs/` at all is a separate question and lives in
 
 ---
 
-#### WWW-02: What is left on the landing page
-
-**The build-out landed 2026-08-27.** The page runs eleven blocks: nav · hero · stats · what-it-is ·
-catalogue · how-it-works · recording · write-your-own · free-and-open-source · final CTA · footer.
-Re-derive rather than trusting that list: `grep -n "<section" apps/www/src/pages/index.astro`.
-
-**Three of the note's twelve were DECLINED, not deferred**, and the note's own anti-pattern list is
-what declined them. **Three pillars** is a shape rather than a claim, and "The approach" already does
-that job in prose. **A proof block** has nothing true to put in it — no users, no testimonial, no
-dated benchmark — and an empty one is how `warp.dev` came to serve "0K Active Developers". **A
-GitHub star count in the nav** would render zero, which is the same failure. Do not re-add any of
-them without the thing that would fill it.
-
-**Still to do.**
-
-- **The free-and-open-source block still does not do its job.** It is two repository links. The note
-  puts it exactly where a commercial site puts pricing, and asks for the same work: an explicit
-  "this is free" sentence — that part exists — plus contributor avatars and a star or sponsor CTA.
-  Both of the missing halves need the repository to be public first, so this sits behind the same
-  gate as the star count.
-- **Two accessibility defects, unchanged.** `aria-live` on the copy-command note makes a screen
-  reader announce "click to copy" at page load, because the script fills the empty element after
-  paint. And the decorative `$` in the command block sits at 3.64:1 with the hairlines at
-  1.44–1.64:1 — reported and not fixed, because that fix belongs in `packages/ui` and the WCAG AA
-  ruling (below) is deliberate.
-- ~~**"Build a stack →" points at the absolute `https://agentsinc.sh`**~~ **Done 2026-09-01 with
-  WWW-03's repository half.** All three anchors read `EDITOR_URL`, which is now `/editor`. Note the
-  consequence for anyone working on this page: the link crosses a Worker boundary that only
-  production has, so it 404s under `astro dev` and `astro preview` and is correct anyway.
-
-**THE MEASURE IS THE OWNER'S CALL AND IS DELIBERATELY LONG.** The page is 64rem wide (1024px, the
-common step in this range and Tailwind's `5xl`), and prose runs the full content width rather than
-stopping at the 36rem it used to. Measured in a browser at 1440: **105 characters per line**, against
-the 45–75 usually recommended. That was chosen after seeing both — the old 36rem cap read as 67
-characters and left every paragraph 226px short of the catalogue grid beside it, so the page had two
-ragged right edges instead of one. **One token moves it**: `--measure` in `site.css`, read by every
-paragraph on the page and by the 404. 44rem gives ~82 characters, 40rem gives ~74. Do not re-pin
-individual paragraphs — that is what made this hard to change the first time.
-
-**Three judgement calls from the original build, none to be undone casually.** The copy-command is a
-`div` with a script-added button role rather than a `<button>`, because browsers make button text
-unselectable — if the script failed, the one command on the page could not be copied at all. The
-page carries exactly one breakpoint, where `apps/editor` deliberately has none, because a landing
-page is the one surface that has to survive a phone. And the hero's editor CTA now leads the command
-block, which is the 2026-08-27 editor-first ruling expressed as position rather than as colour —
-rule 4 reserves amber for what the user deliberately chose, and neither CTA is a choice yet.
-
 ### The research the missing blocks still need
 
 None of it has been used yet, and none of it is superseded by what was built.
@@ -649,16 +579,6 @@ Workers and the same Custom Domain, so taken together the apex moves once instea
 ---
 
 ---
-
-#### WWW-06: The landing page's video slot is empty
-
-The landing page (`apps/www/src/pages/index.astro`) reserves a bordered box reading "Video coming soon" (owner,
-2026-10-15), with a comment above it giving the `<video>` element to paste and the directory the file goes in
-(`apps/www/public/`). The page will not jump when the file arrives. The terminal wizard's recording now sits in
-`packages/cli/README.md` as the Legacy Wizard (`assets/legacy-wizard.gif`).
-
-The quickstart's comment-only slot went with the wizard. `cli-or-web.md` walks the web-to-CLI round trip and is the
-obvious place for a second slot.
 
 ---
 
