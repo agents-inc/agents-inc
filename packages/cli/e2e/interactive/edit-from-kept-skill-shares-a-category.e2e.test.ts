@@ -18,6 +18,7 @@ import {
   configTsPath,
   flattenCliOutput,
   loadConfigOrFail,
+  matchedAsWritten,
   readTreeSnapshot,
   renderMetadataYaml,
   runCLI,
@@ -195,7 +196,11 @@ describe("edit --from <id> keeps the configuration's skill beside a kept one in 
 
       const { planned, output } = await applyApproved(APPLY_ID, env.projectDir, env.fakeHome);
 
-      expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_KEPT_AUTHORED);
+      expect(planned, "the notice names the skill written here as the panel names it").toMatch(
+        new RegExp(
+          `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_KEPT_AUTHORED)}[\\s\\S]*${matchedAsWritten(`skill ${E2E_SKILL["visual-regression"].display}`)}`,
+        ),
+      );
       expect(output, "keeping the skill written here is all this apply does").toContain(
         STEP_TEXT.EDIT_UNCHANGED,
       );
@@ -264,12 +269,16 @@ describe("edit --from <id> keeps the configuration's skill beside a kept one in 
         // First, because it is the defect: joining both into the slot is refused after the yes.
         const { planned } = await applyApproved(VUE_APPLY_ID, env.projectDir, env.fakeHome);
 
-        expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_KEPT_AUTHORED);
+        expect(planned, "the notice names the skill written here as the panel names it").toMatch(
+          new RegExp(
+            `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_KEPT_AUTHORED)}[\\s\\S]*${matchedAsWritten(`skill ${E2E_SKILL.react.display}`)}`,
+          ),
+        );
         expect(
           planned,
-          "the plan must say the kept skill loses the slot the configuration's skill takes",
+          "the plan must say the kept skill loses the slot the configuration's skill takes, naming it as the panel does",
         ).toContain(
-          `${REACT}: ${STEP_TEXT.SHARED_CONFIG_KEPT_UNASSIGNED} ${WEB_DEV}'s web-framework`,
+          `${E2E_SKILL.react.display}: ${STEP_TEXT.SHARED_CONFIG_KEPT_UNASSIGNED} ${WEB_DEV}'s web-framework`,
         );
         const config = await loadConfigOrFail(env.projectDir);
         expect(

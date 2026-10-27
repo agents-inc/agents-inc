@@ -40,10 +40,16 @@ import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/projec
  * config as its installation, while the command itself skipped it and read HOME by roster order.
  * `compile` rewrote the Claude installation, `edit --from` applied a configuration to it (at a
  * terminal, removing a skill from it), `list` and `doctor` reported it with nothing about the
- * Codex one, and `share` and `edit` said no installation existed. A project holding nothing at
- * all, under the same HOME, is refused by each of them. Each refusal is paired with the same
- * command under `--provider`, which must not be refused. The tree snapshot behind "nothing
- * changed" was seen red in compile's case, with HOME's Claude agent file back on disk.
+ * Codex one, `share` and `edit` said no installation existed, and `uninstall --yes` removed the
+ * project's config, leaving HOME's two as they were. A project holding nothing at all, under the
+ * same HOME, is refused by each of them. Each refusal is paired with the same command under
+ * `--provider`, which must not be refused. The tree snapshot behind "nothing changed" was seen red
+ * in compile's case, with HOME's Claude agent file back on disk.
+ *
+ * Owner 2026-10-24 (card q-cli-empty-config-counts, "Never count it, and say so"): such a config is
+ * never the project's installation, and a command run there first prints one line saying so, on
+ * stderr as the old-`.claude-src/` line is. `uninstall` is held to the refusal and to removing
+ * nothing; whether it prints the line waits on the owner, as its words are not true of it.
  */
 
 const SEED_ID = "DeclNone";
@@ -54,6 +60,10 @@ const DROPS_A_SKILL_ID = "DeclDrop";
 const COMPILED_AGENT = E2E_AGENT["web-developer"].name;
 
 const NAME_EITHER = "--provider <claude|codex>";
+
+/** Rendered text, word for word as the owner chose it; the refusal beside it is a literal too. */
+const SAYS_SO =
+  "This project's config declares nothing, so this works on your global installation.\n";
 
 function refusal(home: string, subject: string): string {
   return `${home} holds 2 installations — claude and codex — so ${subject} cannot tell which one you mean. Name it with ${NAME_EITHER}. Nothing has been changed.`;
@@ -122,17 +132,31 @@ describe("a folder whose config declares nothing, under a HOME holding a Claude 
     return CLI.run([...args], project, { env: { AGENTS_INC_API_URL: store.url } });
   }
 
-  async function expectRefusedNamingBoth(args: readonly string[], subject: string): Promise<void> {
+  function expectTheLineFirst({ stderr }: CLIResult): void {
+    // execa strips one final newline, which is the line's own when nothing is written after it.
+    const printed = `${stderr}\n`;
+    expect(
+      printed.slice(0, SAYS_SO.length),
+      `stderr opens with the one line saying the project's config declares nothing:\n${stderr}`,
+    ).toBe(SAYS_SO);
+    expect(printed.slice(SAYS_SO.length), "the line is printed once").not.toContain(SAYS_SO);
+  }
+
+  async function expectRefusedNamingBoth(
+    args: readonly string[],
+    subject: string,
+  ): Promise<CLIResult> {
     const before = await readTreeSnapshot(home);
 
-    const { exitCode, output } = await run(args);
+    const result = await run(args);
 
     expect(
       await readTreeSnapshot(home),
       `${subject} changed one of HOME's two installations, or the project, without asking which`,
     ).toStrictEqual(before);
-    expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.INVALID_ARGS);
-    expect(compactCliOutput(output)).toContain(compactCliOutput(refusal(home, subject)));
+    expect(result.exitCode, flattenCliOutput(result.output)).toBe(EXIT_CODES.INVALID_ARGS);
+    expect(compactCliOutput(result.output)).toContain(compactCliOutput(refusal(home, subject)));
+    return result;
   }
 
   async function expectNotRefusedAsAmbiguous(args: readonly string[]): Promise<CLIResult> {
@@ -143,14 +167,12 @@ describe("a folder whose config declares nothing, under a HOME holding a Claude 
     return result;
   }
 
-  // KNOWN GAP: the refusal counts the project's config as its installation; compile skips it and
-  // compiles HOME's Claude installation by roster order.
-  it.fails(
-    "compile refuses rather than rewriting the Claude installation at HOME",
-    { retry: 0, timeout: TIMEOUTS.INSTALL },
+  it(
+    "compile refuses rather than rewriting the Claude installation at HOME, after the line",
+    { timeout: TIMEOUTS.INSTALL },
     async () => {
       await removeEachCompiledAgent();
-      await expectRefusedNamingBoth(["compile"], "compile");
+      expectTheLineFirst(await expectRefusedNamingBoth(["compile"], "compile"));
     },
   );
 
@@ -159,7 +181,7 @@ describe("a folder whose config declares nothing, under a HOME holding a Claude 
     { timeout: TIMEOUTS.INSTALL },
     async () => {
       await removeEachCompiledAgent();
-      await expectNotRefusedAsAmbiguous(["compile", ...PROVIDER_CODEX]);
+      const result = await expectNotRefusedAsAmbiguous(["compile", ...PROVIDER_CODEX]);
 
       expect(
         await fileExists(
@@ -171,16 +193,17 @@ describe("a folder whose config declares nothing, under a HOME holding a Claude 
         await fileExists(path.join(agentsPath(home), `${COMPILED_AGENT}.md`)),
         "the Claude installation was compiled by a run that named codex",
       ).toBe(false);
+      expectTheLineFirst(result);
     },
   );
 
-  // KNOWN GAP: edit --from resolves HOME's Claude installation by roster order and asks only to
-  // confirm, so at a terminal it applies the configuration there.
-  it.fails(
-    "edit --from refuses rather than applying a configuration to the Claude installation at HOME",
-    { retry: 0, timeout: TIMEOUTS.INSTALL },
+  it(
+    "edit --from refuses rather than applying a configuration to the Claude installation at HOME, after the line",
+    { timeout: TIMEOUTS.INSTALL },
     async () => {
-      await expectRefusedNamingBoth(["edit", "--from", DROPS_A_SKILL_ID], "edit");
+      expectTheLineFirst(
+        await expectRefusedNamingBoth(["edit", "--from", DROPS_A_SKILL_ID], "edit"),
+      );
     },
   );
 
@@ -188,24 +211,23 @@ describe("a folder whose config declares nothing, under a HOME holding a Claude 
     "edit --from naming a provider is past the ambiguity, at the terminal it needs",
     { timeout: TIMEOUTS.INSTALL },
     async () => {
-      const { output } = await expectNotRefusedAsAmbiguous([
+      const result = await expectNotRefusedAsAmbiguous([
         "edit",
         "--from",
         DROPS_A_SKILL_ID,
         ...PROVIDER_CLAUDE,
       ]);
 
-      expect(flattenCliOutput(output)).toContain(STEP_TEXT.SHARED_CONFIG_NEEDS_TERMINAL);
+      expect(flattenCliOutput(result.output)).toContain(STEP_TEXT.SHARED_CONFIG_NEEDS_TERMINAL);
+      expectTheLineFirst(result);
     },
   );
 
-  // KNOWN GAP: share reads the project's own config, finds it empty and says no installation
-  // exists, while HOME holds two.
-  it.fails(
-    "share refuses naming both installations rather than saying there is none",
-    { retry: 0, timeout: TIMEOUTS.INSTALL },
+  it(
+    "share refuses naming both installations rather than saying there is none, after the line",
+    { timeout: TIMEOUTS.INSTALL },
     async () => {
-      await expectRefusedNamingBoth(["share"], "share");
+      expectTheLineFirst(await expectRefusedNamingBoth(["share"], "share"));
     },
   );
 
@@ -213,17 +235,15 @@ describe("a folder whose config declares nothing, under a HOME holding a Claude 
     "share naming a provider is not refused as ambiguous",
     { timeout: TIMEOUTS.INSTALL },
     async () => {
-      await expectNotRefusedAsAmbiguous(["share", ...PROVIDER_CLAUDE]);
+      expectTheLineFirst(await expectNotRefusedAsAmbiguous(["share", ...PROVIDER_CLAUDE]));
     },
   );
 
-  // KNOWN GAP: edit reads the project's own config, finds it empty and says no installation
-  // exists, while HOME holds two.
-  it.fails(
-    "edit refuses naming both installations rather than saying there is none",
-    { retry: 0, timeout: TIMEOUTS.INSTALL },
+  it(
+    "edit refuses naming both installations rather than saying there is none, after the line",
+    { timeout: TIMEOUTS.INSTALL },
     async () => {
-      await expectRefusedNamingBoth(["edit"], "edit");
+      expectTheLineFirst(await expectRefusedNamingBoth(["edit"], "edit"));
     },
   );
 
@@ -231,17 +251,43 @@ describe("a folder whose config declares nothing, under a HOME holding a Claude 
     "edit naming a provider is not refused as ambiguous",
     { timeout: TIMEOUTS.INSTALL },
     async () => {
-      await expectNotRefusedAsAmbiguous(["edit", ...PROVIDER_CLAUDE]);
+      expectTheLineFirst(await expectNotRefusedAsAmbiguous(["edit", ...PROVIDER_CLAUDE]));
     },
   );
 
-  // KNOWN GAP: list's line reads the roster, which counts the project's config, while the listing
-  // skips it and shows HOME's Claude installation.
-  it.fails(
-    "list names both of HOME's installations above the Claude one it lists",
-    { retry: 0, timeout: TIMEOUTS.INSTALL },
+  it(
+    "uninstall refuses naming both rather than removing the project's config",
+    { timeout: TIMEOUTS.INSTALL },
     async () => {
-      const { exitCode, stdout } = await run(["list"]);
+      await expectRefusedNamingBoth(["uninstall", "--yes"], "uninstall");
+    },
+  );
+
+  it(
+    "uninstall naming a provider is not refused, and removes nothing at HOME or in the project",
+    { timeout: TIMEOUTS.INSTALL },
+    async () => {
+      const before = await readTreeSnapshot(home);
+
+      const { exitCode, stdout, output } = await run(["uninstall", "--yes", ...PROVIDER_CLAUDE]);
+
+      expect(
+        await readTreeSnapshot(home),
+        "HOME's two installations, and the project's config that declares nothing, are as they were",
+      ).toStrictEqual(before);
+      expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
+      expect(flattenCliOutput(stdout), "as from a project holding no installation").toContain(
+        STEP_TEXT.UNINSTALL_NOT_INSTALLED,
+      );
+    },
+  );
+
+  it(
+    "list names both of HOME's installations above the Claude one it lists, after the line",
+    { timeout: TIMEOUTS.INSTALL },
+    async () => {
+      const result = await run(["list"]);
+      const { exitCode, stdout } = result;
 
       expect(exitCode, stdout).toBe(EXIT_CODES.SUCCESS);
       expect(stdout, "the installation listed is HOME's Claude one").toContain(
@@ -250,6 +296,7 @@ describe("a folder whose config declares nothing, under a HOME holding a Claude 
       expect(stdout, "the line naming both sits directly above the listing").toContain(
         `${home} holds 2 installations — claude and codex — and this is the claude one. Show another with ${NAME_EITHER}.\n\nInstallation: `,
       );
+      expectTheLineFirst(result);
     },
   );
 
@@ -257,23 +304,24 @@ describe("a folder whose config declares nothing, under a HOME holding a Claude 
     "list --provider codex lists HOME's Codex installation alone",
     { timeout: TIMEOUTS.INSTALL },
     async () => {
-      const { exitCode, stdout } = await run(["list", ...PROVIDER_CODEX]);
+      const result = await run(["list", ...PROVIDER_CODEX]);
+      const { exitCode, stdout } = result;
 
       expect(exitCode, stdout).toBe(EXIT_CODES.SUCCESS);
       expect(stdout).toContain(`  Config:  ${home}/${DIRS.SOURCE_CODEX}/${FILES.CONFIG_TS}\n`);
       expect(stdout, "a run naming its installation has no other to name").toMatch(
         /^\s*Installation: /,
       );
+      expectTheLineFirst(result);
     },
   );
 
-  // KNOWN GAP: doctor's finding reads the roster, which counts the project's config, while its
-  // checks skip it and check HOME's Claude installation alone.
-  it.fails(
-    "doctor reports HOME's two installations as a finding and checks each",
-    { retry: 0, timeout: TIMEOUTS.INSTALL },
+  it(
+    "doctor reports HOME's two installations as a finding and checks each, after the line",
+    { timeout: TIMEOUTS.INSTALL },
     async () => {
-      const { stdout } = await run(["doctor"]);
+      const result = await run(["doctor"]);
+      const { stdout } = result;
 
       expect(stdout).toMatch(
         doctorRow(
@@ -285,6 +333,7 @@ describe("a folder whose config declares nothing, under a HOME holding a Claude 
       expect(stdout).toMatch(
         /\n {2}The claude installation\n[\s\S]*\n {2}The codex installation\n/,
       );
+      expectTheLineFirst(result);
     },
   );
 });

@@ -122,11 +122,14 @@ export const STEP_TEXT = {
   MARKETPLACE_METADATA_UNPARSEABLE: "unparseable metadata.yaml",
   MARKETPLACE_METADATA_NO_DISPLAY_NAME:
     "invalid metadata.yaml — missing required field: displayName",
+  MARKETPLACE_SKILL_MD_MISSING: "No SKILL.md found",
   RESERVED_NAME_MANIFEST_WAY_OUT: "rename the marketplace",
   RECORDED_MARKETPLACE_NAME_FIELD: "marketplaceName",
-  // `skippedUnknownSkills`.
+  // `skippedSkills`, for a skill no marketplace ships.
   CATALOG_DOES_NOT_KNOW: "this catalog does not know:",
-  // `skippedUnknownSkills`, the line naming the sub-agents installed without a skill.
+  // The same skip, for a skill the marketplace ships and could not load.
+  CATALOG_COULD_NOT_LOAD: "this catalog could not load:",
+  // `skippedSkills`, the line naming the sub-agents installed without a skill.
   INSTALLED_WITHOUT_THE_SKILL: "carrying nothing else this catalog knows:",
   UNRESOLVED_SLUG: "Unresolved slug",
   // `checkMatrixHealth`'s prefix; doctor's Marketplaces row omits it.

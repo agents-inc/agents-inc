@@ -1,4 +1,5 @@
 import path from "path";
+import { mkdir, writeFile } from "fs/promises";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
@@ -28,6 +29,7 @@ import {
   loadConfigOrFail,
   readTreeSnapshot,
   renderIncompleteMetadataYaml,
+  renderMetadataYaml,
   renderUnparseableMetadataYaml,
   skillsPath,
 } from "../helpers/test-utils.js";
@@ -44,6 +46,14 @@ import {
  * the capture also holds narration that must not be replayed. Observed red against the unfixed
  * build: both `--from` runs printed the effect and not the cause, while the clean control, the
  * installed files and the declined apply were green and must stay so.
+ *
+ * The skip names a skill the marketplace ships and could not load as one it could not load, never
+ * as one this catalog does not know; an id no marketplace ships keeps "does not know", alone and
+ * in the same link, over the same failed load (CLI-934). A skill folder with no SKILL.md is warned
+ * with its reason like every other failed load, where it was said under --verbose only. Observed
+ * red against the unfixed build: every spec expecting "could not load" got "does not know", and the
+ * SKILL.md-less folder got an empty stderr; the never-shipped control, the displayName install and
+ * the clean control were green.
  */
 
 const BROKEN_SKILL_ID = e2eSkillId("web-broken-metadata");
@@ -51,7 +61,15 @@ const BROKEN_SKILL_ID = e2eSkillId("web-broken-metadata");
 const BROKEN_FILE = `${BROKEN_SKILL_ID}/${FILES.METADATA_YAML}`;
 
 /** The effect the cause explains. */
-const EFFECT = `${STEP_TEXT.CATALOG_DOES_NOT_KNOW} ${BROKEN_SKILL_ID}`;
+const EFFECT = `${STEP_TEXT.CATALOG_COULD_NOT_LOAD} ${BROKEN_SKILL_ID}`;
+
+/** Shipped by no fixture marketplace. */
+const UNSHIPPED_SKILL_ID = e2eSkillId("web-never-shipped");
+
+/** A metadata.yaml with no SKILL.md beside it. */
+const ORPHAN_SKILL_ID = e2eSkillId("web-missing-skill-md");
+
+const ORPHAN_FILE = `${ORPHAN_SKILL_ID}/${FILES.METADATA_YAML}`;
 
 const NAMELESS_SKILL_ID = e2eSkillId("web-nameless-metadata");
 
@@ -78,9 +96,24 @@ async function shipSkillWithNoDisplayName(sourceDir: string): Promise<void> {
   });
 }
 
+async function shipSkillWithNoSkillMd(sourceDir: string): Promise<void> {
+  const skillDir = path.join(sourceDir, SOURCE_PATHS.SKILLS_DIR, ORPHAN_SKILL_ID);
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(
+    path.join(skillDir, FILES.METADATA_YAML),
+    renderMetadataYaml({
+      contentHash: "a1b2c3d",
+      category: "web-tooling",
+      slug: "missing-skill-md",
+      displayName: "Missing SKILL.md",
+    }),
+  );
+}
+
 describe("--from runs say what the marketplace load raised", () => {
   let broken: E2ESource;
   let nameless: E2ESource;
+  let orphaned: E2ESource;
   let clean: E2ESource;
   let store: SeedConfigStore;
   let tempDir: string | undefined;
@@ -91,6 +124,8 @@ describe("--from runs say what the marketplace load raised", () => {
     await shipSkillWithUnparseableMetadata(broken.sourceDir);
     nameless = await createE2ESource();
     await shipSkillWithNoDisplayName(nameless.sourceDir);
+    orphaned = await createE2ESource();
+    await shipSkillWithNoSkillMd(orphaned.sourceDir);
     clean = await createE2ESource();
     store = await startSeedConfigStore();
   }, TIMEOUTS.SETUP);
@@ -99,6 +134,7 @@ describe("--from runs say what the marketplace load raised", () => {
     await store.close();
     await cleanupFixture(broken);
     await cleanupFixture(nameless);
+    await cleanupFixture(orphaned);
     await cleanupFixture(clean);
   });
 
@@ -111,7 +147,7 @@ describe("--from runs say what the marketplace load raised", () => {
   });
 
   it(
-    "init --from names why a skill the marketplace ships was skipped, above the skip",
+    "init --from says a skill the marketplace ships was skipped because it could not load, and why, above the skip",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       tempDir = await createTempDir();
@@ -135,9 +171,11 @@ describe("--from runs say what the marketplace load raised", () => {
 
       expect(exitCode, `init --from output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
       const said = flattenCliOutput(stderr);
-      expect(said, "the effect is said today, so the cause has something to explain").toContain(
-        EFFECT,
-      );
+      expect(said, "the skip names the skill as one this catalog could not load").toContain(EFFECT);
+      expect(
+        said,
+        "a skill the marketplace ships is never called one this catalog does not know",
+      ).not.toContain(STEP_TEXT.CATALOG_DOES_NOT_KNOW);
       expect(said, "the load names the file it could not read").toContain(BROKEN_FILE);
       expect(said, "and what is wrong with it").toContain(
         STEP_TEXT.MARKETPLACE_METADATA_UNPARSEABLE,
@@ -278,7 +316,7 @@ describe("--from runs say what the marketplace load raised", () => {
   );
 
   it(
-    "init --from installs the sub-agents empty when the one skill it names has no displayName, with the warning",
+    "init --from installs the sub-agents empty when the one skill it names has no displayName, saying it could not load it",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       tempDir = await createTempDir();
@@ -303,9 +341,14 @@ describe("--from runs say what the marketplace load raised", () => {
       );
 
       expect(exitCode, `init --from output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
-      expect(flattenCliOutput(stderr)).toContain(
-        `${STEP_TEXT.CATALOG_DOES_NOT_KNOW} ${NAMELESS_SKILL_ID} sub-agent(s) installed without ${NAMELESS_SKILL_ID}, ${STEP_TEXT.INSTALLED_WITHOUT_THE_SKILL} ${WEB_DEV}, ${API_DEV}`,
+      const said = flattenCliOutput(stderr);
+      expect(said).toContain(
+        `${STEP_TEXT.CATALOG_COULD_NOT_LOAD} ${NAMELESS_SKILL_ID} sub-agent(s) installed without ${NAMELESS_SKILL_ID}, ${STEP_TEXT.INSTALLED_WITHOUT_THE_SKILL} ${WEB_DEV}, ${API_DEV}`,
       );
+      expect(
+        said,
+        "a skill the marketplace ships is never called one this catalog does not know",
+      ).not.toContain(STEP_TEXT.CATALOG_DOES_NOT_KNOW);
       const config = await loadConfigOrFail(tempDir);
       expect({
         skills: config.skills,
@@ -353,9 +396,11 @@ describe("--from runs say what the marketplace load raised", () => {
       await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM, TIMEOUTS.WIZARD_LOAD);
 
       const said = flattenCliOutput(prompt.getOutput());
-      expect(said, "the effect is said today, so the cause has something to explain").toContain(
-        EFFECT,
-      );
+      expect(said, "the skip names the skill as one this catalog could not load").toContain(EFFECT);
+      expect(
+        said,
+        "a skill the marketplace ships is never called one this catalog does not know",
+      ).not.toContain(STEP_TEXT.CATALOG_DOES_NOT_KNOW);
       expect(said, "the load names the file it could not read").toContain(BROKEN_FILE);
       expect(said, "and what is wrong with it").toContain(
         STEP_TEXT.MARKETPLACE_METADATA_UNPARSEABLE,
@@ -366,6 +411,115 @@ describe("--from runs say what the marketplace load raised", () => {
       expect(await readTreeSnapshot(project.dir), "a declined apply changes nothing").toStrictEqual(
         before,
       );
+    },
+  );
+
+  it(
+    "init --from still says a skill no marketplace ships is one this catalog does not know, though another failed to load",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async () => {
+      tempDir = await createTempDir();
+      store.publish(
+        "Unship01",
+        buildSeedPayload({
+          v: PINNED_WIRE_VERSION,
+          skills: {
+            [E2E_SKILL.react.id]: ejectedGlobalSkill(),
+            [UNSHIPPED_SKILL_ID]: ejectedGlobalSkill(),
+          },
+        }),
+      );
+
+      const { exitCode, output, stderr } = await runInitFrom(
+        store,
+        "Unship01",
+        { dir: tempDir },
+        broken.sourceDir,
+      );
+
+      expect(exitCode, `init --from output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
+      const said = flattenCliOutput(stderr);
+      expect(said, "this load failed a skill, so a wording keyed to any failure shows").toContain(
+        BROKEN_FILE,
+      );
+      expect(said).toContain(`${STEP_TEXT.CATALOG_DOES_NOT_KNOW} ${UNSHIPPED_SKILL_ID}`);
+      expect(said, "nothing this link names failed to load").not.toContain(
+        STEP_TEXT.CATALOG_COULD_NOT_LOAD,
+      );
+      expect((await loadConfigOrFail(tempDir)).skills.map((skill) => skill.id)).toStrictEqual([
+        E2E_SKILL.react.id,
+      ]);
+    },
+  );
+
+  it(
+    "init --from words each skipped skill by its cause when one link names both kinds",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async () => {
+      tempDir = await createTempDir();
+      store.publish(
+        "Mixed001",
+        buildSeedPayload({
+          v: PINNED_WIRE_VERSION,
+          skills: {
+            [E2E_SKILL.react.id]: ejectedGlobalSkill(),
+            [UNSHIPPED_SKILL_ID]: ejectedGlobalSkill(),
+            [BROKEN_SKILL_ID]: ejectedGlobalSkill(),
+          },
+        }),
+      );
+
+      const { exitCode, output, stderr } = await runInitFrom(
+        store,
+        "Mixed001",
+        { dir: tempDir },
+        broken.sourceDir,
+      );
+
+      expect(exitCode, `init --from output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
+      const said = flattenCliOutput(stderr);
+      expect(said).toContain(`${STEP_TEXT.CATALOG_DOES_NOT_KNOW} ${UNSHIPPED_SKILL_ID}`);
+      expect(said).toContain(EFFECT);
+      expect(said, "the two are not listed under one cause").not.toContain(
+        `${UNSHIPPED_SKILL_ID}, ${BROKEN_SKILL_ID}`,
+      );
+      expect(said).not.toContain(`${STEP_TEXT.CATALOG_DOES_NOT_KNOW} ${BROKEN_SKILL_ID}`);
+      expect(said).not.toContain(`${STEP_TEXT.CATALOG_COULD_NOT_LOAD} ${UNSHIPPED_SKILL_ID}`);
+      expect((await loadConfigOrFail(tempDir)).skills.map((skill) => skill.id)).toStrictEqual([
+        E2E_SKILL.react.id,
+      ]);
+    },
+  );
+
+  it(
+    "init --from names a skill folder the marketplace ships with no SKILL.md, and why",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async () => {
+      tempDir = await createTempDir();
+      store.publish(
+        "Orphan01",
+        buildSeedPayload({
+          v: PINNED_WIRE_VERSION,
+          skills: { [E2E_SKILL.react.id]: ejectedGlobalSkill() },
+        }),
+      );
+
+      const { exitCode, output, stderr } = await runInitFrom(
+        store,
+        "Orphan01",
+        { dir: tempDir },
+        orphaned.sourceDir,
+      );
+
+      expect(exitCode, `init --from output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
+      const said = flattenCliOutput(stderr);
+      expect(said, "the load names the file it skipped").toContain(ORPHAN_FILE);
+      expect(said, "and what is wrong with it").toContain(STEP_TEXT.MARKETPLACE_SKILL_MD_MISSING);
+      expect(output).toContain(STEP_TEXT.INIT_SUCCESS);
+      expect((await loadConfigOrFail(tempDir)).skills.map((skill) => skill.id)).toStrictEqual([
+        E2E_SKILL.react.id,
+      ]);
+      expect(await listFiles(skillsPath(tempDir))).toStrictEqual([E2E_SKILL.react.id]);
     },
   );
 
@@ -396,6 +550,7 @@ describe("--from runs say what the marketplace load raised", () => {
         "only what the load warned is said — never the startup band's own narration",
       ).not.toContain(STEP_TEXT.LOADED);
       expect(stderr).not.toContain(STEP_TEXT.MARKETPLACE_METADATA_UNPARSEABLE);
+      expect(stderr).not.toContain(STEP_TEXT.MARKETPLACE_SKILL_MD_MISSING);
     },
   );
 });

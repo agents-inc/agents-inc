@@ -21,7 +21,9 @@ import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
   codexHome,
+  compactCliOutput,
   createLocalSkill,
+  directoryExists,
   flattenCliOutput,
   loadConfigOrFail,
   readTestFile,
@@ -51,9 +53,9 @@ import type { TreeSnapshotEntry } from "../helpers/test-utils.js";
 /**
  * Every `--from` refusal is decided before the run lists or asks, and a refused run writes nothing.
  * Covered here: writing over a hand-written skill at a carried id, a carried id naming a path rather
- * than one directory, a carried file whose path climbs out of its skill's folder, a configuration
- * with nothing placeable, and a placement the host does not offer. Each is paired with the run it
- * must still allow.
+ * than one directory, a carried id longer than a directory name may be, a carried file whose path
+ * climbs out of its skill's folder, a configuration with nothing placeable, and a placement the host
+ * does not offer. Each is paired with the run it must still allow.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -80,6 +82,17 @@ const VICTIM_DIR_NAME = "victim";
 const SCRATCH_ESCAPING_CARRIED_ID = `../${VICTIM_DIR_NAME}`;
 const VICTIM_FILE = "notes.txt";
 const CARRIED_BYTES = "written by a shared configuration\n";
+
+/**
+ * The most bytes one directory name may hold where an install lands (ext4's `NAME_MAX`). The ids are
+ * ASCII, so their characters are their bytes; the one over it is what `mkdir` answers with a raw
+ * ENAMETOOLONG.
+ */
+const DIRECTORY_NAME_MAX_BYTES = 255;
+const LONGEST_CARRIED_ID = `external-${CARRIED_CATEGORY}-`.padEnd(DIRECTORY_NAME_MAX_BYTES, "a");
+const OVERLONG_CARRIED_ID = `${LONGEST_CARRIED_ID}a`;
+const LONGEST_ID = "Longest1";
+const OVERLONG_ID = "Overlong1";
 
 /** A carried file keyed out of `.claude/skills/<id>`, and one keyed into a folder inside it. */
 const FILE_ESCAPES_TO_HOME_ID = "FileEscapesHome1";
@@ -175,6 +188,8 @@ describe("--from refusals come before the lists and the question", () => {
     store.publish(ESCAPES_SCRATCH_ID, carryingUnder(SCRATCH_ESCAPING_CARRIED_ID));
     store.publish(FILE_ESCAPES_TO_HOME_ID, carryingUnder(CARRIED_ID, HOME_ESCAPING_FILE_KEY));
     store.publish(FILE_IN_A_FOLDER_ID, carryingUnder(CARRIED_ID, NESTED_FILE_KEY));
+    store.publish(OVERLONG_ID, carryingUnder(OVERLONG_CARRIED_ID));
+    store.publish(LONGEST_ID, carryingUnder(LONGEST_CARRIED_ID));
     // Assigned to no sub-agent: one it is assigned to installs, empty, beside the warning.
     store.publish(
       NOTHING_PLACEABLE_ID,
@@ -468,6 +483,160 @@ describe("--from refusals come before the lists and the question", () => {
           output,
           "a refused install must not first show the panel of what it would install",
         ).not.toContain(STEP_TEXT.PANEL_HEADER);
+        expect(await snapshotInstallSurfaces(env)).toStrictEqual(before);
+      },
+    );
+  });
+
+  // The id is printed whole, so a terminal breaks it across lines: it is matched compacted.
+  describe("init --from a carried skill whose id is longer than a directory name may be", () => {
+    it(
+      "refuses before it lists or asks, names the id, and writes nothing",
+      { timeout: TIMEOUTS.INTERACTIVE },
+      async () => {
+        env = await createTestEnvironment();
+        const before = await snapshotInstallSurfaces(env);
+
+        prompt = launchInit(env, OVERLONG_ID);
+        await prompt.waitForTextOrExit(STEP_TEXT.SHARED_CONFIG_INSTALL_CONFIRM);
+        const shown = prompt.getOutput();
+
+        // First, because it is the defect: unguarded, the run asks, and a yes fails the write.
+        expect(
+          shown,
+          "a refused install must be refused before the user is asked to confirm it",
+        ).not.toContain(STEP_TEXT.SHARED_CONFIG_INSTALL_CONFIRM);
+        expect(
+          shown,
+          "a refused install must not first show the panel of what it would install",
+        ).not.toContain(STEP_TEXT.PANEL_HEADER);
+
+        expect(await prompt.waitForExit(TIMEOUTS.EXIT_WAIT)).toBe(EXIT_CODES.ERROR);
+        expect(
+          prompt.getOutput(),
+          "the refusal must be the CLI's own, not the file system's",
+        ).not.toContain("ENAMETOOLONG");
+        expect(compactCliOutput(prompt.getOutput())).toContain(OVERLONG_CARRIED_ID);
+        expect(await snapshotInstallSurfaces(env)).toStrictEqual(before);
+        // The snapshot reads files; unguarded, the failed write leaves an empty skills folder.
+        expect(await directoryExists(skillsPath(env.projectDir))).toBe(false);
+      },
+    );
+
+    it(
+      "with no terminal, refuses before it lists, names the id, and writes nothing",
+      { timeout: TIMEOUTS.INTERACTIVE },
+      async () => {
+        env = await createTestEnvironment();
+        const before = await snapshotInstallSurfaces(env);
+
+        const { exitCode, output } = await runInitFrom(
+          store,
+          OVERLONG_ID,
+          { dir: env.projectDir, globalHome: env.fakeHome },
+          E2E_SOURCE.sourceDir,
+        );
+
+        // First, because it is the defect: unguarded, the file system's error is all the user reads.
+        expect(output, "the refusal must be the CLI's own, not the file system's").not.toContain(
+          "ENAMETOOLONG",
+        );
+        expect(exitCode).toBe(EXIT_CODES.ERROR);
+        expect(compactCliOutput(output)).toContain(OVERLONG_CARRIED_ID);
+        expect(
+          output,
+          "a refused install must not first show the panel of what it would install",
+        ).not.toContain(STEP_TEXT.PANEL_HEADER);
+        expect(await snapshotInstallSurfaces(env)).toStrictEqual(before);
+        expect(await directoryExists(skillsPath(env.projectDir))).toBe(false);
+      },
+    );
+
+    it(
+      "control: with an id exactly as long as a directory name may be, lists and installs it under that id",
+      { timeout: TIMEOUTS.INTERACTIVE },
+      async () => {
+        env = await createTestEnvironment();
+
+        const { exitCode, output } = await runInitFrom(
+          store,
+          LONGEST_ID,
+          { dir: env.projectDir, globalHome: env.fakeHome },
+          E2E_SOURCE.sourceDir,
+        );
+
+        expect(exitCode, `install failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
+        expect(output).toContain(STEP_TEXT.PANEL_HEADER);
+        const carriedFile = path.join(skillsPath(env.projectDir), LONGEST_CARRIED_ID, VICTIM_FILE);
+        expect(await readTestFile(carriedFile)).toBe(CARRIED_BYTES);
+        const config = await loadConfigOrFail(env.projectDir);
+        expect(config.skills).toStrictEqual([
+          buildSkillConfig(E2E_SKILL.react.id, {
+            scope: "project",
+            origin: "eject",
+            displayName: E2E_SKILL.react.display,
+          }),
+          buildSkillConfig(LONGEST_CARRIED_ID, {
+            scope: "project",
+            origin: "eject",
+            displayName: buildSeedExternalSkill().displayName,
+          }),
+        ]);
+      },
+    );
+  });
+
+  describe("edit --from a carried skill whose id is longer than a directory name may be", () => {
+    it(
+      "refuses before it shows the plan or asks, names the id, and writes nothing",
+      { timeout: TIMEOUTS.INTERACTIVE },
+      async () => {
+        env = await createTestEnvironment();
+        await installIntoProject(env, REACT_ONLY_ID);
+        const before = await snapshotInstallSurfaces(env);
+
+        prompt = launchEdit(env, OVERLONG_ID);
+        await prompt.waitForTextOrExit(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
+        const shown = prompt.getOutput();
+
+        expect(
+          shown,
+          "a refused apply must be refused before the user is asked to confirm it",
+        ).not.toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
+        expect(
+          shown,
+          "a refused apply must not first show the panel of what it would install",
+        ).not.toContain(STEP_TEXT.PANEL_HEADER);
+
+        expect(await prompt.waitForExit(TIMEOUTS.EXIT_WAIT)).toBe(EXIT_CODES.ERROR);
+        // Unguarded, this carries the red: the scratch copy `edit` judges a rewrite in fails first.
+        expect(
+          prompt.getOutput(),
+          "the refusal must be the CLI's own, not the file system's",
+        ).not.toContain("ENAMETOOLONG");
+        expect(compactCliOutput(prompt.getOutput())).toContain(OVERLONG_CARRIED_ID);
+        expect(await snapshotInstallSurfaces(env)).toStrictEqual(before);
+      },
+    );
+
+    it(
+      "control: with an id exactly as long as a directory name may be, shows the plan and asks",
+      { timeout: TIMEOUTS.INTERACTIVE },
+      async () => {
+        env = await createTestEnvironment();
+        await installIntoProject(env, REACT_ONLY_ID);
+        const before = await snapshotInstallSurfaces(env);
+
+        prompt = launchEdit(env, LONGEST_ID);
+        await prompt.waitForTextOrExit(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
+        const shown = prompt.getOutput();
+
+        expect(shown).toContain(STEP_TEXT.PANEL_HEADER);
+        expect(shown).toContain(panelRow(ADDED_MARKER, buildSeedExternalSkill().displayName));
+        expect(shown).toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
+
+        await prompt.deny();
+        expect(await prompt.waitForExit(TIMEOUTS.EXIT_WAIT)).toBe(EXIT_CODES.CANCELLED);
         expect(await snapshotInstallSurfaces(env)).toStrictEqual(before);
       },
     );

@@ -249,8 +249,12 @@ describe("edit --from <id> interactive", () => {
       // An unchanged row alone reads as the configuration arriving whole.
       expect(
         planned,
-        "a project apply must name the global skill it keeps though the configuration leaves it out",
-      ).toContain(E2E_SKILL.vitest.id);
+        "a project apply must name the global skill it keeps though the configuration leaves it out, as the panel row does",
+      ).toMatch(
+        new RegExp(
+          `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED)}[\\s\\S]*${matchedAsWritten(`skill ${E2E_SKILL.vitest.display}`)}`,
+        ),
+      );
       expect(
         await snapshotGlobalTree(home),
         "a project apply must leave the global install as it found it",
@@ -286,7 +290,11 @@ describe("edit --from <id> interactive", () => {
       const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
 
       expect(exitCode, `apply failed: ${prompt.getOutput()}`).toBe(EXIT_CODES.SUCCESS);
-      expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_KEPT_AUTHORED);
+      expect(planned, "the notice names the skill written here as the panel row does").toMatch(
+        new RegExp(
+          `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_KEPT_AUTHORED)}[\\s\\S]*${matchedAsWritten(`skill ${E2E_SKILL.vitest.display}`)}`,
+        ),
+      );
       // The user's own work survives a destructive apply that never mentioned it.
       expect(await listFiles(skillsPath(projectDir))).toStrictEqual(
         [E2E_SKILL.react.id, E2E_SKILL.vitest.id].sort(),
@@ -311,8 +319,14 @@ describe("edit --from <id> interactive", () => {
 
       expect(exitCode, `apply failed: ${prompt.getOutput()}`).toBe(EXIT_CODES.SUCCESS);
       // Disclosed with the remedy, or the configuration silently did less than it said.
-      expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_KEPT_UNPLACEABLE);
-      expect(planned).toContain(UNPLACEABLE_SKILL);
+      expect(
+        planned,
+        "with no recorded name and no catalogue to give one, the notice names the kept skill by its id",
+      ).toMatch(
+        new RegExp(
+          `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_KEPT_UNPLACEABLE)}[\\s\\S]*${matchedAsWritten(`skill ${UNPLACEABLE_SKILL}`)}`,
+        ),
+      );
       expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_KEPT_UNPLACEABLE_REMEDY);
 
       // The run still removes what was left out, so the kept entry survives a real rewrite.
@@ -325,6 +339,39 @@ describe("edit --from <id> interactive", () => {
         [E2E_SKILL.react.id, UNPLACEABLE_SKILL].sort(),
       );
       expect(await listFiles(skillsPath(projectDir))).toStrictEqual([E2E_SKILL.react.id]);
+    });
+
+    /** The name an install from a marketplace that still offered it would have recorded. */
+    it("names a skill it keeps that this catalogue cannot place by the name its install recorded, as the panel row does", async () => {
+      const projectDir = await takeProject({ unresolvableSkills: [UNPLACEABLE_SKILL] });
+      const built = await loadConfigOrFail(projectDir);
+      await writeProjectConfig(projectDir, {
+        ...built,
+        skills: built.skills.map((skill) =>
+          skill.id === UNPLACEABLE_SKILL ? { ...skill, displayName: "Tailwind" } : skill,
+        ),
+      });
+      const installedTree = await readTreeSnapshot(projectDir);
+      publishReactAndUnplaceable(APPLY_ID);
+
+      prompt = launch(APPLY_ID, projectDir);
+      await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM, TIMEOUTS.WIZARD_LOAD);
+      const planned = prompt.getOutput();
+      await prompt.deny();
+      const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
+
+      expect(exitCode).toBe(EXIT_CODES.CANCELLED);
+      expect(await readTreeSnapshot(projectDir), "a declined apply changes nothing").toStrictEqual(
+        installedTree,
+      );
+      expect(planned, "the panel draws the kept skill by the name its install recorded").toContain(
+        panelRow(UNCHANGED_MARKER, "Tailwind"),
+      );
+      expect(planned, "the notice names the kept skill as the panel row above it does").toMatch(
+        new RegExp(
+          `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_KEPT_UNPLACEABLE)}[\\s\\S]*${matchedAsWritten("skill Tailwind")}`,
+        ),
+      );
     });
 
     it("keeps a sub-agent it names whose only skill this catalogue cannot place", async () => {
@@ -565,8 +612,9 @@ describe("edit --from <id> interactive", () => {
           Object.keys(globalCopyBefore),
           "the carried skill must be installed globally",
         ).not.toHaveLength(0);
+        // Named as its global install recorded it, which is the name the payload gave it then.
         const namedAsKept = new RegExp(
-          `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED)}[\\s\\S]*${matchedAsWritten(`skill ${CARRIED_ID}`)}`,
+          `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED)}[\\s\\S]*${matchedAsWritten("skill Brainstorming")}`,
         );
         const launchHere = (): InteractivePrompt =>
           new InteractivePrompt(["edit", "--from", CARRIED_ID_GLOBAL], project.dir, {

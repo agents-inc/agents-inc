@@ -129,9 +129,9 @@ describe("init --from <id> into a clean project", () => {
     expect(said).toContain(
       `${CHANGED_MARKER} ${WEB_DEV} ${STEP_TEXT.SUB_AGENT_CHANGED_GLOBALLY} ${STEP_TEXT.SUB_AGENT_GAINS} ${E2E_SKILL.hono.display}`,
     );
-    expect(said).toMatch(
+    expect(said, "the notice names the skill the sub-agent gains as the panel row does").toMatch(
       new RegExp(
-        `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_ADDED_TO_GLOBAL)}[\\s\\S]*${matchedAsWritten(`sub-agent ${WEB_DEV}: + ${E2E_SKILL.hono.id}`)}`,
+        `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_ADDED_TO_GLOBAL)}[\\s\\S]*${matchedAsWritten(`sub-agent ${WEB_DEV}: + ${E2E_SKILL.hono.display}`)}`,
       ),
     );
     expect(said, "a sub-agent the run adds a skill to is not kept as installed").not.toContain(

@@ -195,7 +195,10 @@ describe("the name a run prints itself under", () => {
   });
 
   it("opens and signs off uninstall with the configured name, and with the shipped one when none is configured", async () => {
-    const { configured, unconfigured } = await runBothWays(["uninstall", "--yes"]);
+    const { configured, unconfigured } = await runBothWays(
+      ["uninstall", "--yes"],
+      buildInstalledProject,
+    );
 
     expect(configured).toContain(`${BRANDING.WHITE_LABEL_NAME} ${BRANDING.UNINSTALL_HEADING_NOUN}`);
     expect(configured).toContain(`${BRANDING.WHITE_LABEL_NAME} ${BRANDING.UNINSTALL_SIGN_OFF}`);

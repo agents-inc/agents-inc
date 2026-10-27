@@ -39,8 +39,8 @@ const INSTALLED_ID = "AddsToGlb1";
 const EDITED_ID = "AddsToGlb2";
 
 /** Regex-safe: the leading `+` is a quantifier otherwise. */
-function addedToLine(agentName: string, skillId: string): string {
-  return `sub-agent ${agentName}: + ${skillId}`;
+function addedToLine(agentName: string, skillName: string): string {
+  return `sub-agent ${agentName}: + ${skillName}`;
 }
 
 describe("edit --from <id> from a project, where a new skill joins a held global sub-agent", () => {
@@ -126,18 +126,18 @@ describe("edit --from <id> from a project, where a new skill joins a held global
     await cleanupTempDir(env.tempDir);
   });
 
-  it("names the held sub-agent the new skill joins, with the skill it gains", () => {
+  it("names the held sub-agent the new skill joins, with the skill it gains as the panel names it", () => {
     expect(planned).toMatch(
       new RegExp(
-        `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_ADDED_TO_GLOBAL)}[\\s\\S]*${matchedAsWritten(addedToLine(API_DEV, E2E_SKILL.vitest.id))}`,
+        `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_ADDED_TO_GLOBAL)}[\\s\\S]*${matchedAsWritten(addedToLine(API_DEV, E2E_SKILL.vitest.display))}`,
       ),
     );
   });
 
-  it("names as kept as installed only what it leaves exactly as installed", () => {
+  it("names as kept as installed only what it leaves exactly as installed, as the panel names it", () => {
     expect(planned).toMatch(
       new RegExp(
-        `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED)}[\\s\\S]*${matchedAsWritten(`skill ${E2E_SKILL.zustand.id}`)}`,
+        `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED)}[\\s\\S]*${matchedAsWritten(`skill ${E2E_SKILL.zustand.display}`)}`,
       ),
     );
     expect(planned).toMatch(

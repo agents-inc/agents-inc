@@ -273,10 +273,10 @@ describe("edit --from <id> and a global install the configuration leaves out", (
       ).not.toContain(panelRow(REMOVED_MARKER, E2E_SKILL.vitest.display));
       expect(
         planned,
-        "a project apply must name the global skill it keeps though the configuration leaves it out",
+        "a project apply must name the global skill it keeps though the configuration leaves it out, as the panel row does",
       ).toMatch(
         new RegExp(
-          `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED)}[\\s\\S]*${matchedAsWritten(E2E_SKILL.vitest.id)}`,
+          `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED)}[\\s\\S]*${matchedAsWritten(`skill ${E2E_SKILL.vitest.display}`)}`,
         ),
       );
       expect(planned).not.toContain(realpathSync(fixture.projectB));

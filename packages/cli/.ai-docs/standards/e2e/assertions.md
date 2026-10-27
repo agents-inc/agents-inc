@@ -265,7 +265,7 @@ grep -rnP 'skillIds\??: (readonly )?string\[\]' e2e src --include='*.ts' --inclu
 
 A worklist rather than a verdict, and the exemptions are real and named by CLAUDE.md's own cast
 rule: an id at a boundary that genuinely accepts unvalidated input stays `string`, which is why
-`skippedUnknownSkills` in `src/cli/utils/messages.ts` is correctly typed — its whole subject is ids
+`skippedSkills` in `src/cli/utils/messages.ts` is correctly typed — its whole subject is ids
 the catalogue could not place. The tell for a lie rather than a boundary is a NARROW SIBLING in the
 same file: the module has the generated union imported already and declined to use it at the
 position under suspicion, so no boundary explains the width. `PluginInstalledProjectOptions` in
