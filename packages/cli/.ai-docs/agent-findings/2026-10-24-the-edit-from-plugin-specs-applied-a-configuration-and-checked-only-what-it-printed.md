@@ -15,9 +15,8 @@ domain: cli
 root_cause: enforcement-gap
 status: partial
 partial_note: >-
-  edit-from-plugins-says-what-it-did.test.ts is repaired: each spec that applies now checks the
-  config, the local copies and the plugin host's calls. The three sibling files the census below
-  names are unchanged and were not examined spec by spec.
+  All four spec files are repaired (CLI-974, CLI-976); the two CLAUDE.md sentences proposed below
+  are not landed.
 ---
 
 ## What Was Wrong
@@ -121,3 +120,24 @@ On 2026-10-24 it gave `compile-says-what-it-did` 23 specs and 0 state lines,
 After CLI-976 repaired those three the same day, it gave 23 and 10, 4 and 11, and 43 and 19. It
 undercounts them: they read most of their state through file-local readers (`installedAt`,
 `afterCompileAt`, `bothRoots`, `hostCalls`) that the pattern does not match.
+
+## Correction
+
+Added 2026-10-26 (CLI-981). The first paragraph of "What the checks found" describes the double
+install as live. Since then:
+
+- **It is fixed** (CLI-975, 2026-10-24). `applyScopeChanges` takes the plan's own share,
+  `MigrationPlan.scopeChanges`, so a skill that switches mode reaches `applyMigrations` alone.
+- **A second install was measured** by CLI-975's hand-run on 2026-10-24, against Claude Code
+  2.1.310. Running `claude plugin install` again for an installed plugin exits 0 and prints that it
+  "is already installed (scope: project)". So the duplicate was wasted work, not a failure a user
+  saw.
+- **The `KNOWN GAP` spec** became "asks the host once for a plugin it installs beside its global
+  copy", which expects one call.
+- **The two specs that drive this path** check the whole call list since CLI-981: "says it installs
+  a skill as a plugin in this project beside its global copy, rather than switching it" expects
+  `{ installed: [atProject(REACT)], removed: [] }`, and "says which skill it installs as a plugin
+  beside its global copy and which it switches, counting each" expects
+  `{ installed: [atProject(REACT), atProject(HONO)], removed: [] }`. Under a mutant that hands the
+  scope move the scope-changing switches again, both redden; with their old `toHaveBeenCalledWith`
+  checks, only the once spec did.

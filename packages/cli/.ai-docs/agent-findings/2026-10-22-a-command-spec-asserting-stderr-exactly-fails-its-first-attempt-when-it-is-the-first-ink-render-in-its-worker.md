@@ -12,7 +12,12 @@ reporting_agent: cli-developer
 category: testing
 domain: cli
 root_cause: enforcement-gap
-status: open
+status: resolved
+resolved_by: >-
+  `useMockWorker` in `mock-worker.ts` keeps `onUnhandledRequest: "error"` and gives `data:` URLs a
+  handler that passes them through, so yoga's wasm load prints nothing (CLI-986).
+  `mock-worker.test.ts` was red on the old helper and is green, and the `--retry=0` command below
+  passes. The proposed callback was not used; see Correction.
 ---
 
 ## What Was Wrong
@@ -50,3 +55,20 @@ None — discovery only. `mock-worker.ts` is a shared helper outside the lane th
 Its gate is the `--retry=0` command above going green. Until then, `retry: 1` on the `commands`
 project is covering a deterministic first-render failure as well as real flakes, and nothing says
 which of the two a `(retry x1)` is.
+
+## Correction
+
+2026-10-26, CLI-986. The proposed callback would have stopped the helper refusing anything. With
+msw 2.15, `setupServer` hands an `onUnhandledRequest` callback a `print.error()` that only prints,
+and the request then goes out. Under that callback, a spec's request to a local server no handler
+described was answered `200` by that server. The fix keeps `"error"` and describes `data:` URLs
+with a pass-through handler (`dataUrlsAnswerThemselves`), re-added after every `resetHandlers()`.
+`mock-worker.test.ts` pins both halves: yoga's load and a `data:` fetch print nothing, and an
+undescribed route is refused before it reaches a listening server.
+
+The same `print.error()` still refuses under `@msw/playwright` 0.6.7, which goes through msw's
+`handleRequest`. `refuseUnstubbedThirdParty` in `apps/editor/e2e/fixtures.ts` depends on that.
+
+The `beforeAll` that imports `ink` ahead of `useMockWorker()` in
+`packages/cli/src/cli/lib/__tests__/commands/old-claude-src-folder.test.ts` worked around this
+defect and is no longer needed.

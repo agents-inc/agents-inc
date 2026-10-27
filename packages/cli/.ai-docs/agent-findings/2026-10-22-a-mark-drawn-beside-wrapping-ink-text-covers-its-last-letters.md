@@ -14,10 +14,11 @@ domain: web
 root_cause: convention-undocumented
 status: partial
 partial_note: >-
-  Fixed in `SkillRow` and in `list`'s header rows (`HeaderRow`), pinned at 80 and 100 columns by
-  `e2e/interactive/list-keeps-long-names-whole.e2e.test.ts` and in-process at 80 by
-  `list-shows-the-installation.test.ts`. Open in `PanelHeader` (`summary-panel.tsx`), whose
-  Marketplace and Stack rows still let the label shrink.
+  Fixed in `SkillRow`, in `list`'s header rows (`HeaderRow`) and in `PanelHeader`
+  (`summary-panel.tsx`), pinned at 80 and 100 columns by
+  `e2e/interactive/list-keeps-long-names-whole.e2e.test.ts` and
+  `e2e/interactive/init-from-panel-keeps-long-names-whole.e2e.test.ts`. Open: the Proposed Standard
+  below is in no standards file.
 ---
 
 ## What Was Wrong
@@ -39,16 +40,16 @@ left the bullet alone on its line at 100 columns.
 
 Search for the label shape, run over every Ink component:
 `grep -rn -A2 'flexDirection="row" columnGap={1}' src/cli --include='*.tsx' | grep -B1 -A1 bold`
-finds `list.tsx` (fixed) and `PanelHeader` in `summary-panel.tsx` (Marketplace and Stack), and
-nothing else.
+finds `list.tsx` and `PanelHeader` in `summary-panel.tsx` (Marketplace and Stack), both since
+fixed, and nothing else.
 
 ## Fix Applied
 
 `SkillRow` puts the mark inside the name's own `<Text>`, so it wraps after the last letter, and
 gives the prefix its own `flexShrink={0}` box, so a long name wraps under itself. `paddingRight={1}`
 keeps a name that fills its half from running into the next. `list`'s Mode and Marketplace rows go
-through a `HeaderRow` whose label sits in a `flexShrink={0}` box. `PanelHeader` is not changed: its
-file belongs to the lane building the confirm-screen panel.
+through a `HeaderRow` whose label sits in a `flexShrink={0}` box, and `PanelHeader`'s Marketplace
+and Stack rows later took the same shape.
 
 ## Proposed Standard
 

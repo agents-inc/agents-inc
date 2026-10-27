@@ -11,7 +11,12 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: convention-undocumented
-status: open
+status: resolved
+resolved_by: >-
+  CLI-957. `loadAndMergeFromBasePath` seats nothing, and `convertStackToResolvedStack` takes the
+  catalogue it filters a stack against as an argument, so `loadMarketplaceMatrix` and a load that
+  throws after reading the folder leave the seat as they found it. Pinned by specs in
+  `source-loader.test.ts` and `catalogue-seat.test.ts`.
 ---
 
 ## What Was Wrong
@@ -77,3 +82,32 @@ panel reads that record. `catalogueOfFolderUnseated` and the folder read are del
 named in the correction above was rewritten in that file to name the plugin by its record.
 `status:` stays `open`: `loadMarketplaceMatrix` still seats what it reads and its docblock still
 does not say so (CLI-957).
+
+## Correction
+
+Added 2026-10-26 by the cli-developer (CLI-957). The loader no longer seats what it reads, so the
+"Proposed Standard" above is met without a docblock saying it seats, and without a second,
+read-only loader.
+
+- **Fix.** `loadAndMergeFromBasePath` in `lib/loading/source-loader.ts` no longer calls
+  `initializeMatrix`. The seat was there only to hand the stack filter a catalogue. Now
+  `convertStackToResolvedStack(stack, catalogue)` takes that catalogue as an argument, and its
+  filter reads only that argument. The helper passes the catalogue it just built. The one seat left
+  in the loader is `loadCatalogue`'s, on success. `loadSkillsMatrixFromSource`'s docblock says so:
+  it seats the merged catalogue on success, and a failed load seats nothing.
+- **A second path the body did not name.** A `loadSkillsMatrixFromSource` that threw after the
+  folder was read also left that folder's catalogue seated. The refusal from
+  `resolveMarketplaceLabels` comes after the helper had seated. This contradicted
+  `withCatalogueSeatedFor`'s docblock in `lib/loading/catalogue-seat.ts`, which says a failed load
+  seats nothing. That docblock is now true, and the same change fixed it.
+- **What holds it.** In `source-loader.test.ts`:
+  - "reading a marketplace folder leaves the catalogue the caller seated";
+  - "a load refused after it read the folder seats nothing", with its permitted twin "a load that
+    succeeds seats the catalogue it built";
+  - "filters a stack against the catalogue it is handed, not the one seated".
+
+  In `catalogue-seat.test.ts`: "a load refused after reading the folder leaves the caller's
+  catalogue seated". `lib/__tests__/commands/build/marketplace-catalog.test.ts` › `stacks` reddens
+  if the seat is removed while the filter still reads it.
+- **No output changed.** The `catalog.json` that `build marketplace` writes for a fixture
+  marketplace shipping its own stack was compared byte for byte before and after.

@@ -7,6 +7,11 @@ affected_files:
   - src/cli/lib/agents/write-compiled-agents.ts
   - src/cli/lib/operations/skills/discover-skills.ts
   - src/cli/commands/init.tsx
+  - src/cli/lib/installation/install-layout.ts
+  - src/cli/lib/installation/install-base-dir.ts
+  - src/cli/lib/operations/project/compile-agents-all-scopes.ts
+  - src/cli/lib/configuration/project-config.ts
+  - src/cli/lib/loading/source-loader.ts
 standards_docs:
   - CLAUDE.md
 date: 2026-10-22
@@ -16,13 +21,13 @@ domain: cli
 root_cause: convention-undocumented
 status: partial
 partial_note: >-
-  The doctor read and the uninstall deregistration are repaired: a `deregister-project` mutation
-  carries the project's provider and `mutateGlobal` edits that provider's global
-  (uninstall-under-a-home-holding-both-global-installations.e2e.test.ts, Codex red, Claude the
-  control). The other reads the census lists still ask the home folder. One is now reproduced:
-  `compile --verbose` in a Codex project under a home holding both reads its global copied-in
-  skills from the home's `.claude/skills`, exit 0. The census grep misses the same shape spelled
-  `resolveInstallPaths(<dir>, "global")`, as in `operations/project/compile-agents-all-scopes.ts`.
+  Code landed (CLI-984): every read of the inherited global asks `inheritedGlobalProvider` in
+  `installation/install-layout.ts`, doctor's rule, now the one definition (`hostsOnDisk` uses it).
+  The census was widened to the spellings the first grep missed (`resolveInstallPaths(<dir>,
+  "global")`, `loadInstalledConfig(<home>)`, `hostAt(<home>)`, the configs-in-play list, the source
+  loader's global reads). Reproduced before the fix: `compile` in a Codex project refused over a
+  broken skill in the Claude global and compiled past one in its own. Pending: the proposed
+  CLAUDE.md standard (convention-keeper).
 ---
 
 ## What Was Wrong
@@ -61,13 +66,33 @@ grep -rn "providerInUse(os.homedir())\|providerInUse(homeDir)\|providerInUse(hom
 
 ## Fix Applied
 
-`hostsOnDisk` takes the project's own provider for the global where the home holds an installation
+**CLI-984, the rest of the census.** `inheritedGlobalProvider(projectDir)` in
+`installation/install-layout.ts` answers the project's own provider where the project holds an
+installation of it and so does the home, else the home's own read; `providerAtScope` applies it at
+global scope. Reads routed through it: `resolveInstallPaths(<project>, "global")` (so
+`copy-local-skills`, `local-skill-mover`, `seed/installation-payload`, `seed/external-skills`,
+`unresolved-skill-entries`, `mode-migrator`, `eject`, `edit`, `init` and `content-validator` follow
+without a change of their own), `discover-skills` (copied-in and plugin, through
+`discoverAllPluginSkills(root, provider)`), the global compile pass (`compileAgents` /
+`recompileAgents` / `writeCompiledAgentsByScope` carry the compiled installation's provider),
+`configsInPlay` (replaces `configDirsInPlay`: `ensureConfigReadable`, the placement re-check and
+doctor's content rows), `detectGlobalInstallation`, the source loader's global copied-in skills and
+seated plugin skills, `resolveSource`'s global rung, branding, `loadGlobalStack`, the multi-source
+plugin tagging, `list`'s agent count and `init`'s agent extension. Red, then green:
+`discover-skills-under-a-home-holding-both.test.ts`, `copy-local-skills.test.ts`,
+`compile-agents-all-scopes.test.ts`, `compile-under-a-home-holding-both-global-installations.e2e`
+and `edit-from-under-a-home-holding-both-global-installations.e2e`, Codex red, Claude the control.
+Census after, the same greps: the hits left are the rule's own fallback, `writeFromHome` and
+`set-source` (at home), and two reads reached only where the project holds no installation, where
+the rule answers the home's own anyway.
+
+**Earlier, doctor and uninstall.** `hostsOnDisk` takes the project's own provider for the global where the home holds an installation
 of it; a home holding only the other provider is read as before. Red, then green:
 `installation-reads.test.ts` "reads a home holding both installations as the %s project's own
 provider's global" (Codex red, Claude the control), and
 `e2e/lifecycle/codex-doctor-under-a-home-holding-both-global-installations.e2e.test.ts`, each
 provider with no terminal and at a 120-column PTY (Codex red on the Layout row and
-`! 1 skill missing from disk`; Claude green throughout). The rest of the census is unrepaired.
+`! 1 skill missing from disk`; Claude green throughout).
 
 ## Proposed Standard
 

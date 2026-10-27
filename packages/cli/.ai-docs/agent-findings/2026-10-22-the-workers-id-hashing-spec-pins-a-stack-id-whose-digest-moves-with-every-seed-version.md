@@ -10,7 +10,13 @@ reporting_agent: cli-developer
 category: testing
 domain: api
 root_cause: convention-undocumented
-status: open
+status: partial
+partial_note: >-
+  The spec half landed on 2026-10-26. `names a payload by the base64url SHA-256 of what it stores`
+  finds its stack id on every run (`findUrlUnsafeStackId` in `apps/server/src/index.test.ts`): it
+  posts a probe id, takes the body the worker stored, swaps each candidate id into it and hashes
+  that, so a `v` bump or a fixture change finds a new id instead of reddening the spec. The Proposed
+  Standard is not written into `clean-code-standards.md`.
 ---
 
 ## What Was Wrong

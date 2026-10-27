@@ -8,6 +8,7 @@ affected_files:
   - src/cli/lib/__tests__/integration/installation.test.ts
   - src/cli/lib/installation/installation.test.ts
   - src/cli/lib/plugins/plugin-info.test.ts
+  - src/cli/lib/operations/project/detect-project.test.ts
 standards_docs:
   - CLAUDE.md
 date: 2026-10-22
@@ -15,7 +16,13 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: enforcement-gap
-status: open
+status: resolved
+resolved_by: >-
+  CLI-985. `skillsDir` is deleted from `Installation` and from `detectInstallationInDir` in
+  `src/cli/lib/installation/installation.ts`, with the factory and spec lines that set or asserted
+  it. The detection specs in `installation.test.ts` and `integration/installation.test.ts` now
+  compare the whole detected installation with `toStrictEqual`, a Codex case included, so a field
+  added back fails them.
 ---
 
 ## What Was Wrong

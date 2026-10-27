@@ -14,7 +14,17 @@ reporting_agent: cli-developer
 category: testing
 domain: cli
 root_cause: missing-rule
-status: open
+status: resolved
+resolved_by: >-
+  CLI-968 (2026-10-24) took the second proposal: the init hook calls
+  forgetTheProviderChosenForThisRun() before anything else, so every run through dist/ starts with
+  no provider chosen and a --provider one run names never reaches the next. It is pinned by
+  a-provider-one-run-names-is-not-the-next-runs.test.ts. The class, re-derived 2026-10-26 with the
+  census grep in the body (six files now): remedies-name-the-installation-beside-another.test.ts no
+  longer orders its specs or says why; the three source-imported files keep their afterEach reset,
+  which their in-process runs still need, and CLI-981 cut the dist reason from their docblocks
+  (grep -rn -i 'outlive' over the spec files finds none of it). No rule is owed, since nothing
+  leaks.
 ---
 
 ## What Was Wrong
