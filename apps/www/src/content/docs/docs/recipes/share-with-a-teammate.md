@@ -47,7 +47,7 @@ The id is the configuration's own hash. Sharing an unchanged installation return
 
 ```
 Kept — written here rather than installed, so a shared configuration never carried them:
-  skill my-house-style
+  skill My House Style
 ```
 
 The `projects` registry, `author` and `branding` stay behind too. They describe your machine rather than the configuration, and the payload has no field for any of them.

@@ -86,7 +86,7 @@ Nothing in `config.ts` is rewritten, so the row survives and the warning repeats
 
 **What it buys you**: running `npx agents-inc compile` from your home directory rewrites each registered project's `config.ts` and `config-types.ts` so the inlined global half is current, and recompiles them. Without the registry a global change would be invisible to every project until you visited it.
 
-A registered project the fan-out can't reach is warned by name and the run continues. The type unions at the scope you compiled were still written.
+A registered project the fan-out can't reach, or whose `config.ts` declares nothing, is warned by name and left as it is, and the run continues. The type unions at the scope you compiled were still written.
 
 ## The path overrides
 

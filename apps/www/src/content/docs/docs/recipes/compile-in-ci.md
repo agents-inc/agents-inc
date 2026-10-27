@@ -73,7 +73,7 @@ Completed with 1 failure(s) — the changes above landed, these did not:
 
 A store on this machine (`localhost`, `127.x.x.x` or `[::1]`) also points every editor link the CLI prints or opens at the local editor, `http://localhost:5173/editor`.
 
-There's no refresh flag and no offline flag. Every load revalidates its cached copy of the marketplace against the remote with a five-second budget, and when it can't reach the remote uses the cache and warns (`doctor` fails its `Marketplace Reachable` row instead):
+There's no refresh flag and no offline flag. A load checks its cached copy of the marketplace against the remote with a five-second budget, unless that copy was saved without a version stamp ([see Common problems](/docs/troubleshooting/common-problems#a-marketplace-that-will-not-load)), and when it can't reach the remote uses the cache and warns (`doctor` fails its `Marketplace Reachable` row instead):
 
 ```
 Could not reach github:acme/skills — using the cached copy, which may be out of date.
