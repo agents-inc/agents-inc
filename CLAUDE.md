@@ -68,11 +68,11 @@ publishes to npm.
   already been ruled in practice: the skill-category dropdown is editor-only because nothing on the
   CLI side creates a custom skill, while the CLI installing editor-added external skills was a
   genuine blocker, because that is consumption.
-- **Always compact the session at 500k context used.** Not at a hard limit, and not only when
+- **Always compact the session at 200k context used.** Not at a hard limit, and not only when
   asked. Sessions here run long and orchestrate many sub-agents, each returning a large report, so
   context fills unevenly and a limit hit mid-programme loses the thread of what landed, what is
   running and what is still owed. Compact between units of work rather than mid-dispatch, so the
-  summary records a clean state.
+  summary records a clean state. Every orchestrator step re-reads its whole context, so a long session's context size multiplies across thousands of steps.
 - **`packages/cli` formats itself** — 100 columns, semicolons, double quotes — while everything else
   uses the root config. Prettier picks the nearest config walking up, so this happens on its own; the
   reasoning is in the `//` notes in [`package.json`](./package.json).
