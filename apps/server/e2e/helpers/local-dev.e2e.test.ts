@@ -1,10 +1,15 @@
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, sep } from "node:path"
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { devEnvironment, publishIntoLocalStore, startDev } from "./local-dev"
+import {
+  WRANGLER_AGENT_SKILLS_LIST,
+  devEnvironment,
+  publishIntoLocalStore,
+  startDev,
+} from "./local-dev"
 import {
   cameTrueWithin,
   isRunning,
@@ -20,10 +25,6 @@ import type { StandInGitHub } from "./stand-in-github"
 
 // How the helpers run their processes, with stand-ins for `bunx wrangler` and `bun run dev`, so no
 // worker starts. Collected by vitest.e2e.config.ts: the workerd pool `test` uses cannot spawn.
-
-// What wrangler fetches under an AI agent when its skills cache is a day old.
-const WRANGLER_AGENT_SKILLS_LIST =
-  "https://api.github.com/repos/cloudflare/skills/contents/skills"
 
 const PUBLISHED_INDEX: SkillIndex = {
   builtAt: "2026-10-16T09:00:00.000Z",
@@ -84,6 +85,9 @@ const WRANGLER_AGENT_RULES: readonly AgentRule[] = [
 
 const CALLER_SETTING = "SERVER_E2E_CALLER_SETTING"
 const KEPT = "kept from the caller"
+
+// Where the caller's wrangler keeps its config, its cached skills list included.
+const CALLER_CONFIG_HOME = join(tmpdir(), "the-callers-config")
 
 let scratch: string
 let github: StandInGitHub
@@ -149,6 +153,17 @@ describe("devEnvironment", () => {
     const passed = passedOnFromACallerWith({ [CALLER_SETTING]: KEPT })
 
     expect(passed[CALLER_SETTING]).toBe(KEPT)
+  })
+
+  it("gives wrangler a config folder inside the run's own scratch, so no skills list the caller's wrangler cached stands in for asking GitHub", () => {
+    const passed = passedOnFromACallerWith({
+      XDG_CONFIG_HOME: CALLER_CONFIG_HOME,
+    })
+
+    expect(
+      passed.XDG_CONFIG_HOME?.startsWith(`${scratch}${sep}`),
+      "wrangler reads the caller's cached skills list, so whether it asks GitHub depends on that list's age"
+    ).toBe(true)
   })
 })
 

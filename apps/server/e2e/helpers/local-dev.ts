@@ -39,6 +39,11 @@ export type DevSession = {
   stop: () => Promise<void>
 }
 
+// What wrangler asks GitHub for under an AI agent, unless it has a copy under a
+// day old in its config folder.
+export const WRANGLER_AGENT_SKILLS_LIST =
+  "https://api.github.com/repos/cloudflare/skills/contents/skills"
+
 // What wrangler's agent detector (`detectAgent` in wrangler-dist/cli.js) reads
 // as an AI agent, under which wrangler asks GitHub for cloudflare/skills. A rule
 // needs all of its variables, so one name per rule is enough.
@@ -89,6 +94,9 @@ export const devEnvironment = (
   WRANGLER_HIDE_BANNER: "true",
   WRANGLER_LOG_PATH: join(scratch, "wrangler-logs"),
   WRANGLER_REGISTRY_PATH: join(scratch, "wrangler-registry"),
+  // Empty, so no skills list the caller's wrangler cached stands in for
+  // asking GitHub. Wrangler reads `~/.wrangler` instead where that exists.
+  XDG_CONFIG_HOME: join(scratch, "wrangler-config"),
   ...overrides,
 })
 

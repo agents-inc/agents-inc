@@ -217,6 +217,19 @@ describe("GET /skills", () => {
     )
   })
 
+  // Each CORS run appends `Origin` to Vary, so a second mount covering this
+  // path names it twice.
+  it("names the origin once in Vary", async () => {
+    await publish(indexBuiltAt(someTimeAgo(RECENTLY)))
+
+    const response = await SELF.fetch(`${BASE}/skills`, {
+      headers: { origin: "http://localhost:5173" },
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("vary")).toBe("Origin")
+  })
+
   it("does not admit any other origin", async () => {
     await publish(indexBuiltAt(someTimeAgo(RECENTLY)))
 

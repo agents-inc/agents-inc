@@ -2,6 +2,7 @@ import { SELF, env } from "cloudflare:test"
 import {
   COMPOSE_TOO_LONG_BODY,
   NO_CONFIG_BODY,
+  STACK_NAME_TAKEN_BODY,
   STORE_REFUSED_BODY,
   UNREADABLE_CONFIG_BODY,
   seedPayload,
@@ -49,12 +50,50 @@ const ID_LENGTH = 8
 // Written out rather than imported, so moving the cap reddens these.
 const BODY_CAP_BYTES = 1_048_576
 
-// Its payload hashes to `+/…` in standard base64, so both characters a URL
-// cannot carry fall inside the id.
-const URL_UNSAFE_STACK_ID = "url-unsafe-540"
-
 const sha256 = (text: string) =>
   crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))
+
+const storedUnderItsId = async (body: SeedPayload) => {
+  const response = await post(body)
+  const { id } = await response.json<{ id: string }>()
+  const stored = await env.CONFIGS.get(id)
+  if (stored === null) throw new Error("the worker named a key it never wrote")
+  return { id, stored }
+}
+
+// Both characters a URL cannot carry.
+const URL_UNSAFE_PAIR = /\+\//
+
+const PROBE_STACK_ID = "url-unsafe-probe"
+
+// Seven places for the pair, each 1 in 64²: about one id in 585 qualifies, so
+// finding none in this many is a fault rather than bad luck.
+const CANDIDATE_COUNT = 10_000
+
+/**
+ * A stack id whose stored payload hashes to `+/` inside the id. Searched on
+ * every run because any change to the stored bytes, a `v` bump included,
+ * moves every digest. The body the worker stores for a probe id, with each
+ * candidate swapped in, stands for what it would store for that candidate.
+ */
+const findUrlUnsafeStackId = async () => {
+  const { stored } = await storedUnderItsId(
+    payload({ stackId: PROBE_STACK_ID })
+  )
+  const quoted = JSON.stringify(PROBE_STACK_ID)
+  if (stored.split(quoted).length !== 2)
+    throw new Error(`the stored body does not carry ${quoted} exactly once`)
+
+  for (let n = 0; n < CANDIDATE_COUNT; n += 1) {
+    const stackId = `url-unsafe-${String(n)}`
+    const digest = await sha256(stored.replace(quoted, JSON.stringify(stackId)))
+    if (URL_UNSAFE_PAIR.test(encodeBase64(digest).slice(0, ID_LENGTH)))
+      return stackId
+  }
+  throw new Error(
+    `no stack id from url-unsafe-0 to url-unsafe-${String(CANDIDATE_COUNT - 1)} hashes to +/ inside the id`
+  )
+}
 
 /** Padded so its JSON is exactly `bytes` long. */
 const payloadOfLength = (bytes: number) => {
@@ -63,6 +102,8 @@ const payloadOfLength = (bytes: number) => {
 }
 
 const storeFailure = new Error("the store is down")
+
+const STACK = { name: "mine", configId: "abcd1234" }
 
 const CARRIED_ID = "external-web-framework-house"
 
@@ -258,14 +299,15 @@ describe("POST /configs", () => {
 
   // A `+` or `/` in the id would break the share link the editor builds from it.
   it("names a payload by the base64url SHA-256 of what it stores", async () => {
-    const response = await post(payload({ stackId: URL_UNSAFE_STACK_ID }))
-    const { id } = await response.json<{ id: string }>()
-    const stored = await env.CONFIGS.get(id)
-    if (stored === null)
-      throw new Error("the worker named a key it never wrote")
+    const stackId = await findUrlUnsafeStackId()
+
+    const { id, stored } = await storedUnderItsId(payload({ stackId }))
     const digest = await sha256(stored)
 
-    expect(encodeBase64(digest).slice(0, ID_LENGTH)).toMatch(/\+\//)
+    expect(
+      encodeBase64(digest).slice(0, ID_LENGTH),
+      "the probe's body did not predict what the worker stored"
+    ).toMatch(URL_UNSAFE_PAIR)
     expect(id).toBe(encodeBase64Url(digest).slice(0, ID_LENGTH))
   })
 
@@ -482,8 +524,6 @@ describe("the typed client the editor uses", () => {
     })
   }
 
-  const STACK = { name: "mine", configId: "abcd1234" }
-
   it("saves a stack and lists it back", async () => {
     const { stacks } = await signedIn()
 
@@ -495,6 +535,35 @@ describe("the typed client the editor uses", () => {
     const listed = await stacks.$get()
     if (!listed.ok) throw new Error("the worker refused a signed-in list")
     expect((await listed.json()).map((stack) => stack.id)).toEqual([id])
+  })
+
+  // A status the route does not declare fails the narrowing at compile time.
+  it("tells a save under a name the account holds apart, by a status it declares", async () => {
+    const { stacks } = await signedIn()
+    await stacks.$post({ json: STACK })
+
+    const again = await stacks.$post({ json: STACK })
+
+    expect(again.status).toBe(409)
+    if (again.status !== 409) throw new Error("the worker took a held name")
+    expect(await again.json()).toStrictEqual(STACK_NAME_TAKEN_BODY)
+  })
+
+  it("tells a rename onto a name the account holds apart, by a status it declares", async () => {
+    const { stacks } = await signedIn()
+    await stacks.$post({ json: STACK })
+    const other = await stacks.$post({ json: { ...STACK, name: "other" } })
+    if (!other.ok) throw new Error("the worker refused a signed-in save")
+    const { id } = await other.json()
+
+    const renamed = await stacks[":id"].$patch({
+      param: { id },
+      json: { name: STACK.name },
+    })
+
+    expect(renamed.status).toBe(409)
+    if (renamed.status !== 409) throw new Error("the worker took a held name")
+    expect(await renamed.json()).toStrictEqual(STACK_NAME_TAKEN_BODY)
   })
 
   it("answers a request with no session 401", async () => {
@@ -647,6 +716,70 @@ describe("CORS", () => {
       expect(response.headers.get("access-control-allow-origin")).toBe(
         "http://localhost:5173"
       )
+    }
+  )
+
+  type WebAppCall = {
+    method: string
+    path: string
+    status: number
+    headers?: Record<string, string>
+    body?: string
+  }
+
+  const asJson = (body: unknown) => ({
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  })
+
+  // Signed in, so the stack routes answer past their session check.
+  const fromTheWebApp = async ({ method, path, headers, body }: WebAppCall) => {
+    const { cookie } = await seedSession(env)
+
+    return SELF.fetch(`${BASE}${path}`, {
+      method,
+      headers: { ...headers, cookie, origin: "http://localhost:5173" },
+      body: body ?? null,
+    })
+  }
+
+  // `/x/*` matches a bare `/x` as well, and each CORS run appends `Origin` to
+  // Vary, so a path two mounts cover names it twice.
+  const SERVED_TO_THE_WEB_APP: WebAppCall[] = [
+    { method: "POST", path: "/configs", ...asJson(payload()), status: 201 },
+    { method: "GET", path: "/configs/unknown1", status: 404 },
+    { method: "GET", path: "/stacks", status: 200 },
+    { method: "POST", path: "/stacks", ...asJson(STACK), status: 201 },
+    {
+      method: "PATCH",
+      path: "/stacks/unknown1",
+      ...asJson({ name: "other" }),
+      status: 404,
+    },
+    { method: "DELETE", path: "/stacks/unknown1", status: 204 },
+    {
+      method: "POST",
+      path: "/compose",
+      ...asJson({ sentence: "x".repeat(601) }),
+      status: 400,
+    },
+    {
+      method: "POST",
+      path: "/monitoring",
+      headers: { "content-type": "application/x-sentry-envelope" },
+      body: "not an envelope",
+      status: 400,
+    },
+    { method: "GET", path: "/api/auth/get-session", status: 200 },
+  ]
+
+  it.each(SERVED_TO_THE_WEB_APP)(
+    "names the origin once in Vary on the web app's $method to $path",
+    async (call) => {
+      const response = await fromTheWebApp(call)
+
+      expect(response.status).toBe(call.status)
+      expect(response.headers.get("vary")).toBe("Origin")
     }
   )
 })

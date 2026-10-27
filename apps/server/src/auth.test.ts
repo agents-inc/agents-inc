@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test"
 import { HttpResponse, http } from "msw"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { upstreamMock } from "../vitest.setup"
 import { createAuth } from "./auth"
@@ -217,5 +217,120 @@ describe("redeeming GitHub's code", () => {
         clientSecret: env.GITHUB_CLIENT_SECRET,
       },
     ])
+  })
+})
+
+// The owner's ruling: a sign-in lasts 90 days, and using it renews it, at
+// most once a day. `get-session` is what the editor reads its session from.
+describe("how long a sign-in lasts", () => {
+  const HOUR_MS = 60 * 60 * 1000
+  const DAY_MS = 24 * HOUR_MS
+  const LIFETIME_DAYS = 90
+  const LIFETIME_MS = LIFETIME_DAYS * DAY_MS
+
+  // Development's cookie name: `env` serves the editor over plain http.
+  const SESSION_COOKIE = "better-auth.session_token"
+
+  type SessionRead = {
+    session: { expiresAt: string; createdAt: string; updatedAt: string }
+    user: { id: string }
+  } | null
+
+  // As the editor asks: its cookie, from its origin.
+  const readSession = (cookie: string) =>
+    app.request(
+      `${BASE}/api/auth/get-session`,
+      { headers: { cookie, origin: env.WEB_ORIGIN } },
+      env
+    )
+
+  const sessionCookieOf = (response: Response) => {
+    const line = response.headers
+      .getSetCookie()
+      .find((cookie) => cookie.startsWith(`${SESSION_COOKIE}=`))
+    if (line === undefined) throw new Error("no session cookie was set")
+    return line
+  }
+
+  /** Signed in `ago` milliseconds back, and not used since. */
+  const signedInAgo = async (ago: number) => {
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() - ago })
+    try {
+      return await seedSession(env)
+    } finally {
+      vi.useRealTimers()
+    }
+  }
+
+  /** Brackets the expiry between two clock readings taken around the write. */
+  const expectLifetimeFrom = (
+    read: SessionRead,
+    { from, to }: { from: number; to: number }
+  ) => {
+    if (read === null) throw new Error("the worker answered with no session")
+    const expiresAt = Date.parse(read.session.expiresAt)
+    expect(expiresAt).toBeGreaterThanOrEqual(from + LIFETIME_MS)
+    expect(expiresAt).toBeLessThanOrEqual(to + LIFETIME_MS)
+  }
+
+  it("holds a new sign-in for 90 days from the moment it was made", async () => {
+    const from = Date.now()
+    const person = await seedSession(env)
+    const to = Date.now()
+
+    const read = await (await readSession(person.cookie)).json<SessionRead>()
+
+    expectLifetimeFrom(read, { from, to })
+  })
+
+  // The two sides of 90 days, for someone who has not been back since.
+  describe("someone who has not been back since signing in", () => {
+    it("is still signed in 89 days later", async () => {
+      const person = await signedInAgo(89 * DAY_MS)
+
+      const read = await (await readSession(person.cookie)).json<SessionRead>()
+
+      expect(read?.user.id).toBe(person.userId)
+    })
+
+    it("is signed out 91 days later", async () => {
+      const person = await signedInAgo(91 * DAY_MS)
+
+      const read = await (await readSession(person.cookie)).json<SessionRead>()
+
+      expect(read).toBeNull()
+    })
+  })
+
+  // The two sides of the one-day renewal age.
+  describe("using a sign-in", () => {
+    it("renews it for another 90 days once a day has passed since it was last renewed", async () => {
+      const person = await signedInAgo(DAY_MS + HOUR_MS)
+
+      const from = Date.now()
+      const response = await readSession(person.cookie)
+      const to = Date.now()
+
+      // 90 days, in seconds.
+      expect(sessionCookieOf(response)).toContain("Max-Age=7776000;")
+      const renewed = await response.json<SessionRead>()
+      expectLifetimeFrom(renewed, { from, to })
+      // Kept by the server, not only answered.
+      const readAgain = await (
+        await readSession(person.cookie)
+      ).json<SessionRead>()
+      expect(readAgain?.session.expiresAt).toBe(renewed?.session.expiresAt)
+    })
+
+    it("leaves it as it was within a day of its last renewal", async () => {
+      const person = await signedInAgo(DAY_MS - HOUR_MS)
+
+      const response = await readSession(person.cookie)
+
+      expect(response.headers.getSetCookie()).toStrictEqual([])
+      const read = await response.json<SessionRead>()
+      expect(read?.user.id).toBe(person.userId)
+      expect(read?.session.updatedAt).toBe(read?.session.createdAt)
+    })
   })
 })

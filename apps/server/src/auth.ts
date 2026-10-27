@@ -18,6 +18,15 @@ type CloudflareKv = NonNullable<CloudflareOptions["kv"]>
 
 const AUTH_BASE_PATH = "/api/auth"
 
+const DAY_SECONDS = 24 * 60 * 60
+
+// Seconds. A use more than a day after the last renewal restarts the full
+// lifetime. `satisfies` refuses a misspelt key, as for DECLINE_LOCATION.
+const SESSION_LIFETIME = {
+  expiresIn: 90 * DAY_SECONDS,
+  updateAge: DAY_SECONDS,
+} as const satisfies NonNullable<BetterAuthOptions["session"]>
+
 // Location detection off. `cf` must be present (even empty) on both paths or
 // the adapter throws. Both flags default on, and only a fresh object literal is
 // checked for unknown keys, so `satisfies` is what refuses a misspelt one.
@@ -65,6 +74,8 @@ export const createAuth = (env?: Env) => {
       },
 
       trustedOrigins: env ? [env.WEB_ORIGIN] : [],
+
+      session: SESSION_LIFETIME,
 
       advanced: {
         // Same registrable domain, so the cookie is same-site and needs only the

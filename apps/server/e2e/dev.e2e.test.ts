@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { INDEXED_REPOS } from "../src/crawl"
 import {
+  WRANGLER_AGENT_SKILLS_LIST,
   devEnvironment,
   publishIntoLocalStore,
   startDev,
@@ -95,6 +96,9 @@ const LEFT_OVER: SkillIndexEntry = {
   stars: 1,
   bytes: 1,
 }
+
+// Claude Code's, which wrangler reads as an AI agent it installs skills for.
+const AN_AI_AGENT = { CLAUDECODE: "1" }
 
 const GITHUB_DOWN = [
   http.all("*", () => new HttpResponse(null, { status: 503 })),
@@ -211,6 +215,29 @@ describe("`bun run dev` in apps/server", () => {
     expect(served.freshness).toBe("fresh")
     expect(served.body).toStrictEqual(kept)
     expect(github.requested()).toStrictEqual([])
+  })
+
+  // The check above can fail: a variable let through is a request, whatever
+  // the caller's wrangler has cached.
+  it("keeps an index younger than three days, and asks GitHub only for wrangler's skills list once an AI agent's variable is let through", async ({
+    signal,
+  }) => {
+    const underAnAgent = devEnvironment(scratch, {
+      ...github.environment,
+      ...AN_AI_AGENT,
+    })
+    const kept = indexBuiltAgo(YOUNGER_THAN_THREE_DAYS)
+    await publishIntoLocalStore(store(), kept, underAnAgent, signal)
+    dev = await startDev(store(), underAnAgent, signal)
+
+    const served = await askForIndex(dev)
+
+    expect(served.status, dev.output()).toBe(200)
+    expect(served.body).toStrictEqual(kept)
+    expect(
+      new Set(github.requested()),
+      "the check above cannot see a variable let through: wrangler answered from a skills list cached outside this run, or no longer asks for one"
+    ).toStrictEqual(new Set([WRANGLER_AGENT_SKILLS_LIST]))
   })
 
   it("applies the local D1 migrations, so signing in starts instead of failing", async ({

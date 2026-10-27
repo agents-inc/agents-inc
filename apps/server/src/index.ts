@@ -146,12 +146,11 @@ const allowOnlyWebOrigin = cors({
   exposeHeaders: [SKILL_INDEX_FRESHNESS_HEADER, RETRY_AFTER_HEADER],
 })
 
+// One mount per path: `/x/*` matches a bare `/x` too, and a second mount would
+// run CORS twice there.
 app.use("/configs/*", allowOnlyWebOrigin)
-app.use("/configs", allowOnlyWebOrigin)
 app.use("/skills", allowOnlyWebOrigin)
-app.use("/skills/*", allowOnlyWebOrigin)
 app.use("/monitoring", allowOnlyWebOrigin)
-app.use("/stacks", allowOnlyWebOrigin)
 app.use("/stacks/*", allowOnlyWebOrigin)
 app.use("/api/auth/*", allowOnlyWebOrigin)
 app.use("/compose", allowOnlyWebOrigin)
