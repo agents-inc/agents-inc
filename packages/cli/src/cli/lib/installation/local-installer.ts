@@ -19,8 +19,9 @@ import {
   type AuthoritativeScope,
   mergeWithExistingConfig,
   loadProjectConfig,
-  loadInstalledConfig,
 } from "../configuration";
+import { loadProjectConfigFromDir } from "../configuration/project-config";
+import { inheritedGlobalProvider } from "./install-layout";
 import { type SourceLoadResult } from "../loading";
 import { loadStackById, stackNotOfferedMessage } from "../stacks";
 import { buildSkillRefsFromConfig } from "../resolver";
@@ -67,13 +68,18 @@ async function loadCuratedStack(
   projectStack: ProjectConfig["stack"],
 ): Promise<Partial<Record<AgentName, StackAgentConfig>>> {
   // At `$HOME` the loaded config IS the global one.
-  const globalStack = isHomeDirectory(projectDir) ? undefined : await loadGlobalStack();
+  const globalStack = isHomeDirectory(projectDir) ? undefined : await loadGlobalStack(projectDir);
 
   return { ...globalStack, ...projectStack };
 }
 
-async function loadGlobalStack(): Promise<ProjectConfig["stack"]> {
-  return (await loadInstalledConfig(os.homedir()))?.config.stack;
+/** The stack of the global installation the project inherits. */
+async function loadGlobalStack(projectDir: string): Promise<ProjectConfig["stack"]> {
+  const inherited = await loadProjectConfigFromDir(
+    os.homedir(),
+    inheritedGlobalProvider(projectDir),
+  );
+  return inherited?.config.stack;
 }
 
 async function buildInstallConfig(

@@ -292,7 +292,7 @@ describe("Integration: Custom Skills Matrix Loading", () => {
       DOCKER_TOOLING_SKILL,
     );
 
-    const skills = await extractAllSkills(skillsDir);
+    const { skills } = await extractAllSkills(skillsDir);
     const merged = mergeMatrixWithSkills(
       TOOLING_AND_FRAMEWORK_CONFIG.categories,
       TOOLING_AND_FRAMEWORK_CONFIG.relationships,
@@ -327,7 +327,7 @@ describe("Integration: Custom Skills Matrix Loading", () => {
       await writeSourceSkill(skillsDir, path.join("infra", "ci-cd", dir), skill);
     }
 
-    const skills = await extractAllSkills(skillsDir);
+    const { skills } = await extractAllSkills(skillsDir);
     const merged = mergeMatrixWithSkills(
       CI_CD_CONFIG.categories,
       CI_CD_CONFIG.relationships,
@@ -357,7 +357,7 @@ describe("Integration: Custom Skills Matrix Loading", () => {
       await writeSourceSkill(skillsDir, path.join(categoryPath, dir), skill);
     }
 
-    const skills = await extractAllSkills(skillsDir);
+    const { skills } = await extractAllSkills(skillsDir);
     const merged = mergeMatrixWithSkills(
       FRAMEWORK_AND_STYLING_CONFIG.categories,
       FRAMEWORK_AND_STYLING_CONFIG.relationships,
@@ -538,7 +538,7 @@ describe("Integration: Custom Matrix Skill Metadata Survival", () => {
       DATADOG_OBSERVABILITY_SKILL,
     );
 
-    const skills = await extractAllSkills(skillsDir);
+    const { skills } = await extractAllSkills(skillsDir);
     const merged = mergeMatrixWithSkills(
       OBSERVABILITY_CONFIG.categories,
       OBSERVABILITY_CONFIG.relationships,
@@ -563,7 +563,7 @@ describe("Integration: Custom Matrix Skill Metadata Survival", () => {
       await writeSourceSkill(skillsDir, path.join(catPath, dir), skill);
     }
 
-    const skills = await extractAllSkills(skillsDir);
+    const { skills } = await extractAllSkills(skillsDir);
     const merged = mergeMatrixWithSkills(
       FRAMEWORK_AND_TESTING_CONFIG.categories,
       FRAMEWORK_AND_TESTING_CONFIG.relationships,

@@ -1,12 +1,15 @@
 import { pruneCompiledAgents } from "./remove-compiled-agents.js";
 import { recompileAgents } from "../../agents/index.js";
-import { loadInstalledConfig } from "../../configuration/index.js";
+import { loadProjectConfigFromDir } from "../../configuration/project-config.js";
 import { buildAgentScopeMap } from "../../installation/index.js";
 import { agentCodec, providerInUse } from "../../installation/install-layout.js";
+import type { Provider } from "../../../consts.js";
 import type { AgentName, SkillDefinitionMap, SkillScope } from "../../../types/index.js";
 
 export type CompileAgentsOptions = {
   projectDir: string;
+  /** The installation compiled, where `projectDir` holds two; the default is the one in use. */
+  provider?: Provider;
   sourcePath: string;
   pluginDir?: string;
   skills?: SkillDefinitionMap;
@@ -25,7 +28,8 @@ export type CompilationResult = {
 };
 
 export async function compileAgents(options: CompileAgentsOptions): Promise<CompilationResult> {
-  const roster = await rosterForPass(options);
+  const provider = options.provider ?? providerInUse(options.projectDir);
+  const roster = await rosterForPass(options, provider);
 
   const recompileResult = await recompileAgents({
     pluginDir: options.pluginDir ?? options.projectDir,
@@ -33,11 +37,12 @@ export async function compileAgents(options: CompileAgentsOptions): Promise<Comp
     ...(roster.agents !== undefined && { agents: roster.agents }),
     ...(options.skills !== undefined && { skills: options.skills }),
     projectDir: options.projectDir,
+    provider,
     ...(options.outputDir !== undefined && { outputDir: options.outputDir }),
     ...(roster.agentScopeMap !== undefined && { agentScopeMap: roster.agentScopeMap }),
   });
 
-  await pruneStaleAgentsForPass(options, recompileResult);
+  await pruneStaleAgentsForPass(options, provider, recompileResult);
 
   return {
     compiled: recompileResult.compiled,
@@ -52,16 +57,20 @@ type PassRoster = {
   agentScopeMap: Map<AgentName, SkillScope> | undefined;
 };
 
-async function rosterForPass(options: CompileAgentsOptions): Promise<PassRoster> {
+async function rosterForPass(
+  options: CompileAgentsOptions,
+  provider: Provider,
+): Promise<PassRoster> {
   if (!options.scopeFilter) return { agents: options.agents, agentScopeMap: options.agentScopeMap };
-  return rosterForScope(options, options.scopeFilter);
+  return rosterForScope(options, options.scopeFilter, provider);
 }
 
 async function rosterForScope(
   options: CompileAgentsOptions,
   scope: SkillScope,
+  provider: Provider,
 ): Promise<PassRoster> {
-  const config = (await loadInstalledConfig(options.projectDir))?.config;
+  const config = (await loadProjectConfigFromDir(options.projectDir, provider))?.config;
   const activeAtScope = config?.agents
     .filter((agent) => !agent.excluded && agent.scope === scope)
     .map((agent) => agent.name);
@@ -89,6 +98,7 @@ function requestedAgentsAmong(
  */
 async function pruneStaleAgentsForPass(
   options: CompileAgentsOptions,
+  provider: Provider,
   recompileResult: CompilationResult,
 ): Promise<void> {
   if (options.scopeFilter || !options.outputDir) return;
@@ -101,6 +111,6 @@ async function pruneStaleAgentsForPass(
     agentsDir: options.outputDir,
     keep: compiledForDir,
     // A Codex role is a `.toml`, so the prune must know the host's extension.
-    codec: agentCodec(providerInUse(options.projectDir)),
+    codec: agentCodec(provider),
   });
 }

@@ -25,7 +25,7 @@ import {
   NO_VALID_DEFAULT_EXPORT,
 } from "./config-loader";
 import { getInstalledConfigPath, getProjectConfigPath } from "../installation/install-base-dir";
-import { providerInUse } from "../installation/install-layout";
+import { inheritedGlobalProvider, providerInUse } from "../installation/install-layout";
 import { initProviderToNameAt, providerToNameAt } from "../installation/provider-to-name";
 import { isHomeDirectory } from "../installation/is-home-directory";
 import type { ScopeKind } from "../installation/source-scopes";
@@ -187,8 +187,11 @@ export async function loadProjectSourceConfig(
   return loadSourceConfig(projectDir, isHomeDirectory(projectDir) ? "global" : "project");
 }
 
-export async function loadGlobalSourceConfig(): Promise<Partial<ProjectConfig> | null> {
-  return loadSourceConfig(os.homedir(), "global");
+/** `provider` names the installation where the home holds two; the default is the one in use. */
+export async function loadGlobalSourceConfig(
+  provider?: Provider,
+): Promise<Partial<ProjectConfig> | null> {
+  return loadSourceConfig(os.homedir(), "global", provider);
 }
 
 /** The effective source config, which scope it was actually loaded from, and its file. */
@@ -204,7 +207,12 @@ async function loadEffectiveSourceConfig(
 ): Promise<EffectiveSourceConfig | null> {
   const ownDir = ownProjectDir(projectDir);
   const own = ownDir === null ? null : await readStoredRung(ownDir, "project", provider);
-  return own ?? (await readStoredRung(os.homedir(), "global", provider));
+  return own ?? (await readStoredRung(os.homedir(), "global", provider ?? inheritedBy(projectDir)));
+}
+
+/** The global installation a project inherits, or home's own where the run names no project. */
+function inheritedBy(projectDir: string | undefined): Provider {
+  return inheritedGlobalProvider(projectDir ?? os.homedir());
 }
 
 /** One stored rung: the config at `dir` and the file it was read from, or null when it has none. */
@@ -354,7 +362,7 @@ type ResolvedBranding = {
 export async function resolveBranding(projectDir?: string): Promise<ResolvedBranding> {
   const [own, global] = await Promise.all([
     loadOwnProjectSourceConfig(projectDir),
-    loadGlobalSourceConfig(),
+    loadGlobalSourceConfig(inheritedBy(projectDir)),
   ]);
 
   return {

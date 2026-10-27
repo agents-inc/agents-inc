@@ -11,10 +11,16 @@ import type {
   StackAgentConfig,
 } from "../../types";
 import type { AgentScopeConfig, SkillConfig } from "../../types/config";
-import { PROVIDERS, type Provider } from "../../consts";
+import type { Provider } from "../../consts";
 import { getInstalledConfigPath, getProjectConfigPath } from "../installation/install-base-dir";
+import { detectInstallations } from "../installation/detect-installations";
 import { providerInUse, sourceFolderInUse } from "../installation/install-layout";
-import { ConfigLoadError, loadInstalledConfig } from "../configuration/project-config";
+import {
+  ConfigLoadError,
+  declaresNoContent,
+  loadInstalledConfig,
+  type LoadedProjectConfig,
+} from "../configuration/project-config";
 import { mergeConfigs, type AuthoritativeScope } from "../configuration/config-merger";
 import {
   activeProjectAgentNames,
@@ -391,7 +397,16 @@ function refuseAWriteOutsideTheInstallation(projectDir: string, provider: Provid
   return configPath;
 }
 
-/** Looks everything up in this project's own seated catalogue. False for an empty config. */
+/**
+ * The installation a fan-out rewrites. A config declaring nothing is none: it is the user's file
+ * (owner, 2026-10-24), so it is passed over as a project holding nothing is.
+ */
+async function installationToRewrite(projectPath: string): Promise<LoadedProjectConfig | null> {
+  const loaded = await loadInstalledConfig(projectPath);
+  return loaded !== null && !declaresNoContent(loaded.config) ? loaded : null;
+}
+
+/** Looks everything up in this project's own seated catalogue. False where nothing is installed. */
 async function propagateToProject(
   projectPath: string,
   provider: Provider,
@@ -400,8 +415,8 @@ async function propagateToProject(
   options: PropagationOptions,
 ): Promise<boolean> {
   // Before the catalogue load, whose refusal of this config is indistinguishable from others.
-  const existingProject = await loadInstalledConfig(projectPath);
-  if (!existingProject?.config) return false;
+  const existingProject = await installationToRewrite(projectPath);
+  if (existingProject === null) return false;
 
   return withCatalogueSeatedFor(projectPath, async (catalogue) => {
     const projectSplit = reconcileAgainstGlobal(existingProject.config, globalConfig, catalogue);
@@ -464,12 +479,13 @@ async function propagateToRegisteredProject(
   agents: Partial<Record<AgentName, AgentDefinition>>,
   options: PropagationOptions,
 ): Promise<keyof PropagationResult> {
-  if (!(await holdsAnInstallation(projectPath))) {
+  const installed = await providersInstalledAt(projectPath);
+  if (installed.length === 0) {
     verbose(`Skipped propagation to ${projectPath} (nothing installed there)`);
     return "gone";
   }
 
-  const notOurs = await whyThisProjectIsNotOurs(projectPath, provider);
+  const notOurs = whyThisProjectIsNotOurs(projectPath, provider, installed);
   if (notOurs !== null) {
     verbose(`Skipped propagation to ${projectPath} (${notOurs})`);
     return "notOurs";
@@ -504,36 +520,41 @@ export async function projectsAFanOutReaches(
 }
 
 async function wouldBeRewritten(projectPath: string, provider: Provider): Promise<boolean> {
-  if (!(await holdsAnInstallation(projectPath))) return false;
-  if ((await whyThisProjectIsNotOurs(projectPath, provider)) !== null) return false;
+  const installed = await providersInstalledAt(projectPath);
+  if (whyThisProjectIsNotOurs(projectPath, provider, installed) !== null) return false;
   try {
-    return (await loadInstalledConfig(projectPath)) !== null;
+    return (await installationToRewrite(projectPath)) !== null;
   } catch {
     // DEGRADE: the fan-out skips any project it cannot load, and says why once it has run.
     return false;
   }
 }
 
-/** Whether any provider's installation is at `projectPath`, this fan-out's or another's. */
-async function holdsAnInstallation(projectPath: string): Promise<boolean> {
-  const configs = await Promise.all(
-    PROVIDERS.map((installed) => fileExists(getProjectConfigPath(projectPath, installed))),
-  );
-  return configs.includes(true);
+/**
+ * Every provider whose installation is at `projectPath`, this fan-out's or another's, by the roster:
+ * a config declaring nothing is none (owner, 2026-10-24). Asked before `providerInUse` reads the
+ * project, since that read counts such a config until the roster has recorded it.
+ */
+async function providersInstalledAt(projectPath: string): Promise<Provider[]> {
+  const found = await detectInstallations(projectPath);
+  return found
+    .filter((installation) => installation.scope === "project")
+    .map((installation) => installation.provider);
 }
 
 /** `null` when ours to rewrite. A `providerInUse` refusal skips the project, never aborts. */
-async function whyThisProjectIsNotOurs(
+function whyThisProjectIsNotOurs(
   projectPath: string,
   provider: Provider,
-): Promise<string | null> {
+  installed: readonly Provider[],
+): string | null {
   const notOurs = `not a ${provider} installation`;
   try {
     if (providerInUse(projectPath) !== provider) return notOurs;
   } catch (error) {
     return getErrorMessage(error);
   }
-  return (await fileExists(getProjectConfigPath(projectPath, provider))) ? null : notOurs;
+  return installed.includes(provider) ? null : notOurs;
 }
 
 /**

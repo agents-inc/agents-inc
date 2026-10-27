@@ -3,21 +3,19 @@ import type { Dirent } from "fs";
 
 import { DEFAULT_PLUGIN_NAME, type Provider } from "../../consts";
 import { loadProjectConfig } from "../configuration";
-import { loadProjectConfigFromDir } from "../configuration/project-config";
+import { declaresNoContent, loadProjectConfigFromDir } from "../configuration/project-config";
 import {
-  declaresNoContent,
   deriveInstallMode,
   detectInstallation,
   detectInstallations,
   installBaseDir,
   isHomeDirectory,
-  resolveInstallPaths,
   INSTALL_MODE_LABELS,
   type Installation,
   type InstallMode,
 } from "../installation";
 import type { DetectedInstallation } from "../installation/detect-installations";
-import { agentCodec, agentsDir } from "../installation/install-layout";
+import { agentCodec, agentsDir, providerAtScope } from "../installation/install-layout";
 import type { ProjectConfig, SkillScope } from "../../types/config";
 
 export type InstallationInfo = {
@@ -146,10 +144,12 @@ async function countCompiledAgentsPerScope(
 ): Promise<ScopeCount[]> {
   return Promise.all(
     scopes.map(async (scope) => {
-      const dir = resolveInstallPaths(installation.projectDir, scope).agentsDir;
+      // Each scope's own installation, at global the inherited one, in its own agent format.
+      const provider = providerAtScope(installation.projectDir, scope);
+      const dir = agentsDir(provider, scope, installation.projectDir);
       return {
         dir,
-        count: await countDirEntries(dir, isCompiledAgentFileIn(agentCodec("claude").extension)),
+        count: await countDirEntries(dir, isCompiledAgentFileIn(agentCodec(provider).extension)),
       };
     }),
   );

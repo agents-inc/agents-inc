@@ -138,6 +138,8 @@ export function buildSourceResult(
     isLocal: true,
     unreachable: false,
     marketplaceSkillIds: new Set(typedKeys<SkillId>(matrix.skills)),
+    marketplaceSkills: { ...matrix.skills },
+    unloadedSkillIds: new Set(),
     ...overrides,
   };
 }

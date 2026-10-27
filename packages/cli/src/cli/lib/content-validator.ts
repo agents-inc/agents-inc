@@ -7,17 +7,17 @@ import { directoryExists, fileExists, listDirectories } from "../utils/fs.js";
 import { listAgentMdFiles, splitAgentsByProvenance } from "./agents/index.js";
 import { readSkillMetadata } from "./loading/index.js";
 import {
-  configDirsInPlay,
+  configsInPlay,
   findConfigLoadFailures,
   isLocalSource,
-  loadInstalledConfig,
   resolvePrimarySourceEntry,
   type ConfigLoadError,
   type LoadedProjectConfig,
   type SourceEntry,
 } from "./configuration/index.js";
 import { isHomeDirectory, resolveInstallPaths } from "./installation/index.js";
-import { getInstalledConfigPath } from "./installation/install-base-dir.js";
+import { getProjectConfigPath } from "./installation/install-base-dir.js";
+import { loadProjectConfigFromDir } from "./configuration/project-config.js";
 import type { AgentCodec } from "./installation/install-layout.js";
 import {
   getInstalledPluginsRegistryPath,
@@ -108,7 +108,9 @@ function toUnreadableConfigIssue(failure: ConfigLoadError): ContentIssue {
 
 async function countExistingConfigs(projectDir: string): Promise<number> {
   const present = await Promise.all(
-    configDirsInPlay(projectDir).map((dir) => fileExists(getInstalledConfigPath(dir))),
+    configsInPlay(projectDir).map(({ dir, provider }) =>
+      fileExists(getProjectConfigPath(dir, provider)),
+    ),
   );
   return present.filter(Boolean).length;
 }
@@ -252,7 +254,7 @@ export async function validateInstalledSkills(projectDir: string): Promise<Conte
 /** Every skill id the configs this run reads name, across both scopes and both install modes. */
 async function configuredSkillIds(projectDir: string): Promise<ReadonlySet<string>> {
   const loaded = await Promise.all(
-    configDirsInPlay(projectDir).map((dir) => loadInstalledConfig(dir)),
+    configsInPlay(projectDir).map(({ dir, provider }) => loadProjectConfigFromDir(dir, provider)),
   );
   return new Set(loaded.flatMap(configuredIdsOf));
 }

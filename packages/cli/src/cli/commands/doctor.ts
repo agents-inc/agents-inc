@@ -123,43 +123,51 @@ function checkConfigValid(
   installation: CheckedInstallation,
 ): ConfigCheckOutput {
   const theConfig = (verdict: string) => configRowMessage(state, installation, verdict);
-  if (state.kind === "absent") {
-    return {
-      result: {
-        kind: "config",
-        status: "fail",
-        message: theConfig("not found"),
-        details: [`Run '${CLI_INVOKE_COMMAND} init' to create a configuration`],
-      },
-      config: null,
-    };
+  switch (state.kind) {
+    case "absent":
+      return {
+        result: {
+          kind: "config",
+          status: "fail",
+          message: theConfig("not found"),
+          details: [`Run '${CLI_INVOKE_COMMAND} init' to create a configuration`],
+        },
+        config: null,
+      };
+    case "unreadable":
+      return {
+        result: {
+          kind: "config",
+          status: "fail",
+          message: theConfig("exists but could not be loaded"),
+          details: [state.failure.reason],
+        },
+        config: null,
+      };
+    case "declares-nothing":
+      // Valid but empty: handed on so the rows below don't report "config invalid".
+      return {
+        result: {
+          kind: "config-empty",
+          status: "warn",
+          message: theConfig("is valid but declares no skills and no agents"),
+        },
+        config: state.config,
+      };
+    case "loaded":
+      return checkLoadedConfig(state.config, theConfig);
+    default: {
+      const _exhaustive: never = state;
+      return _exhaustive;
+    }
   }
+}
 
-  if (state.kind === "unreadable") {
-    return {
-      result: {
-        kind: "config",
-        status: "fail",
-        message: theConfig("exists but could not be loaded"),
-        details: [state.failure.reason],
-      },
-      config: null,
-    };
-  }
-
-  // Valid but empty: handed on so the rows below don't report "config invalid".
-  if (state.kind === "declares-nothing") {
-    return {
-      result: {
-        kind: "config-empty",
-        status: "warn",
-        message: theConfig("is valid but declares no skills and no agents"),
-      },
-      config: state.config,
-    };
-  }
-
-  const { config } = state;
+/** Loading accepts configs `validateProjectConfig` refuses, such as one with an empty name. */
+function checkLoadedConfig(
+  config: ProjectConfig,
+  theConfig: (verdict: string) => string,
+): ConfigCheckOutput {
   const validation = validateProjectConfig(config);
 
   if (!validation.valid) {
@@ -203,7 +211,7 @@ function configRowMessage(
   verdict: string,
 ): string {
   if (state.kind === "loaded" && state.inherited)
-    return `${theInheritedConfig(hosts.global)}, which ${verdict}`;
+    return `${theInheritedConfig(projectDir, state.declaringNothingIn, hosts.global)}, which ${verdict}`;
   if (state.kind === "unreadable") {
     const { scopeRoot, scope } = state.failure;
     return `${theConfigAt(scopeRoot, hosts[scope])} ${verdict}`;
@@ -215,8 +223,17 @@ function theConfigAt(root: string, provider: Provider): string {
   return `${scopeLabel(scopeOf(root))}: ${configNamedFrom(root, provider)}`;
 }
 
-function theInheritedConfig(provider: Provider): string {
-  return `${scopeLabel("project")}: no ${STANDARD_FILES.CONFIG_TS}, using ${scopeNoun("global")}'s (${configNamedFrom(os.homedir(), provider)})`;
+/** What the project holds in place of an installation, then the global config standing in. */
+function theInheritedConfig(
+  projectDir: string,
+  declaringNothingIn: Provider | null,
+  provider: Provider,
+): string {
+  const projectHolds =
+    declaringNothingIn === null
+      ? `no ${STANDARD_FILES.CONFIG_TS}`
+      : `${relativeConfigPath(projectDir, declaringNothingIn)} declares nothing`;
+  return `${scopeLabel("project")}: ${projectHolds}, using ${scopeNoun("global")}'s (${configNamedFrom(os.homedir(), provider)})`;
 }
 
 function scopeOf(dir: string): ScopeKind {
@@ -966,6 +983,8 @@ export default class Doctor extends BaseCommand {
   async run(): Promise<void> {
     await this.parse(Doctor);
     const projectDir = process.cwd();
+    // No `--provider`: a scope holding both is reported, and each checked.
+    await this.sayWhenTheGlobalInstallationStandsIn(undefined);
 
     // `verbose()` stays off: the loaders' trace would interleave with and restate the rows.
     this.printHeader(await this.resolveBrandingName(projectDir));

@@ -56,7 +56,7 @@ import {
   skillMetadataUnusableDetail,
   skillMetadataUnusableError,
   skippedUnknownAgents,
-  skippedUnknownSkills,
+  skippedSkills,
   sourceUnreachableUsingCache,
   subAgentChanged,
   uninstallConfigUnreadable,
@@ -67,7 +67,7 @@ import {
 import { DEFAULT_BRANDING, PROVIDERS } from "../consts";
 import { SKILLS } from "../lib/__tests__/test-fixtures";
 import { initializeMatrix } from "../lib/matrix/matrix-provider";
-import { WEB_TRIO_MATRIX } from "../lib/__tests__/mock-data/mock-matrices";
+import { FULLSTACK_TRIO_MATRIX, WEB_TRIO_MATRIX } from "../lib/__tests__/mock-data/mock-matrices";
 import type { AgentName } from "../types";
 
 /** Whole word, so `resource` is not matched. */
@@ -282,6 +282,8 @@ const WEB_DEVELOPER: AgentName = "web-developer";
 const API_DEVELOPER: AgentName = "api-developer";
 const REACT = SKILLS.react.id;
 const HONO = SKILLS.hono.id;
+/** A load where every skill the marketplace ships loaded. */
+const NONE_UNLOADED: ReadonlySet<string> = new Set();
 
 const PROJECT_DIR = "/home/me/project";
 const OTHER_PROJECT_DIR = "/home/me/other";
@@ -684,7 +686,7 @@ describe("the lines init --from prints about what a configuration brings", () =>
   });
 
   it("counts and names the skills, sub-agents and carried skills it skipped or wrote", () => {
-    expect(skippedUnknownSkills([REACT, HONO], [])).toBe(
+    expect(skippedSkills([REACT, HONO], [], NONE_UNLOADED)).toBe(
       `Skipped 2 skill(s) this catalog does not know: ${REACT}, ${HONO}`,
     );
     expect(skippedUnknownAgents(["web-ghost", "api-ghost"])).toBe(
@@ -697,9 +699,10 @@ describe("the lines init --from prints about what a configuration brings", () =>
 
   it("names, under each skipped skill, the sub-agents installed without it that carry nothing else", () => {
     expect(
-      skippedUnknownSkills(
+      skippedSkills(
         [REACT, HONO],
         [{ skillId: HONO, agentNames: [WEB_DEVELOPER, "api-developer"] }],
+        NONE_UNLOADED,
       ),
     ).toBe(
       [
@@ -709,13 +712,45 @@ describe("the lines init --from prints about what a configuration brings", () =>
     );
   });
 
+  it("says a skill the marketplace ships and could not load is one this catalog could not load", () => {
+    expect(
+      skippedSkills([HONO], [{ skillId: HONO, agentNames: [WEB_DEVELOPER] }], new Set([HONO])),
+    ).toBe(
+      [
+        `Skipped 1 skill(s) this catalog could not load: ${HONO}`,
+        `  sub-agent(s) installed without ${HONO}, carrying nothing else this catalog knows: web-developer`,
+      ].join("\n"),
+    );
+  });
+
+  it("words each skipped skill by its cause, each with the sub-agents installed without it", () => {
+    expect(
+      skippedSkills(
+        [REACT, HONO],
+        [
+          { skillId: REACT, agentNames: [API_DEVELOPER] },
+          { skillId: HONO, agentNames: [WEB_DEVELOPER] },
+        ],
+        new Set([HONO]),
+      ),
+    ).toBe(
+      [
+        `Skipped 1 skill(s) this catalog could not load: ${HONO}`,
+        `  sub-agent(s) installed without ${HONO}, carrying nothing else this catalog knows: web-developer`,
+        `Skipped 1 skill(s) this catalog does not know: ${REACT}`,
+        `  sub-agent(s) installed without ${REACT}, carrying nothing else this catalog knows: api-developer`,
+      ].join("\n"),
+    );
+  });
+
   it("takes out the terminal controls a configuration's own keys carry, wherever a key is named", () => {
     const keyWithControls = "web-x\u001b]0;pwned\u0007\u001b[2J";
 
     expect(
-      skippedUnknownSkills(
+      skippedSkills(
         [keyWithControls],
         [{ skillId: keyWithControls, agentNames: [WEB_DEVELOPER] }],
+        NONE_UNLOADED,
       ),
     ).toBe(
       [
@@ -730,9 +765,10 @@ describe("the lines init --from prints about what a configuration brings", () =>
     const keyAcrossLines = "web-x\nNothing removed.";
 
     expect(
-      skippedUnknownSkills(
+      skippedSkills(
         [keyAcrossLines],
         [{ skillId: keyAcrossLines, agentNames: [WEB_DEVELOPER] }],
+        NONE_UNLOADED,
       ),
     ).toBe(
       [
@@ -754,12 +790,26 @@ describe("the lines init --from prints about what a configuration brings", () =>
       ].join("\n"),
     );
   });
+});
+
+/**
+ * Each notice names a skill as the panel above it does: the name its install recorded, else the
+ * seated catalogue's, else its id. These pass ids alone, so the catalogue and the id are what they
+ * can reach; the record is held by the `--from` command specs, which run with real entries.
+ */
+describe("the notices under the panel about what a shared configuration keeps or adds to", () => {
+  /** In no catalogue seated here, so only its id can name it. */
+  const UNSEATED = SKILLS.zustand.id;
+
+  beforeEach(() => {
+    initializeMatrix(FULLSTACK_TRIO_MATRIX);
+  });
 
   it("lists what the global install keeps as installed, and the run from home that changes it", () => {
-    expect(keptAsInstalledGlobally([REACT], [WEB_DEVELOPER], "Abc123", undefined)).toBe(
+    expect(keptAsInstalledGlobally([REACT], [WEB_DEVELOPER], "Abc123", undefined, {})).toBe(
       [
         "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
-        `  skill ${REACT}`,
+        "  skill React",
         "  sub-agent web-developer",
         "Change them with 'npx agents-inc edit --from Abc123' from your home directory.",
       ].join("\n"),
@@ -767,7 +817,7 @@ describe("the lines init --from prints about what a configuration brings", () =>
   });
 
   it("names the installation in the run from home where home holds another beside it", () => {
-    expect(keptAsInstalledGlobally([], [WEB_DEVELOPER], "Abc123", "claude")).toBe(
+    expect(keptAsInstalledGlobally([], [WEB_DEVELOPER], "Abc123", "claude", {})).toBe(
       [
         "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
         "  sub-agent web-developer",
@@ -777,46 +827,76 @@ describe("the lines init --from prints about what a configuration brings", () =>
   });
 
   it("names no run from home for a configuration home would refuse", () => {
-    expect(keptAsInstalledGlobally([REACT], [], undefined, undefined)).toBe(
+    expect(keptAsInstalledGlobally([REACT], [], undefined, undefined, {})).toBe(
       [
         "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
-        `  skill ${REACT}`,
+        "  skill React",
       ].join("\n"),
     );
   });
 
   it("lists each global sub-agent a project run adds to, with every skill it gains", () => {
-    expect(addedToGlobalSubAgents([{ agentName: WEB_DEVELOPER, skillIds: [REACT, HONO] }])).toBe(
+    expect(
+      addedToGlobalSubAgents([{ agentName: WEB_DEVELOPER, skillIds: [REACT, HONO] }], {}),
+    ).toBe(
       [
         "Added to sub-agents in the global install — each keeps everything it already has, since a project run only adds to the global install:",
-        `  sub-agent web-developer: + ${REACT}, ${HONO}`,
+        "  sub-agent web-developer: + React, Hono",
       ].join("\n"),
     );
   });
 
   it("lists the skills authored here that a configuration never carried", () => {
-    expect(authoredHereKept([REACT, HONO])).toBe(
+    expect(authoredHereKept([REACT, HONO], {})).toBe(
       [
         "Kept — written here rather than installed, so a shared configuration never carried them:",
-        `  skill ${REACT}`,
-        `  skill ${HONO}`,
+        "  skill React",
+        "  skill Hono",
       ].join("\n"),
     );
   });
 
   it("lists the skills this catalogue cannot place, and how to refresh it", () => {
-    expect(unplaceableKept([REACT])).toBe(
+    expect(unplaceableKept([REACT], {})).toBe(
       [
         "Kept — named by this configuration, and this catalogue cannot place them:",
-        `  skill ${REACT}`,
+        "  skill React",
         "Run 'npx agents-inc update' to refresh this installation's marketplace, then apply the configuration again.",
       ].join("\n"),
     );
   });
 
   it("names the sub-agent and category a kept skill is no longer assigned to", () => {
-    expect(keptUnassigned(REACT, WEB_DEVELOPER, "web-framework")).toBe(
-      `${REACT}: kept, no longer assigned to web-developer's web-framework`,
+    expect(
+      keptUnassigned({ skillId: REACT, agentName: WEB_DEVELOPER, category: "web-framework" }, {}),
+    ).toBe("React: kept, no longer assigned to web-developer's web-framework");
+  });
+
+  it("names a skill no seated catalogue holds by its id, in each notice", () => {
+    expect(
+      [
+        keptAsInstalledGlobally([UNSEATED], [], undefined, undefined, {}),
+        addedToGlobalSubAgents([{ agentName: WEB_DEVELOPER, skillIds: [UNSEATED] }], {}),
+        authoredHereKept([UNSEATED], {}),
+        unplaceableKept([UNSEATED], {}),
+        keptUnassigned(
+          { skillId: UNSEATED, agentName: WEB_DEVELOPER, category: "web-client-state" },
+          {},
+        ),
+      ].join("\n"),
+    ).toBe(
+      [
+        "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
+        `  skill ${UNSEATED}`,
+        "Added to sub-agents in the global install — each keeps everything it already has, since a project run only adds to the global install:",
+        `  sub-agent web-developer: + ${UNSEATED}`,
+        "Kept — written here rather than installed, so a shared configuration never carried them:",
+        `  skill ${UNSEATED}`,
+        "Kept — named by this configuration, and this catalogue cannot place them:",
+        `  skill ${UNSEATED}`,
+        "Run 'npx agents-inc update' to refresh this installation's marketplace, then apply the configuration again.",
+        `${UNSEATED}: kept, no longer assigned to web-developer's web-client-state`,
+      ].join("\n"),
     );
   });
 });

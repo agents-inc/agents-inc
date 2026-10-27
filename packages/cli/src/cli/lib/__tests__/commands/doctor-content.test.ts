@@ -2077,6 +2077,48 @@ describe("the doctor report, line by line", () => {
     ).toBe(true);
   });
 
+  it("reports a config that loads without a name as having errors, skipping the rows that read one", async () => {
+    // Declares an agent, so it is a config with content rather than one declaring nothing.
+    await writeRawTestConfig(
+      projectDir,
+      renderConfigTs(
+        buildProjectConfig({
+          name: "",
+          skills: [],
+          agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
+        }),
+      ),
+    );
+
+    const { stdout, error } = await runCliCommand(["doctor"]);
+
+    expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+    expect(stdout).toContain(
+      [
+        "  Operational checks",
+        "    Config Valid            ✗  This project: .agents-inc/claude/config.ts has errors",
+        "                               name is required and must be a string",
+        "    Layout                  ✓  This project is on .agents-inc/claude/",
+        "    Placements Offered      ✓  Every configured skill is placeable",
+        "    Skills Resolved         –  Skipped (config invalid)",
+        "    Agents Compiled         –  Skipped (config invalid)",
+        "    No Orphans              –  Skipped (config invalid)",
+        "    Skills Installed        –  Skipped (config invalid)",
+        "    Plugins Installed       –  Skipped (config invalid)",
+        "    Marketplace Reachable   ✓  Connected to remote: ",
+      ].join("\n"),
+    );
+    expect(stdout.slice(stdout.indexOf("  Summary:"))).toBe(
+      [
+        "  Summary: 8 passed, 0 warnings, 1 error",
+        "",
+        "  Tip: Run 'npx agents-inc init' to create or fix configuration",
+        "",
+        "",
+      ].join("\n"),
+    );
+  });
+
   it("says the saved copy differed from the marketplace when the download replaced it", async () => {
     // The saved copy is the shared checkout; the marketplace serves a one-file stand-in.
     await writeTestTsConfig(
@@ -2351,10 +2393,16 @@ describe("the doctor report, line by line", () => {
   });
 
   it("names the finding a second installation here makes for every acting command", async () => {
-    await setupValidatedProject(tempDir, projectDir);
+    // Declares a sub-agent: a config declaring nothing is not an installation, so not a second one.
+    const sourceDir = await setupValidatedProject(tempDir, projectDir);
     await writeTestTsConfig(
       projectDir,
-      buildProjectConfig({ name: "codex-one", skills: [], agents: [] }),
+      buildProjectConfig({
+        name: "codex-one",
+        skills: [],
+        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
+        marketplace: sourceDir,
+      }),
       ".agents-inc/codex",
     );
 

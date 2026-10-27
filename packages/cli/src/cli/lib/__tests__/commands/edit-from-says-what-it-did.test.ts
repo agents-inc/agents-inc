@@ -24,6 +24,7 @@ import {
 } from "../content-generators";
 import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
 import { readTestTsConfig, writeTestTsConfig } from "../helpers/config-io.js";
+import { readInstallTree } from "../helpers/golden-tree.js";
 import { buildSkillConfigs } from "../helpers/skill-config-builders.js";
 import {
   createTestSource,
@@ -115,6 +116,12 @@ describe("what edit --from says", () => {
   }
 
   const configPath = () => path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS);
+
+  /** Every file under the project and the home, the home's shared marketplace cache aside. */
+  const installTrees = async () => ({
+    project: await readInstallTree(projectDir),
+    home: await readInstallTree(fakeHome, { skip: [".cache"] }),
+  });
 
   /** The project's own web-developer, which wins over the built-in one. */
   async function declareAStopHookOnWebDeveloper(): Promise<void> {
@@ -354,14 +361,19 @@ describe("what edit --from says", () => {
   describe("an installed skill it names but this catalogue cannot place", () => {
     const unplaceable = "web-framework-angular-standalone";
 
-    async function installReactAndTheUnplaceable(): Promise<void> {
+    /** `recordedName` is the name an install from a marketplace that offered it would have written. */
+    async function installReactAndTheUnplaceable(recordedName?: string): Promise<void> {
       await installReact();
       const installedConfig = await readTestTsConfig<ProjectConfig>(configPath());
       await writeTestTsConfig(projectDir, {
         ...installedConfig,
         skills: [
           ...installedConfig.skills,
-          ...buildSkillConfigs([unplaceable], { scope: "project", origin: "eject" }),
+          ...buildSkillConfigs([unplaceable], {
+            scope: "project",
+            origin: "eject",
+            ...(recordedName !== undefined && { displayName: recordedName }),
+          }),
         ],
       });
     }
@@ -399,6 +411,38 @@ describe("what edit --from says", () => {
       expect(
         (await readTestTsConfig<ProjectConfig>(configPath())).skills.map((skill) => skill.id),
       ).toStrictEqual([REACT, unplaceable, HONO]);
+    });
+
+    it("names it by the name its install recorded, as the panel row does, where no catalogue can", async () => {
+      const recordedName = "Acme Angular";
+      await installReactAndTheUnplaceable(recordedName);
+      const installed = await installTrees();
+      servingNext({ ...ejected(REACT), ...ejected(HONO), ...ejected(unplaceable) });
+
+      const { stdout, error } = await answered(["edit", "--from", "Next"], KEY_N);
+
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.CANCELLED);
+      expect(await installTrees(), "a declined apply writes nothing at either scope").toStrictEqual(
+        installed,
+      );
+      expect(stdout, "the panel draws the kept skill by the name its install recorded").toContain(
+        `│  • ${recordedName} ⏏ `,
+      );
+      expect(
+        flattenCliOutput(stdout),
+        "the notice names the kept skill as the panel row above it does",
+      ).toContain(
+        flattenCliOutput(
+          [
+            "┘",
+            "~ web-developer: gains Hono",
+            "Kept — named by this configuration, and this catalogue cannot place them:",
+            `  skill ${recordedName}`,
+            "Run 'npx agents-inc update' to refresh this installation's marketplace, then apply the configuration again.",
+            "Apply this configuration?",
+          ].join("\n"),
+        ),
+      );
     });
 
     it("says it keeps it, and how to place it, where nothing else changes and nothing is asked", async () => {
@@ -493,7 +537,79 @@ describe("what edit --from says", () => {
       flattenCliOutput(
         [
           "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
-          `  skill ${HONO}`,
+          "  skill Hono",
+          "Change them with 'npx agents-inc edit --from Next' from your home directory.",
+          "Apply this configuration?",
+        ].join("\n"),
+      ),
+    );
+  });
+
+  /**
+   * Hono is stated differently and Vitest left out, the two ways a global skill is kept. Each was
+   * recorded under a name the marketplace no longer gives it, and neither has a copy here to name it.
+   */
+  it("names each global skill it keeps as installed by the name the global install recorded, as the panel rows do", async () => {
+    const recordedHono = "Acme Hono";
+    const recordedVitest = "Acme Vitest";
+    await writeTestTsConfig(
+      fakeHome,
+      buildProjectConfig({
+        name: "global",
+        skills: [
+          ...buildSkillConfigs([HONO], {
+            scope: "global",
+            origin: "eject",
+            displayName: recordedHono,
+          }),
+          ...buildSkillConfigs([VITEST], {
+            scope: "global",
+            origin: "eject",
+            displayName: recordedVitest,
+          }),
+        ],
+        agents: buildAgentConfigs(["api-developer"], { scope: "global" }),
+        stack: { "api-developer": { "api-api": [{ id: HONO, preloaded: false }] } },
+      }),
+    );
+    await installReact();
+    serve(
+      "Next",
+      buildSeedPayload({
+        marketplace: dirs.sourceDir,
+        skills: {
+          [HONO]: buildSeedSkill({
+            install: "plugin",
+            scope: "global",
+            assignments: { "api-developer": "lazy" },
+          }),
+        },
+        agents: { "api-developer": { scope: "global" } },
+      }),
+    );
+    const installed = await installTrees();
+
+    const { stdout, error } = await answered(["edit", "--from", "Next"], KEY_N);
+
+    expect(error?.oclif?.exit).toBe(EXIT_CODES.CANCELLED);
+    expect(await installTrees(), "a declined apply writes nothing at either scope").toStrictEqual(
+      installed,
+    );
+    expect(stdout, "the panel draws the global skill stated differently by its record").toContain(
+      ` • ${recordedHono} ⏏ `,
+    );
+    expect(stdout, "the panel draws the global skill left out by its record").toContain(
+      ` • ${recordedVitest} ⏏ `,
+    );
+    expect(
+      flattenCliOutput(stdout),
+      "the notice names each kept skill as the panel row above it does",
+    ).toContain(
+      flattenCliOutput(
+        [
+          "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
+          `  skill ${recordedHono}`,
+          `  skill ${recordedVitest}`,
           "Change them with 'npx agents-inc edit --from Next' from your home directory.",
           "Apply this configuration?",
         ].join("\n"),
@@ -1000,9 +1116,9 @@ describe("what edit --from says", () => {
           "┘",
           "~ api-developer (global): gains Vitest",
           "Added to sub-agents in the global install — each keeps everything it already has, since a project run only adds to the global install:",
-          `  sub-agent api-developer: + ${VITEST}`,
+          "  sub-agent api-developer: + Vitest",
           "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
-          `  skill ${HONO}`,
+          "  skill Hono",
           "Apply this configuration?",
         ].join("\n"),
       ),
@@ -1056,7 +1172,7 @@ describe("what edit --from says", () => {
           "┘",
           "~ api-developer (global): gains Vitest",
           "Added to sub-agents in the global install — each keeps everything it already has, since a project run only adds to the global install:",
-          `  sub-agent api-developer: + ${VITEST}`,
+          "  sub-agent api-developer: + Vitest",
           "Apply this configuration?",
         ].join("\n"),
       ),
@@ -1137,6 +1253,77 @@ describe("what edit --from says", () => {
       ].join("\n"),
     );
     expect(stdout).not.toContain("No changes made.");
+  });
+
+  /**
+   * A project run holds the global copy of a carried skill whole, so the global install's record
+   * names it rather than the name the revised configuration now gives it. Hono arrives so that
+   * there is a panel to compare the notice with.
+   */
+  it("names a revised carried skill the global install keeps by the name that install recorded, as the panel row does", async () => {
+    const carried = "external-web-testing-brainstorming";
+    const recordedName = "Brainstorming";
+    const carrying = (displayName: string, content: string, arriving: SeedPayload["skills"] = {}) =>
+      buildSeedPayload({
+        marketplace: dirs.sourceDir,
+        skills: {
+          ...ejected(REACT),
+          [carried]: buildSeedSkill({
+            install: "eject",
+            scope: "global",
+            assignments: { "web-developer": "lazy" },
+          }),
+          ...arriving,
+        },
+        external: {
+          [carried]: buildSeedExternalSkill({
+            displayName,
+            categoryId: "web-testing",
+            files: { [STANDARD_FILES.SKILL_MD]: renderSkillMd(carried, content) },
+          }),
+        },
+        agents: { "web-developer": { scope: "project" } },
+      });
+    serve("Installed", carrying(recordedName, "The first version"));
+    expect((await answered(["init", "--from", "Installed"], KEY_Y)).error).toBeUndefined();
+    serve("Next", carrying("Acme Brainstorming", "The second version", ejected(HONO)));
+    const globalCopy = path.join(
+      fakeHome,
+      CLAUDE_DIR,
+      STANDARD_DIRS.SKILLS,
+      carried,
+      STANDARD_FILES.SKILL_MD,
+    );
+    expect(
+      await readFile(globalCopy, "utf-8"),
+      "the carried skill's copy sits in the global install, as the first version",
+    ).toContain("The first version");
+    const installed = await installTrees();
+
+    const { stdout, error } = await answered(["edit", "--from", "Next"], KEY_N);
+
+    expect(error?.oclif?.exit).toBe(EXIT_CODES.CANCELLED);
+    expect(
+      await installTrees(),
+      "a declined project run writes nothing at either scope, the global copy included",
+    ).toStrictEqual(installed);
+    expect(stdout, "the panel draws the held global copy by its record").toContain(
+      ` • ${recordedName} ⏏ `,
+    );
+    expect(
+      flattenCliOutput(stdout),
+      "the notice names the kept carried skill as the panel row above it does",
+    ).toContain(
+      flattenCliOutput(
+        [
+          "┘",
+          "~ web-developer: gains Hono",
+          "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
+          `  skill ${recordedName}`,
+          "Apply this configuration?",
+        ].join("\n"),
+      ),
+    );
   });
 
   it("marks the sub-agent it only takes a skill off ~, says what it loses, and removes no file", async () => {
@@ -1322,9 +1509,14 @@ describe("what edit --from says", () => {
       const globalConfig = await readTestTsConfig<ProjectConfig>(globalConfigPath());
       const agentless = path.join(path.dirname(projectDir), "agentless");
       await writeTestTsConfig(projectDir, buildProjectConfig({ name: "registered" }));
+      // A skill and no sub-agent: a config declaring nothing is no installation to recompile.
       await writeTestTsConfig(
         agentless,
-        buildProjectConfig({ name: "agentless", skills: [], agents: [] }),
+        buildProjectConfig({
+          name: "agentless",
+          skills: buildSkillConfigs([REACT], { scope: "global" }),
+          agents: [],
+        }),
       );
       await writeTestTsConfig(fakeHome, { ...globalConfig, projects: [projectDir, agentless] });
       serve("Next", onWebDeveloper([REACT, HONO], "global"));
@@ -1577,7 +1769,7 @@ describe("what edit --from says without a terminal", () => {
         "Fetching configuration Installed...",
         "Loading skills...",
         "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
-        `  skill ${REACT}`,
+        "  skill React",
         "  sub-agent web-developer",
         "No changes made.",
         "",
@@ -1779,9 +1971,9 @@ describe("what edit --from says of a skill written here", () => {
           "~ web-developer: gains Vue Composition Api, loses React",
           "~ api-developer: gains Vue Composition Api, loses React",
           "Kept — written here rather than installed, so a shared configuration never carried them:",
-          `  skill ${REACT}`,
-          `${REACT}: kept, no longer assigned to api-developer's web-framework`,
-          `${REACT}: kept, no longer assigned to web-developer's web-framework`,
+          "  skill React",
+          "React: kept, no longer assigned to api-developer's web-framework",
+          "React: kept, no longer assigned to web-developer's web-framework",
           "Apply this configuration?",
         ].join("\n"),
       ),
@@ -1789,5 +1981,64 @@ describe("what edit --from says of a skill written here", () => {
     expect(
       await fileExists(path.join(projectDir, CLAUDE_DIR, "skills", REACT, STANDARD_FILES.SKILL_MD)),
     ).toBe(true);
+  });
+
+  /**
+   * Recorded under a name the catalogue no longer gives it; the folder written over it since states
+   * a third, which nothing names a row by.
+   */
+  it("names a skill written here by the name its install recorded, as the panel row does, over the catalogue's and its folder's", async () => {
+    const recordedName = "Acme React";
+    configMockServer.use(storedConfigHandlerFor("Installed", onBothDevelopers(REACT)));
+    expect((await answered(["init", "--from", "Installed"], KEY_Y)).error).toBeUndefined();
+    const installedConfig = await readTestTsConfig<ProjectConfig>(
+      path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS),
+    );
+    await writeTestTsConfig(projectDir, {
+      ...installedConfig,
+      skills: installedConfig.skills.map((skill) =>
+        skill.id === REACT ? { ...skill, displayName: recordedName } : skill,
+      ),
+    });
+    await writeFile(
+      path.join(projectDir, CLAUDE_DIR, "skills", REACT, STANDARD_FILES.METADATA_YAML),
+      renderMetadataYaml({
+        category: "web-framework",
+        displayName: "House React",
+        slug: "react",
+        contentHash: "authored1",
+      }),
+    );
+    configMockServer.use(storedConfigHandlerFor("Next", onBothDevelopers(VUE)));
+    const installed = await readInstallTree(projectDir);
+
+    const { stdout, error } = await answered(["edit", "--from", "Next"], KEY_N);
+
+    expect(error?.oclif?.exit).toBe(EXIT_CODES.CANCELLED);
+    expect(
+      await readInstallTree(projectDir),
+      "a declined apply writes nothing, the folder written here included",
+    ).toStrictEqual(installed);
+    expect(stdout, "the panel draws the kept skill by the name its install recorded").toContain(
+      ` • ${recordedName} ⏏ `,
+    );
+    expect(stdout, "and not by the name its folder gives it").not.toContain("House React");
+    expect(
+      flattenCliOutput(stdout),
+      "each notice names the kept skill as the panel and the line above it do",
+    ).toContain(
+      flattenCliOutput(
+        [
+          "┘",
+          `~ web-developer: gains Vue Composition Api, loses ${recordedName}`,
+          `~ api-developer: gains Vue Composition Api, loses ${recordedName}`,
+          "Kept — written here rather than installed, so a shared configuration never carried them:",
+          `  skill ${recordedName}`,
+          `${recordedName}: kept, no longer assigned to api-developer's web-framework`,
+          `${recordedName}: kept, no longer assigned to web-developer's web-framework`,
+          "Apply this configuration?",
+        ].join("\n"),
+      ),
+    );
   });
 });

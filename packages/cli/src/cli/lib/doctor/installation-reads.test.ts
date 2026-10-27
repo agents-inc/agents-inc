@@ -74,6 +74,13 @@ describe("installation-reads", () => {
       expect(await hostsOnDisk(projectDir)).toStrictEqual({ project: "codex", global: "codex" });
     });
 
+    it("checks a project whose config declares nothing as the global one it inherits", async () => {
+      await writeTestTsConfig(projectDir, buildProjectConfig(DECLARES_NOTHING), folderOf("claude"));
+      await writeTestTsConfig(home.dir, buildProjectConfig(), folderOf("codex"));
+
+      expect(await hostsOnDisk(projectDir)).toStrictEqual({ project: "codex", global: "codex" });
+    });
+
     it.each(PROVIDERS)(
       "reads a home holding both installations as the %s project's own provider's global",
       async (provider) => {
@@ -101,6 +108,21 @@ describe("installation-reads", () => {
 
       expect(await providersInPlay(projectDir)).toStrictEqual(["codex"]);
     });
+
+    it("answers the project's own installation where a config beside it declares nothing", async () => {
+      await writeTestTsConfig(projectDir, buildProjectConfig(DECLARES_NOTHING), folderOf("claude"));
+      await writeTestTsConfig(projectDir, buildProjectConfig(), folderOf("codex"));
+
+      expect(await providersInPlay(projectDir)).toStrictEqual(["codex"]);
+    });
+
+    it("answers the global installations where the project's config declares nothing", async () => {
+      await writeTestTsConfig(projectDir, buildProjectConfig(DECLARES_NOTHING), folderOf("claude"));
+      await writeTestTsConfig(home.dir, buildProjectConfig(), folderOf("claude"));
+      await writeTestTsConfig(home.dir, buildProjectConfig(), folderOf("codex"));
+
+      expect(await providersInPlay(projectDir)).toStrictEqual(["claude", "codex"]);
+    });
   });
 
   describe("resolveConfigState", () => {
@@ -127,6 +149,7 @@ describe("installation-reads", () => {
         kind: "loaded",
         config: expect.objectContaining({ name: "global-one" }),
         inherited: true,
+        declaringNothingIn: "claude",
       });
     });
 

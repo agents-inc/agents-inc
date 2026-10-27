@@ -15,6 +15,7 @@ import {
 } from "../../__tests__/factories/config-factories.js";
 import { writeRawTestConfig, writeTestTsConfig } from "../../__tests__/helpers/config-io.js";
 import { renderUnparseableConfigTs } from "../../__tests__/factories/unloadable-config-factories.js";
+import { readInstallTree } from "../../__tests__/helpers/golden-tree.js";
 import { useFakeHome } from "../../__tests__/helpers/isolated-home.js";
 import { silenceConsole } from "../../__tests__/helpers/silence-console.js";
 import { buildSkillConfig } from "../../__tests__/helpers/skill-config-builders.js";
@@ -24,6 +25,10 @@ import { withGateToken } from "../gate-token.js";
 import { cleanupTempDir, createTempDir, fileExists } from "../../__tests__/test-fs-utils.js";
 import { loadProjectConfigFromDir } from "../../configuration/project-config.js";
 import { getProjectConfigPath } from "../../installation/install-base-dir.js";
+import {
+  chooseProviderForThisRun,
+  forgetTheProviderChosenForThisRun,
+} from "../../installation/install-layout.js";
 import { matrix } from "../../matrix/matrix-provider.js";
 import { setVerbose } from "../../../utils/logger.js";
 import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE, STANDARD_FILES } from "../../../consts.js";
@@ -71,6 +76,7 @@ describe("a global change propagated into a registered project", () => {
 
   afterEach(async () => {
     setVerbose(false);
+    forgetTheProviderChosenForThisRun();
     await cleanupTempDir(tempDir);
   });
 
@@ -524,6 +530,137 @@ describe("a global change propagated into a registered project", () => {
       gone: [gone],
       notOurs: [notOurs],
       failed: [],
+    });
+  });
+
+  /** Owner 2026-10-24: a project config declaring nothing is not an installation; it is the user's. */
+  it("passes over a registered project whose config declares nothing, as over one holding nothing, and leaves that config as it was", async () => {
+    const reached = await registerProject("reached", buildProjectConfig({ name: "reached" }));
+    const declaresNothing = await registerProject(
+      "declares-nothing",
+      buildProjectConfig({ name: "declares-nothing", skills: [], agents: [] }),
+    );
+    const configPath = getProjectConfigPath(declaresNothing, "claude");
+    const before = await readFile(configPath, "utf-8");
+    const projects = [reached, declaresNothing];
+
+    const named = await projectsAFanOutReaches(projects, "claude");
+    const result = await propagateGlobalChangesToProjects(
+      globalInstall({
+        skills: [buildSkillConfig(HONO, { scope: "global" })],
+        agents: buildAgentConfigs([API_DEVELOPER], { scope: "global" }),
+        projects,
+      }),
+      NO_AGENTS,
+      "claude",
+    );
+
+    expect({ named, result, after: await readFile(configPath, "utf-8") }).toStrictEqual({
+      named: [reached],
+      result: {
+        updated: [reached],
+        unreadable: [],
+        gone: [declaresNothing],
+        notOurs: [],
+        failed: [],
+      },
+      after: before,
+    });
+  });
+
+  /** A Codex installation beside a Claude config declaring nothing, which is the user's file. */
+  async function registerCodexBesideAnEmptyClaudeConfig(name: string): Promise<string> {
+    const dir = path.join(tempDir, name);
+    await writeTestTsConfig(
+      dir,
+      buildProjectConfig({
+        name,
+        skills: [],
+        agents: buildAgentConfigs([API_DEVELOPER], { scope: "project" }),
+      }),
+      CODEX_SOURCE_REL,
+    );
+    await writeTestTsConfig(dir, buildProjectConfig({ name: "mine", skills: [], agents: [] }));
+    return realpath(dir);
+  }
+
+  // Each row asks the pre-flight and the fan-out of a project apiece: a read of one project's
+  // configs records what they declare, and that record would answer the other read.
+
+  it("rewrites a registered project's own installation though a config of the other tool beside it declares nothing, and leaves that config as it was", async () => {
+    const asked = await registerCodexBesideAnEmptyClaudeConfig("asked");
+    const rewritten = await registerCodexBesideAnEmptyClaudeConfig("rewritten");
+    const leftover = getProjectConfigPath(rewritten, "claude");
+    const before = await readFile(leftover, "utf-8");
+
+    const named = await projectsAFanOutReaches([asked], "codex");
+    const result = await propagateGlobalChangesToProjects(
+      globalInstall({
+        agents: buildAgentConfigs([WEB_DEVELOPER], { scope: "global" }),
+        projects: [rewritten],
+      }),
+      NO_AGENTS,
+      "codex",
+    );
+
+    expect({
+      named,
+      result,
+      agents: (await loadProjectConfigFromDir(rewritten, "codex"))?.config.agents,
+      leftover: await readFile(leftover, "utf-8"),
+    }).toStrictEqual({
+      named: [asked],
+      result: { updated: [rewritten], unreadable: [], gone: [], notOurs: [], failed: [] },
+      agents: [
+        ...buildAgentConfigs([WEB_DEVELOPER], { scope: "global" }),
+        ...buildAgentConfigs([API_DEVELOPER], { scope: "project" }),
+      ],
+      leftover: before,
+    });
+  });
+
+  it("passes over as another tool's a registered project whose only config of this tool declares nothing, and changes nothing in it", async () => {
+    const asked = await registerCodexBesideAnEmptyClaudeConfig("asked");
+    const skipped = await registerCodexBesideAnEmptyClaudeConfig("skipped");
+    const before = await readInstallTree(skipped);
+
+    const named = await projectsAFanOutReaches([asked], "claude");
+    const result = await propagateGlobalChangesToProjects(
+      globalInstall({
+        agents: buildAgentConfigs([WEB_DEVELOPER], { scope: "global" }),
+        projects: [skipped],
+      }),
+      NO_AGENTS,
+      "claude",
+    );
+
+    expect({ named, result, after: await readInstallTree(skipped) }).toStrictEqual({
+      named: [],
+      result: { updated: [], unreadable: [], gone: [], notOurs: [skipped], failed: [] },
+      after: before,
+    });
+  });
+
+  it("passes over that project as another tool's when the run was told its tool, and changes nothing in it", async () => {
+    const asked = await registerCodexBesideAnEmptyClaudeConfig("asked");
+    const skipped = await registerCodexBesideAnEmptyClaudeConfig("skipped");
+    const before = await readInstallTree(skipped);
+    chooseProviderForThisRun("claude");
+
+    const named = await projectsAFanOutReaches([asked], "claude");
+    const result = await propagateGlobalChangesToProjects(
+      globalInstall({
+        agents: buildAgentConfigs([WEB_DEVELOPER], { scope: "global" }),
+        projects: [skipped],
+      }),
+      NO_AGENTS,
+      "claude",
+    );
+
+    expect({ named, result, after: await readInstallTree(skipped) }).toStrictEqual({
+      named: [],
+      result: { updated: [], unreadable: [], gone: [], notOurs: [skipped], failed: [] },
+      after: before,
     });
   });
 });

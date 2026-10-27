@@ -1,6 +1,6 @@
 import path from "path";
 
-import { CLAUDE_DIR, PLUGINS_SUBDIR, STANDARD_DIRS } from "../../../consts.js";
+import { CLAUDE_DIR, STANDARD_DIRS } from "../../../consts.js";
 
 import type { Installation } from "../../installation/index.js";
 import { getProjectConfigPath } from "../../installation/install-base-dir.js";
@@ -16,16 +16,11 @@ export function buildInstallation(overrides: Partial<Installation> = {}): Instal
     mode: "eject",
     configPath: getProjectConfigPath(FACTORY_PROJECT_DIR, "claude"),
     agentsDir: path.join(FACTORY_PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.AGENTS),
-    skillsDir: path.join(FACTORY_PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.SKILLS),
     projectDir: FACTORY_PROJECT_DIR,
     ...overrides,
   };
 }
 
 export function buildPluginInstallation(overrides: Partial<Installation> = {}): Installation {
-  return buildInstallation({
-    mode: "plugin",
-    skillsDir: path.join(FACTORY_PROJECT_DIR, CLAUDE_DIR, PLUGINS_SUBDIR),
-    ...overrides,
-  });
+  return buildInstallation({ mode: "plugin", ...overrides });
 }

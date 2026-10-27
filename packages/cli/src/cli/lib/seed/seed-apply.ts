@@ -1,6 +1,6 @@
 import os from "os";
 
-import { isDeepEqual, omit, partition, pick } from "remeda";
+import { indexBy, isDeepEqual, omit, partition, pick } from "remeda";
 
 import { loadProjectConfigFromDir } from "../configuration/project-config.js";
 import { isActiveAt } from "../configuration/scope-predicates.js";
@@ -11,6 +11,7 @@ import { addedToGlobalSubAgents } from "../../utils/messages.js";
 import { typedEntries, typedValues } from "../../utils/typed-object.js";
 
 import type { InstallSelection } from "@workspace/compile/seed-to-config";
+import type { NamedBy } from "../configuration/scope-diff.js";
 import type { AgentName } from "../../types/agents.js";
 import type {
   AgentScopeConfig,
@@ -500,8 +501,18 @@ function entriesActiveAt(
   };
 }
 
+/**
+ * The entry the panel draws each skill's row from, which a notice under it names the skill by: the
+ * global install's for one held, the installed one for one kept, the configuration's for the rest.
+ */
+export function panelRowEntries(held: HeldGlobal): NamedBy {
+  const active = held.result.skills.filter((skill) => !skill.excluded);
+  return indexBy(active, (skill) => skill.id);
+}
+
 export function joinedStatement(held: HeldGlobal): string[] {
-  return held.joined.length === 0 ? [] : [addedToGlobalSubAgents(held.joined)];
+  if (held.joined.length === 0) return [];
+  return [addedToGlobalSubAgents(held.joined, panelRowEntries(held))];
 }
 
 /** Split by kind: skill and sub-agent scopes are independent, so a refusal names each. */

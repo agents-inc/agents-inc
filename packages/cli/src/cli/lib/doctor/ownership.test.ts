@@ -55,7 +55,7 @@ function ownConfig(config: ProjectConfig): ConfigState {
 }
 
 function inheritedConfig(config: ProjectConfig): ConfigState {
-  return { kind: "loaded", config, inherited: true };
+  return { kind: "loaded", config, inherited: true, declaringNothingIn: null };
 }
 
 describe("judgeOwnership", () => {

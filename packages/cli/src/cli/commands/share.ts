@@ -75,11 +75,10 @@ export default class Share extends BaseCommand {
 
     // A piped payload never reads this directory, so its state must not refuse it.
     if (!flags.stdin) {
-      await refuseAnAmbiguousInstallation(
-        process.cwd(),
-        "share",
-        providerNamedBy(flags.provider),
-        (message) => this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
+      const namedProvider = providerNamedBy(flags.provider);
+      await this.sayWhenTheGlobalInstallationStandsIn(namedProvider);
+      await refuseAnAmbiguousInstallation(process.cwd(), "share", namedProvider, (message) =>
+        this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
       );
       await this.ensureConfigReadable(process.cwd());
       await this.refuseUnofferablePlacements(process.cwd());

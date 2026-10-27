@@ -25,6 +25,8 @@ import { loadAllAgents, loadProjectAgents } from "../loading";
 import { getPluginAgentsDir } from "../plugins";
 import { discoverAllPluginSkills } from "../plugins/plugin-discovery";
 import { resolveAgents } from "../resolver";
+import { providerInUse } from "../installation/install-layout";
+import type { Provider } from "../../consts";
 
 export type RecompileAgentsOptions = {
   pluginDir: string;
@@ -32,8 +34,13 @@ export type RecompileAgentsOptions = {
   agents?: AgentName[];
   skills?: SkillDefinitionMap;
   projectDir?: string;
+  /** The installation recompiled, where its directory holds two; the default is the one in use. */
+  provider?: Provider;
   outputDir?: string;
-  /** When provided, routes agents by scope: global agents to ~/.claude/agents/, project agents to outputDir */
+  /**
+   * When provided, routes agents by scope: global ones to the agents folder of the global
+   * installation inherited, project ones to `outputDir`.
+   */
   agentScopeMap?: Map<AgentName, SkillScope>;
 };
 
@@ -144,8 +151,9 @@ export async function recompileAgents(
   const { pluginDir, sourcePath, skills: providedSkills, projectDir, outputDir } = options;
 
   const configDir = projectDir ?? pluginDir;
-  const filteredConfig = await loadConfigWithoutExclusions(configDir);
-  const allAgents = await loadAgentDefinitions(sourcePath, projectDir);
+  const provider = options.provider ?? providerInUse(configDir);
+  const filteredConfig = await loadConfigWithoutExclusions(configDir, provider);
+  const allAgents = await loadAgentDefinitions(sourcePath, projectDir, provider);
 
   const agentNames = await resolveAgentNames({
     ...(options.agents !== undefined && { specifiedAgents: options.agents }),
@@ -163,7 +171,7 @@ export async function recompileAgents(
   verbose(`Recompiling ${agentNames.length} agents in ${outputDir ?? pluginDir}`);
 
   const pluginSkills: SkillDefinitionMap =
-    providedSkills ?? (await discoverAllPluginSkills(projectDir ?? pluginDir));
+    providedSkills ?? (await discoverAllPluginSkills(configDir, provider));
 
   const { configAgents, missingWarnings } = compileEntriesFor(
     agentNames,
@@ -172,7 +180,7 @@ export async function recompileAgents(
   );
   const compileConfig = compileConfigFor(filteredConfig, configAgents, pluginDir);
 
-  const engine = await createLiquidEngine(projectDir);
+  const engine = await createLiquidEngine(projectDir, provider);
   const resolvedAgents = await resolveAgents(allAgents, pluginSkills, compileConfig);
 
   const agentsDir = outputDir ?? getPluginAgentsDir(pluginDir);
@@ -183,15 +191,19 @@ export async function recompileAgents(
     sourcePath,
     engine,
     projectAgentsDir: agentsDir,
-    // Same root as the config, so format and configuration come from one installation.
+    // The config's own installation, so format and configuration agree.
     projectDir: configDir,
+    provider,
     ...(options.agentScopeMap !== undefined && { agentScopeMap: options.agentScopeMap }),
   });
   return buildRecompileResult(outcomes, missingWarnings);
 }
 
-async function loadConfigWithoutExclusions(configDir: string): Promise<ProjectConfig | null> {
-  const loaded = await loadProjectConfig(configDir);
+async function loadConfigWithoutExclusions(
+  configDir: string,
+  provider: Provider,
+): Promise<ProjectConfig | null> {
+  const loaded = await loadProjectConfig(configDir, provider);
   return loaded ? filterExcludedEntries(loaded.config) : null;
 }
 
@@ -199,9 +211,10 @@ async function loadConfigWithoutExclusions(configDir: string): Promise<ProjectCo
 async function loadAgentDefinitions(
   sourcePath: string,
   projectDir: string | undefined,
+  provider: Provider,
 ): Promise<Partial<Record<AgentName, AgentDefinition>>> {
   const builtinAgents = await loadAllAgents(sourcePath);
-  const projectAgents = projectDir ? await loadProjectAgents(projectDir) : {};
+  const projectAgents = projectDir ? await loadProjectAgents(projectDir, provider) : {};
 
   return { ...builtinAgents, ...projectAgents };
 }

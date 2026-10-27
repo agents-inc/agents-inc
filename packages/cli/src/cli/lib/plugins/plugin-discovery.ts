@@ -3,19 +3,25 @@ import { getErrorMessage } from "../../utils/errors";
 import { fileExists } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
 import { typedEntries } from "../../utils/typed-object";
-import { hostAt } from "../hosts/host-for.js";
+import type { Provider } from "../../consts";
+import { hostFor } from "../hosts/host-for.js";
+import { providerInUse } from "../installation/install-layout.js";
 import { loadPluginSkills } from "../loading";
 import { getPluginManifestPath } from "./plugin-finder";
 import type { ResolvedPlugin } from "./plugin-settings";
 
 /**
  * Enabled plugins whose manifest is still on disk. Degrades to `[]` on an unreadable registry, so
- * `doctor` reports it as a finding rather than an aborted check.
+ * `doctor` reports it as a finding rather than an aborted check. `provider` names the installation
+ * where `projectDir` holds two; the default is the one in use.
  */
-export async function getVerifiedPluginInstallPaths(projectDir: string): Promise<ResolvedPlugin[]> {
+export async function getVerifiedPluginInstallPaths(
+  projectDir: string,
+  provider: Provider = providerInUse(projectDir),
+): Promise<ResolvedPlugin[]> {
   let enabled: ResolvedPlugin[];
   try {
-    const installed = await hostAt(projectDir).listPlugins(projectDir);
+    const installed = await hostFor(provider).listPlugins(projectDir);
     enabled = installed
       .filter((plugin) => plugin.enabled)
       .map(({ pluginKey, installPath }) => ({ pluginKey, installPath }));
@@ -40,8 +46,12 @@ async function hasManifestOnDisk({ pluginKey, installPath }: ResolvedPlugin): Pr
   return manifestExists;
 }
 
-export async function discoverAllPluginSkills(projectDir: string): Promise<SkillDefinitionMap> {
-  const pluginPaths = await getVerifiedPluginInstallPaths(projectDir);
+/** `provider` names the installation where `projectDir` holds two; the default is the one in use. */
+export async function discoverAllPluginSkills(
+  projectDir: string,
+  provider: Provider = providerInUse(projectDir),
+): Promise<SkillDefinitionMap> {
+  const pluginPaths = await getVerifiedPluginInstallPaths(projectDir, provider);
 
   if (pluginPaths.length === 0) {
     verbose(`No enabled plugins found for '${projectDir}'`);

@@ -211,7 +211,6 @@ function buildEjectInstallation(projectDir: string): Installation {
     projectDir,
     configPath: getProjectConfigPath(projectDir, "claude"),
     agentsDir: path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS),
-    skillsDir: path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS),
   });
 }
 
@@ -1642,6 +1641,42 @@ describe("what edit --from does to plugins and saved copies", () => {
         "Installing 1 skill as a plugin in this project (the global copy stays)",
       );
       expect(await readFile(savedCopyAt(fakeHome.dir), "utf-8")).toBe("the global copy");
+    });
+
+    it("installs a global copy switched to a project plugin once, at project, and removes nothing", async () => {
+      await writeSavedCopy(fakeHome.dir, "the global copy");
+      installed(saved(["web-framework-react"], "global"));
+
+      const error = await applying(withMarketplace(), plugin(["web-framework-react"], "project"));
+
+      expect(error).toBeUndefined();
+      expect({ installed: installSpy.mock.calls, removed: uninstallSpy.mock.calls }).toStrictEqual({
+        installed: [[REACT_PLUGIN, "project", projectDir]],
+        removed: [],
+      });
+      expect(await readFile(savedCopyAt(fakeHome.dir), "utf-8")).toBe("the global copy");
+      expect(await fileExists(savedCopyAt(projectDir)), "the plugin brings no copy").toBe(false);
+      expect(
+        (await readTestTsConfig<ProjectConfig>(getProjectConfigPath(projectDir, "claude"))).skills,
+      ).toStrictEqual(plugin(["web-framework-react"], "project"));
+    });
+
+    it("installs a project copy switched to a global plugin once, globally, deleting the copy and removing nothing", async () => {
+      await writeSavedCopy(projectDir, "the project copy");
+      installed(saved(["web-framework-react"], "project"));
+
+      const error = await applying(withMarketplace(), plugin(["web-framework-react"], "global"));
+
+      expect(error).toBeUndefined();
+      expect({ installed: installSpy.mock.calls, removed: uninstallSpy.mock.calls }).toStrictEqual({
+        installed: [[REACT_PLUGIN, "global", projectDir]],
+        removed: [],
+      });
+      expect(await fileExists(savedCopyAt(projectDir))).toBe(false);
+      expect(await fileExists(savedCopyAt(fakeHome.dir)), "the plugin brings no copy").toBe(false);
+      expect(
+        (await readTestTsConfig<ProjectConfig>(getProjectConfigPath(projectDir, "claude"))).skills,
+      ).toStrictEqual(plugin(["web-framework-react"], "global"));
     });
 
     it("warns of the plugin it could not uninstall once the saved copy landed", async () => {

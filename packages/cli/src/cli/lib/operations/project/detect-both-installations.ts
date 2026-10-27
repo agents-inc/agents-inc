@@ -13,7 +13,7 @@ export type BothInstallations = {
 
 /** Skips project detection in the home directory, where it would double-compile the global. */
 export async function detectBothInstallations(projectDir: string): Promise<BothInstallations> {
-  const global = await detectGlobalInstallation();
+  const global = await detectGlobalInstallation(projectDir);
 
   const project = isHomeDirectory(projectDir) ? null : await detectProjectInstallation(projectDir);
   return { global, project, hasBoth: !!global && !!project };

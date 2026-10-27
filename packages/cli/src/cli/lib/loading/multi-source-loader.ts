@@ -2,7 +2,8 @@ import os from "os";
 import { unique } from "remeda";
 
 import { isHomeDirectory } from "../installation/is-home-directory";
-import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE } from "../../consts";
+import { inheritedGlobalProvider } from "../installation/install-layout";
+import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE, type Provider } from "../../consts";
 import type {
   MergedSkillsMatrix,
   ResolvedSkill,
@@ -149,7 +150,9 @@ function markInstalledAsPlugin(
 
 async function collectPluginSkillIds(projectDir: string): Promise<SkillId[]> {
   const projectSkillIds = await pluginSkillIdsIn(projectDir);
-  const globalSkillIds = isHomeDirectory(projectDir) ? [] : await pluginSkillIdsIn(os.homedir());
+  const globalSkillIds = isHomeDirectory(projectDir)
+    ? []
+    : await pluginSkillIdsIn(os.homedir(), inheritedGlobalProvider(projectDir));
 
   if (globalSkillIds.length > 0) {
     verbose(`Found ${globalSkillIds.length} global plugin skill(s)`);
@@ -163,8 +166,8 @@ async function collectPluginSkillIds(projectDir: string): Promise<SkillId[]> {
   return projectSkillIds;
 }
 
-async function pluginSkillIdsIn(dir: string): Promise<SkillId[]> {
-  return typedKeys<SkillId>(await discoverAllPluginSkills(dir));
+async function pluginSkillIdsIn(dir: string, provider?: Provider): Promise<SkillId[]> {
+  return typedKeys<SkillId>(await discoverAllPluginSkills(dir, provider));
 }
 
 function setActiveSources(matrix: MergedSkillsMatrix): void {

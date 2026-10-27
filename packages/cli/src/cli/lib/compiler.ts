@@ -69,10 +69,12 @@ async function readOutputPartial(agentDir: string, categoryDir: string): Promise
  * `.claude/templates/`, then the built-ins. The options mirror `createEngineFromTemplates` in
  * `@workspace/compile/engine`; keep the two in sync.
  */
-export async function createLiquidEngine(projectDir?: string): Promise<Liquid> {
-  const roots: string[] = [];
+export async function createLiquidEngine(
+  projectDir?: string,
   // One read for both: template overrides and source folder must name one installation.
-  const provider = providerInUse(projectDir);
+  provider: Provider = providerInUse(projectDir),
+): Promise<Liquid> {
+  const roots: string[] = [];
 
   if (projectDir) {
     const srcTemplatesDir = path.join(

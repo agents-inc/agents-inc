@@ -11,6 +11,7 @@ import {
   STANDARD_DIRS,
   STANDARD_FILES,
   PROJECT_ROOT,
+  type Provider,
 } from "../../consts";
 import { providerInUse, sourceFolderInUse } from "../installation/install-layout";
 import type {
@@ -195,10 +196,12 @@ export async function loadMergedAgents(
   return { ...cliAgents, ...sourceAgents };
 }
 
+/** `provider` names the installation where `projectRoot` holds two; the default is the one in use. */
 export async function loadProjectAgents(
   projectRoot: string,
+  provider: Provider = providerInUse(projectRoot),
 ): Promise<Partial<Record<AgentName, AgentDefinition>>> {
-  const sourceFolder = sourceFolderInUse(projectRoot, providerInUse(projectRoot));
+  const sourceFolder = sourceFolderInUse(projectRoot, provider);
   const projectAgentsDir = path.join(sourceFolder.dir, STANDARD_DIRS.AGENTS);
 
   if (!(await directoryExists(projectAgentsDir))) {

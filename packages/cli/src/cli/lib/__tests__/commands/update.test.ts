@@ -9,7 +9,7 @@ import { buildSkillConfig } from "../helpers/index.js";
 import { writeTestTsConfig } from "../helpers/config-io.js";
 import { flattenCliOutput } from "../helpers/flatten-cli-output.js";
 import { buildProjectConfig } from "../factories/config-factories.js";
-import { EJECT_SOURCE } from "../../../consts";
+import { EJECT_SOURCE, type Provider } from "../../../consts";
 import { EXIT_CODES } from "../../exit-codes";
 import type { PluginHost } from "../../hosts/plugin-host.js";
 import type { ProjectConfig } from "../../../types";
@@ -19,18 +19,26 @@ import type { ProjectConfig } from "../../../types";
  * directly because `runCliCommand` resolves out of `dist/`, where a module mock can't reach.
  */
 
-const { mockMarketplaceUpdate, mockHostAvailable } = vi.hoisted(() => ({
+const { mockMarketplaceUpdate, mockHostAvailable, mockRefreshedThrough } = vi.hoisted(() => ({
   mockMarketplaceUpdate: vi.fn<PluginHost["refreshMarketplace"]>(),
   mockHostAvailable: vi.fn<PluginHost["isAvailable"]>(),
+  mockRefreshedThrough: vi.fn<(provider: Provider) => void>(),
 }));
 
+/** One host per provider, and `hostAt` reads the provider off the disk as the real one does. */
 vi.mock("../../hosts/host-for.js", async () => {
   const { createMockPluginHost } = await import("../helpers/mock-plugin-host.js");
-  const host = createMockPluginHost({
-    refreshMarketplace: mockMarketplaceUpdate,
-    isAvailable: mockHostAvailable,
-  });
-  return { hostAt: () => host, hostFor: () => host };
+  const { providerInUse } = await import("../../installation/install-layout.js");
+  const hostFor = (provider: Provider): PluginHost =>
+    createMockPluginHost({
+      provider,
+      refreshMarketplace: (...args) => {
+        mockRefreshedThrough(provider);
+        return mockMarketplaceUpdate(...args);
+      },
+      isAvailable: mockHostAvailable,
+    });
+  return { hostAt: (root: string) => hostFor(providerInUse(root)), hostFor };
 });
 
 const { default: Update } = await import("../../../commands/update.js");
@@ -38,6 +46,9 @@ const { default: Update } = await import("../../../commands/update.js");
 const MARKETPLACE = "agents-inc";
 const OTHER_MARKETPLACE = "acme-skills";
 const MARKETPLACE_FAILURE = "Failed to update marketplace: network unreachable";
+
+/** A literal: a test reading the folder off the product would move with it. */
+const CODEX_FOLDER = ".agents-inc/codex";
 
 /** `claude plugin marketplace update` leaves installed plugins alone, so "complete" is false. */
 const FALSE_COMPLETION_CLAIM = "Update complete!";
@@ -289,6 +300,68 @@ describe("update command", () => {
         `Warning: Could not update marketplace ${MARKETPLACE}: ${MARKETPLACE_FAILURE}`,
       );
       expect(error?.message).toBe(`1 marketplace could not be updated: ${MARKETPLACE}`);
+    });
+  });
+
+  describe("the tool a refresh runs through", () => {
+    it("is the tool of the project's own installation", async () => {
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({
+          skills: [buildSkillConfig("web-framework-react", { origin: MARKETPLACE })],
+        }),
+        CODEX_FOLDER,
+      );
+
+      const error = await runUpdate();
+
+      expect(error).toBeUndefined();
+      expect(mockRefreshedThrough.mock.calls).toStrictEqual([["codex"]]);
+    });
+
+    it("is the global installation's tool where the project's config is another tool's and declares nothing", async () => {
+      // HOME is `tempDir`, whose Claude installation the run falls back to.
+      await writeTestTsConfig(
+        tempDir,
+        buildProjectConfig({
+          skills: [
+            buildSkillConfig("web-framework-react", { origin: MARKETPLACE, scope: "global" }),
+          ],
+        }),
+      );
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({ name: "project", skills: [], agents: [] }),
+        CODEX_FOLDER,
+      );
+
+      const error = await runUpdate();
+
+      expect(error).toBeUndefined();
+      expect(updatedMarketplaces(), "HOME's marketplace is the one refreshed").toStrictEqual([
+        MARKETPLACE,
+      ]);
+      expect(mockRefreshedThrough.mock.calls).toStrictEqual([["claude"]]);
+    });
+
+    it("is the global installation's tool where the project holds none and HOME holds only Codex's", async () => {
+      await writeTestTsConfig(
+        tempDir,
+        buildProjectConfig({
+          skills: [
+            buildSkillConfig("web-framework-react", { origin: MARKETPLACE, scope: "global" }),
+          ],
+        }),
+        CODEX_FOLDER,
+      );
+
+      const error = await runUpdate();
+
+      expect(error).toBeUndefined();
+      expect(updatedMarketplaces(), "HOME's marketplace is the one refreshed").toStrictEqual([
+        MARKETPLACE,
+      ]);
+      expect(mockRefreshedThrough.mock.calls).toStrictEqual([["codex"]]);
     });
   });
 

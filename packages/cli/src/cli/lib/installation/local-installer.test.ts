@@ -1618,6 +1618,8 @@ describe("local-installer", () => {
 
   describe("propagateGlobalChangesToProjects", () => {
     const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
+    /** A registered project's own entry: a config declaring nothing is no installation to rewrite. */
+    const A_PROJECT_SKILL = buildSkillConfigs(["web-testing-vitest"], { scope: "project" });
     // The fan-out merges global local skills under `os.homedir()`, so HOME must be the fake one.
     useFakeHome(() => tempDir);
 
@@ -1666,7 +1668,7 @@ describe("local-installer", () => {
         const configDir = sourceFolderInUse(dir, "claude").dir;
         await mkdir(configDir, { recursive: true });
         await writeConfigFile(
-          buildProjectConfig({ name, skills: [], agents: [] }),
+          buildProjectConfig({ name, skills: A_PROJECT_SKILL, agents: [] }),
           path.join(configDir, STANDARD_FILES.CONFIG_TS),
         );
         return dir;
@@ -1705,7 +1707,7 @@ describe("local-installer", () => {
         await mkdir(configDir, { recursive: true });
         const projectConfig = buildProjectConfig({
           name: path.basename(dir),
-          skills: [],
+          skills: A_PROJECT_SKILL,
           agents: [],
         });
         await writeConfigFile(projectConfig, path.join(configDir, STANDARD_FILES.CONFIG_TS));
@@ -1744,7 +1746,7 @@ describe("local-installer", () => {
 
       const projectConfig = buildProjectConfig({
         name: "target",
-        skills: [],
+        skills: A_PROJECT_SKILL,
         agents: [],
       });
       await writeConfigFile(projectConfig, path.join(configDir, STANDARD_FILES.CONFIG_TS));

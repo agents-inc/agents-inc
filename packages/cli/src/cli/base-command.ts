@@ -3,12 +3,13 @@ import { Command } from "@oclif/core";
 import chalk from "chalk";
 import { unique } from "remeda";
 
-import { CLI_COLORS, DEFAULT_BRANDING, MIN_TERMINAL_SIZE } from "./consts.js";
+import { CLI_COLORS, DEFAULT_BRANDING, MIN_TERMINAL_SIZE, type Provider } from "./consts.js";
 import { getErrorMessage } from "./utils/errors.js";
 import { inertLine, stripTerminalControls } from "./utils/string.js";
 import { verbose } from "./utils/logger.js";
 import {
   completedWithFailures,
+  INFO_MESSAGES,
   installationConfigsUnreadable,
   type IncompleteWork,
   pluginsInstalled,
@@ -22,7 +23,7 @@ import {
   skillAssignedToNoAgent,
   skillMetadataUnusableDetail,
   skippedUnknownAgents,
-  skippedUnknownSkills,
+  skippedSkills,
   STATUS_MESSAGES,
 } from "./utils/messages.js";
 import {
@@ -35,6 +36,7 @@ import { isActiveAt } from "./lib/configuration/scope-predicates.js";
 import { resolveBranding } from "./lib/configuration/config.js";
 import { isHomeDirectory, refuseUnofferedStack } from "./lib/installation/index.js";
 import { providerInUse } from "./lib/installation/install-layout.js";
+import { globalInstallationStandsIn } from "./lib/installation/provider-flag.js";
 import { providerToNameAt } from "./lib/installation/provider-to-name.js";
 import type { InstallSelection } from "@workspace/compile/seed-to-config";
 import { getStackSkillIds, loadStackById } from "./lib/stacks/index.js";
@@ -136,6 +138,17 @@ export abstract class BaseCommand extends Command {
   async init(): Promise<void> {
     await super.init();
     await this.ensureTerminalSize();
+  }
+
+  /**
+   * Called first where a command starts work on the installation in play, which for a project whose
+   * config declares nothing is the global one. On stderr, as the init hook's old-folder lines are,
+   * so piped output is unchanged.
+   */
+  protected async sayWhenTheGlobalInstallationStandsIn(named: Provider | undefined): Promise<void> {
+    if (!(await globalInstallationStandsIn(process.cwd(), named))) return;
+
+    process.stderr.write(`${INFO_MESSAGES.GLOBAL_INSTALLATION_STANDS_IN}\n`);
   }
 
   protected async ensureTerminalSize(): Promise<void> {
@@ -325,11 +338,15 @@ export abstract class BaseCommand extends Command {
     });
   }
 
-  protected warnOfSkippedEntries(mapping: SeedMapping): void {
+  /** `unloadedSkillIds`: skills the marketplace ships and could not load, never unknown ones. */
+  protected warnOfSkippedEntries(
+    mapping: SeedMapping,
+    unloadedSkillIds: SourceLoadResult["unloadedSkillIds"],
+  ): void {
     const { skippedSkillIds, skippedAgentNames, agentsOnlySkippedSkillsCarried } = mapping;
 
     if (skippedSkillIds.length > 0) {
-      this.warn(skippedUnknownSkills(skippedSkillIds, agentsOnlySkippedSkillsCarried));
+      this.warn(skippedSkills(skippedSkillIds, agentsOnlySkippedSkillsCarried, unloadedSkillIds));
     }
     if (skippedAgentNames.length > 0) this.warn(skippedUnknownAgents(skippedAgentNames));
   }

@@ -40,6 +40,12 @@ import { DEFAULT_TEST_SKILLS } from "../mock-data/mock-skills";
  * holds the other tool's installation or both. A run naming a provider names that provider's folder
  * in both lines, whatever the project's tool.
  *
+ * CLI-971, owner 2026-10-24 ("Never count it, and say so"): a project config declaring no skill and
+ * no sub-agent is not the project's installation. On a run naming no provider, a project holding
+ * nothing else is read as one holding none, so HOME's line names HOME's own folder and the
+ * project's names the folder that config sits in; a project holding another provider's installation
+ * beside it is read as that installation alone, so both lines name that installation's folder.
+ *
  * Where the run stands is pinned as it behaves today: a project under HOME is named by its absolute
  * path, and a run from a folder inside a project checks that folder and HOME, not the project above.
  */
@@ -299,6 +305,119 @@ describe("an old .claude-src folder", () => {
         [
           ignoredLine(HOME_SHORTHAND, CLAUDE_FOLDER),
           ignoredLine(projectDir, CLAUDE_FOLDER),
+          without.stderr,
+        ].join(""),
+      );
+    });
+  });
+
+  describe("where the project's config declares nothing", () => {
+    async function declaringNothingIn(folder: typeof CLAUDE_FOLDER | typeof CODEX_FOLDER) {
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({ name: "declares-nothing", skills: [], agents: [] }),
+        folder,
+      );
+    }
+
+    it.each([
+      {
+        homeHolds: "a Claude installation alone",
+        home: [CLAUDE_FOLDER],
+        project: CODEX_FOLDER,
+        homeReads: CLAUDE_FOLDER,
+      },
+      {
+        homeHolds: "a Codex installation alone",
+        home: [CODEX_FOLDER],
+        project: CLAUDE_FOLDER,
+        homeReads: CODEX_FOLDER,
+      },
+      {
+        homeHolds: "both installations",
+        home: [CLAUDE_FOLDER, CODEX_FOLDER],
+        project: CODEX_FOLDER,
+        homeReads: CLAUDE_FOLDER,
+      },
+    ] as const)(
+      "on the other tool from a home directory holding $homeHolds, HOME's line names the folder of the installation the run reads there",
+      async ({ home, project, homeReads }) => {
+        await declaringNothingIn(project);
+        for (const folder of home) await installIn([fakeHome], folder);
+        const without = await runCliCommand(["list"]);
+        await oldFolderIn([projectDir, fakeHome]);
+
+        const withOld = await runCliCommand(["list"]);
+
+        expect(without.error).toBeUndefined();
+        expect(without.stdout, "list read HOME's installation").toContain(
+          path.join(fakeHome, homeReads, "config.ts"),
+        );
+        expect(without.stderr, "a run with no old folder names none").not.toContain(
+          OLD_SOURCE_FOLDER,
+        );
+        expect(withOld.error).toBeUndefined();
+        expect(withOld.stdout, "stdout is what it is without the old folder").toBe(without.stdout);
+        expect(
+          withOld.stderr,
+          "HOME's line names HOME's own folder, as for a project holding no installation, and the project's names the folder its config is in",
+        ).toBe(
+          [
+            ignoredLine(HOME_SHORTHAND, homeReads),
+            ignoredLine(projectDir, project),
+            without.stderr,
+          ].join(""),
+        );
+      },
+    );
+
+    it("on Codex, under a home directory holding nothing, HOME's line names the Claude folder, as for a project holding no installation", async () => {
+      await declaringNothingIn(CODEX_FOLDER);
+      const without = await runCliCommand(["list"]);
+      await oldFolderIn([projectDir, fakeHome]);
+
+      const withOld = await runCliCommand(["list"]);
+
+      expect(without.stderr, "a run with no old folder names none").not.toContain(
+        OLD_SOURCE_FOLDER,
+      );
+      expect(withOld.error?.message).toBe(without.error?.message);
+      expect(withOld.stdout, "stdout is what it is without the old folder").toBe(without.stdout);
+      expect(
+        withOld.stderr,
+        "HOME's line names the folder of HOME's own tool, and the project's names the folder its config is in",
+      ).toBe(
+        [
+          ignoredLine(HOME_SHORTHAND, CLAUDE_FOLDER),
+          ignoredLine(projectDir, CODEX_FOLDER),
+          without.stderr,
+        ].join(""),
+      );
+    });
+
+    it("beside the project's own Codex installation, under a home directory holding both, both lines name the Codex folder, as for the Codex project alone", async () => {
+      await installIn([projectDir], CODEX_FOLDER);
+      await declaringNothingIn(CLAUDE_FOLDER);
+      await installIn([fakeHome], CLAUDE_FOLDER);
+      await installIn([fakeHome], CODEX_FOLDER);
+      const without = await runCliCommand(["list"]);
+      await oldFolderIn([projectDir, fakeHome]);
+
+      const withOld = await runCliCommand(["list"]);
+
+      expect(without.error).toBeUndefined();
+      expect(without.stderr, "a run with no old folder names none").not.toContain(
+        OLD_SOURCE_FOLDER,
+      );
+      expect(withOld.error).toBeUndefined();
+      expect(withOld.stdout, "stdout is what it is without the old folder").toBe(without.stdout);
+      expect(
+        withOld.stderr,
+        "the config declaring nothing is not the project's installation, so both lines name the folder of the Codex one the run reads",
+      ).toBe(
+        [
+          ignoredLine(HOME_SHORTHAND, CODEX_FOLDER),
+          ignoredLine(projectDir, CODEX_FOLDER),
           without.stderr,
         ].join(""),
       );

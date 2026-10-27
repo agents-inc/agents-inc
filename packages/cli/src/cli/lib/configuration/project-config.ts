@@ -10,7 +10,7 @@ import { normalizeStackRecord } from "../stacks/stacks-loader";
 import { projectConfigLoaderSchema } from "../schemas";
 import { formatZodErrors } from "../schema-validator";
 import { getProjectConfigPath } from "../installation/install-base-dir";
-import { providerInUse } from "../installation/install-layout";
+import { inheritedGlobalProvider, providerInUse } from "../installation/install-layout";
 import { initProviderToNameAt, providerToNameAt } from "../installation/provider-to-name";
 import { isHomeDirectory } from "../installation/is-home-directory";
 import type { ScopeKind } from "../installation/source-scopes";
@@ -48,6 +48,30 @@ export class ConfigLoadError extends Error {
   }
 }
 
+/**
+ * A project config declaring no skill and no sub-agent is not an installation (owner, 2026-10-24).
+ * The one definition: the roster, the listing and `doctor` all ask it.
+ */
+export function declaresNoContent(config: {
+  skills: readonly unknown[];
+  agents: readonly unknown[];
+}): boolean {
+  return config.skills.length === 0 && config.agents.length === 0;
+}
+
+/**
+ * {@link declaresNoContent} of the config at `projectDir`, read without a load's warnings, since
+ * the roster asks it on every read. Throws `ConfigLoadError` as a load does.
+ */
+export async function configDeclaresNothing(
+  projectDir: string,
+  provider: Provider,
+): Promise<boolean> {
+  const configPath = getProjectConfigPath(projectDir, provider);
+  const parsed = await parseConfigFile(configPath, refusalAt(configPath, projectDir, provider));
+  return declaresNoContent({ skills: parsed.skills ?? [], agents: parsed.agents ?? [] });
+}
+
 /** `null` only when the file is absent; throws `ConfigLoadError` when it exists but cannot load. */
 export async function loadProjectConfigFromDir(
   projectDir: string,
@@ -71,8 +95,7 @@ export async function loadProjectConfigAt(
   }
 
   // The file exists: from here any failure is a ConfigLoadError, never `null`.
-  const refuse = (reason: string) => new ConfigLoadError(configPath, reason, projectDir, provider);
-  const parsed = await parseConfigFile(configPath, refuse);
+  const parsed = await parseConfigFile(configPath, refusalAt(configPath, projectDir, provider));
   const config = asProjectConfig(parsed, projectDir);
   warnOfDefaultedFields(parsed, configPath);
 
@@ -85,6 +108,14 @@ export async function loadProjectConfigAt(
 }
 
 type ParsedProjectConfig = z.infer<typeof projectConfigLoaderSchema>;
+
+function refusalAt(
+  configPath: string,
+  projectDir: string,
+  provider: Provider,
+): (reason: string) => ConfigLoadError {
+  return (reason) => new ConfigLoadError(configPath, reason, projectDir, provider);
+}
 
 /** The file's default export, held to the lenient loader schema. */
 async function parseConfigFile(
@@ -137,20 +168,29 @@ export async function loadInstalledConfig(dir: string): Promise<LoadedProjectCon
   return loadProjectConfigFromDir(dir, providerInUse(dir));
 }
 
-/** The project's own config dir plus the global one it inlines; one dir at the home root. */
-export function configDirsInPlay(projectDir: string): string[] {
-  return isHomeDirectory(projectDir) ? [projectDir] : [projectDir, os.homedir()];
+/** A config a run reads: the directory it sits in, and the installation's provider there. */
+export type ConfigInPlay = { dir: string; provider: Provider };
+
+/** The project's own config plus the global one it inherits; one at the home root. */
+export function configsInPlay(projectDir: string): ConfigInPlay[] {
+  const own: ConfigInPlay = { dir: projectDir, provider: providerInUse(projectDir) };
+  if (isHomeDirectory(projectDir)) return [own];
+
+  return [own, { dir: os.homedir(), provider: inheritedGlobalProvider(projectDir) }];
 }
 
 /** Shared by `ensureConfigReadable` and `doctor`, so both agree on which configs are in play. */
 export async function findConfigLoadFailures(projectDir: string): Promise<ConfigLoadError[]> {
-  const outcomes = await Promise.all(configDirsInPlay(projectDir).map(configLoadFailure));
+  const outcomes = await Promise.all(configsInPlay(projectDir).map(configLoadFailure));
   return outcomes.filter((failure): failure is ConfigLoadError => failure !== undefined);
 }
 
-async function configLoadFailure(dir: string): Promise<ConfigLoadError | undefined> {
+async function configLoadFailure({
+  dir,
+  provider,
+}: ConfigInPlay): Promise<ConfigLoadError | undefined> {
   try {
-    await loadInstalledConfig(dir);
+    await loadProjectConfigFromDir(dir, provider);
     return undefined;
   } catch (error) {
     if (error instanceof ConfigLoadError) return error;
@@ -158,14 +198,33 @@ async function configLoadFailure(dir: string): Promise<ConfigLoadError | undefin
   }
 }
 
-/** The project's config, falling back to the global one of the same provider. */
-export async function loadProjectConfig(projectDir: string): Promise<LoadedProjectConfig | null> {
-  const provider = providerInUse(projectDir);
+/**
+ * The project's config, falling back to the global one of the same provider. `provider` names the
+ * installation where `projectDir` holds two; the default is the one in use.
+ */
+export async function loadProjectConfig(
+  projectDir: string,
+  provider: Provider = providerInUse(projectDir),
+): Promise<LoadedProjectConfig | null> {
   const projectResult = await loadProjectConfigFromDir(projectDir, provider);
   if (projectResult) return projectResult;
   if (isHomeDirectory(projectDir)) return null;
 
   return loadProjectConfigFromDir(os.homedir(), provider);
+}
+
+/**
+ * As {@link loadProjectConfig}, for a run that works on an installation: a project config
+ * declaring nothing is not one, so the global config stands in for it as for a missing file. HOME
+ * is read off its own folder, as `detectInstallation` reads it: a project holding no installation
+ * has no provider to hand on, and a leftover folder there would pick one.
+ */
+export async function loadConfigInPlay(projectDir: string): Promise<LoadedProjectConfig | null> {
+  const own = await loadInstalledConfig(projectDir);
+  if (isHomeDirectory(projectDir)) return own;
+  if (own !== null && !declaresNoContent(own.config)) return own;
+
+  return loadInstalledConfig(os.homedir());
 }
 
 /** On top of the lenient schema, a usable config also needs `name` and `agents`. */

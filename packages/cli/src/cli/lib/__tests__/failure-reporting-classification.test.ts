@@ -139,8 +139,8 @@ const BASE_COMMAND_ADVISORY_WARNS = [
     why: "The reason behind the line above, and advisory for the same reason.",
   },
   {
-    line: "this.warn(skippedUnknownSkills(skippedSkillIds, agentsOnlySkippedSkillsCarried));",
-    why: "`warnOfSkippedEntries`, which `init --from` and `edit --from` share. A fact about the PAYLOAD, not a failure of this run: an id no catalogue seats describes no work that could have been attempted. From `edit --from` the ids reach `reconcileSharedConfig` as `unplaceable`, so the entries stay installed and the confirm discloses them through `unplaceableKept`.",
+    line: "this.warn(skippedSkills(skippedSkillIds, agentsOnlySkippedSkillsCarried, unloadedSkillIds));",
+    why: "`warnOfSkippedEntries`, which `init --from` and `edit --from` share. A fact about the PAYLOAD, not a failure of this run: an id no catalogue seats describes no work that could have been attempted, and one the marketplace ships and could not load was already warned with its cause by the load. From `edit --from` the ids reach `reconcileSharedConfig` as `unplaceable`, so the entries stay installed and the confirm discloses them through `unplaceableKept`.",
   },
   {
     line: "if (skippedAgentNames.length > 0) this.warn(skippedUnknownAgents(skippedAgentNames));",

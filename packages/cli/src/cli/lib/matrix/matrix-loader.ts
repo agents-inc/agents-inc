@@ -18,6 +18,7 @@ import type {
   CategoryMap,
   ExtractedSkillMetadata,
   SkillFrontmatter,
+  SkillId,
   SkillRulesConfig,
 } from "../../types";
 import type { z } from "zod";
@@ -56,43 +57,58 @@ export async function loadSkillRules(configPath: string): Promise<SkillRulesConf
   return config;
 }
 
-/** A file describing no usable skill is warned and skipped; it never ends the scan. */
-export async function extractAllSkills(skillsDir: string): Promise<ExtractedSkillMetadata[]> {
-  const metadataFiles = await glob(`**/${STANDARD_FILES.METADATA_YAML}`, skillsDir);
-  const skills: ExtractedSkillMetadata[] = [];
+/** A skills folder as read: the skills it loaded, and the ids of those it could not. */
+export type ExtractedSkills = {
+  skills: ExtractedSkillMetadata[];
+  /** Each named by its SKILL.md; a folder whose SKILL.md names nothing is in neither list. */
+  unloadedSkillIds: SkillId[];
+};
 
+/** `unnamed`: skipped before any SKILL.md named it, so the skip carries no id. */
+type SkillFolderRead =
+  | { kind: "loaded"; skill: ExtractedSkillMetadata }
+  | { kind: "unloaded"; skillId: SkillId }
+  | { kind: "unnamed" };
+
+/** A file describing no usable skill is warned and skipped; it never ends the scan. */
+export async function extractAllSkills(skillsDir: string): Promise<ExtractedSkills> {
+  const metadataFiles = await glob(`**/${STANDARD_FILES.METADATA_YAML}`, skillsDir);
+  const folders: SkillFolderRead[] = [];
+
+  // One at a time, so the warnings come in the order the folders do.
   for (const metadataFile of metadataFiles) {
-    const skill = await extractSkill(skillsDir, metadataFile);
-    if (skill) skills.push(skill);
+    folders.push(await readSkillFolder(skillsDir, metadataFile));
   }
 
-  return skills;
+  return {
+    skills: folders.flatMap((folder) => (folder.kind === "loaded" ? [folder.skill] : [])),
+    unloadedSkillIds: folders.flatMap((folder) =>
+      folder.kind === "unloaded" ? [folder.skillId] : [],
+    ),
+  };
 }
 
-/** `null` skips this skill, not the scan. */
-async function extractSkill(
-  skillsDir: string,
-  metadataFile: string,
-): Promise<ExtractedSkillMetadata | null> {
+/** Each skip is warned here or by a reader it calls, and names its skill where a SKILL.md can. */
+async function readSkillFolder(skillsDir: string, metadataFile: string): Promise<SkillFolderRead> {
   const skillDir = path.dirname(metadataFile);
   const skillMdPath = path.join(skillsDir, skillDir, STANDARD_FILES.SKILL_MD);
 
   if (!(await fileExists(skillMdPath))) {
-    verbose(`Skipping ${metadataFile}: No ${STANDARD_FILES.SKILL_MD} found`);
-    return null;
+    warn(`Skipping '${metadataFile}': No ${STANDARD_FILES.SKILL_MD} found`);
+    return { kind: "unnamed" };
   }
 
   const metadata = await readMatrixMetadataOrWarn(metadataFile, path.join(skillsDir, metadataFile));
-  if (!metadata) return null;
+  if (!metadata) return unloadedSkillNamedBy(skillMdPath);
 
   const frontmatter = parseFrontmatterOrWarn(skillDir, skillMdPath, await readFile(skillMdPath));
-  if (!frontmatter) return null;
+  if (!frontmatter) return { kind: "unnamed" };
 
   if (!metadata.displayName) {
     warn(
       `Skipping '${metadataFile}': invalid ${STANDARD_FILES.METADATA_YAML} — missing required field: ${METADATA_KEYS.DISPLAY_NAME}`,
     );
-    return null;
+    return { kind: "unloaded", skillId: frontmatter.name };
   }
 
   const skillId = frontmatter.name;
@@ -113,7 +129,21 @@ async function extractSkill(
   };
 
   verbose(`Extracted skill: ${skillId}`);
-  return extracted;
+  return { kind: "loaded", skill: extracted };
+}
+
+/**
+ * Which skill a refused metadata.yaml cost, read off its SKILL.md. The skip is already warned, so a
+ * SKILL.md that cannot say leaves it unnamed rather than ending the scan.
+ */
+async function unloadedSkillNamedBy(skillMdPath: string): Promise<SkillFolderRead> {
+  try {
+    const frontmatter = parseFrontmatter(await readFile(skillMdPath), skillMdPath);
+    return frontmatter ? { kind: "unloaded", skillId: frontmatter.name } : { kind: "unnamed" };
+  } catch (error) {
+    verbose(`No skill named by '${skillMdPath}' — ${getErrorMessage(error)}`);
+    return { kind: "unnamed" };
+  }
 }
 
 async function readMatrixMetadataOrWarn(

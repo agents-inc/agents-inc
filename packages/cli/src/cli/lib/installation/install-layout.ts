@@ -82,14 +82,63 @@ export function forgetTheProviderChosenForThisRun(): void {
 }
 
 /**
+ * Whether each project `config.ts` declared nothing when the roster last read it, against the
+ * file's stamp. Process state because {@link providerOnDisk} is synchronous and cannot load one.
+ */
+const declaresNothingAsRead = new Map<string, { stamp: string; declaresNothing: boolean }>();
+
+export function recordWhetherItDeclaresNothing(configPath: string, declaresNothing: boolean): void {
+  const stamp = stampOf(configPath);
+  if (stamp !== null) declaresNothingAsRead.set(configPath, { stamp, declaresNothing });
+}
+
+/** `undefined` where the file is unread, gone, or changed since it was read. */
+export function declaresNothingAsLastRead(configPath: string): boolean | undefined {
+  const read = declaresNothingAsRead.get(configPath);
+  if (read === undefined || read.stamp !== stampOf(configPath)) return undefined;
+  return read.declaresNothing;
+}
+
+function stampOf(file: string): string | null {
+  try {
+    const stats = fs.statSync(file, { throwIfNoEntry: false });
+    return stats === undefined ? null : `${stats.mtimeMs}:${stats.size}`;
+  } catch {
+    // The cause is irrelevant: unstamped reads as unread, and the next load of it reports a fault.
+    return null;
+  }
+}
+
+/**
  * The provider a run over `root` is about: the run's `--provider` if given, else read off the
  * disk (a folder holding `config.ts` beats a merely non-empty one; an empty folder decides
- * nothing). A root holding live installations of both providers answers by roster order.
+ * nothing). A project config the roster read as declaring nothing is no installation, so its
+ * folder is merely non-empty. A root holding live installations of both providers answers by
+ * roster order.
  */
 export function providerInUse(root: string | undefined): Provider {
   if (providerChosenForThisRun !== undefined) return providerChosenForThisRun;
   if (root === undefined) return PROVIDER_OF_A_NEW_INSTALLATION;
   return providerOnDisk(root);
+}
+
+/**
+ * The provider of the global installation `projectDir` inherits: `own`, where the project holds an
+ * installation of it and so does the home; the home's own read otherwise. A home holding both
+ * would otherwise answer by roster order, whatever the project is on.
+ */
+export function inheritedGlobalProvider(
+  projectDir: string,
+  own: Provider = providerInUse(projectDir),
+): Provider {
+  const home = os.homedir();
+  const inheritsItsOwn = holdsAnInstallation(projectDir, own) && holdsAnInstallation(home, own);
+  return inheritsItsOwn ? own : providerInUse(home);
+}
+
+/** The provider `projectDir` reads at `scope`: at global, that of the installation it inherits. */
+export function providerAtScope(projectDir: string, scope: SkillScope | undefined): Provider {
+  return scope === "global" ? inheritedGlobalProvider(projectDir) : providerInUse(projectDir);
 }
 
 function providerOnDisk(root: string): Provider {
@@ -101,7 +150,8 @@ function providerOnDisk(root: string): Provider {
 }
 
 function holdsAnInstallation(root: string, provider: Provider): boolean {
-  return holdsAConfig(sourceDir(root, provider));
+  const dir = sourceDir(root, provider);
+  return holdsAConfig(dir) && declaresNothingAsLastRead(configIn(dir)) !== true;
 }
 
 function holdsASourceFolder(root: string, provider: Provider): boolean {
@@ -396,7 +446,11 @@ export function advisesOnPermissions(provider: Provider): boolean {
  * later read or write there fails naming the real file.
  */
 function holdsAConfig(dir: string): boolean {
-  return fs.existsSync(path.join(dir, STANDARD_FILES.CONFIG_TS));
+  return fs.existsSync(configIn(dir));
+}
+
+function configIn(dir: string): string {
+  return path.join(dir, STANDARD_FILES.CONFIG_TS);
 }
 
 function holdsAnything(dir: string): boolean {

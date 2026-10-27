@@ -1,29 +1,30 @@
 /**
  * `doctor`'s reads of one installation, each asked of a named provider rather than the one
- * `providerInUse` picks, so one run can report on both installations a scope holds. Two re-express
- * helpers that read the provider only through process state — `getVerifiedPluginInstallPaths` and
- * `unofferablePlacementsFound` — and answer as they do when the hosts are read off the disk.
+ * `providerInUse` picks, so one run can report on both installations a scope holds. One
+ * re-expresses `unofferablePlacementsFound`, which reads the project's provider off the disk, and
+ * answers as it does when the hosts are read off the disk.
  */
 
 import os from "os";
 
-import { ConfigLoadError, loadProjectConfigFromDir } from "../configuration/project-config.js";
-import { scopeRootsInPlay } from "../installation/source-scopes.js";
-import { declaresNoContent } from "../installation/installation.js";
 import {
+  ConfigLoadError,
+  declaresNoContent,
+  loadProjectConfigFromDir,
+} from "../configuration/project-config.js";
+import { scopeRootsInPlay } from "../installation/source-scopes.js";
+import {
+  configsDeclaringNothing,
   detectInstallations,
   type DetectedInstallation,
 } from "../installation/detect-installations.js";
 import { isHomeDirectory } from "../installation/is-home-directory.js";
-import { providerInUse } from "../installation/install-layout.js";
+import { inheritedGlobalProvider, providerInUse } from "../installation/install-layout.js";
 import { hostFor } from "../hosts/host-for.js";
-import type { HostPlugin } from "../hosts/plugin-host.js";
 import { refuseUnofferedPlacements } from "../hosts/offered-placements.js";
-import { getPluginManifestPath } from "../plugins/plugin-finder.js";
+import { getVerifiedPluginInstallPaths } from "../plugins/plugin-discovery.js";
 import { parseMarketplacePluginRef } from "../plugins/plugin-ref.js";
 import { getErrorMessage } from "../../utils/errors.js";
-import { fileExists } from "../../utils/fs.js";
-import { verbose } from "../../utils/logger.js";
 import type { Provider } from "../../consts.js";
 import type { ProjectConfig, SkillConfig, SkillScope } from "../../types/index.js";
 
@@ -45,23 +46,11 @@ export async function hostsOnDisk(projectDir: string): Promise<Hosts> {
   const found = await detectInstallations(projectDir);
   if (inheritsTheGlobalInstallation(found)) return hostsOf(providerInUse(os.homedir()));
 
-  const project = providerInUse(projectDir);
-  return { project, global: globalBeside(project, found) };
+  return { project: providerInUse(projectDir), global: inheritedGlobalProvider(projectDir) };
 }
 
 function inheritsTheGlobalInstallation(found: readonly DetectedInstallation[]): boolean {
   return found.length > 0 && found.every((installation) => installation.scope === "global");
-}
-
-/**
- * A project inherits only its own provider's global, which a home holding both would otherwise
- * answer by roster order.
- */
-function globalBeside(project: Provider, found: readonly DetectedInstallation[]): Provider {
-  const inherited = found.some(
-    (installation) => installation.scope === "global" && installation.provider === project,
-  );
-  return inherited ? project : providerInUse(os.homedir());
 }
 
 export function hostsOf(provider: Provider): Hosts {
@@ -78,13 +67,20 @@ export async function providersInPlay(projectDir: string): Promise<Provider[]> {
 
 /**
  * Unreadable only where a scope holds two installations: the content layer reads the configs in
- * use, so a broken one of those has already stood the operational layer down.
+ * use, so a broken one of those has already stood the operational layer down. An inherited config
+ * carries the folder of the one the project holds declaring nothing, `null` where it holds none.
  */
 export type ConfigState =
   | { kind: "absent" }
   | { kind: "unreadable"; failure: ConfigLoadError }
   | { kind: "declares-nothing"; config: ProjectConfig }
-  | { kind: "loaded"; config: ProjectConfig; inherited: boolean };
+  | { kind: "loaded"; config: ProjectConfig; inherited: false }
+  | {
+      kind: "loaded";
+      config: ProjectConfig;
+      inherited: true;
+      declaringNothingIn: Provider | null;
+    };
 
 /** The project's own config, else the global one it inherits, each read with its scope's host. */
 export async function resolveConfigState({
@@ -109,39 +105,33 @@ async function readConfigState(projectDir: string, hosts: Hosts): Promise<Config
     ? null
     : await loadProjectConfigFromDir(os.homedir(), hosts.global);
   if (inherited && !declaresNoContent(inherited.config)) {
-    return { kind: "loaded", config: inherited.config, inherited: true };
+    return {
+      kind: "loaded",
+      config: inherited.config,
+      inherited: true,
+      declaringNothingIn: await providerDeclaringNothingIn(projectDir),
+    };
   }
 
   return own ? { kind: "declares-nothing", config: own.config } : { kind: "absent" };
 }
 
+/** Any provider's: the project's leftover config need not be the inherited installation's. */
+async function providerDeclaringNothingIn(projectDir: string): Promise<Provider | null> {
+  const [leftover] = await configsDeclaringNothing(projectDir);
+  return leftover === undefined ? null : leftover.provider;
+}
+
 /**
- * `getVerifiedPluginInstallPaths` asked of a named host rather than the one in use at `baseDir`:
- * enabled plugins whose manifest is still on disk, none at all from a registry it cannot read.
+ * The named host's enabled plugins whose manifest is still on disk, as skill ids; none at all from
+ * a registry it cannot read.
  */
 export async function installedPluginSkillIds(
   baseDir: string,
   provider: Provider,
 ): Promise<ReadonlySet<string>> {
-  const plugins = await verifiedPlugins(baseDir, provider);
+  const plugins = await getVerifiedPluginInstallPaths(baseDir, provider);
   return new Set(plugins.map((plugin) => parseMarketplacePluginRef(plugin.pluginKey)));
-}
-
-async function verifiedPlugins(baseDir: string, provider: Provider): Promise<HostPlugin[]> {
-  const enabled = (await pluginsListedBy(provider, baseDir)).filter((plugin) => plugin.enabled);
-  const onDisk = await Promise.all(
-    enabled.map((plugin) => fileExists(getPluginManifestPath(plugin.installPath))),
-  );
-  return enabled.filter((_, index) => onDisk[index] === true);
-}
-
-async function pluginsListedBy(provider: Provider, baseDir: string): Promise<HostPlugin[]> {
-  try {
-    return await hostFor(provider).listPlugins(baseDir);
-  } catch (error) {
-    verbose(`Failed to list installed plugins: ${getErrorMessage(error)}`);
-    return [];
-  }
 }
 
 /**

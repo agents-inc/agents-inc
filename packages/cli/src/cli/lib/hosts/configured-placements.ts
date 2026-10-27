@@ -6,26 +6,27 @@
 
 import {
   ConfigLoadError,
-  configDirsInPlay,
-  loadInstalledConfig,
+  configsInPlay,
+  loadProjectConfigFromDir,
+  type ConfigInPlay,
 } from "../configuration/project-config.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import type { SkillConfig } from "../../types/config.js";
-import { hostAt } from "./host-for.js";
+import { hostFor } from "./host-for.js";
 import { refuseUnofferedPlacements } from "./offered-placements.js";
 
 /** Both scopes, each asked of its OWN host: the two scopes can be on different providers. */
 export async function unofferablePlacementsFound(cwd: string): Promise<string[]> {
-  const findings = await Promise.all(configDirsInPlay(cwd).map(unofferablePlacementIn));
+  const findings = await Promise.all(configsInPlay(cwd).map(unofferablePlacementIn));
   return findings.filter((finding): finding is string => finding !== null);
 }
 
-async function unofferablePlacementIn(root: string): Promise<string | null> {
-  const skills = await configuredSkillsAt(root);
+async function unofferablePlacementIn(config: ConfigInPlay): Promise<string | null> {
+  const skills = await configuredSkillsAt(config);
   if (skills === null) return null;
 
   try {
-    refuseUnofferedPlacements(skills, hostAt(root));
+    refuseUnofferedPlacements(skills, hostFor(config.provider));
     return null;
   } catch (error) {
     return getErrorMessage(error);
@@ -33,9 +34,9 @@ async function unofferablePlacementIn(root: string): Promise<string | null> {
 }
 
 /** Degrades on `ConfigLoadError` only, which `ensureConfigReadable` and doctor report by name. */
-async function configuredSkillsAt(root: string): Promise<SkillConfig[] | null> {
+async function configuredSkillsAt({ dir, provider }: ConfigInPlay): Promise<SkillConfig[] | null> {
   try {
-    const loaded = await loadInstalledConfig(root);
+    const loaded = await loadProjectConfigFromDir(dir, provider);
     return loaded?.config.skills ?? null;
   } catch (error) {
     if (error instanceof ConfigLoadError) return null;

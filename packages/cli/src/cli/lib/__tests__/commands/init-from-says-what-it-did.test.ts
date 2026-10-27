@@ -10,6 +10,7 @@ import { printAtWidth, standAtTerminal } from "../helpers/terminal-input.js";
 import { directoryExists, fileExists } from "../test-fs-utils";
 import { CONFIRM_INPUT_DELAY_MS, delay, KEY_N, KEY_Y } from "../test-constants";
 import { useMockWorker } from "../helpers/mock-worker.js";
+import { useClaudeStub } from "../helpers/claude-stub.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { readTestTsConfig, writeTestTsConfig } from "../helpers/config-io.js";
 import { readInstallTree } from "../helpers/golden-tree.js";
@@ -29,6 +30,7 @@ import {
   createTestSource,
   cleanupTestSource,
   inTestMarketplace,
+  TEST_MARKETPLACE_NAME,
   testMarketplaceSkillId,
   type TestDirs,
 } from "../fixtures/create-test-source";
@@ -47,6 +49,9 @@ const PANEL_COLUMNS = 160;
 const REACT = testMarketplaceSkillId("web-framework-react");
 const HONO = testMarketplaceSkillId("api-framework-hono");
 const VITEST = testMarketplaceSkillId("web-testing-vitest");
+
+// Every run here goes through `dist/`, which no module mock reaches; the host spawns by name.
+const claude = useClaudeStub();
 
 const configFileAt = (root: string) =>
   path.join(root, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS);
@@ -655,6 +660,10 @@ describe("what init --from says", () => {
 
     const { stdout } = await initFrom();
 
+    expect(
+      await claude.changes(),
+      "the global install already holds Hono, so nothing in Claude's setup changes",
+    ).toStrictEqual([]);
     expect(stdout).toContain("│  • Hono ⏏ ");
     expect(stdout).toContain("│  • api-developer ");
     expect(stdout).toContain(
@@ -662,7 +671,7 @@ describe("what init --from says", () => {
         "┘",
         "",
         "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
-        `  skill ${HONO}`,
+        "  skill Hono",
         "  sub-agent api-developer",
         "",
         "Installing 1 skill(s) across 2 sub-agent(s)",
@@ -765,7 +774,7 @@ describe("what init --from says", () => {
         "~ api-developer (global): gains Vitest",
         "",
         "Added to sub-agents in the global install — each keeps everything it already has, since a project run only adds to the global install:",
-        `  sub-agent api-developer: + ${VITEST}`,
+        "  sub-agent api-developer: + Vitest",
         "",
         "Installing 1 skill(s) across 1 sub-agent(s)",
       ].join("\n"),
@@ -896,12 +905,16 @@ describe("what init --from says", () => {
     const { stdout, error } = await initFrom();
 
     expect(error).toBeUndefined();
+    expect(
+      await claude.changes(),
+      "the global install already holds Hono, so nothing in Claude's setup changes",
+    ).toStrictEqual([]);
     expect(stdout).toContain(
       [
         "┘",
         "",
         "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
-        `  skill ${HONO}`,
+        "  skill Hono",
         "",
         "Installing 1 skill(s) across 2 sub-agent(s)",
       ].join("\n"),
@@ -914,6 +927,132 @@ describe("what init --from says", () => {
       (await installedAt(projectDir)).copies,
       "React's is the one copy it makes",
     ).toStrictEqual([REACT]);
+  });
+
+  /** Recorded under a name the marketplace no longer gives it, with no copy here to name it. */
+  it("names a global skill it kept as installed by the name the global install recorded, as the panel row does", async () => {
+    const recordedName = "Acme Hono";
+    await writeTestTsConfig(
+      fakeHome,
+      buildProjectConfig({
+        name: "global",
+        skills: buildSkillConfigs([HONO], {
+          scope: "global",
+          origin: "eject",
+          displayName: recordedName,
+        }),
+        agents: buildAgentConfigs(["api-developer"], { scope: "global" }),
+        stack: { "api-developer": { "api-api": [sa(HONO)] } },
+      }),
+    );
+    serve(
+      buildSeedPayload({
+        skills: {
+          [REACT]: ejected("project", "web-developer"),
+          [HONO]: buildSeedSkill({
+            install: "plugin",
+            scope: "global",
+            assignments: { "api-developer": "lazy" },
+          }),
+        },
+        agents: { "web-developer": { scope: "project" }, "api-developer": { scope: "global" } },
+      }),
+    );
+    const globalBefore = await installedAt(fakeHome);
+
+    const { stdout, error } = await initFrom();
+
+    expect(error).toBeUndefined();
+    expect(
+      await claude.changes(),
+      "the global install already holds Hono, so nothing in Claude's setup changes",
+    ).toStrictEqual([]);
+    expect(stdout, "the panel draws the global skill it keeps by its record").toContain(
+      `│  • ${recordedName} ⏏ `,
+    );
+    expect(stdout, "the notice names the kept skill as the panel row above it does").toContain(
+      [
+        "┘",
+        "",
+        "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
+        `  skill ${recordedName}`,
+        "",
+        "Installing 1 skill(s) across 2 sub-agent(s)",
+      ].join("\n"),
+    );
+    expect(
+      await installedAt(fakeHome),
+      "the global install keeps Hono as recorded, not the plugin this configuration states",
+    ).toStrictEqual(globalBefore);
+    expect(
+      await installedAt(projectDir),
+      "the project inherits the global entries with the name each recorded, beside its own React",
+    ).toStrictEqual({
+      skills: [
+        ...buildSkillConfigs([HONO], { scope: "global", displayName: recordedName }),
+        copyEntry(REACT, "React"),
+      ],
+      agents: [
+        ...buildAgentConfigs(["api-developer"], { scope: "global" }),
+        ...buildAgentConfigs(["web-developer"], { scope: "project" }),
+      ],
+      copies: [REACT],
+      compiled: ["web-developer.md"],
+    });
+  });
+
+  /** The pair of each spec here whose global install already holds Hono: here nothing holds it. */
+  it("installs a global plugin skill the global install does not hold through Claude's CLI", async () => {
+    serve(
+      buildSeedPayload({
+        skills: {
+          [REACT]: ejected("project", "web-developer"),
+          [HONO]: buildSeedSkill({
+            install: "plugin",
+            scope: "global",
+            assignments: { "api-developer": "lazy" },
+          }),
+        },
+        agents: { "web-developer": { scope: "project" }, "api-developer": { scope: "global" } },
+      }),
+    );
+
+    const { error } = await initFrom();
+
+    expect(error).toBeUndefined();
+    expect(
+      await claude.changes(),
+      "Claude's CLI registers the marketplace, then installs Hono for the user",
+    ).toStrictEqual([
+      `plugin marketplace add ${dirs.sourceDir}`,
+      `plugin install ${HONO}@${TEST_MARKETPLACE_NAME} --scope user`,
+    ]);
+    const honoPlugin = buildSkillConfig(HONO, {
+      scope: "global",
+      origin: TEST_MARKETPLACE_NAME,
+      displayName: "Hono",
+    });
+    expect(
+      await installedAt(fakeHome),
+      "the global install records Hono as the plugin, with no copy, and compiles api-developer",
+    ).toStrictEqual({
+      skills: [honoPlugin],
+      agents: buildAgentConfigs(["api-developer"], { scope: "global" }),
+      copies: [],
+      compiled: ["api-developer.md"],
+    });
+    expect(
+      await installedAt(projectDir),
+      "the project holds React's copy and web-developer, beside the global plugin it inherits",
+    ).toStrictEqual({
+      skills: [honoPlugin, copyEntry(REACT, "React")],
+      agents: [
+        ...buildAgentConfigs(["api-developer"], { scope: "global" }),
+        ...buildAgentConfigs(["web-developer"], { scope: "project" }),
+      ],
+      copies: [REACT],
+      compiled: ["web-developer.md"],
+    });
   });
 
   it("names a global sub-agent it kept as installed, and no skill when each is restated", async () => {

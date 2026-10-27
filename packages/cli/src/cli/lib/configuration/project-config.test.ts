@@ -3,7 +3,7 @@ import path from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   ConfigLoadError,
-  configDirsInPlay,
+  configsInPlay,
   loadProjectConfig,
   loadProjectConfigFromDir,
   validateProjectConfig,
@@ -426,8 +426,11 @@ describe("loading a config: refusals and defaults", () => {
   });
 
   it("reads the project's config and the global one, or the global one alone at the home root", () => {
-    expect(configDirsInPlay(tempDir)).toStrictEqual([tempDir, home.dir]);
-    expect(configDirsInPlay(home.dir)).toStrictEqual([home.dir]);
+    expect(configsInPlay(tempDir)).toStrictEqual([
+      { dir: tempDir, provider: "claude" },
+      { dir: home.dir, provider: "claude" },
+    ]);
+    expect(configsInPlay(home.dir)).toStrictEqual([{ dir: home.dir, provider: "claude" }]);
   });
 
   it("looks for the global config once when run from the home root", async () => {

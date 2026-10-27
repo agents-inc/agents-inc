@@ -4,8 +4,8 @@ import { loadSkillsFromDir, type LoadedSkills } from "../../loading/index.js";
 import { sayingEachWarningOnce, verbose } from "../../../utils/logger.js";
 import { globalInstallRoot } from "../../../consts.js";
 import {
-  installBaseDir,
-  providerInUse,
+  inheritedGlobalProvider,
+  providerAtScope,
   skillsDir,
   skillsPathPrefix,
 } from "../../installation/install-layout.js";
@@ -38,7 +38,7 @@ async function discoverLocalProjectSkills(
   projectDir: string,
   scope: SkillScope,
 ): Promise<LoadedSkills> {
-  const provider = providerInUse(installBaseDir(projectDir, scope));
+  const provider = providerAtScope(projectDir, scope);
   const scan = () =>
     loadSkillsFromDir(skillsDir(provider, scope, projectDir), {
       pathPrefix: skillsPathPrefix(provider, scope, projectDir),
@@ -48,13 +48,8 @@ async function discoverLocalProjectSkills(
   return scope === "global" ? sayingEachWarningOnce(scan) : scan();
 }
 
-function globalSkillsRoot(): string {
-  const home = globalInstallRoot();
-  return skillsDir(providerInUse(home), "global", home);
-}
-
-function projectSkillsRoot(projectDir: string, scope: SkillScope): string {
-  return skillsDir(providerInUse(installBaseDir(projectDir, scope)), scope, projectDir);
+function skillsRootAt(projectDir: string, scope: SkillScope): string {
+  return skillsDir(providerAtScope(projectDir, scope), scope, projectDir);
 }
 
 /** Later sources win. */
@@ -76,7 +71,7 @@ function mergeSkills(...skillSources: SkillDefinitionMap[]): SkillDefinitionMap 
 export async function discoverInstalledSkills(projectDir: string): Promise<DiscoveredSkills> {
   const isGlobalProject = isHomeDirectory(projectDir);
 
-  const globalPlugins = isGlobalProject ? {} : await discoverGlobalPluginSkills();
+  const globalPlugins = isGlobalProject ? {} : await discoverGlobalPluginSkills(projectDir);
   const globalLocal = isGlobalProject
     ? NO_LOCAL_SKILLS
     : await discoverGlobalLocalSkills(projectDir);
@@ -88,8 +83,11 @@ export async function discoverInstalledSkills(projectDir: string): Promise<Disco
   return assembleDiscoveredSkills({ globalPlugins, globalLocal, projectPlugins, projectLocal });
 }
 
-async function discoverGlobalPluginSkills(): Promise<SkillDefinitionMap> {
-  const skills = await discoverAllPluginSkills(globalInstallRoot());
+async function discoverGlobalPluginSkills(projectDir: string): Promise<SkillDefinitionMap> {
+  const skills = await discoverAllPluginSkills(
+    globalInstallRoot(),
+    inheritedGlobalProvider(projectDir),
+  );
   const count = skillCount(skills);
   if (count > 0) verbose(`  Found ${count} skills from global plugins`);
   return skills;
@@ -98,7 +96,9 @@ async function discoverGlobalPluginSkills(): Promise<SkillDefinitionMap> {
 async function discoverGlobalLocalSkills(projectDir: string): Promise<LoadedSkills> {
   const loaded = await discoverLocalProjectSkills(projectDir, "global");
   const count = skillCount(loaded.skills);
-  if (count > 0) verbose(`  Found ${count} global local skills from ${globalSkillsRoot()}`);
+  if (count > 0) {
+    verbose(`  Found ${count} global local skills from ${skillsRootAt(projectDir, "global")}`);
+  }
   return loaded;
 }
 
@@ -111,7 +111,7 @@ async function discoverProjectPluginSkills(projectDir: string): Promise<SkillDef
 async function discoverLocalSkillsAt(projectDir: string, scope: SkillScope): Promise<LoadedSkills> {
   const loaded = await discoverLocalProjectSkills(projectDir, scope);
   verbose(
-    `  Found ${skillCount(loaded.skills)} local skills from ${projectSkillsRoot(projectDir, scope)}`,
+    `  Found ${skillCount(loaded.skills)} local skills from ${skillsRootAt(projectDir, scope)}`,
   );
   return loaded;
 }

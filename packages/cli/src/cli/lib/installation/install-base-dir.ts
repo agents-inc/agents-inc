@@ -5,6 +5,7 @@ import { STANDARD_FILES } from "../../consts.js";
 import {
   agentsDir,
   installBaseDir,
+  providerAtScope,
   providerInUse,
   skillsDir,
   sourceFolderInUse,
@@ -31,8 +32,8 @@ export function resolveInstallPaths(
   scope: SkillScope = "project",
 ): InstallPaths {
   const baseDir = installBaseDir(projectDir, scope);
-  // Read once so all three paths name the same installation.
-  const provider = providerInUse(baseDir);
+  // Read once so all three paths name the same installation: at global, the one inherited.
+  const provider = providerAtScope(projectDir, scope);
 
   return {
     skillsDir: skillsDir(provider, scope, projectDir),

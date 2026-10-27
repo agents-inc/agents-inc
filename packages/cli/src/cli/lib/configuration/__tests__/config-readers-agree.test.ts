@@ -68,6 +68,12 @@ describe("every reader of an agents-inc config.ts", () => {
       read: (dir) => projectConfigModule.loadProjectConfig(dir),
     },
     {
+      // Falls back to the global config for a project config declaring nothing, as for none.
+      name: "loadConfigInPlay",
+      locate: "argument",
+      read: (dir) => projectConfigModule.loadConfigInPlay(dir),
+    },
+    {
       // Reads the provider off the directory; a dir with no installation must still answer `null`.
       name: "loadInstalledConfig",
       locate: "argument",

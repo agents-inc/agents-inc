@@ -36,6 +36,7 @@ import {
   installsAtHome,
   joinedStatement,
   notInstalledGlobally,
+  panelRowEntries,
   readInstalledGlobal,
   type HeldGlobal,
   type InstalledGlobal,
@@ -58,7 +59,6 @@ import {
   detectProjectInstallation,
   deriveInstallMode,
   holdsItsOwnInstallation,
-  installBaseDir,
   resolveInstallPaths,
   buildAgentScopeMap,
   isHomeDirectory,
@@ -69,6 +69,7 @@ import { hostAt } from "../lib/hosts/host-for.js";
 import {
   agentCodec,
   chooseProviderForThisRun,
+  providerAtScope,
   providerInUse,
   relativeConfigPath,
 } from "../lib/installation/install-layout.js";
@@ -454,9 +455,9 @@ export default class Init extends BaseCommand {
       sourceResult,
     );
 
-    // Above the skips: an "unknown" skill is often one whose file failed to parse.
+    // Above the skips: a skill that could not load is skipped under the warning saying why.
     sayCapturedWarnings(startupMessages);
-    this.warnOfSkippedEntries(mapping);
+    this.warnOfSkippedEntries(mapping, sourceResult.unloadedSkillIds);
     this.refuseAnEmptySelection(held.result, id);
 
     const stackName = await this.stackNameOf(result.selectedStackId, sourceResult);
@@ -849,7 +850,15 @@ type RunFromHome = { id: string | undefined; provider: Provider | undefined };
 function keptAsInstalledStatement(held: HeldGlobal, runFromHome: RunFromHome): string[] {
   const { skillIds, agentNames } = held.keptAsInstalled;
   if (skillIds.length === 0 && agentNames.length === 0) return [];
-  return [keptAsInstalledGlobally(skillIds, agentNames, runFromHome.id, runFromHome.provider)];
+  return [
+    keptAsInstalledGlobally(
+      skillIds,
+      agentNames,
+      runFromHome.id,
+      runFromHome.provider,
+      panelRowEntries(held),
+    ),
+  ];
 }
 
 type GlobalEntries = { skills: SkillConfig[]; agents: AgentScopeConfig[] };
@@ -1028,7 +1037,7 @@ function compiledAgentsBlock(
   scope: SkillScope,
   agents: AgentName[],
 ): DirectoryBlock {
-  const { extension } = agentCodec(providerInUse(installBaseDir(projectDir, scope)));
+  const { extension } = agentCodec(providerAtScope(projectDir, scope));
   return {
     dir: resolveInstallPaths(projectDir, scope).agentsDir,
     entries: agents.map((name) => `${name}${extension}`),

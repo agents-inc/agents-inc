@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { writeFile } from "fs/promises";
 
 import { withCatalogueSeatedFor } from "./catalogue-seat";
+import { MarketplaceNameRefusedError } from "./source-fetcher";
+import { EJECT_SOURCE, marketplaceManifestPath } from "../../consts";
+import { buildProjectConfig } from "../__tests__/factories/config-factories";
+import {
+  createMockMarketplace,
+  createMockMarketplacePlugin,
+} from "../__tests__/factories/plugin-factories";
+import { writeTestTsConfig } from "../__tests__/helpers/config-io";
 import {
   cleanupTestSource,
   createTestSource,
@@ -21,13 +30,16 @@ const LOCAL_SKILL: TestSkill = { ...COMPILE_LOCAL_SKILL, category: "web-house-co
 
 const CALLERS_CATALOGUE = createMockMatrix(SKILLS.vue);
 
+/** In its own namespace: a custom marketplace shipping a catalogue id is refused whole. */
+const MARKETPLACE_SKILLS = inTestMarketplace(DEFAULT_TEST_SKILLS);
+
 describe("withCatalogueSeatedFor", () => {
   const consoleSpies = silenceConsole(["log", "warn"]);
   let dirs: TestDirs;
 
   beforeEach(async () => {
     dirs = await createTestSource({
-      skills: inTestMarketplace(DEFAULT_TEST_SKILLS),
+      skills: MARKETPLACE_SKILLS,
       localSkills: [LOCAL_SKILL],
     });
     initializeMatrix(CALLERS_CATALOGUE);
@@ -50,6 +62,26 @@ describe("withCatalogueSeatedFor", () => {
 
   it("puts the caller's catalogue back once the body is done", async () => {
     await withCatalogueSeatedFor(dirs.projectDir, () => Promise.resolve());
+
+    expect(matrix).toBe(CALLERS_CATALOGUE);
+  });
+
+  /** Refused by the manifest's name, which is read after the folder; the spec above is the twin. */
+  it("a load refused after reading the folder leaves the caller's catalogue seated", async () => {
+    await writeTestTsConfig(dirs.projectDir, buildProjectConfig({ marketplace: dirs.sourceDir }));
+    await writeFile(
+      marketplaceManifestPath(dirs.sourceDir),
+      JSON.stringify({
+        ...createMockMarketplace(
+          MARKETPLACE_SKILLS.map((skill) => createMockMarketplacePlugin(skill.id)),
+        ),
+        name: EJECT_SOURCE,
+      }),
+    );
+
+    await expect(
+      withCatalogueSeatedFor(dirs.projectDir, () => Promise.resolve()),
+    ).rejects.toBeInstanceOf(MarketplaceNameRefusedError);
 
     expect(matrix).toBe(CALLERS_CATALOGUE);
   });

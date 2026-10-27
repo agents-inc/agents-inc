@@ -409,7 +409,8 @@ describe("extractSkills", () => {
       renderSkillMd("web-framework-react", skillMdDescription),
     );
 
-    const catalogJson = firstElement(await extractAllSkills(path.join(tempDir, "src/skills")));
+    const { skills } = await extractAllSkills(path.join(tempDir, "src/skills"));
+    const catalogJson = firstElement(skills);
 
     expect(
       catalogJson.activationDescription,

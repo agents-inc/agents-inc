@@ -33,7 +33,6 @@ describe("detectProject", () => {
       mode: "eject",
       configPath: getProjectConfigPath(dir, "claude"),
       agentsDir: resolveInstallPaths(dir, "project").agentsDir,
-      skillsDir: resolveInstallPaths(dir, "project").skillsDir,
       projectDir: dir,
     },
     config: INSTALLED_CONFIG,

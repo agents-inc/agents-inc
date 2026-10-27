@@ -49,15 +49,18 @@ describe("installation", () => {
       expect(result?.mode).toBe("eject");
     });
 
-    it("should use correct paths for agentsDir and skillsDir in eject mode", async () => {
+    it("should use the correct paths in eject mode", async () => {
       const claudeDir = path.join(tempDir, CLAUDE_DIR);
       await writeInstallationConfig(tempDir, buildProjectConfig());
 
       const result = await detectInstallation(tempDir);
 
-      expect(result).not.toBeNull();
-      expect(result?.agentsDir).toBe(path.join(claudeDir, "agents"));
-      expect(result?.skillsDir).toBe(path.join(claudeDir, "skills"));
+      expect(result).toStrictEqual({
+        mode: "eject",
+        configPath: getProjectConfigPath(tempDir, "claude"),
+        agentsDir: path.join(claudeDir, "agents"),
+        projectDir: tempDir,
+      });
     });
   });
 
@@ -78,7 +81,7 @@ describe("installation", () => {
       expect(result?.projectDir).toBe(tempDir);
     });
 
-    it("should use correct plugin paths for agentsDir and skillsDir", async () => {
+    it("should use the correct paths in plugin mode", async () => {
       const claudeDir = path.join(tempDir, CLAUDE_DIR);
       await writeInstallationConfig(
         tempDir,
@@ -89,9 +92,12 @@ describe("installation", () => {
 
       const result = await detectInstallation(tempDir);
 
-      expect(result).not.toBeNull();
-      expect(result?.agentsDir).toBe(path.join(claudeDir, "agents"));
-      expect(result?.skillsDir).toBe(path.join(claudeDir, "plugins"));
+      expect(result).toStrictEqual({
+        mode: "plugin",
+        configPath: getProjectConfigPath(tempDir, "claude"),
+        agentsDir: path.join(claudeDir, "agents"),
+        projectDir: tempDir,
+      });
     });
 
     it("should return null when only plugin directory exists without config", async () => {

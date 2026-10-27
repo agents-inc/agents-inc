@@ -64,7 +64,7 @@ import {
   getSkillDisplayName,
   getSkillEntryDisplayName,
 } from "../lib/matrix/matrix-provider";
-import { type AuthoritativeScope, loadProjectConfig } from "../lib/configuration/index.js";
+import { type AuthoritativeScope, loadConfigInPlay } from "../lib/configuration/index.js";
 import {
   activeAgentScopeMap,
   isActiveAt,
@@ -99,6 +99,7 @@ import {
   installsAtHome,
   joinedStatement,
   notInstalledGlobally,
+  panelRowEntries,
   readInstalledGlobal,
   reconcileSharedConfig,
   restoreInstalledGlobal,
@@ -153,6 +154,7 @@ import {
   agentChangesAmong,
   formatScopeTag,
   type AgentChange,
+  type NamedBy,
 } from "../lib/configuration/scope-diff.js";
 import type { SeedPayload } from "@workspace/matrix/seed";
 
@@ -475,27 +477,23 @@ function withReassignments(
 }
 
 /** Disclosed rather than acted on, so nobody is left wondering why an agent kept a skill. */
-function keptStatements(kept: KeptFromRoundTrip): string[] {
-  return [...authorshipStatement(kept), ...catalogueStatement(kept)];
+function keptStatements(kept: KeptFromRoundTrip, namedBy: NamedBy): string[] {
+  return [...authorshipStatement(kept, namedBy), ...catalogueStatement(kept, namedBy)];
 }
 
-function authorshipStatement(kept: KeptFromRoundTrip): string[] {
+function authorshipStatement(kept: KeptFromRoundTrip, namedBy: NamedBy): string[] {
   if (kept.authoredSkillIds.length === 0) return [];
-  return [authoredHereKept(kept.authoredSkillIds)];
+  return [authoredHereKept(kept.authoredSkillIds, namedBy)];
 }
 
-function catalogueStatement(kept: KeptFromRoundTrip): string[] {
+function catalogueStatement(kept: KeptFromRoundTrip, namedBy: NamedBy): string[] {
   if (kept.unplaceableSkillIds.length === 0) return [];
-  return [unplaceableKept(kept.unplaceableSkillIds)];
+  return [unplaceableKept(kept.unplaceableSkillIds, namedBy)];
 }
 
-function unassignedStatement(unassigned: UnassignedRow[]): string[] {
+function unassignedStatement(unassigned: UnassignedRow[], namedBy: NamedBy): string[] {
   if (unassigned.length === 0) return [];
-  return [
-    unassigned
-      .map(({ skillId, agentName, category }) => keptUnassigned(skillId, agentName, category))
-      .join("\n"),
-  ];
+  return [unassigned.map((row) => keptUnassigned(row, namedBy)).join("\n")];
 }
 
 /** The run from home that changes what a project run keeps, where home would take it. */
@@ -508,14 +506,16 @@ function keptOnApply(
   revisedCarried: SkillId[],
   runFromHome: RunFromHome,
 ): string[] {
+  const namedBy = panelRowEntries(held);
   return [
-    ...keptStatements(reconciled.kept),
-    ...unassignedStatement(reconciled.unassigned),
+    ...keptStatements(reconciled.kept, namedBy),
+    ...unassignedStatement(reconciled.unassigned, namedBy),
     ...joinedStatement(held),
     ...keptAsInstalledStatement(held, revisedCarried, runFromHome),
   ];
 }
 
+/** A revised carried skill is held whole, so the global install's entry names it. */
 function keptAsInstalledStatement(
   held: HeldGlobal,
   revisedCarried: SkillId[],
@@ -524,7 +524,15 @@ function keptAsInstalledStatement(
   const skillIds = [...held.keptAsInstalled.skillIds, ...revisedCarried];
   const { agentNames } = held.keptAsInstalled;
   if (skillIds.length === 0 && agentNames.length === 0) return [];
-  return [keptAsInstalledGlobally(skillIds, agentNames, runFromHome.id, runFromHome.provider)];
+  return [
+    keptAsInstalledGlobally(
+      skillIds,
+      agentNames,
+      runFromHome.id,
+      runFromHome.provider,
+      panelRowEntries(held),
+    ),
+  ];
 }
 
 /** From a project, a shared configuration only adds to the global install. */
@@ -650,6 +658,7 @@ export default class Edit extends BaseCommand {
       return this.openSharedInEditor(flags.from, cwd, namedProvider);
     }
 
+    await this.sayWhenTheGlobalInstallationStandsIn(namedProvider);
     // Before anything is copied or installed.
     await refuseAnAmbiguousInstallation(cwd, "edit", namedProvider, (message) =>
       this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
@@ -758,7 +767,7 @@ export default class Edit extends BaseCommand {
     const revisedGlobally = await carriedSkillsThatDiffer(difference(carried, arrivingCarried));
 
     sayCapturedWarnings(context.startupMessages);
-    this.warnOfSkippedEntries(mapping);
+    this.warnOfSkippedEntries(mapping, context.sourceResult.unloadedSkillIds);
 
     const runFromHome = {
       id: installsAtHome(result) ? id : undefined,
@@ -970,7 +979,7 @@ export default class Edit extends BaseCommand {
    * those a catalogue lacks, as `edit --from` asks. The config read is the one the payload reads.
    */
   private async ensureInstalledSkillsReadable(projectDir: string): Promise<void> {
-    const loaded = await loadProjectConfig(projectDir);
+    const loaded = await loadConfigInPlay(projectDir);
     // Nothing installed is `editorPayloadForInstallation`'s to report.
     if (!loaded) return;
 

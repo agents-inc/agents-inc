@@ -1,4 +1,5 @@
 import path from "path";
+import { partition } from "remeda";
 
 import {
   CLI_INVOKE_COMMAND,
@@ -16,15 +17,15 @@ import {
 import type { UnusableSkillMetadata } from "../lib/loading/index.js";
 import type { ScopeKind } from "../lib/installation/source-scopes.js";
 import type { ConfigLoadError } from "../lib/configuration/project-config.js";
-import type { JoinedAgent } from "../lib/seed/seed-apply.js";
-import type { AgentChange, SettingChange } from "../lib/configuration/scope-diff.js";
+import type { JoinedAgent, UnassignedRow } from "../lib/seed/seed-apply.js";
+import type { AgentChange, NamedBy, SettingChange } from "../lib/configuration/scope-diff.js";
 import { getSkillEntryDisplayName } from "../lib/matrix/matrix-provider.js";
 import type { SkippedSkillAgents } from "@workspace/compile/seed-to-config";
 import { RETIRED_SOURCE_FOLDER } from "../lib/installation/install-layout.js";
 import { isHomeDirectory } from "../lib/installation/is-home-directory.js";
 import { charactersOutsideKebabCase } from "../lib/validate-kebab-name.js";
 import { inertLine, plural } from "./string.js";
-import type { AgentName, Category, SkillId } from "../types/index.js";
+import type { AgentName, SkillId } from "../types/index.js";
 
 export const ERROR_MESSAGES = {
   UNKNOWN_ERROR: "Unknown error occurred",
@@ -98,6 +99,9 @@ export const INFO_MESSAGES = {
   CONFIG_TYPES_REFRESHED: `Refreshed ${STANDARD_FILES.CONFIG_TYPES_TS}`,
   EJECTED_SKILLS_USER_OWNED: `Ejected skills are yours to own — '${CLI_INVOKE_COMMAND} update' does not change them.`,
   NO_PLUGIN_MARKETPLACES: "No plugin marketplaces are configured — nothing to refresh.",
+  /** The owner's words (2026-10-24), on stderr before the command's own output. */
+  GLOBAL_INSTALLATION_STANDS_IN:
+    "This project's config declares nothing, so this works on your global installation.",
   /** Under doctor's marketplace row, when its download replaced a saved copy whose files differed. */
   SAVED_COPY_REPLACED: "The saved copy differed from the marketplace and has been replaced",
   /** Printed under the destination already named, so it names files only. */
@@ -394,17 +398,44 @@ function unknownKeys(keys: readonly string[]): string {
   return keys.map(inertLine).join(", ");
 }
 
-export function skippedUnknownSkills(
+/** A skill the marketplace ships and could not load is not one this catalog does not know. */
+const SKIP_CAUSE = {
+  UNLOADED: "could not load",
+  UNKNOWN: "does not know",
+} as const;
+
+/** `unloadedSkillIds`: the marketplace ships these and could not load them. */
+export function skippedSkills(
   skillIds: readonly string[],
   installedWithout: readonly SkippedSkillAgents[],
+  unloadedSkillIds: ReadonlySet<string>,
 ): string {
+  const [unloaded, unknown] = partition(skillIds, (id) => unloadedSkillIds.has(id));
+
   return [
-    `Skipped ${skillIds.length} skill(s) this catalog does not know: ${unknownKeys(skillIds)}`,
-    ...installedWithout.map(
-      ({ skillId, agentNames }) =>
-        `  sub-agent(s) installed without ${unknownKeys([skillId])}, carrying nothing else this catalog knows: ${agentNames.join(", ")}`,
-    ),
+    ...skippedFor(SKIP_CAUSE.UNLOADED, unloaded, installedWithout),
+    ...skippedFor(SKIP_CAUSE.UNKNOWN, unknown, installedWithout),
   ].join("\n");
+}
+
+/** One cause's line, with the sub-agents installed without each of its skills under it. */
+function skippedFor(
+  cause: (typeof SKIP_CAUSE)[keyof typeof SKIP_CAUSE],
+  skillIds: readonly string[],
+  installedWithout: readonly SkippedSkillAgents[],
+): string[] {
+  if (skillIds.length === 0) return [];
+
+  return [
+    `Skipped ${skillIds.length} skill(s) this catalog ${cause}: ${unknownKeys(skillIds)}`,
+    ...installedWithout
+      .filter(({ skillId }) => skillIds.includes(skillId))
+      .map(subAgentsInstalledWithout),
+  ];
+}
+
+function subAgentsInstalledWithout({ skillId, agentNames }: SkippedSkillAgents): string {
+  return `  sub-agent(s) installed without ${unknownKeys([skillId])}, carrying nothing else this catalog knows: ${agentNames.join(", ")}`;
 }
 
 export function skippedUnknownAgents(agentNames: readonly string[]): string {
@@ -461,6 +492,11 @@ export const SHARED_CONFIG_ARRIVALS = {
   INSTALL_CONFIRM: "Install this configuration?",
 } as const;
 
+/** As the panel row for it names it; a skill no entry names reads the catalogue, then its id. */
+function skillName(id: SkillId, namedBy: NamedBy): string {
+  return getSkillEntryDisplayName(namedBy[id] ?? { id });
+}
+
 /**
  * `idAppliedAtHome` is the id only where a run from home would take the configuration;
  * `provider`, the installation that run must name beside another at home.
@@ -470,10 +506,11 @@ export function keptAsInstalledGlobally(
   agentNames: readonly AgentName[],
   idAppliedAtHome: string | undefined,
   provider: Provider | undefined,
+  namedBy: NamedBy,
 ): string {
   return [
     "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
-    ...skillIds.map((id) => `  skill ${id}`),
+    ...skillIds.map((id) => `  skill ${skillName(id, namedBy)}`),
     ...agentNames.map((name) => `  sub-agent ${name}`),
     ...(idAppliedAtHome === undefined
       ? []
@@ -483,13 +520,12 @@ export function keptAsInstalledGlobally(
   ].join("\n");
 }
 
-/** A skill no entry names reads the catalogue, then its id. */
 function skillsMoved(
   verb: "gains" | "loses",
   skillIds: readonly SkillId[],
-  namedBy: NonNullable<AgentChange["namedBy"]>,
+  namedBy: NamedBy,
 ): string[] {
-  const names = skillIds.map((id) => getSkillEntryDisplayName(namedBy[id] ?? { id }));
+  const names = skillIds.map((id) => skillName(id, namedBy));
   return names.length === 0 ? [] : [`${verb} ${listed(names)}`];
 }
 
@@ -525,32 +561,36 @@ export function subAgentChanged({
   return `~ ${name}${where}: ${details.length > 0 ? details.join(", ") : SKILLS_REASSIGNED}`;
 }
 
-export function addedToGlobalSubAgents(joined: readonly JoinedAgent[]): string {
+export function addedToGlobalSubAgents(joined: readonly JoinedAgent[], namedBy: NamedBy): string {
+  const gains = (skillIds: readonly SkillId[]): string =>
+    skillIds.map((id) => skillName(id, namedBy)).join(", ");
+
   return [
     "Added to sub-agents in the global install — each keeps everything it already has, since a project run only adds to the global install:",
-    ...joined.map(
-      ({ agentName, skillIds }) => `  sub-agent ${agentName}: + ${skillIds.join(", ")}`,
-    ),
+    ...joined.map(({ agentName, skillIds }) => `  sub-agent ${agentName}: + ${gains(skillIds)}`),
   ].join("\n");
 }
 
-export function authoredHereKept(skillIds: readonly SkillId[]): string {
+export function authoredHereKept(skillIds: readonly SkillId[], namedBy: NamedBy): string {
   return [
     "Kept — written here rather than installed, so a shared configuration never carried them:",
-    ...skillIds.map((id) => `  skill ${id}`),
+    ...skillIds.map((id) => `  skill ${skillName(id, namedBy)}`),
   ].join("\n");
 }
 
-export function unplaceableKept(skillIds: readonly SkillId[]): string {
+export function unplaceableKept(skillIds: readonly SkillId[], namedBy: NamedBy): string {
   return [
     "Kept — named by this configuration, and this catalogue cannot place them:",
-    ...skillIds.map((id) => `  skill ${id}`),
+    ...skillIds.map((id) => `  skill ${skillName(id, namedBy)}`),
     `Run '${CLI_INVOKE_COMMAND} update' to refresh this installation's marketplace, then apply the configuration again.`,
   ].join("\n");
 }
 
-export function keptUnassigned(skillId: SkillId, agentName: AgentName, category: Category): string {
-  return `${skillId}: kept, no longer assigned to ${agentName}'s ${category}`;
+export function keptUnassigned(
+  { skillId, agentName, category }: UnassignedRow,
+  namedBy: NamedBy,
+): string {
+  return `${skillName(skillId, namedBy)}: kept, no longer assigned to ${agentName}'s ${category}`;
 }
 
 function doctorReportsTheSame(count: number): string {

@@ -11,6 +11,7 @@ import {
 } from "../helpers/cli-runner.js";
 import { captureOutput } from "@oclif/test";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
+import { useClaudeStub } from "../helpers/claude-stub.js";
 import { fileExists, directoryExists } from "../test-fs-utils";
 import { writeTestSkill, writeTestPluginManifest } from "../helpers/disk-writers.js";
 import { createMockSkill, createTestSkill } from "../factories/skill-factories.js";
@@ -59,6 +60,9 @@ vi.mock("../../hosts/host-for.js", async () => {
   return { hostAt: () => host, hostFor: () => host };
 });
 
+// The mock reaches only runs from source; a run through `dist/` spawns `claude` by name.
+const claude = useClaudeStub();
+
 /** Loading the command through `dist/` comes before the prompt opens. */
 const PROMPT_OPEN_TIMEOUT = { timeout: 10_000 };
 
@@ -81,12 +85,21 @@ const TEST_PLUGIN_NAME = "test-plugin@marketplace";
 
 /**
  * Printed per plugin really deregistered: the count is what a run observed, not what it planned.
- * Specs staging only a directory register nothing, so they assert its absence.
+ * The stand-in Claude holds no plugin, so a spec staging one asserts its absence.
  */
 const PLUGIN_COUNT_LINE = "Uninstalled 1 plugin";
 
 const NOTHING_REGISTERED_TO_COUNT =
   "no host held a registration for the staged plugin, so a count claims a removal the run never observed";
+
+/**
+ * What uninstall changes in Claude for the staged plugin: its removal at each scope. Sorted, as each
+ * spec sorts the calls it reads, since the order of the scopes is not something a user sees.
+ */
+const STAGED_PLUGIN_REMOVED_AT_EACH_SCOPE = [
+  `plugin uninstall ${TEST_PLUGIN_NAME} --scope project`,
+  `plugin uninstall ${TEST_PLUGIN_NAME} --scope user`,
+].toSorted();
 
 /** Not a catalogue skill, so a config naming it is written as a plain string. */
 const TEST_PLUGIN_SKILL = "test-plugin";
@@ -104,7 +117,11 @@ const WHITE_LABEL_NAME = "Northwind";
 /** Reads, and does not parse: an unclosed flow sequence. */
 const UNPARSEABLE_METADATA = "displayName: [unclosed\n";
 
-/** `skills` takes fixture ids too: the config is written to disk, so no cast is needed. */
+/**
+ * `skills` takes fixture ids too: the config is written to disk, so no cast is needed. A config
+ * declaring no skill and no sub-agent is not an installation, so uninstall says it is not installed
+ * there; a spec that needs one to remove declares a sub-agent.
+ */
 async function createProjectConfig(
   projectDir: string,
   {
@@ -349,7 +366,10 @@ describe("uninstall command", () => {
 
     /** Paired with the default below: either alone passes on a hardcoded or never-wired line. */
     it("should name the configured branding in what it prints", async () => {
-      await createProjectConfig(projectDir, { branding: { name: WHITE_LABEL_NAME } });
+      await createProjectConfig(projectDir, {
+        branding: { name: WHITE_LABEL_NAME },
+        agents: buildAgentConfigs(["web-developer"]),
+      });
       const skillsDir = await createProjectSkillsDir(projectDir);
       await createUserSkill(skillsDir, "web-tooling-custom" as SkillId);
 
@@ -363,7 +383,7 @@ describe("uninstall command", () => {
     });
 
     it("should name the shipped branding in what it prints when none is configured", async () => {
-      await createProjectConfig(projectDir);
+      await createProjectConfig(projectDir, { agents: buildAgentConfigs(["web-developer"]) });
       const skillsDir = await createProjectSkillsDir(projectDir);
       await createUserSkill(skillsDir, "web-tooling-custom" as SkillId);
 
@@ -585,7 +605,7 @@ describe("uninstall command", () => {
 
   describe("source-folder config manifest removal", () => {
     it("should remove the config manifest by default", async () => {
-      await createProjectConfig(projectDir);
+      await createProjectConfig(projectDir, { agents: buildAgentConfigs(["web-developer"]) });
       const sourceFolder = sourceFolderInUse(projectDir, "claude").dir;
 
       const { stdout } = await runCliCommand(["uninstall", "--yes"]);
@@ -615,7 +635,7 @@ describe("uninstall command", () => {
     });
 
     it("should not remove .claude/ if user content remains", async () => {
-      await createProjectConfig(projectDir);
+      await createProjectConfig(projectDir, { agents: buildAgentConfigs(["web-developer"]) });
       const claudeDir = path.join(projectDir, CLAUDE_DIR);
       await mkdir(claudeDir, { recursive: true });
 
@@ -643,6 +663,9 @@ describe("uninstall command", () => {
 
       expect(await directoryExists(pluginDir)).toBe(false);
       expect(stdout, NOTHING_REGISTERED_TO_COUNT).not.toContain(PLUGIN_COUNT_LINE);
+      expect((await claude.changes()).toSorted()).toStrictEqual(
+        STAGED_PLUGIN_REMOVED_AT_EACH_SCOPE,
+      );
     });
 
     it("should show the plugin it removes in the panel, as a skill with no local copy", async () => {
@@ -656,6 +679,9 @@ describe("uninstall command", () => {
       expect(stdout).toContain(PLAN_PANEL);
       expect(stdout).toContain(removedRow(TEST_PLUGIN_SKILL));
       expect(stdout).not.toContain(`${TEST_PLUGIN_SKILL} ⏏`);
+      expect((await claude.changes()).toSorted()).toStrictEqual(
+        STAGED_PLUGIN_REMOVED_AT_EACH_SCOPE,
+      );
     });
 
     it("should show uninstall complete message", async () => {
@@ -668,6 +694,9 @@ describe("uninstall command", () => {
 
       expect(stdout).toContain(`${DEFAULT_BRANDING.NAME} has been uninstalled`);
       expect(stdout).toContain("Uninstall complete");
+      expect((await claude.changes()).toSorted()).toStrictEqual(
+        STAGED_PLUGIN_REMOVED_AT_EACH_SCOPE,
+      );
     });
   });
 
@@ -689,6 +718,9 @@ describe("uninstall command", () => {
 
       expect(await directoryExists(pluginDir)).toBe(false);
       expect(stdout, NOTHING_REGISTERED_TO_COUNT).not.toContain(PLUGIN_COUNT_LINE);
+      expect((await claude.changes()).toSorted()).toStrictEqual(
+        STAGED_PLUGIN_REMOVED_AT_EACH_SCOPE,
+      );
     });
 
     it("should uninstall project-scoped plugin that was re-scoped from global during init", async () => {
@@ -708,6 +740,9 @@ describe("uninstall command", () => {
 
       expect(await directoryExists(pluginDir)).toBe(false);
       expect(stdout, NOTHING_REGISTERED_TO_COUNT).not.toContain(PLUGIN_COUNT_LINE);
+      expect((await claude.changes()).toSorted()).toStrictEqual(
+        STAGED_PLUGIN_REMOVED_AT_EACH_SCOPE,
+      );
     });
   });
 
@@ -802,6 +837,9 @@ describe("uninstall command", () => {
       expect(await directoryExists(cliSkillDir)).toBe(false);
       expect(stdout, NOTHING_REGISTERED_TO_COUNT).not.toContain(PLUGIN_COUNT_LINE);
       expect(stdout).toContain("Removed 1 CLI-installed skill");
+      expect((await claude.changes()).toSorted()).toStrictEqual(
+        STAGED_PLUGIN_REMOVED_AT_EACH_SCOPE,
+      );
     });
 
     it("should remove everything including the config manifest by default", async () => {
@@ -829,6 +867,10 @@ describe("uninstall command", () => {
       expect(stdout).toContain("Removed .agents-inc/claude/");
       expect(stdout).toContain("Removed .agents-inc/");
       expect(stdout).toContain(`Removed ${CLAUDE_DIR}/`);
+      expect(
+        await claude.changes(),
+        "no plugin is held, so nothing in Claude's setup changes",
+      ).toStrictEqual([]);
     });
   });
 
@@ -895,6 +937,10 @@ describe("uninstall command", () => {
 
       expect(stdout).toContain("Removed 1 CLI-installed skill");
       expect(await directoryExists(path.join(globalSkillsDir, "web-framework-react"))).toBe(false);
+      expect(
+        await claude.changes(),
+        "a global run owns every plugin and none is held, so nothing in Claude's setup changes",
+      ).toStrictEqual([]);
     });
   });
 });
@@ -1233,7 +1279,7 @@ describe("what uninstall says", () => {
   });
 
   it("names no skills folder in the plan when there is no skill in it, and tidies the empty one away", async () => {
-    await createProjectConfig(projectDir);
+    await createProjectConfig(projectDir, { agents: buildAgentConfigs(["web-developer"]) });
     await createProjectSkillsDir(projectDir);
 
     const { stdout, error } = await runCliCommand(["uninstall", "--yes"]);

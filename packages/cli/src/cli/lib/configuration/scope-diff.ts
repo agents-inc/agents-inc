@@ -214,6 +214,9 @@ function toRemovedAgentRow(agent: AgentScopeConfig): AgentDiffRow {
   return { name: agent.name, status: "removed" };
 }
 
+/** The entry each skill is named by, as a panel row drawn from that entry names it. */
+export type NamedBy = Partial<Record<SkillId, Pick<SkillConfig, "id" | "displayName">>>;
+
 /** A sub-agent that keeps its slot and still changes: the skills its rows gain and lose, and its retunes. */
 export type AgentChange = {
   name: AgentName;
@@ -221,8 +224,8 @@ export type AgentChange = {
   gains: SkillId[];
   loses: SkillId[];
   settings: SettingChange[];
-  /** The entry each is named by: the run's for a skill it gains, the install's for one it loses. */
-  namedBy?: Partial<Record<SkillId, Pick<SkillConfig, "id" | "displayName">>>;
+  /** The run's entry for a skill it gains, the install's for one it loses. */
+  namedBy?: NamedBy;
 };
 
 /** `undefined` where the setting is left to its default. */

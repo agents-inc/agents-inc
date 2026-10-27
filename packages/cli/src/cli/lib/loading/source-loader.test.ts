@@ -17,10 +17,13 @@ vi.mock("../../consts", async (importOriginal) => {
     },
   };
 });
+import { seatedCatalog } from "@workspace/compile";
 import {
   loadSkillsMatrixFromSource,
+  loadMarketplaceMatrix,
   convertStackToResolvedStack,
   mergeLocalSkillsIntoMatrix,
+  MarketplaceManifestRequiredError,
 } from "./source-loader";
 import { MarketplaceNameRefusedError } from "./source-fetcher";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
@@ -82,7 +85,8 @@ import { disableBuffering, drainBuffer, enableBuffering } from "../../utils/logg
 import { defaultCategories } from "../configuration/default-categories";
 import { defaultStacks } from "../configuration/default-stacks";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
-import { initializeMatrix, matrix } from "../matrix/matrix-provider";
+import { getSkillDisplayName, initializeMatrix, matrix } from "../matrix/matrix-provider";
+import { SINGLE_REACT_MATRIX } from "../__tests__/mock-data/mock-matrices";
 // Cleared through the resolver's own constant: these hooks assert nothing.
 import { SOURCE_ENV_VAR } from "../configuration/config";
 import { LOCAL_DEFAULTS } from "../metadata-keys";
@@ -225,13 +229,16 @@ function loadedSkill(matrix: MergedSkillsMatrix, id: string): ResolvedSkill | un
 }
 
 /** The same question of a stack conversion, which warns about what it drops. */
-function convertStackWithWarnings(stack: Stack): {
+function convertStackWithWarnings(
+  stack: Stack,
+  catalogue: MergedSkillsMatrix,
+): {
   resolved: ResolvedStack;
   warnings: string[];
 } {
   enableBuffering();
   try {
-    const resolved = convertStackToResolvedStack(stack);
+    const resolved = convertStackToResolvedStack(stack, catalogue);
     return { resolved, warnings: drainBuffer().map((message) => message.text) };
   } finally {
     disableBuffering();
@@ -1414,15 +1421,107 @@ describe("source-loader integration", () => {
   });
 });
 
+/**
+ * The run's catalogue is seated by a successful load alone. Each spec seats the public catalogue
+ * first, so a read that seated the folder's would show as a raw id where "React" was.
+ */
+describe("source-loader: the catalogue a read leaves seated", () => {
+  let tempDir: string;
+  let unbuiltDirs: TestDirs | undefined;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir("cc-source-loader-seat-");
+    initializeMatrix(BUILT_IN_MATRIX);
+  });
+
+  afterEach(async () => {
+    initializeMatrix(BUILT_IN_MATRIX);
+    await cleanupTestSource(unbuiltDirs);
+    unbuiltDirs = undefined;
+    await cleanupTempDir(tempDir);
+  });
+
+  it("reading a marketplace folder leaves the catalogue the caller seated", async () => {
+    const read = await loadMarketplaceMatrix(fixtureDirs.sourceDir);
+
+    expect(
+      typedKeys(read.skills).toSorted(),
+      "the read returned the folder's own catalogue",
+    ).toStrictEqual(FIXTURE_SKILLS.map((skill) => skill.id).toSorted());
+    expect(matrix, "the CLI's seat still holds the caller's catalogue").toBe(BUILT_IN_MATRIX);
+    expect(seatedCatalog(), "the shared builder's seat moves with the CLI's").toBe(
+      BUILT_IN_MATRIX,
+    );
+    expect(getSkillDisplayName("web-framework-react")).toBe("React");
+  });
+
+  /** The refusal is thrown after the folder is read; the success below is its permitted twin. */
+  describe("a load of a marketplace folder", () => {
+    it("a load refused after it read the folder seats nothing", async () => {
+      unbuiltDirs = await createTestSource({ skills: FIXTURE_SKILLS, unbuilt: true });
+
+      await expect(
+        loadSkillsMatrixFromSource({
+          sourceFlag: unbuiltDirs.sourceDir,
+          projectDir: unbuiltDirs.projectDir,
+          skipExtraSources: true,
+        }),
+      ).rejects.toBeInstanceOf(MarketplaceManifestRequiredError);
+
+      expect(matrix, "a failed load leaves the caller's catalogue seated").toBe(BUILT_IN_MATRIX);
+      expect(getSkillDisplayName("web-framework-react")).toBe("React");
+    });
+
+    it("a load that succeeds seats the catalogue it built", async () => {
+      const result = await loadSkillsMatrixFromSource({
+        sourceFlag: fixtureDirs.sourceDir,
+        projectDir: tempDir,
+        skipExtraSources: true,
+      });
+
+      expect(matrix).toBe(result.matrix);
+    });
+  });
+});
+
 describe("convertStackToResolvedStack", () => {
   const reactSkill = createMockSkill("web-framework-react");
   const zustandSkill = createMockSkill("web-state-zustand");
   const honoSkill = createMockSkill("api-framework-hono");
+  const catalogue = createMockMatrix(reactSkill, zustandSkill, honoSkill);
 
   beforeEach(() => {
-    // convertStackToResolvedStack reads the module-level matrix, so seed it.
-    const testMatrix = createMockMatrix(reactSkill, zustandSkill, honoSkill);
-    initializeMatrix(testMatrix);
+    // The seat holds a catalogue none of these specs hands in, so a conversion reading it shows.
+    initializeMatrix(BUILT_IN_MATRIX);
+  });
+
+  it("filters a stack against the catalogue it is handed, not the one seated", () => {
+    const stack = createMockStack("handed", {
+      name: "Handed",
+      agents: {
+        "web-developer": {
+          "web-framework": [createMockSkillAssignment("web-framework-react")],
+        },
+        "api-developer": {
+          "api-api": [createMockSkillAssignment("api-framework-hono")],
+        },
+      },
+    });
+
+    const { resolved, warnings } = convertStackWithWarnings(stack, SINGLE_REACT_MATRIX);
+
+    expect(resolved.allSkillIds).toStrictEqual(["web-framework-react"]);
+    expect(
+      resolved.skills,
+      "each sub-agent's rows are filtered against the same catalogue",
+    ).toStrictEqual({
+      "web-developer": { "web-framework": ["web-framework-react"] },
+      "api-developer": {},
+    });
+    expect(warnings).toStrictEqual([
+      "Stack 'handed' names 1 skill(s) this marketplace's catalogue does not carry: 'api-framework-hono'. " +
+        "Left out of the stack — selecting it would install nothing.",
+    ]);
   });
 
   it("should convert an empty stack", () => {
@@ -1431,7 +1530,7 @@ describe("convertStackToResolvedStack", () => {
       agents: {},
     });
 
-    const resolved = convertStackToResolvedStack(stack);
+    const resolved = convertStackToResolvedStack(stack, catalogue);
 
     expect(resolved.id).toBe("empty");
     expect(resolved.name).toBe("Empty Stack");
@@ -1450,7 +1549,7 @@ describe("convertStackToResolvedStack", () => {
       },
     });
 
-    const resolved = convertStackToResolvedStack(stack);
+    const resolved = convertStackToResolvedStack(stack, catalogue);
 
     expect(resolved.id).toBe("single");
     expect(resolved.name).toBe("Single Agent");
@@ -1474,7 +1573,7 @@ describe("convertStackToResolvedStack", () => {
       },
     });
 
-    const resolved = convertStackToResolvedStack(stack);
+    const resolved = convertStackToResolvedStack(stack, catalogue);
 
     expect(resolved.allSkillIds).toHaveLength(3);
     expect(resolved.allSkillIds).toContain("web-framework-react");
@@ -1503,13 +1602,13 @@ describe("convertStackToResolvedStack", () => {
       },
     });
 
-    const resolved = convertStackToResolvedStack(stack);
+    const resolved = convertStackToResolvedStack(stack, catalogue);
 
     expect(resolved.allSkillIds).toHaveLength(1);
     expect(resolved.allSkillIds).toStrictEqual(["web-framework-react"]);
   });
 
-  it("should filter out skills not present in the current matrix", () => {
+  it("should filter out skills not present in the catalogue it is handed", () => {
     const stack = createMockStack("filtered", {
       name: "Filtered",
       agents: {
@@ -1523,7 +1622,7 @@ describe("convertStackToResolvedStack", () => {
       },
     });
 
-    const resolved = convertStackToResolvedStack(stack);
+    const resolved = convertStackToResolvedStack(stack, catalogue);
 
     const agentSkills = resolved.skills["web-developer"] as Record<string, SkillId[]>;
     expect(agentSkills["web-framework"]).toStrictEqual(["web-framework-react"]);
@@ -1536,7 +1635,7 @@ describe("convertStackToResolvedStack", () => {
       philosophy: "Modern type-safe development",
     });
 
-    const resolved = convertStackToResolvedStack(stack);
+    const resolved = convertStackToResolvedStack(stack, catalogue);
 
     expect(resolved.philosophy).toBe("Modern type-safe development");
   });
@@ -1551,7 +1650,7 @@ describe("convertStackToResolvedStack", () => {
       },
     });
 
-    const resolved = convertStackToResolvedStack(stack);
+    const resolved = convertStackToResolvedStack(stack, catalogue);
 
     const agentSkills = resolved.skills["web-developer"] as Record<string, SkillId[]> | undefined;
     expect(agentSkills?.["web-framework"]).toBeUndefined();
@@ -1572,7 +1671,7 @@ describe("convertStackToResolvedStack", () => {
       },
     });
 
-    const { resolved } = convertStackWithWarnings(stack);
+    const { resolved } = convertStackWithWarnings(stack, catalogue);
 
     expect(
       typedKeys<AgentName>(resolved.skills),
@@ -1597,7 +1696,7 @@ describe("convertStackToResolvedStack", () => {
       },
     });
 
-    const { warnings } = convertStackWithWarnings(stack);
+    const { warnings } = convertStackWithWarnings(stack, catalogue);
 
     expect(warnings).toStrictEqual([
       "Stack 'part-declared' names 1 sub-agent(s) this CLI does not define: 'frontend-dev'. " +
@@ -1620,7 +1719,7 @@ describe("convertStackToResolvedStack", () => {
       },
     });
 
-    const { resolved } = convertStackWithWarnings(stack);
+    const { resolved } = convertStackWithWarnings(stack, catalogue);
 
     expect(resolved.allSkillIds).toStrictEqual(["web-framework-react"]);
     expect(resolved.skills["web-developer"]?.["web-framework"]).toStrictEqual([
@@ -1638,7 +1737,7 @@ describe("convertStackToResolvedStack", () => {
       },
     });
 
-    const { warnings } = convertStackWithWarnings(stack);
+    const { warnings } = convertStackWithWarnings(stack, catalogue);
 
     expect(warnings.join(" ")).toContain("web-styling-tailwind");
   });
@@ -1652,7 +1751,7 @@ describe("convertStackToResolvedStack", () => {
       },
     });
 
-    const { warnings } = convertStackWithWarnings(stack);
+    const { warnings } = convertStackWithWarnings(stack, catalogue);
 
     expect(warnings).toStrictEqual([
       "Stack 'two-undeclared' names 2 sub-agent(s) this CLI does not define: 'frontend-dev', 'backend-dev'. " +
@@ -1673,7 +1772,7 @@ describe("convertStackToResolvedStack", () => {
       },
     });
 
-    const { warnings } = convertStackWithWarnings(stack);
+    const { warnings } = convertStackWithWarnings(stack, catalogue);
 
     expect(warnings).toStrictEqual([
       "Stack 'two-withdrawn' names 2 skill(s) this marketplace's catalogue does not carry: 'web-styling-tailwind', 'web-testing-vitest'. " +
@@ -1691,7 +1790,7 @@ describe("convertStackToResolvedStack", () => {
       },
     });
 
-    const { warnings } = convertStackWithWarnings(stack);
+    const { warnings } = convertStackWithWarnings(stack, catalogue);
 
     expect(warnings).toStrictEqual([]);
   });

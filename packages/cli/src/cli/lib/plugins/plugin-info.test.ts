@@ -13,7 +13,6 @@ import {
   DEFAULT_PLUGIN_NAME,
   DEFAULT_PUBLIC_SOURCE_NAME,
   EJECT_SOURCE,
-  PLUGINS_SUBDIR,
   STANDARD_DIRS,
 } from "../../consts";
 
@@ -103,7 +102,6 @@ describe("plugin-info", () => {
           mode: "eject",
           configPath,
           agentsDir,
-          skillsDir,
           projectDir: PROJECT_DIR,
         }),
       );
@@ -152,7 +150,6 @@ describe("plugin-info", () => {
         buildInstallation({
           configPath,
           agentsDir: projectAgentsDir,
-          skillsDir: projectSkillsDir,
           projectDir: PROJECT_DIR,
         }),
       );
@@ -315,7 +312,7 @@ describe("plugin-info", () => {
       const skillsDir = path.join(homeDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
 
       mockedDetectInstallation.mockResolvedValue(
-        buildInstallation({ configPath, agentsDir, skillsDir, projectDir: homeDir }),
+        buildInstallation({ configPath, agentsDir, projectDir: homeDir }),
       );
       mockedDirectoryExists.mockResolvedValue(true);
       mockReaddirByDir({
@@ -479,7 +476,6 @@ describe("plugin-info", () => {
         buildPluginInstallation({
           configPath,
           agentsDir: path.join(homeDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS),
-          skillsDir: path.join(homeDir, CLAUDE_DIR, PLUGINS_SUBDIR),
           projectDir: homeDir,
         }),
       );

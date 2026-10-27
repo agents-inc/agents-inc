@@ -1,12 +1,18 @@
 import path from "path";
 import { readdir } from "fs/promises";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { copyLocalSkills } from "./copy-local-skills.js";
 import { resolveInstallPaths } from "../../installation/index.js";
+import { skillsDir } from "../../installation/install-layout.js";
 import type { SourceLoadResult } from "../../loading/source-loader.js";
+import { PROVIDERS, sourceDirName } from "../../../consts.js";
 import type { SkillId } from "../../../types/index.js";
-import { initMatrixAndSource } from "../../__tests__/factories/config-factories.js";
+import {
+  buildProjectConfig,
+  initMatrixAndSource,
+} from "../../__tests__/factories/config-factories.js";
+import { writeTestTsConfig } from "../../__tests__/helpers/config-io.js";
 import { createMatrixFromTestSkills } from "../../__tests__/factories/matrix-factories.js";
 import {
   cleanupTestSource,
@@ -107,5 +113,47 @@ describe("copyLocalSkills", () => {
     expect(result.totalCopied).toBe(2);
     expect(await skillFoldersIn(globalSkillsDir())).toStrictEqual([HONO, VITEST].toSorted());
     expect(await directoryExists(projectSkillsDir())).toBe(false);
+  });
+
+  /**
+   * A project inherits only its own provider's global installation. Claude is the control, being
+   * also the provider a home holding both is read as.
+   */
+  describe("in a project under a home holding a Claude and a Codex global installation", () => {
+    beforeEach(() => {
+      vi.stubEnv("CODEX_HOME", "");
+    });
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it.each(PROVIDERS)(
+      "copies a %s project's global skills into its own provider's global installation only",
+      async (provider) => {
+        for (const atHome of PROVIDERS) {
+          await writeTestTsConfig(home.dir, buildProjectConfig(), sourceDirName(atHome));
+        }
+        await writeTestTsConfig(dirs.projectDir, buildProjectConfig(), sourceDirName(provider));
+
+        const result = await copyLocalSkills(
+          [buildSkillConfig(HONO, { scope: "global" })],
+          dirs.projectDir,
+          sourceResult,
+        );
+
+        const ownGlobalSkills = skillsDir(provider, "global", home.dir);
+        expect(result.globalCopied.map((skill) => skill.destPath)).toStrictEqual([
+          path.join(ownGlobalSkills, HONO),
+        ]);
+        expect(await skillFoldersIn(ownGlobalSkills)).toStrictEqual([HONO]);
+        for (const other of PROVIDERS.filter((atHome) => atHome !== provider)) {
+          expect(
+            await directoryExists(skillsDir(other, "global", home.dir)),
+            `nothing is copied into the ${other} global installation`,
+          ).toBe(false);
+        }
+      },
+    );
   });
 });

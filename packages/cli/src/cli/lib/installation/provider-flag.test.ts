@@ -24,6 +24,8 @@ const CODEX_FOLDER = ".agents-inc/codex";
 
 const SUBJECT = "edit";
 
+const DECLARES_NOTHING = buildProjectConfig({ name: "declares-nothing", skills: [], agents: [] });
+
 /** Throws, so a refusal that should not happen fails the spec where it happened. */
 function refusalMustNotHappen(message: string): never {
   throw new Error(`refused unexpectedly: ${message}`);
@@ -146,6 +148,58 @@ describe("--provider", () => {
     it("reads that one as the only installation in play", async () => {
       expect(await providersInPlay(project)).toStrictEqual(["claude"]);
     });
+  });
+
+  /**
+   * Owner 2026-10-24 ("Never count it, and say so"): a project config declaring no skill and no
+   * sub-agent is not the project's installation, so the project is judged as one holding none.
+   */
+  describe("a project whose config declares nothing, under a HOME holding both providers' installations", () => {
+    let project: string;
+    let homeHolding: string;
+
+    beforeEach(async () => {
+      homeHolding = await scopeHolding(home.dir, [CLAUDE_FOLDER, CODEX_FOLDER]);
+      project = await scopeHolding(path.join(tempDir, "project"), []);
+      await writeTestTsConfig(project, DECLARES_NOTHING);
+    });
+
+    it("refuses an acting command naming HOME's two, as for a project holding none", async () => {
+      const onAmbiguous = vi.fn((message: string): never => {
+        throw new Error(message);
+      });
+
+      await expect(
+        refuseAnAmbiguousInstallation(project, SUBJECT, undefined, onAmbiguous),
+      ).rejects.toThrow(
+        `${homeHolding} holds 2 installations — claude and codex — so edit cannot tell which one you mean. Name it with --provider <claude|codex>. Nothing has been changed.`,
+      );
+    });
+
+    it("reads HOME's two as in play", async () => {
+      expect(await providersInPlay(project)).toStrictEqual(["claude", "codex"]);
+    });
+
+    it("reports HOME's two to doctor, and tells list which other one HOME holds", async () => {
+      expect(await ambiguityFinding(project)).toBe(
+        `${homeHolding} holds 2 installations — claude and codex — so every command that acts on one cannot tell which one you mean. Name it with --provider <claude|codex>. Nothing has been changed.`,
+      );
+      expect(await otherInstallationsInThisScope(project)).toBe(
+        `${homeHolding} holds 2 installations — claude and codex — and this is the claude one. Show another with --provider <claude|codex>.`,
+      );
+    });
+  });
+
+  it("counts only the project's own installation where a config beside it declares nothing", async () => {
+    await scopeHolding(home.dir, [CLAUDE_FOLDER, CODEX_FOLDER]);
+    const project = await scopeHolding(path.join(tempDir, "project"), [CODEX_FOLDER]);
+    await writeTestTsConfig(project, DECLARES_NOTHING, CLAUDE_FOLDER);
+
+    expect(await providersInPlay(project)).toStrictEqual(["codex"]);
+    await expect(
+      refuseAnAmbiguousInstallation(project, SUBJECT, undefined, refusalMustNotHappen),
+    ).resolves.toBeUndefined();
+    expect(await otherInstallationsInThisScope(project)).toBeNull();
   });
 
   it("judges a project with no installation by the global ones", async () => {

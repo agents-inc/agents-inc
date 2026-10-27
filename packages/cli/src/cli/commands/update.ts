@@ -3,8 +3,8 @@ import { unique } from "remeda";
 import { BaseCommand } from "../base-command.js";
 import { EJECT_SOURCE } from "../consts.js";
 import { EXIT_CODES } from "../lib/exit-codes.js";
-import { loadProjectConfig } from "../lib/configuration/index.js";
-import { hostAt } from "../lib/hosts/host-for.js";
+import { loadConfigInPlay, type LoadedProjectConfig } from "../lib/configuration/index.js";
+import { hostFor } from "../lib/hosts/host-for.js";
 import {
   providerFlag,
   providerNamedBy,
@@ -21,7 +21,7 @@ import {
   marketplacesRefreshFailed,
   marketplacesRefreshed,
 } from "../utils/messages.js";
-import type { ProjectConfig, SkillConfig } from "../types/index.js";
+import type { SkillConfig } from "../types/index.js";
 
 function isEjected(skill: SkillConfig): boolean {
   return skill.origin === EJECT_SOURCE;
@@ -48,23 +48,22 @@ export default class Update extends BaseCommand {
 
   async run(): Promise<void> {
     const { flags } = await this.parse(Update);
+    const namedProvider = providerNamedBy(flags.provider);
 
+    await this.sayWhenTheGlobalInstallationStandsIn(namedProvider);
     // Before the config is loaded: loading it already picks a provider by roster order.
-    await refuseAnAmbiguousInstallation(
-      process.cwd(),
-      "update",
-      providerNamedBy(flags.provider),
-      (message) => this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
+    await refuseAnAmbiguousInstallation(process.cwd(), "update", namedProvider, (message) =>
+      this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
     );
     await this.ensureConfigReadable(process.cwd());
     await this.refuseUnofferablePlacements(process.cwd());
-    const config = await this.loadInstalledConfig(process.cwd());
-    if (!config) {
+    const installed = await this.loadInstalledConfig(process.cwd());
+    if (!installed) {
       this.warn(ERROR_MESSAGES.NO_INSTALLATION);
       return;
     }
 
-    const skills = activeSkills(config.skills);
+    const skills = activeSkills(installed.config.skills);
     this.reportEjectedSkills(skills);
 
     const marketplaces = configuredMarketplaces(skills);
@@ -73,7 +72,8 @@ export default class Update extends BaseCommand {
       return;
     }
 
-    const host = hostAt(process.cwd());
+    // The read installation's tool, not the cwd's: a leftover folder there would name another.
+    const host = hostFor(installed.provider);
     await this.requireHost(host);
     await this.refreshMarketplaces(marketplaces, host);
   }
@@ -84,10 +84,9 @@ export default class Update extends BaseCommand {
   }
 
   /** ABORT on an unreadable config: a fault, not "not installed". */
-  private async loadInstalledConfig(projectDir: string): Promise<ProjectConfig | null> {
+  private async loadInstalledConfig(projectDir: string): Promise<LoadedProjectConfig | null> {
     try {
-      const loaded = await loadProjectConfig(projectDir);
-      return loaded?.config ?? null;
+      return await loadConfigInPlay(projectDir);
     } catch (error) {
       this.error(getErrorMessage(error), { exit: EXIT_CODES.ERROR });
     }

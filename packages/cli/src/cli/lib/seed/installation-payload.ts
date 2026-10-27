@@ -9,7 +9,7 @@ import {
 import { readCarriedSkills } from "./external-skills.js";
 import { EJECT_SOURCE } from "../../consts.js";
 import { withoutExcludedAssignments } from "../agents/agent-recompiler.js";
-import { loadProjectConfig, loadProjectConfigFromDir } from "../configuration/project-config.js";
+import { loadConfigInPlay, loadProjectConfigFromDir } from "../configuration/project-config.js";
 import { activeAgentScopeMap, activeSkillScopeMap } from "../configuration/scope-predicates.js";
 import { getProjectConfigPath, resolveInstallPaths } from "../installation/install-base-dir.js";
 import { readForkedFromMetadata } from "../skills/skill-metadata.js";
@@ -91,7 +91,7 @@ export async function editorPayloadForInstallation(
 /** An unloadable config, HOME's included, is reported as its own error, not "not installed". */
 async function readInstalledConfig(projectDir: string): Promise<InstalledConfig> {
   try {
-    const loaded = await loadProjectConfig(projectDir);
+    const loaded = await loadConfigInPlay(projectDir);
     if (!loaded) return { ok: false, error: ERROR_MESSAGES.NO_INSTALLATION };
     const inheritedFrom = await readInheritedConfig(loaded);
     return {

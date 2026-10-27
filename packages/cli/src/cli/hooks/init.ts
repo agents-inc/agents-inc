@@ -15,7 +15,10 @@ import { installationConfigsUnreadable, retiredSourceFolderIgnored } from "../ut
 
 const hook: Hook<"init"> = async function (options) {
   forgetTheProviderChosenForThisRun();
-  await sayTheRetiredSourceFolderIsIgnored(process.cwd(), providerNamedIn(options.argv));
+  // Before any path is read: `providerInUse` cannot load a config, so the roster records which
+  // of the project's declare nothing.
+  const projectHoldsOne = await projectHoldsAnInstallation(process.cwd());
+  sayTheRetiredSourceFolderIsIgnored(process.cwd(), providerNamedIn(options.argv), projectHoldsOne);
 
   // A named command runs as named; no command is the dashboard.
   if (options.id !== undefined) return;
@@ -48,12 +51,13 @@ const hook: Hook<"init"> = async function (options) {
  * Flags are not parsed yet, so the provider a run names is read off its arguments: that run reads
  * the named provider's folder in every root.
  */
-async function sayTheRetiredSourceFolderIsIgnored(
+function sayTheRetiredSourceFolderIsIgnored(
   cwd: string,
   named: Provider | undefined,
-): Promise<void> {
+  projectHoldsOne: boolean,
+): void {
   for (const root of rootsHoldingTheRetiredSourceFolder(cwd)) {
-    const provider = named ?? (await providerReadIn(root, cwd));
+    const provider = named ?? providerReadIn(root, cwd, projectHoldsOne);
     process.stderr.write(`${retiredSourceFolderIgnored(root, provider)}\n`);
   }
 }
@@ -62,12 +66,12 @@ async function sayTheRetiredSourceFolderIsIgnored(
  * A run naming no provider reads a project with its own tool, and HOME with the project's, as it
  * reads HOME's config; a project holding no installation leaves the run on HOME's own.
  */
-async function providerReadIn(root: string, cwd: string): Promise<Provider> {
+function providerReadIn(root: string, cwd: string, projectHoldsOne: boolean): Provider {
   if (!isHomeDirectory(root)) return providerInUse(root);
-  if (!(await projectHoldsAnInstallation(cwd))) return providerInUse(root);
-  return providerInUse(cwd);
+  return providerInUse(projectHoldsOne ? cwd : root);
 }
 
+/** A project config declaring nothing is not an installation, so it is not counted here. */
 async function projectHoldsAnInstallation(cwd: string): Promise<boolean> {
   const found = await detectInstallations(cwd);
   return found.some((installation) => installation.scope === "project");

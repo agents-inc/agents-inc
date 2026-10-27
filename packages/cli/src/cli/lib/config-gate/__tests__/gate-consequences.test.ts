@@ -51,6 +51,13 @@ const NO_AGENTS = {};
 
 const NOTHING_PROPAGATED = { updated: [], unreadable: [], gone: [], notOurs: [], failed: [] };
 
+/** A skill and no sub-agent: a config declaring nothing is no installation to rewrite. */
+const AGENTLESS = buildProjectConfig({
+  name: "agentless",
+  skills: [buildSkillConfig(REACT, { scope: "global" })],
+  agents: [],
+});
+
 const UNOPENABLE_FILE = 0o000;
 const READ_WRITE_FILE = 0o644;
 
@@ -180,10 +187,7 @@ describe("the config gate's entry points", () => {
 
     it("counts a registered project whose config pair it rewrote as rewritten, though it holds no sub-agent", async () => {
       const project = await installProject("project");
-      const agentless = await installProject(
-        "agentless",
-        buildProjectConfig({ name: "agentless", skills: [], agents: [] }),
-      );
+      const agentless = await installProject("agentless", AGENTLESS);
       await installGlobal({ projects: [project, agentless] });
 
       const report = await writeFromProject(
@@ -302,10 +306,7 @@ describe("the config gate's entry points", () => {
     });
 
     it("counts a registered project rewritten while the fan-out changes its pair, and unchanged once it does not", async () => {
-      const agentless = await installProject(
-        "agentless",
-        buildProjectConfig({ name: "agentless", skills: [], agents: [] }),
-      );
+      const agentless = await installProject("agentless", AGENTLESS);
       await installGlobal({ projects: [agentless] });
       const reconcile = () =>
         reconcileTypesFromDisk(

@@ -8,7 +8,11 @@ import os from "os";
 import { Flags } from "@oclif/core";
 
 import { PROVIDERS, EDITOR_URL, CLI_INVOKE_COMMAND, type Provider } from "../../consts.js";
-import { detectInstallations, type DetectedInstallation } from "./detect-installations.js";
+import {
+  detectInstallations,
+  holdsAConfigDeclaringNothing,
+  type DetectedInstallation,
+} from "./detect-installations.js";
 import { chooseProviderForThisRun, providerInUse } from "./install-layout.js";
 
 /** A factory because oclif mutates flag definitions, so commands must not share one. */
@@ -109,6 +113,24 @@ export async function refuseAnAmbiguousInstallation(
   if (providers.length <= 1) return;
 
   onAmbiguous(ambiguousInstallation(subject, providers, scopeRoot));
+}
+
+/**
+ * Whether a run here works on a global installation because the project's own config declares
+ * nothing, which such a run says first. Not where HOME holds none the run could work on.
+ */
+export async function globalInstallationStandsIn(
+  cwd: string,
+  named: Provider | undefined,
+): Promise<boolean> {
+  if (!(await holdsAConfigDeclaringNothing(cwd))) return false;
+
+  const { scopeRoot, providers } = await installationsInPlay(cwd);
+  const theProjectHoldsNone = scopeRoot !== cwd;
+  const homeHoldsOneToWorkOn = providers.some(
+    (provider) => named === undefined || provider === named,
+  );
+  return theProjectHoldsNone && homeHoldsOneToWorkOn;
 }
 
 /** The non-refusing read the remedies hand a command out from, so they and the refusal agree. */

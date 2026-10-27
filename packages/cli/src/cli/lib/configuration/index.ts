@@ -32,8 +32,10 @@ export { isActiveAt, effectivelyExcludedSkillIds } from "./scope-predicates";
 export {
   type LoadedProjectConfig,
   ConfigLoadError,
-  configDirsInPlay,
+  type ConfigInPlay,
+  configsInPlay,
   findConfigLoadFailures,
+  loadConfigInPlay,
   loadInstalledConfig,
   loadProjectConfig,
   validateProjectConfig,

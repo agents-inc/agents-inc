@@ -10,6 +10,7 @@ import { buildSkillConfigs } from "../__tests__/helpers/skill-config-builders";
 import { SKILLS } from "../__tests__/test-fixtures";
 import { CLAUDE_DIR, DEFAULT_PUBLIC_SOURCE_NAME, PLUGINS_SUBDIR } from "../../consts";
 import { getProjectConfigPath } from "./install-base-dir.js";
+import { sourceFolderInUse } from "./install-layout.js";
 
 vi.mock("../../utils/logger");
 
@@ -54,13 +55,29 @@ describe("installation", () => {
 
       const result = await detectInstallation(tempDir);
 
-      expect(result).not.toBeNull();
-      expect(result!.mode).toBe("eject");
+      expect(result).toStrictEqual({
+        mode: "eject",
+        configPath: getProjectConfigPath(tempDir, "claude"),
+        agentsDir: path.join(tempDir, CLAUDE_DIR, "agents"),
+        projectDir: tempDir,
+      });
+    });
 
-      expect(result!.configPath).toBe(getProjectConfigPath(tempDir, "claude"));
-      expect(result!.agentsDir).toBe(path.join(tempDir, CLAUDE_DIR, "agents"));
-      expect(result!.skillsDir).toBe(path.join(tempDir, CLAUDE_DIR, "skills"));
-      expect(result!.projectDir).toBe(tempDir);
+    it("detects a Codex installation in the Codex folders", async () => {
+      await writeTestTsConfig(
+        tempDir,
+        AN_EJECT_INSTALLATION,
+        sourceFolderInUse(tempDir, "codex").relName,
+      );
+
+      const result = await detectInstallation(tempDir);
+
+      expect(result).toStrictEqual({
+        mode: "eject",
+        configPath: getProjectConfigPath(tempDir, "codex"),
+        agentsDir: path.join(tempDir, ".codex", "agents"),
+        projectDir: tempDir,
+      });
     });
 
     it("defaults to eject mode for an installation holding no skill", async () => {
@@ -77,13 +94,12 @@ describe("installation", () => {
 
       const result = await detectInstallation(tempDir);
 
-      expect(result).not.toBeNull();
-      expect(result!.mode).toBe("plugin");
-
-      expect(result!.configPath).toBe(getProjectConfigPath(tempDir, "claude"));
-      expect(result!.agentsDir).toBe(path.join(tempDir, CLAUDE_DIR, "agents"));
-      expect(result!.skillsDir).toBe(path.join(tempDir, CLAUDE_DIR, PLUGINS_SUBDIR));
-      expect(result!.projectDir).toBe(tempDir);
+      expect(result).toStrictEqual({
+        mode: "plugin",
+        configPath: getProjectConfigPath(tempDir, "claude"),
+        agentsDir: path.join(tempDir, CLAUDE_DIR, "agents"),
+        projectDir: tempDir,
+      });
     });
 
     it("returns null for project-level detection when no installation found", async () => {

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import path from "path";
-import { mkdir } from "fs/promises";
+import { chmod, mkdir } from "fs/promises";
 
 import {
   renderConfigTs,
@@ -25,10 +25,15 @@ import { firstElement } from "../__tests__/helpers/element-at.js";
 
 /** Sorts before the healthy skill, proving a parse failure does not end the scan. */
 const BROKEN_SKILL_DIR = "broken-skill";
+/** A metadata.yaml with no SKILL.md beside it. */
+const ORPHAN_SKILL_DIR = "orphan-skill";
 const HEALTHY_SKILL_DIR = "web-framework-react";
 const HEALTHY_SKILL_ID: SkillId = "web-framework-react";
 const HEALTHY_SKILL_DESCRIPTION = "React framework";
 const CONTENT_HASH = "abc123";
+
+/** What a folder yields when no skill in it loaded and no SKILL.md named one. */
+const NOTHING_READ = { skills: [], unloadedSkillIds: [] };
 
 /** The yaml parser's own words for what renderUnparseableMetadataYaml() writes. */
 const PARSER_REASON = "Nested mappings are not allowed";
@@ -233,7 +238,7 @@ describe("matrix-loader", () => {
         skillMd: renderSkillMd("web-framework-react", "React framework", "# React"),
       });
 
-      const skills = await extractAllSkills(skillsDir);
+      const { skills } = await extractAllSkills(skillsDir);
 
       expect(skills).toHaveLength(1);
       expect(firstElement(skills).id).toBe("web-framework-react");
@@ -246,16 +251,19 @@ describe("matrix-loader", () => {
         metadata: renderMetadataYaml({ contentHash: CONTENT_HASH, category: "web-framework" }),
       });
 
-      expect(await extractAllSkills(skillsDir)).toStrictEqual([]);
+      expect(await extractAllSkills(skillsDir)).toStrictEqual(NOTHING_READ);
     });
 
-    it("skips skills with invalid metadata.yaml", async () => {
+    it("skips skills with invalid metadata.yaml, naming each by its SKILL.md as one it could not load", async () => {
       await writeSkill("bad-skill", {
         metadata: "invalid: true\n",
         skillMd: renderSkillMd("bad-skill", "test", "# Bad"),
       });
 
-      expect(await extractAllSkills(skillsDir)).toStrictEqual([]);
+      expect(await extractAllSkills(skillsDir)).toStrictEqual({
+        skills: [],
+        unloadedSkillIds: ["bad-skill"],
+      });
     });
 
     it("skips a skill whose metadata.yaml has no displayName, naming the file and the field, and extracts every other skill", async () => {
@@ -266,12 +274,13 @@ describe("matrix-loader", () => {
         ),
       );
 
-      const skills = await extractAllSkills(skillsDir);
+      const { skills, unloadedSkillIds } = await extractAllSkills(skillsDir);
 
       expect(
         skills.map((skill) => skill.id),
         "a skill with no displayName must not abort the scan",
       ).toStrictEqual([HEALTHY_SKILL_ID]);
+      expect(unloadedSkillIds, "named by its SKILL.md").toStrictEqual([BROKEN_SKILL_DIR]);
       expect(warn).toHaveBeenCalledExactlyOnceWith(
         `Skipping '${path.join(BROKEN_SKILL_DIR, STANDARD_FILES.METADATA_YAML)}': invalid metadata.yaml — missing required field: displayName`,
       );
@@ -288,22 +297,38 @@ describe("matrix-loader", () => {
         skillMd: "no frontmatter here",
       });
 
-      expect(await extractAllSkills(skillsDir)).toStrictEqual([]);
+      expect(await extractAllSkills(skillsDir)).toStrictEqual(NOTHING_READ);
     });
 
-    it("returns empty array when no metadata files found", async () => {
-      expect(await extractAllSkills(skillsDir)).toStrictEqual([]);
+    it("reads nothing when no metadata files are found", async () => {
+      expect(await extractAllSkills(skillsDir)).toStrictEqual(NOTHING_READ);
     });
 
     it("skips an unparseable metadata.yaml and extracts every other skill", async () => {
       await writeBrokenSkillAndHealthySkill();
 
-      const skills = await extractAllSkills(skillsDir);
+      const { skills, unloadedSkillIds } = await extractAllSkills(skillsDir);
 
       expect(
         skills.map((skill) => skill.id),
         "one unparseable metadata.yaml must not abort the scan",
       ).toStrictEqual([HEALTHY_SKILL_ID]);
+      expect(unloadedSkillIds, "named by its SKILL.md").toStrictEqual([BROKEN_SKILL_DIR]);
+    });
+
+    it("leaves a refused metadata.yaml's skill unnamed, and scans on, when its SKILL.md cannot be read", async () => {
+      await writeBrokenSkillAndHealthySkill();
+      const skillMd = path.join(skillsDir, BROKEN_SKILL_DIR, STANDARD_FILES.SKILL_MD);
+      await chmod(skillMd, 0o000);
+
+      try {
+        const { skills, unloadedSkillIds } = await extractAllSkills(skillsDir);
+
+        expect(skills.map((skill) => skill.id)).toStrictEqual([HEALTHY_SKILL_ID]);
+        expect(unloadedSkillIds).toStrictEqual([]);
+      } finally {
+        await chmod(skillMd, 0o644);
+      }
     });
 
     it("names the unparseable metadata.yaml's path in the warning", async () => {
@@ -337,7 +362,10 @@ displayName: wrong
         skillMd: renderSkillMd("wrong-types", "test", "# Test"),
       });
 
-      expect(await extractAllSkills(skillsDir)).toStrictEqual([]);
+      expect(await extractAllSkills(skillsDir)).toStrictEqual({
+        skills: [],
+        unloadedSkillIds: ["wrong-types"],
+      });
       expect(warn).toHaveBeenCalledWith(expect.stringContaining("invalid metadata.yaml"));
     });
 
@@ -359,10 +387,13 @@ displayName: wrong
         skillMd: renderSkillMd("skill-bad-meta"),
       });
 
-      const skills = await extractAllSkills(skillsDir);
+      const { skills, unloadedSkillIds } = await extractAllSkills(skillsDir);
 
       expect(skills).toHaveLength(1);
       expect(firstElement(skills).id).toBe("skill-valid");
+      expect(unloadedSkillIds, "the folder with no SKILL.md names no id").toStrictEqual([
+        "skill-bad-meta",
+      ]);
     });
   });
 
@@ -401,7 +432,7 @@ displayName: wrong
         }),
       );
 
-      expect(await extractAllSkills(skillsDir)).toStrictEqual([
+      expect((await extractAllSkills(skillsDir)).skills).toStrictEqual([
         { ...extractedReact, usageGuidance: GUIDANCE, custom: true },
       ]);
       expect(verbose).toHaveBeenCalledWith(`Extracted skill: ${HEALTHY_SKILL_ID}`);
@@ -417,20 +448,37 @@ displayName: wrong
         }),
       );
 
-      expect(await extractAllSkills(skillsDir)).toStrictEqual([extractedReact]);
+      expect((await extractAllSkills(skillsDir)).skills).toStrictEqual([extractedReact]);
     });
 
-    it("says which metadata.yaml it skipped for having no SKILL.md, and warns about nothing", async () => {
-      await writeSkill("orphan-skill", {
+    it("warns which metadata.yaml it skipped for having no SKILL.md, and why, like every other skip", async () => {
+      await writeSkill(ORPHAN_SKILL_DIR, {
         metadata: renderMetadataYaml({ contentHash: CONTENT_HASH, category: "web-framework" }),
       });
-
-      await extractAllSkills(skillsDir);
-
-      expect(verbose).toHaveBeenCalledExactlyOnceWith(
-        "Skipping orphan-skill/metadata.yaml: No SKILL.md found",
+      await oneSkillOnDisk(
+        renderMetadataYaml({
+          contentHash: CONTENT_HASH,
+          category: "web-framework",
+          displayName: "React",
+          slug: "react",
+        }),
       );
-      expect(warn).not.toHaveBeenCalled();
+
+      expect(
+        await extractAllSkills(skillsDir),
+        "a folder with no SKILL.md must not abort the scan",
+      ).toStrictEqual({ skills: [extractedReact], unloadedSkillIds: [] });
+      expect(
+        warn,
+        "said without --verbose, naming the file it skipped",
+      ).toHaveBeenCalledExactlyOnceWith(
+        expect.stringContaining(
+          `Skipping '${path.join(ORPHAN_SKILL_DIR, STANDARD_FILES.METADATA_YAML)}'`,
+        ),
+      );
+      expect(warn, "and why").toHaveBeenCalledWith(
+        expect.stringContaining(`No ${STANDARD_FILES.SKILL_MD} found`),
+      );
     });
 
     it("warns once, naming the SKILL.md, for a frontmatter that reads but its schema refused", async () => {
@@ -444,7 +492,7 @@ displayName: wrong
         renderSkillMd(NUMERIC_SKILL_NAME),
       );
 
-      expect(await extractAllSkills(skillsDir)).toStrictEqual([]);
+      expect(await extractAllSkills(skillsDir)).toStrictEqual(NOTHING_READ);
       expect(warn).toHaveBeenCalledExactlyOnceWith(
         expect.stringContaining(path.join(skillsDir, HEALTHY_SKILL_DIR, STANDARD_FILES.SKILL_MD)),
       );

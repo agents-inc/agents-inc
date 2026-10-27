@@ -84,13 +84,12 @@ export default class Compile extends BaseCommand {
     const { flags } = await this.parse(Compile);
     setVerbose(flags.verbose);
     const cwd = process.cwd();
+    const namedProvider = providerNamedBy(flags.provider);
 
+    await this.sayWhenTheGlobalInstallationStandsIn(namedProvider);
     // First: `providerInUse` below picks by roster order when a scope holds both providers.
-    await refuseAnAmbiguousInstallation(
-      cwd,
-      "compile",
-      providerNamedBy(flags.provider),
-      (message) => this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
+    await refuseAnAmbiguousInstallation(cwd, "compile", namedProvider, (message) =>
+      this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
     );
     await this.ensureConfigReadable(cwd);
     const installations = await this.detectInstallations(cwd);

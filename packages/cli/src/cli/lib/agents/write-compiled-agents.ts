@@ -1,9 +1,13 @@
-import os from "os";
 import path from "path";
 import type { Liquid } from "liquidjs";
 import { compileAgentForHost } from "../compiler.js";
-import { resolveInstallPaths } from "../installation/install-base-dir.js";
-import { agentCodec, hostCompilesAgent, providerInUse } from "../installation/install-layout.js";
+import {
+  agentCodec,
+  agentsDir,
+  hostCompilesAgent,
+  inheritedGlobalProvider,
+  providerInUse,
+} from "../installation/install-layout.js";
 import { writeFile, fileExists, readFile } from "../../utils/fs.js";
 import { typedEntries } from "../../utils/typed-object.js";
 import type { Provider } from "../../consts.js";
@@ -41,15 +45,16 @@ export async function writeCompiledAgentsByScope(params: {
   projectAgentsDir: string;
   /** The root whose folder says which host the PROJECT scope's sub-agents are written for. */
   projectDir: string;
+  /** The installation at `projectDir`, where it holds two; the default is the one in use. */
+  provider?: Provider;
   agentScopeMap?: Map<AgentName, SkillScope>;
 }): Promise<AgentWriteOutcome[]> {
+  const own = params.provider ?? providerInUse(params.projectDir);
+  // Each scope its own: a Codex project under a Claude global is allowed, and inherits only that.
+  const inherited = inheritedGlobalProvider(params.projectDir, own);
   const hosts: Record<SkillScope, AgentHost> = {
-    // Each scope reads its own root: a Codex project under a Claude global is allowed.
-    global: {
-      provider: providerInUse(os.homedir()),
-      agentsDir: resolveInstallPaths(os.homedir(), "global").agentsDir,
-    },
-    project: { provider: providerInUse(params.projectDir), agentsDir: params.projectAgentsDir },
+    global: { provider: inherited, agentsDir: agentsDir(inherited, "global", params.projectDir) },
+    project: { provider: own, agentsDir: params.projectAgentsDir },
   };
 
   const outcomes: AgentWriteOutcome[] = [];

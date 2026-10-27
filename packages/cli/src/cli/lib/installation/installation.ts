@@ -1,11 +1,14 @@
 import os from "os";
-import path from "path";
 import { fileExists } from "../../utils/fs";
-import { ConfigLoadError, loadProjectConfigFromDir } from "../configuration/project-config";
-import { CLAUDE_DIR, PLUGINS_SUBDIR, EJECT_SOURCE, STANDARD_DIRS } from "../../consts";
+import {
+  ConfigLoadError,
+  declaresNoContent,
+  loadProjectConfigFromDir,
+} from "../configuration/project-config";
+import { EJECT_SOURCE, type Provider } from "../../consts";
 import { getProjectConfigPath } from "./install-base-dir";
-import { agentsDir, providerInUse } from "./install-layout";
-import type { ProjectConfig, SkillConfig, SkillScope } from "../../types/config";
+import { agentsDir, inheritedGlobalProvider, providerInUse } from "./install-layout";
+import type { SkillConfig, SkillScope } from "../../types/config";
 import type { InstallMode } from "../../types/matrix";
 
 export type { InstallMode };
@@ -29,14 +32,8 @@ export type Installation = {
   mode: InstallMode;
   configPath: string;
   agentsDir: string;
-  skillsDir: string;
   projectDir: string;
 };
-
-/** Shared with `doctor`, so both agree which configs count as content-less. */
-export function declaresNoContent(config: ProjectConfig): boolean {
-  return config.skills.length === 0 && config.agents.length === 0;
-}
 
 export function deriveInstallMode(skills: SkillConfig[]): InstallMode {
   if (skills.length === 0) return "eject";
@@ -49,8 +46,8 @@ export function deriveInstallMode(skills: SkillConfig[]): InstallMode {
 async function detectInstallationInDir(
   dir: string,
   scope: SkillScope,
+  provider: Provider = providerInUse(dir),
 ): Promise<Installation | null> {
-  const provider = providerInUse(dir);
   const configPath = getProjectConfigPath(dir, provider);
 
   if (!(await fileExists(configPath))) {
@@ -69,18 +66,10 @@ async function detectInstallationInDir(
     return null;
   }
 
-  const mode: InstallMode = deriveInstallMode(loaded.config.skills);
-
   return {
-    mode,
+    mode: deriveInstallMode(loaded.config.skills),
     configPath,
     agentsDir: agentsDir(provider, scope, dir),
-    // Mixed mode uses the local skills dir, as eject does.
-    skillsDir: path.join(
-      dir,
-      CLAUDE_DIR,
-      mode === "plugin" ? PLUGINS_SUBDIR : STANDARD_DIRS.SKILLS,
-    ),
     projectDir: dir,
   };
 }
@@ -100,8 +89,9 @@ export async function holdsItsOwnInstallation(dir: string): Promise<boolean> {
   }
 }
 
-export async function detectGlobalInstallation(): Promise<Installation | null> {
-  return detectInstallationInDir(os.homedir(), "global");
+/** The global installation `projectDir` inherits. */
+export async function detectGlobalInstallation(projectDir: string): Promise<Installation | null> {
+  return detectInstallationInDir(os.homedir(), "global", inheritedGlobalProvider(projectDir));
 }
 
 /** Project first, else global; never merged. */
@@ -111,5 +101,5 @@ export async function detectInstallation(
   const projectInstallation = await detectProjectInstallation(projectDir);
   if (projectInstallation) return projectInstallation;
 
-  return detectGlobalInstallation();
+  return detectGlobalInstallation(projectDir);
 }

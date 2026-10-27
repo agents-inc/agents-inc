@@ -36,7 +36,11 @@ import {
 } from "../lib/config-gate/index.js";
 import { loadSkillsMatrixFromSource } from "../lib/loading";
 import { loadAgentDefs } from "../lib/operations";
-import { ConfigLoadError, loadProjectConfigAt } from "../lib/configuration/project-config";
+import {
+  ConfigLoadError,
+  declaresNoContent,
+  loadProjectConfigAt,
+} from "../lib/configuration/project-config";
 import type { Provider } from "../consts";
 import { CLAUDE_DIR, DEFAULT_BRANDING, EJECT_SOURCE, STANDARD_FILES } from "../consts";
 import {
@@ -620,7 +624,7 @@ type ScopeSourceFolder = {
   dir: string;
   relName: string;
   manifestFiles: string[];
-  /** `null` when absent or unreadable. */
+  /** `null` when absent, unreadable, or a project's declaring nothing. */
   config: ProjectConfig | null;
 };
 
@@ -694,7 +698,11 @@ async function loadUninstallConfig(
   }
 }
 
-/** Its config is read under {@link loadUninstallConfig}'s degrade posture. */
+/**
+ * Its config is read under {@link loadUninstallConfig}'s degrade posture. A project's config
+ * declaring nothing is not an installation (owner, 2026-10-24): the file is the user's, so the
+ * folder holds nothing of this run's to remove. HOME's is the global manifest however empty.
+ */
 async function readSourceFolder(
   folder: Pick<ScopeSourceFolder, "dir" | "relName">,
   projectDir: string,
@@ -710,6 +718,10 @@ async function readSourceFolder(
       onConfigLoadFailed,
     ),
   ]);
+  const isTheUsersFile =
+    config !== null && declaresNoContent(config) && !isHomeDirectory(projectDir);
+  if (isTheUsersFile) return { ...folder, manifestFiles: [], config: null };
+
   return { ...folder, manifestFiles, config };
 }
 

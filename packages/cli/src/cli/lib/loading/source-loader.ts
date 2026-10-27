@@ -15,6 +15,7 @@ import {
 import { defaultCategories } from "../configuration/default-categories";
 import { defaultStacks } from "../configuration/default-stacks";
 import { isHomeDirectory } from "../installation/is-home-directory";
+import { inheritedGlobalProvider } from "../installation/install-layout";
 import { LOCAL_DEFAULTS, METADATA_KEYS } from "../metadata-keys";
 import type {
   AgentName,
@@ -71,7 +72,7 @@ import {
 } from "./source-fetcher";
 import { loadSkillsFromAllSources, marketplaceSource } from "./multi-source-loader";
 import { loadStacks, resolveAgentConfigToSkills } from "../stacks";
-import { initializeMatrix, matrix as currentMatrix } from "../matrix/matrix-provider";
+import { initializeMatrix } from "../matrix/matrix-provider";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 
 /** `"fetch"` refuses a non-default marketplace without a valid manifest; `"upkeep"` goes on. */
@@ -102,12 +103,19 @@ export type SourceLoadResult = {
   marketplace?: string;
   /** The only skills `sourcePath` has files for; the matrix also holds local and global ones. */
   marketplaceSkillIds: ReadonlySet<SkillId>;
+  /** Each as `sourcePath` holds it: a local copy takes its matrix entry's place, path and all. */
+  marketplaceSkills: Readonly<Partial<Record<SkillId, ResolvedSkill>>>;
+  /** Skills `sourcePath` ships and could not load, each named by its SKILL.md; never in `matrix`. */
+  unloadedSkillIds: ReadonlySet<SkillId>;
 };
 
 /** A marketplace's catalogue as read, before anything on this machine joins its matrix. */
-type CatalogueRead = Omit<SourceLoadResult, "marketplaceSkillIds">;
+type CatalogueRead = Omit<SourceLoadResult, "marketplaceSkillIds" | "marketplaceSkills">;
 
-/** Says each warning once per run: a global change reloads the same files per project. */
+/**
+ * Says each warning once per run: a global change reloads the same files per project. Seats the
+ * merged catalogue on success; a failed load seats nothing.
+ */
 export function loadSkillsMatrixFromSource(
   options: SourceLoadOptions = {},
 ): Promise<SourceLoadResult> {
@@ -139,10 +147,17 @@ async function loadCatalogue(options: SourceLoadOptions): Promise<SourceLoadResu
   const result: SourceLoadResult = {
     ...catalogue,
     marketplaceSkillIds: new Set(typedKeys<SkillId>(catalogue.matrix.skills)),
+    marketplaceSkills: { ...catalogue.matrix.skills },
   };
 
-  result.matrix = await mergeLocalSkills(result.matrix, resolvedProjectDir, provider);
-  await seatGlobalInstallationSkills(result.matrix, source, purpose);
+  const globalProvider = provider ?? inheritedGlobalProvider(resolvedProjectDir);
+  result.matrix = await mergeLocalSkills(
+    result.matrix,
+    resolvedProjectDir,
+    provider,
+    globalProvider,
+  );
+  await seatGlobalInstallationSkills(result.matrix, source, purpose, globalProvider);
 
   if (!options.skipExtraSources) {
     await loadSkillsFromAllSources(
@@ -169,20 +184,28 @@ async function seatGlobalInstallationSkills(
   matrix: MergedSkillsMatrix,
   loadedSource: string,
   purpose: SourceLoadPurpose,
+  globalProvider: Provider,
 ): Promise<void> {
-  const uncarried = await globalPluginSkillsUncarried(matrix);
+  const uncarried = await globalPluginSkillsUncarried(matrix, globalProvider);
   if (uncarried.length === 0) return;
 
-  const globalCatalogue = await loadGlobalInstallationCatalogue(loadedSource, purpose);
+  const globalCatalogue = await loadGlobalInstallationCatalogue(
+    loadedSource,
+    purpose,
+    globalProvider,
+  );
   if (globalCatalogue === null) return;
 
   for (const id of uncarried) seatFromCatalogue(matrix, globalCatalogue, id);
 }
 
 /** Degrades on an unreadable global config: its skills simply stay unseated. */
-async function globalPluginSkillsUncarried(matrix: MergedSkillsMatrix): Promise<SkillId[]> {
+async function globalPluginSkillsUncarried(
+  matrix: MergedSkillsMatrix,
+  globalProvider: Provider,
+): Promise<SkillId[]> {
   try {
-    const globalConfig = await loadGlobalSourceConfig();
+    const globalConfig = await loadGlobalSourceConfig(globalProvider);
     return (globalConfig?.skills ?? [])
       .filter(isActivePlugin)
       .filter((skill) => matrix.skills[skill.id] === undefined)
@@ -204,9 +227,14 @@ function isActivePlugin(skill: SkillConfig): boolean {
 async function loadGlobalInstallationCatalogue(
   loadedSource: string,
   purpose: SourceLoadPurpose,
+  globalProvider: Provider,
 ): Promise<CatalogueRead | null> {
   try {
-    const globalSourceConfig = await resolveSource({ caller: "stored", projectDir: os.homedir() });
+    const globalSourceConfig = await resolveSource({
+      caller: "stored",
+      projectDir: os.homedir(),
+      provider: globalProvider,
+    });
     if (globalSourceConfig.source === loadedSource) return null;
     return await resolveBaseResult(globalSourceConfig, {
       purpose,
@@ -298,6 +326,8 @@ async function resolveBaseResult(
     const fetched = matrixOnly ? NOTHING_FETCHED : await fetchFromSource(source);
     return {
       matrix: copyOfBuiltInMatrix(),
+      // Checked when it was generated, so nothing in it failed to load.
+      unloadedSkillIds: new Set(),
       sourceConfig,
       sourcePath: fetched.path,
       isLocal: false,
@@ -412,17 +442,18 @@ function configuredLabel(sourceConfig: ResolvedConfig): MarketplaceLabels {
 }
 
 /**
- * Global local skills first, then the project's, so the project's win on conflict. Both are read
- * off `provider`'s installation, as a project inherits the global installation of its own provider.
+ * Global local skills first, then the project's, so the project's win on conflict. The global ones
+ * are read off the installation the project inherits, which is of its own provider where it can be.
  */
 async function mergeLocalSkills(
   matrix: MergedSkillsMatrix,
   projectDir: string,
   provider: Provider | undefined,
+  globalProvider: Provider,
 ): Promise<MergedSkillsMatrix> {
   const withGlobal = isHomeDirectory(projectDir)
     ? matrix
-    : await mergeDiscoveredLocalSkills(matrix, os.homedir(), "global", provider);
+    : await mergeDiscoveredLocalSkills(matrix, os.homedir(), "global", globalProvider);
   return mergeDiscoveredLocalSkills(withGlobal, projectDir, "project", provider);
 }
 
@@ -451,11 +482,12 @@ async function loadFromLocal(
 
   verbose(`Loading skills from local path: ${skillsPath}`);
 
-  const mergedMatrix = await loadAndMergeFromBasePath(skillsPath, source);
+  const { matrix, unloadedSkillIds } = await loadAndMergeFromBasePath(skillsPath, source);
   const labels = await resolveMarketplaceLabels(skillsPath, sourceConfig, purpose);
 
   return {
-    matrix: mergedMatrix,
+    matrix,
+    unloadedSkillIds,
     sourceConfig,
     sourcePath: skillsPath,
     isLocal: true,
@@ -475,11 +507,12 @@ async function loadFromRemote(
 
   verbose(`Fetched to: ${fetchResult.path}`);
 
-  const mergedMatrix = await loadAndMergeFromBasePath(fetchResult.path, source);
+  const { matrix, unloadedSkillIds } = await loadAndMergeFromBasePath(fetchResult.path, source);
   const labels = await resolveMarketplaceLabels(source, sourceConfig, purpose);
 
   return {
-    matrix: mergedMatrix,
+    matrix,
+    unloadedSkillIds,
     sourceConfig,
     sourcePath: fetchResult.path,
     isLocal: false,
@@ -490,7 +523,7 @@ async function loadFromRemote(
 
 /** An author's load: no local merge, or the catalogue would carry one machine's skills. */
 export async function loadMarketplaceMatrix(marketplaceDir: string): Promise<MergedSkillsMatrix> {
-  const matrix = await loadAndMergeFromBasePath(marketplaceDir, marketplaceDir);
+  const { matrix } = await loadAndMergeFromBasePath(marketplaceDir, marketplaceDir);
   return { ...matrix, categories: categoriesTheseSkillsAreIn(matrix) };
 }
 
@@ -505,11 +538,14 @@ function categoriesTheseSkillsAreIn(matrix: MergedSkillsMatrix): CategoryMap {
   );
 }
 
+/** One marketplace folder's skills as read: what loaded, and what it ships and could not load. */
+type MarketplaceFolderRead = Pick<SourceLoadResult, "matrix" | "unloadedSkillIds">;
+
 /** `source` is the string `basePath` stands for: the only word for which marketplace it is. */
 async function loadAndMergeFromBasePath(
   basePath: string,
   source: string,
-): Promise<MergedSkillsMatrix> {
+): Promise<MarketplaceFolderRead> {
   // Aborts on an unreadable config: it declares where the skills and stacks live.
   const sourceProjectConfig = await loadSourceRepoConfig(basePath);
 
@@ -521,18 +557,19 @@ async function loadAndMergeFromBasePath(
   const skillsDir = path.join(basePath, skillsDirRelPath);
   verbose(`Skills from source: ${skillsDir}`);
 
-  const skills = await extractAllSkills(skillsDir);
+  const { skills, unloadedSkillIds } = await extractAllSkills(skillsDir);
   await refuseCatalogueCollisions(basePath, source, skills);
 
   const relationships = relationshipsForSource(skills, sourceRules);
   const mergedMatrix = mergeMatrixWithSkills(categories, relationships, skills);
-  initializeMatrix(mergedMatrix);
 
   // Assigned unconditionally: a source offering no stacks is a matrix carrying none.
   const stacks = await resolveOfferedStacks(basePath, stacksRelFile, source);
-  mergedMatrix.suggestedStacks = stacks.map((stack) => convertStackToResolvedStack(stack));
+  mergedMatrix.suggestedStacks = stacks.map((stack) =>
+    convertStackToResolvedStack(stack, mergedMatrix),
+  );
 
-  return mergedMatrix;
+  return { matrix: mergedMatrix, unloadedSkillIds: new Set(unloadedSkillIds) };
 }
 
 /** What a source declares about its skills' taxonomy, beside the CLI's own. */
@@ -667,12 +704,19 @@ function withdrawnSkillsWarning(stack: Stack, withdrawn: readonly string[]): str
   );
 }
 
-export function convertStackToResolvedStack(stack: Stack): ResolvedStack {
+/** The skills of the catalogue a stack ships with, which is the only one it is filtered against. */
+type StackCatalogue = Pick<MergedSkillsMatrix, "skills">;
+
+export function convertStackToResolvedStack(
+  stack: Stack,
+  catalogue: StackCatalogue,
+): ResolvedStack {
   const { declared, undeclared } = declaredAgentsIn(stack);
   if (undeclared.length > 0) warn(undeclaredAgentsWarning(stack, undeclared));
 
+  const isCarried = carriedBy(catalogue);
   const agentConfigs = agentConfigsFor(stack, declared);
-  const [allSkillIds, withdrawn] = partition(namedSkillIds(agentConfigs), isInCurrentCatalogue);
+  const [allSkillIds, withdrawn] = partition(namedSkillIds(agentConfigs), isCarried);
   if (withdrawn.length > 0) warn(withdrawnSkillsWarning(stack, withdrawn));
 
   verbose(
@@ -683,7 +727,7 @@ export function convertStackToResolvedStack(stack: Stack): ResolvedStack {
     id: stack.id,
     name: stack.name,
     description: stack.description,
-    skills: skillsByAgent(agentConfigs),
+    skills: skillsByAgent(agentConfigs, isCarried),
     allSkillIds,
     philosophy: stack.philosophy || "",
   };
@@ -707,15 +751,21 @@ function namedSkillIds(agentConfigs: StackAgentEntry[]): SkillId[] {
   );
 }
 
+type IsCarried = (id: SkillId) => boolean;
+
 /** The one question a stack's skills are filtered by, for the stack and for each agent's rows. */
-function isInCurrentCatalogue(id: SkillId): boolean {
-  return id in currentMatrix.skills;
+function carriedBy(catalogue: StackCatalogue): IsCarried {
+  return (id) => id in catalogue.skills;
 }
 
-function skillsByAgent(agentConfigs: StackAgentEntry[]): ResolvedStack["skills"] {
+function skillsByAgent(
+  agentConfigs: StackAgentEntry[],
+  isCarried: IsCarried,
+): ResolvedStack["skills"] {
   return typedFromEntries(
     agentConfigs.map(
-      ({ agentId, agentConfig }) => [agentId, resolveStackAgentSkills(agentConfig)] as const,
+      ({ agentId, agentConfig }) =>
+        [agentId, resolveStackAgentSkills(agentConfig, isCarried)] as const,
     ),
   );
 }
@@ -723,11 +773,12 @@ function skillsByAgent(agentConfigs: StackAgentEntry[]): ResolvedStack["skills"]
 /** A category left with no carried skill is dropped. */
 function resolveStackAgentSkills(
   agentConfig: Partial<Record<Category, SkillAssignment[]>>,
+  isCarried: IsCarried,
 ): Partial<Record<Category, SkillId[]>> {
   const carriedByCategory = typedEntries<Category, SkillAssignment[]>(agentConfig).map(
     ([category, assignments]) =>
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
-      [category, (assignments ?? []).map((a) => a.id).filter(isInCurrentCatalogue)] as const,
+      [category, (assignments ?? []).map((a) => a.id).filter(isCarried)] as const,
   );
   return typedFromEntries(carriedByCategory.filter(([, ids]) => ids.length > 0));
 }

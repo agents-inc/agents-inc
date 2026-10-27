@@ -866,7 +866,31 @@ describe("holding the global install as installed", () => {
     ]);
   });
 
-  it("names a held sub-agent a new row joins as added to, with the skill it gains", () => {
+  /** The entry the configuration decoded is the one the change line above names the skill from. */
+  it("names the skill a held sub-agent gains by the name its entry records, over the catalogue's", () => {
+    const decoded = decodedWithGlobal({ [ZUSTAND]: onApiDeveloper(), [HONO]: onApiDeveloper() });
+    const recorded = {
+      ...decoded,
+      skills: decoded.skills.map((skill) =>
+        skill.id === HONO ? { ...skill, displayName: "Acme Hono" } : skill,
+      ),
+    };
+
+    const held = holdInstalledGlobal(recorded, installedGlobal);
+
+    expect(
+      held.result.skills.find((skill) => skill.id === HONO)?.displayName,
+      "the held result keeps the entry as decoded",
+    ).toBe("Acme Hono");
+    expect(joinedStatement(held)).toStrictEqual([
+      [
+        "Added to sub-agents in the global install — each keeps everything it already has, since a project run only adds to the global install:",
+        `  sub-agent ${API_DEV}: + Acme Hono`,
+      ].join("\n"),
+    ]);
+  });
+
+  it("names a held sub-agent a new row joins as added to, with the skill it gains by its name", () => {
     const held = holdInstalledGlobal(
       decodedWithGlobal({ [ZUSTAND]: onApiDeveloper(), [HONO]: onApiDeveloper() }),
       installedGlobal,
@@ -875,7 +899,7 @@ describe("holding the global install as installed", () => {
     expect(joinedStatement(held)).toStrictEqual([
       [
         "Added to sub-agents in the global install — each keeps everything it already has, since a project run only adds to the global install:",
-        `  sub-agent ${API_DEV}: + ${HONO}`,
+        `  sub-agent ${API_DEV}: + Hono`,
       ].join("\n"),
     ]);
   });
