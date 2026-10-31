@@ -61,3 +61,54 @@ export const CopyableEnterReachesHandler: Story = {
     await expect(args.onClick).toHaveBeenCalledTimes(1)
   },
 }
+
+const NEXT_CONTROL = "Next"
+
+export const AnUndefinedTabIndexLeavesTheCopyableBlockATabStop: Story = {
+  render: () => (
+    <CommandBlock copyable tabIndex={undefined}>
+      {INSTALL_COMMAND}
+    </CommandBlock>
+  ),
+  play: async ({ canvas }) => {
+    await userEvent.tab()
+
+    await expect(
+      canvas.getByRole("button", { name: INSTALL_COMMAND })
+    ).toHaveFocus()
+  },
+}
+
+export const ACallerTabIndexTakesTheCopyableBlockOutOfTheTabOrder: Story = {
+  render: () => (
+    <>
+      <CommandBlock copyable tabIndex={-1}>
+        {INSTALL_COMMAND}
+      </CommandBlock>
+      <button type="button">{NEXT_CONTROL}</button>
+    </>
+  ),
+  play: async ({ canvas }) => {
+    await userEvent.tab()
+
+    await expect(
+      canvas.getByRole("button", { name: NEXT_CONTROL })
+    ).toHaveFocus()
+  },
+}
+
+export const AnUndefinedTabIndexLeavesAPlainBlockOutOfTheTabOrder: Story = {
+  render: () => (
+    <>
+      <CommandBlock tabIndex={undefined}>{INSTALL_COMMAND}</CommandBlock>
+      <button type="button">{NEXT_CONTROL}</button>
+    </>
+  ),
+  play: async ({ canvas }) => {
+    await userEvent.tab()
+
+    await expect(
+      canvas.getByRole("button", { name: NEXT_CONTROL })
+    ).toHaveFocus()
+  },
+}

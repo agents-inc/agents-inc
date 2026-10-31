@@ -8,8 +8,6 @@ import {
   type ToastManager,
 } from "@workspace/ui/components/toast"
 
-import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
-
 const MESSAGE = "web tester switched off: Tailwind CSS removed"
 const LONG_MESSAGE =
   "web developer, web researcher, web tester and 5 more switched on: React and Hono added"
@@ -101,17 +99,5 @@ export const CloseGlyphCloses: Story = {
     await waitFor(async () => {
       await expect(screen.queryByRole("dialog")).toBeNull()
     })
-  },
-}
-
-// Axe cannot check focus indicators.
-export const CloseGlyphFocusDrawsTheRing: Story = {
-  play: async () => {
-    await userEvent.hover(await screen.findByRole("dialog", { name: MESSAGE }))
-    const close = await screen.findByRole("button", { name: "Close" })
-
-    close.focus()
-
-    await expectVisibleFocusRing(close)
   },
 }

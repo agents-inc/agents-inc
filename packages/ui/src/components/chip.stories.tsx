@@ -2,8 +2,6 @@ import type { Meta, StoryObj } from "@storybook/react-vite"
 
 import { Chip } from "@workspace/ui/components/chip"
 
-import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
-
 const meta = {
   title: "Components/Chip",
   component: Chip,
@@ -36,15 +34,4 @@ export const OnDarkBand: Story = {
       </div>
     ),
   ],
-}
-
-// Axe cannot check focus indicators.
-export const FocusDrawsTheRing: Story = {
-  play: async ({ canvas }) => {
-    const chip = canvas.getByRole("button", { name: "web" })
-
-    chip.focus()
-
-    await expectVisibleFocusRing(chip)
-  },
 }

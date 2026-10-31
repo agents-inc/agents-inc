@@ -154,3 +154,75 @@ export const ArrowUpMovesToThePreviousSegment: Story = {
     )
   },
 }
+
+const NEXT_CONTROL = "Next"
+
+export const AnUndefinedTabIndexLeavesOneTabStop: Story = {
+  render: () => (
+    <>
+      <Segmented>
+        {INSTALL_MODES.map((mode) => (
+          <SegmentedItem
+            key={mode}
+            active={mode === "plugin"}
+            tabIndex={undefined}
+          >
+            {mode}
+          </SegmentedItem>
+        ))}
+      </Segmented>
+      <button type="button">{NEXT_CONTROL}</button>
+    </>
+  ),
+  play: async ({ canvas }) => {
+    await userEvent.tab()
+    await userEvent.tab()
+
+    await expect(
+      canvas.getByRole("button", { name: NEXT_CONTROL })
+    ).toHaveFocus()
+  },
+}
+
+export const AnUndefinedTabIndexLeavesTheStopOnTheActiveSegment: Story = {
+  render: () => (
+    <Segmented>
+      {INSTALL_MODES.map((mode) => (
+        <SegmentedItem
+          key={mode}
+          active={mode === "eject"}
+          tabIndex={undefined}
+        >
+          {mode}
+        </SegmentedItem>
+      ))}
+    </Segmented>
+  ),
+  play: async ({ canvas }) => {
+    await userEvent.tab()
+
+    await expect(canvas.getByRole("radio", { name: "eject" })).toHaveFocus()
+  },
+}
+
+export const ACallerTabIndexTakesTheActiveSegmentOutOfTheTabOrder: Story = {
+  render: () => (
+    <>
+      <Segmented>
+        {INSTALL_MODES.map((mode) => (
+          <SegmentedItem key={mode} active={mode === "plugin"} tabIndex={-1}>
+            {mode}
+          </SegmentedItem>
+        ))}
+      </Segmented>
+      <button type="button">{NEXT_CONTROL}</button>
+    </>
+  ),
+  play: async ({ canvas }) => {
+    await userEvent.tab()
+
+    await expect(
+      canvas.getByRole("button", { name: NEXT_CONTROL })
+    ).toHaveFocus()
+  },
+}

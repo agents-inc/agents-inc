@@ -135,6 +135,7 @@ function ButtonGroupItem({
   active = false,
   error = false,
   type = "button",
+  tabIndex,
   ...props
 }: ComponentProps<"button"> &
   Omit<VariantProps<typeof buttonGroupItemVariants>, "unavailable">) {
@@ -142,6 +143,7 @@ function ButtonGroupItem({
   const checked = active ?? false
   // Read from `aria-disabled` so one attribute drives both semantics and paint.
   const unavailable = isRefused(props["aria-disabled"])
+  const rovingTabIndex = checked ? 0 : -1
 
   return (
     <button
@@ -149,8 +151,7 @@ function ButtonGroupItem({
       data-slot="button-group-item"
       role="radio"
       aria-checked={checked}
-      // Roving tabindex.
-      tabIndex={checked ? 0 : -1}
+      tabIndex={tabIndex ?? rovingTabIndex}
       className={cn(
         buttonGroupItemVariants({
           size,

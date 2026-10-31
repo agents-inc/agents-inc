@@ -20,7 +20,6 @@ import {
   DialogTrigger,
 } from "@workspace/ui/components/dialog"
 
-import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
 import { resolvedColor } from "../../.storybook/resolved-color"
 
 const TITLE = "Install"
@@ -104,19 +103,6 @@ export const EscapeCloses: Story = {
     await waitFor(async () => {
       await expect(screen.queryByRole("dialog")).toBeNull()
     })
-  },
-}
-
-// Axe cannot check focus indicators.
-export const CloseGlyphFocusDrawsTheRing: Story = {
-  args: { defaultOpen: true },
-  play: async () => {
-    await screen.findByRole("dialog", { name: TITLE })
-    const close = screen.getByRole("button", { name: "Close" })
-
-    close.focus()
-
-    await expectVisibleFocusRing(close)
   },
 }
 
@@ -206,18 +192,6 @@ export const MaximiseNamesTheAction: Story = {
     await expect(
       screen.getByRole("button", { name: FULLSCREEN })
     ).toHaveAttribute("aria-pressed", "false")
-  },
-}
-
-export const MaximiseFocusDrawsTheRing: Story = {
-  ...SplitWithFullscreen,
-  play: async () => {
-    await screen.findByRole("dialog", { name: "Output preview" })
-    const maximise = screen.getByRole("button", { name: FULLSCREEN })
-
-    maximise.focus()
-
-    await expectVisibleFocusRing(maximise)
   },
 }
 

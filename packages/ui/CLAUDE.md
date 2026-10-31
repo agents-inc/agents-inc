@@ -30,12 +30,16 @@ re-add a component.
 
 - **One focus treatment:** `outline-none focus-visible:ring-1 focus-visible:ring-ring`, once per
   component. Put it in the cva base when every render is focusable (`Button`, `Input`), and on the
-  element when the cva also dresses a passive form (`Chip`, `MatrixGrid`, `Badge`). Axe cannot check
-  focus, so a new focusable control gets a story that focuses it and asserts the ring
-  (`expectVisibleFocusRing`, as in `chip.stories.tsx`).
+  element when the cva also dresses a passive form (`Chip`, `MatrixGrid`, `Badge`). Focus outlines
+  are not tested, by owner ruling: no story asserts the ring.
 - **If it looks clickable it is a `<button>`**, or it carries `role`, `tabIndex` and a key handler.
   Exclusive options are a `radiogroup` of `role="radio"` items with a roving tabindex (`Segmented`),
   not a group of `aria-pressed` toggles.
+- **An attribute a part sets but a caller may override is merged with `??`**
+  (`tabIndex={tabIndex ?? rovingTabIndex}`), never written before `{...props}`: a caller's
+  `undefined` is a key in the spread and replaces it. The exception is an attribute a caller must be
+  able to remove: `Chip` writes `aria-pressed` before its spread, so `SegmentedItem`'s
+  `aria-pressed={undefined}` drops it from a radio.
 - **`LatticeCell` paints the affordance and leaves operability to its callers.** A cell that holds
   no controls takes `role`, `tabIndex` and a key handler itself (`stack-grid.tsx`). A cell that
   holds controls uses a sibling `LatticeCellButton` instead (`skill-cell.tsx`), because a control

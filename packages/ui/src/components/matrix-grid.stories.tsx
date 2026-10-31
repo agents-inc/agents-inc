@@ -7,8 +7,6 @@ import {
   type MatrixRow,
 } from "@workspace/ui/components/matrix-grid"
 
-import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
-
 const ROLES = ["dev", "pm", "rsrch", "rev", "test"]
 
 // No sub-agent behind the pair, unlike an unassigned `null` cell.
@@ -80,16 +78,5 @@ export const CellsAreKeyboardOperable: Story = {
 export const AbsentSlotsAreNotButtons: Story = {
   play: async ({ canvas }) => {
     await expect(canvas.queryByRole("button", { name: "ai pm" })).toBeNull()
-  },
-}
-
-// Axe cannot check focus indicators.
-export const FocusDrawsTheRing: Story = {
-  play: async ({ canvas }) => {
-    const cell = canvas.getByRole("button", { name: "web dev" })
-
-    cell.focus()
-
-    await expectVisibleFocusRing(cell)
   },
 }

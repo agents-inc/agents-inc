@@ -10,8 +10,6 @@ import {
   MenuTrigger,
 } from "@workspace/ui/components/menu"
 
-import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
-
 const GROUP_BYS = ["domain", "scope"] as const
 type GroupBy = (typeof GROUP_BYS)[number]
 
@@ -166,35 +164,11 @@ export const TheKeyboardCanPick: Story = {
   },
 }
 
-// Axe cannot check focus indicators; waits as in `TheKeyboardCanPick`.
-export const FocusDrawsTheRing: Story = {
-  args: { defaultOpen: true },
-  play: async () => {
-    const menu = await screen.findByRole("menu")
-    await waitFor(async () => {
-      await expect(menu).toHaveFocus()
-    })
-
-    await userEvent.keyboard("{ArrowDown}")
-    const option = screen.getByRole("menuitemradio", { name: "domain" })
-    await waitFor(async () => {
-      await expect(option).toHaveFocus()
-    })
-
-    // The unfocused row reads `none`.
-    await expectVisibleFocusRing(option)
-  },
-}
-
-// A real Tab, since `:focus-visible` does not reliably match programmatic focus.
-export const TheTriggerDrawsTheRing: Story = {
+export const TabReachesTheTrigger: Story = {
   play: async () => {
     await userEvent.tab()
-    const trigger = screen.getByRole("button", { name: TRIGGER })
-    await expect(trigger).toHaveFocus()
 
-    // The unfocused trigger reads `none`.
-    await expectVisibleFocusRing(trigger)
+    await expect(screen.getByRole("button", { name: TRIGGER })).toHaveFocus()
   },
 }
 

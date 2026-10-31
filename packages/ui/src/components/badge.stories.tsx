@@ -2,8 +2,6 @@ import type { Meta, StoryObj } from "@storybook/react-vite"
 
 import { Badge } from "@workspace/ui/components/badge"
 
-import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
-
 // So the name says the value rather than "plugin, button".
 const INSTALL_LABEL = "Install mode: plugin"
 
@@ -30,17 +28,9 @@ export const Outline: Story = {
   args: { variant: "outline", children: "one of" },
 }
 
-// Axe cannot check focus indicators.
-export const InteractiveFocusDrawsTheRing: Story = {
+export const Interactive: Story = {
   args: {
     interactive: true,
     render: <button type="button" aria-label={INSTALL_LABEL} />,
-  },
-  play: async ({ canvas }) => {
-    const badge = canvas.getByRole("button", { name: INSTALL_LABEL })
-
-    badge.focus()
-
-    await expectVisibleFocusRing(badge)
   },
 }

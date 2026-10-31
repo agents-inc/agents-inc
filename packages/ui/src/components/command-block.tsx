@@ -10,17 +10,20 @@ function CommandBlock({
   copyable = false,
   children,
   onKeyDown,
+  tabIndex,
   ...props
 }: ComponentProps<"div"> & {
   // Whole-block click-to-copy semantics; the clipboard write is the caller's `onClick`.
   copyable?: boolean
 }) {
+  const copyableTabIndex = copyable ? 0 : undefined
+
   return (
     <div
       data-slot="command-block"
       data-copyable={copyable || undefined}
       role={copyable ? "button" : undefined}
-      tabIndex={copyable ? 0 : undefined}
+      tabIndex={tabIndex ?? copyableTabIndex}
       onKeyDown={(event) => {
         onKeyDown?.(event)
         if (copyable) activateOnEnterOrSpace(event)

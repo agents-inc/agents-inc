@@ -24,8 +24,11 @@ function Segmented({ className, onKeyDown, ...props }: ComponentProps<"div">) {
 
 function SegmentedItem({
   active,
+  tabIndex,
   ...props
 }: ComponentProps<typeof Chip> & { active?: boolean }) {
+  const rovingTabIndex = active ? 0 : -1
+
   return (
     <Chip
       size="segment"
@@ -34,8 +37,7 @@ function SegmentedItem({
       aria-checked={active ?? false}
       // A radio is checked, not pressed; `undefined` drops the attribute Chip supplies.
       aria-pressed={undefined}
-      // Roving tabindex.
-      tabIndex={active ? 0 : -1}
+      tabIndex={tabIndex ?? rovingTabIndex}
       {...props}
     />
   )

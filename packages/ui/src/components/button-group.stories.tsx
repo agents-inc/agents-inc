@@ -1,13 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
 import { useState } from "react"
-import { expect, screen, userEvent } from "storybook/test"
+import { expect, userEvent } from "storybook/test"
 
 import {
   ButtonGroup,
   ButtonGroupItem,
 } from "@workspace/ui/components/button-group"
 
-import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
 import { resolvedColor } from "../../.storybook/resolved-color"
 
 const INSTALL_MODES = ["plugin", "eject"] as const
@@ -223,40 +222,6 @@ export const OnDarkTone: Story = {
   },
 }
 
-// One ring story per preset, because each preset's padding makes its own box.
-export const CardPresetFocusDrawsTheRing: Story = {
-  ...CardPreset,
-  play: async () => {
-    const cell = screen.getByRole("radio", { name: "sonnet" })
-
-    cell.focus()
-
-    await expectVisibleFocusRing(cell)
-  },
-}
-
-export const RailPresetFocusDrawsTheRing: Story = {
-  ...RailPreset,
-  play: async () => {
-    const cell = screen.getByRole("radio", { name: "domain" })
-
-    cell.focus()
-
-    await expectVisibleFocusRing(cell)
-  },
-}
-
-export const SearchPresetFocusDrawsTheRing: Story = {
-  ...SearchPreset,
-  play: async () => {
-    const cell = screen.getByRole("radio", { name: "all 238" })
-
-    cell.focus()
-
-    await expectVisibleFocusRing(cell)
-  },
-}
-
 // `ButtonGroup` holds no state, so a story that moves the choice has to.
 function ControlledPair() {
   const [selected, setSelected] = useState<string>("plugin")
@@ -326,11 +291,74 @@ export const ArrowKeysMoveTheChoice: Story = {
   },
 }
 
-export const TheFocusedCellDrawsARing: Story = {
-  render: () => <ControlledPair />,
+const NEXT_CONTROL = "Next"
+
+export const AnUndefinedTabIndexLeavesOneTabStop: Story = {
+  render: () => (
+    <div className="flex items-center gap-[0.625rem]">
+      <ButtonGroup aria-label="Install mode">
+        {INSTALL_MODES.map((mode) => (
+          <ButtonGroupItem
+            key={mode}
+            active={mode === "plugin"}
+            tabIndex={undefined}
+          >
+            {mode}
+          </ButtonGroupItem>
+        ))}
+      </ButtonGroup>
+      <button type="button">{NEXT_CONTROL}</button>
+    </div>
+  ),
+  play: async ({ canvas }) => {
+    await userEvent.tab()
+    await userEvent.tab()
+
+    await expect(
+      canvas.getByRole("button", { name: NEXT_CONTROL })
+    ).toHaveFocus()
+  },
+}
+
+export const AnUndefinedTabIndexLeavesTheStopOnTheActiveCell: Story = {
+  render: () => (
+    <ButtonGroup aria-label="Install mode">
+      {INSTALL_MODES.map((mode) => (
+        <ButtonGroupItem
+          key={mode}
+          active={mode === "eject"}
+          tabIndex={undefined}
+        >
+          {mode}
+        </ButtonGroupItem>
+      ))}
+    </ButtonGroup>
+  ),
   play: async ({ canvas }) => {
     await userEvent.tab()
 
-    await expectVisibleFocusRing(canvas.getByRole("radio", { name: "plugin" }))
+    await expect(canvas.getByRole("radio", { name: "eject" })).toHaveFocus()
+  },
+}
+
+export const ACallerTabIndexTakesTheActiveCellOutOfTheTabOrder: Story = {
+  render: () => (
+    <div className="flex items-center gap-[0.625rem]">
+      <ButtonGroup aria-label="Install mode">
+        {INSTALL_MODES.map((mode) => (
+          <ButtonGroupItem key={mode} active={mode === "plugin"} tabIndex={-1}>
+            {mode}
+          </ButtonGroupItem>
+        ))}
+      </ButtonGroup>
+      <button type="button">{NEXT_CONTROL}</button>
+    </div>
+  ),
+  play: async ({ canvas }) => {
+    await userEvent.tab()
+
+    await expect(
+      canvas.getByRole("button", { name: NEXT_CONTROL })
+    ).toHaveFocus()
   },
 }

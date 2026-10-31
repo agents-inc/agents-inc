@@ -3,8 +3,6 @@ import { expect, userEvent } from "storybook/test"
 
 import { Input } from "@workspace/ui/components/input"
 
-import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
-
 const SEARCH_TERM = "react"
 
 // The fields are borderless; the wrapper carries the border and no padding (the args pad), or the
@@ -58,17 +56,6 @@ export const FillsTheBoxItSitsIn: Story = {
     // `client*` is integral and a rect sub-pixel; the smallest inset, `p-px`, would be two.
     await expect(drawn.width).toBeCloseTo(box.clientWidth, 0)
     await expect(drawn.height).toBeCloseTo(box.clientHeight, 0)
-  },
-}
-
-// Axe cannot check focus indicators, and the UA outline is off.
-export const FocusDrawsTheRing: Story = {
-  play: async ({ canvas }) => {
-    const field = canvas.getByPlaceholderText("search skills")
-
-    field.focus()
-
-    await expectVisibleFocusRing(field)
   },
 }
 

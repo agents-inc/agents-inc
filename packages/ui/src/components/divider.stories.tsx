@@ -1,9 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { expect, fn, screen, userEvent } from "storybook/test"
+import { expect, fn, userEvent } from "storybook/test"
 
 import { Hinge, Rule } from "@workspace/ui/components/divider"
-
-import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
 
 // The column variant bleeds by `-mx-gutter`, so it needs a gutter to bleed into.
 const meta = {
@@ -66,17 +64,6 @@ export const PressingTheTitleReachesTheCaller: Story = {
     await userEvent.click(canvas.getByRole("button", { name: WORDS }))
 
     await expect(args.onToggle).toHaveBeenCalledTimes(1)
-  },
-}
-
-export const StepTitleFocusDrawsTheRing: Story = {
-  ...FoldableStepTitle,
-  play: async () => {
-    const title = screen.getByRole("button", { name: WORDS })
-
-    title.focus()
-
-    await expectVisibleFocusRing(title)
   },
 }
 

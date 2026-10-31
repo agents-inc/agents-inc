@@ -9,8 +9,6 @@ import {
   LatticeRows,
 } from "@workspace/ui/components/lattice"
 
-import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
-
 // The inset lines only read against the page ground.
 const meta = {
   title: "Components/Lattice",
@@ -77,7 +75,7 @@ const CELL = "react"
 const OPTIONS = "Options for react"
 const STACK = "Next.js Full-Stack"
 
-export const FocusableCellDrawsTheRing: Story = {
+export const FocusableCell: Story = {
   args: {
     columns: 1,
     children: (
@@ -90,13 +88,6 @@ export const FocusableCellDrawsTheRing: Story = {
         {STACK}
       </LatticeCell>
     ),
-  },
-  play: async ({ canvas }) => {
-    const cell = canvas.getByRole("button", { name: STACK })
-
-    cell.focus()
-
-    await expectVisibleFocusRing(cell)
   },
 }
 
@@ -141,25 +132,6 @@ export const CellButtonLeavesItsNeighbourReachable: Story = {
     await userEvent.tab()
 
     await expect(canvas.getByRole("button", { name: OPTIONS })).toHaveFocus()
-  },
-}
-
-export const CellButtonFocusDrawsTheRing: Story = {
-  args: {
-    columns: 1,
-    children: (
-      <LatticeCell className="p-3 font-mono text-11">
-        <LatticeCellButton aria-label={CELL} />
-        <span className="pointer-events-none relative z-1">{CELL}</span>
-      </LatticeCell>
-    ),
-  },
-  play: async ({ canvas }) => {
-    const surface = canvas.getByRole("button", { name: CELL })
-
-    surface.focus()
-
-    await expectVisibleFocusRing(surface)
   },
 }
 
@@ -224,21 +196,6 @@ export const RowSpaceReachesHandler: Story = {
   },
 }
 
-export const RowFocusDrawsTheRing: Story = {
-  render: () => (
-    <LatticeRows>
-      <LatticeRow className="font-mono text-11">{ROW}</LatticeRow>
-    </LatticeRows>
-  ),
-  play: async ({ canvas }) => {
-    const row = canvas.getByRole("button", { name: ROW })
-
-    row.focus()
-
-    await expectVisibleFocusRing(row)
-  },
-}
-
 export const SelectedRowIsPressed: Story = {
   render: () => (
     <LatticeRows>
@@ -269,5 +226,42 @@ export const SelectedRowKeepsItsOutlineWhileFocused: Story = {
     row.focus()
 
     await expect(getComputedStyle(row).outlineStyle).not.toBe("none")
+  },
+}
+
+const NEXT_CONTROL = "Next"
+
+export const AnUndefinedTabIndexLeavesTheRowATabStop: Story = {
+  render: () => (
+    <LatticeRows>
+      <LatticeRow className="font-mono text-11" tabIndex={undefined}>
+        {ROW}
+      </LatticeRow>
+    </LatticeRows>
+  ),
+  play: async ({ canvas }) => {
+    await userEvent.tab()
+
+    await expect(canvas.getByRole("button", { name: ROW })).toHaveFocus()
+  },
+}
+
+export const ACallerTabIndexTakesTheRowOutOfTheTabOrder: Story = {
+  render: () => (
+    <>
+      <LatticeRows>
+        <LatticeRow className="font-mono text-11" tabIndex={-1}>
+          {ROW}
+        </LatticeRow>
+      </LatticeRows>
+      <button type="button">{NEXT_CONTROL}</button>
+    </>
+  ),
+  play: async ({ canvas }) => {
+    await userEvent.tab()
+
+    await expect(
+      canvas.getByRole("button", { name: NEXT_CONTROL })
+    ).toHaveFocus()
   },
 }

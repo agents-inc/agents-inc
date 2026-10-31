@@ -139,6 +139,7 @@ function LatticeRow({
   className,
   selected,
   onKeyDown,
+  tabIndex,
   ...props
 }: ComponentProps<"div"> & VariantProps<typeof latticeRowVariants>) {
   return (
@@ -146,7 +147,7 @@ function LatticeRow({
       data-slot="lattice-row"
       data-selected={selected || undefined}
       role="button"
-      tabIndex={0}
+      tabIndex={tabIndex ?? 0}
       aria-pressed={selected ?? false}
       onKeyDown={(event) => {
         onKeyDown?.(event)
