@@ -5,11 +5,11 @@ import { inkRampSyntaxTheme } from "@workspace/ui/lib/syntax-theme"
 import { defineConfig } from "astro/config"
 
 import {
-  CHANGELOG_URL,
   EXTERNAL_LINK_ATTRS,
   GITHUB_REPO_URL,
   SKILLS_REPO_URL,
 } from "./src/lib/links"
+import { RELEASES_DIRECTORY } from "./src/lib/release-pages"
 
 // No terminal frame: its mask-painted dots escape site.css's radius reset.
 const CODE_BLOCK_DEFAULTS = { frame: "none" } as const
@@ -126,6 +126,12 @@ export default defineConfig({
           label: "Reference",
           items: [{ autogenerate: { directory: "docs/reference" } }],
         },
+        // Collapsed: it lists every release.
+        {
+          label: "Releases",
+          collapsed: true,
+          items: [{ autogenerate: { directory: RELEASES_DIRECTORY } }],
+        },
         {
           label: "Resources",
           items: [
@@ -138,11 +144,6 @@ export default defineConfig({
             {
               label: "GitHub repository",
               link: GITHUB_REPO_URL,
-              attrs: EXTERNAL_LINK_ATTRS,
-            },
-            {
-              label: "Changelog",
-              link: CHANGELOG_URL,
               attrs: EXTERNAL_LINK_ATTRS,
             },
           ],

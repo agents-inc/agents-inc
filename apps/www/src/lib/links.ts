@@ -6,8 +6,6 @@ export const GITHUB_REPO_URL = "https://github.com/agents-inc/agents-inc"
 
 export const SKILLS_REPO_URL = "https://github.com/agents-inc/skills"
 
-export const CHANGELOG_URL = `${GITHUB_REPO_URL}/releases`
-
 export const DOCS_PATH = "/docs"
 
 // Served by the editor's Worker on the same hostname, so it 404s locally.

@@ -107,6 +107,9 @@
         "@workspace/eslint-config": "workspace:*",
         "@workspace/typescript-config": "workspace:*",
         "eslint": "^10",
+        "mdast-util-from-markdown": "^2.0.3",
+        "mdast-util-gfm": "^3.1.0",
+        "micromark-extension-gfm": "^3.0.0",
         "playwright": "1.56.1",
         "typescript": "~6",
         "wrangler": "^4",
@@ -148,7 +151,7 @@
     },
     "packages/cli": {
       "name": "agents-inc",
-      "version": "0.170.2",
+      "version": "0.175.0",
       "bin": {
         "agents-inc": "dist/index.js",
         "agentsinc": "dist/index.js",

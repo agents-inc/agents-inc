@@ -11,7 +11,7 @@
     "lint": "eslint",
     "typecheck": "astro check",
     "//test": "The site-claim checks, cheapest-to-fix first. Most read dist/, hence the build dependency in turbo.json.",
-    "test": "bun scripts/check-new-tab-links.ts && bun scripts/check-apex-redirect.ts && bun scripts/check-type-scale.ts && bun scripts/check-webfont-delivery.ts && bun scripts/check-cli-claims.ts && bun scripts/check-editor-address.ts && bun scripts/check-syntax-theme.ts"
+    "test": "bun scripts/check-new-tab-links.ts && bun scripts/check-apex-redirect.ts && bun scripts/check-type-scale.ts && bun scripts/check-webfont-delivery.ts && bun scripts/check-cli-claims.ts && bun scripts/check-editor-address.ts && bun scripts/check-syntax-theme.ts && bun scripts/check-release-pages.ts && bun scripts/check-search-index.ts"
   },
   "//dependencies": "font-preloads.astro imports the fontsource packages for their file URLs, so they are declared rather than hoisted. This note sits at top level because bun resolves `//` keys inside `dependencies` as packages.",
   "dependencies": {
@@ -28,6 +28,9 @@
     "@workspace/eslint-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
     "eslint": "^10",
+    "mdast-util-from-markdown": "^2.0.3",
+    "mdast-util-gfm": "^3.1.0",
+    "micromark-extension-gfm": "^3.0.0",
     "playwright": "1.56.1",
     "typescript": "~6",
     "wrangler": "^4"

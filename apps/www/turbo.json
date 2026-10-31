@@ -2,16 +2,22 @@
   "$schema": "https://turbo.build/schema.json",
   "extends": ["//"],
   "tasks": {
+    // The release pages read CLI notes this site does not depend on. The
+    // root's inputs are restated because naming inputs replaces them.
+    "build": {
+      "inputs": ["$TURBO_DEFAULT$", ".env*", "../../packages/cli/changelogs/**"]
+    },
     // `build`, not `^build`: the checks read this workspace's own dist/.
     "test": {
       "dependsOn": ["build"],
-      // Two checks read CLI source this site does not depend on, so turbo
+      // Three checks read CLI files this site does not depend on, so turbo
       // must be told or a CLI-only change replays from cache.
       // `$TURBO_DEFAULT$` stays because naming inputs replaces the default set.
       "inputs": [
         "$TURBO_DEFAULT$",
         "../../packages/cli/src/cli/commands/**",
-        "../../packages/cli/src/cli/consts.ts"
+        "../../packages/cli/src/cli/consts.ts",
+        "../../packages/cli/changelogs/**"
       ]
     }
   }
