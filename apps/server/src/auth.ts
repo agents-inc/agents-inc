@@ -118,13 +118,23 @@ export const createAuth = (env?: Env) => {
 // What `@better-auth/cli generate` loads. Never used at the edge.
 export const auth = createAuth()
 
-// Costs a database round trip; call once per request.
+// Costs a database round trip; call once per request. A read renews a session
+// due for it, and sets the renewed cookie only on the headers `returnHeaders`
+// hands back.
 const sessionOf = async (c: Context<WorkerEnv>) =>
   createAuth(c.env).api.getSession({
     headers: c.req.raw.headers,
+    returnHeaders: true,
   })
 
-type SignedIn = NonNullable<Awaited<ReturnType<typeof sessionOf>>>
+type SignedIn = NonNullable<Awaited<ReturnType<typeof sessionOf>>["response"]>
+
+// Set before the handler answers, so every reply it gives carries them.
+const passCookiesOn = (c: Context<WorkerEnv>, headers: Headers) => {
+  for (const cookie of headers.getSetCookie()) {
+    c.header("set-cookie", cookie, { append: true })
+  }
+}
 
 // A wrapper rather than middleware, so a handler can only read a session by
 // being wrapped in what produced it.
@@ -133,9 +143,10 @@ export const authenticated =
     handle: (c: C, session: SignedIn) => Promise<R>
   ) =>
   async (c: C) => {
-    const session = await sessionOf(c)
+    const { headers, response: session } = await sessionOf(c)
     if (!session) return c.json({ error: "unauthorized" as const }, 401)
 
+    passCookiesOn(c, headers)
     return handle(c, session)
   }
 
