@@ -7,6 +7,73 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.176.0] - 2026-10-31
+
+**`update` moves every installed plugin to its newest version, every command checks a saved marketplace copy with no version stamp and falls back to it with a warning when a download fails, `init --from` takes back the skills and plugins it installed when it cannot save its configuration, a skill carried in a shared link must be named `external-…`, and the docs site gains a Releases section**
+
+- CLI-918: `update` refreshes each marketplace, then moves every installed plugin to its newest version on Claude Code and Codex, naming any that fail.
+- CLI-1002: on Codex, `update` switches a plugin you had switched off back off after updating it, or names it and ends with an error.
+- CLI-1008: on Codex, `init --from` and `edit --from` name a switched-off plugin they could not switch back off and exit 1, instead of saying `continuing with cached version`.
+- CLI-992: every command checks a saved marketplace copy with no version stamp, not only `doctor`.
+- CLI-945: a failed download of a marketplace that moved on falls back to the saved copy and warns, for both kinds of source.
+- CLI-982: `init --from` that cannot save its configuration removes the skill folders it copied and leaves home's config as it was.
+- CLI-1001: it also uninstalls the plugins that run newly installed, and says how many copied and carried skills it removed.
+- CLI-885: `init --from` and `edit --from` refuse carried skills whose ids do not start with `external-`.
+- CLI-887: the marketplace a shared link names can no longer steer the carried-id guard.
+- CLI-917: the refusal of a stack the marketplace does not ship ends `It ships: …`.
+- CLI-916: `edit --from` says when an id names another marketplace than the installation's.
+- CLI-921: declining `edit --from`'s question prints `Edit cancelled` once.
+- CLI-971: in a project whose config declares nothing, each command says a line true for what it does there.
+- CLI-1000: a project config naming nothing uses the global installation's marketplace in `compile`, `search`, `eject` and `doctor`.
+- CLI-991: `list`, `compile`, `edit --from` and `doctor` read only the project's own tool's global installation.
+- CLI-901: `uninstall` of a global Codex installation from home removes its ejected skills.
+- CLI-979: `edit --from` at home removes a dropped plugin a project installed from another marketplace.
+- CLI-995: `edit --from` moves a plugin from another marketplace between scopes under the marketplace it came from.
+- CLI-911: under a custom-marketplace global, `init --from` with a public-catalogue id installs from the public catalogue.
+- CLI-912: such a project records its marketplace as `agents-inc`.
+- CLI-997: a public-catalogue project keeps its marketplace when a custom-marketplace global is installed afterwards.
+- CLI-993: six more messages name skills as the `--from` summary does.
+- CLI-996: skipped unregistered skill folders are reported in one line per skills folder.
+- CLI-1004: the `Set category in …` warning names the absolute path of the skill's `metadata.yaml`.
+- CLI-1007: `init --from` and `edit --from` install a stack from a declared `stacksFile`.
+- CLI-1009: `doctor` checks a declared `stacksFile`.
+- CLI-1011: `doctor` files a broken stacks file's warning against that file.
+- CLI-1013: `doctor` files a broken `config/skill-rules.ts` against that file.
+- CLI-1010: the config writer's unused import-the-global layout is gone.
+- CLI-1012: what CLI-1010 left behind is gone.
+- CLI-875: `packages/cli/CLAUDE.md` says a test reads an expected value from the file it comes from.
+- CLI-845: the test helpers' config-types reader fails loudly, and two fixtures write config files byte for byte.
+- CLI-1003: two more config layouts join the byte-for-byte check.
+- CLI-994: two CLI e2e runs at once no longer break each other.
+- CLI-1014: the CLI unit suite passes with a symlinked temp folder.
+- CLI-1017: the CLI e2e suite passes with a long or symlinked temp path.
+- EDITOR-58: the preview, a skill's contents, a long proposal and the Install dialog's lists scroll from the keyboard.
+- EDITOR-61: a ruled-out skill's ••• button and switches show disabled.
+- EDITOR-117: a ruled-out skill's open options panel closes, keeping its settings.
+- EDITOR-62: a proposal with one change reads `1 change`.
+- EDITOR-93: Tab across the stuck skills bar no longer throws the page up.
+- EDITOR-96: the rename prompt no longer opens over a skill's Contents dialog.
+- EDITOR-116: `ButtonGroupItem` no longer makes every option a Tab stop on `tabIndex={undefined}`.
+- EDITOR-120: `SegmentedItem`, `LatticeRow` and `CommandBlock` no longer drop a Tab stop on `tabIndex={undefined}`.
+- EDITOR-122: a failed editor build shows its own error.
+- EDITOR-123: the Codex install dialog joins the two sub-agents it leaves out with "and".
+- EDITOR-121: the editor's "or" list helper is renamed `inAnEnglishAlternative`.
+- EDITOR-74: the editor's fake server gives every saved stack its own id.
+- EDITOR-119: a spec pins a ruled-out cell's switches out of the Tab order.
+- EDITOR-124: the editor's test gate runs its script tests.
+- EDITOR-90: the design system's focus-outline checks are gone.
+- EDITOR-118: the editor's eight focus-outline browser tests are gone.
+- SERVER-13: every signed-in action renews the 90-day sign-in in the browser too.
+- WWW-01: the docs site gains a Releases section, left out of search.
+- REPO-49: CI runs each slow suite as two halves on two machines.
+- REPO-52: `deps:check` refuses a test file its workspace never runs.
+- REPO-53: a spec runs the real pre-commit hook.
+- REPO-54: CI's CLI unit step runs with a symlinked temp folder.
+- REPO-51: the briefing contract moved to `docs/briefing.md`.
+- REPO-44: the CLI guide is condensed, and the standards, the journey page and the findings follow the code.
+
+See [changelogs/0.176.0.md](./changelogs/0.176.0.md) for full details.
+
 ## [0.175.0] - 2026-10-27
 
 **A project config that declares nothing is no longer an installation, a project under a home holding both tools reads only its own tool's global installation, `init --from` and `edit --from` refuse two more broken links before they ask, and an account refuses a second stack under a name it already holds**
