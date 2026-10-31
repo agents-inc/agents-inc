@@ -14,7 +14,9 @@ import {
   MARKETPLACE_CANONICAL_REF,
   MARKETPLACE_TOKEN,
   PRIVATE_MARKETPLACE_REF,
+  SKILL_INDEX,
   UNAUTHORIZED_BODY,
+  seedPayload,
 } from "@workspace/api-mocks/fixtures"
 import { HttpResponse, http } from "msw"
 
@@ -23,9 +25,12 @@ import { ConfigurePage } from "../pages/configure-page"
 import { DOMAINS, EXCLUSIVE_CATEGORY, STACKS } from "../support/catalog"
 import {
   BIGCO_CANONICAL_REF,
+  stubHeldMarketplaceCatalog,
   stubMarketplaceEstate,
   stubPrivateMarketplaceCatalog,
 } from "../support/marketplace"
+import { stubSkillContents } from "../support/skill-contents"
+import { stubSkillIndex } from "../support/skill-index"
 import { stubWith } from "../support/stub"
 import {
   SIGNED_IN_USER,
@@ -41,13 +46,16 @@ import {
   type SavedStack,
 } from "../support/auth"
 import {
+  MARKETPLACE_PAYLOAD,
   OUT_OF_SCOPE_PAYLOAD,
   STORE_UNAVAILABLE,
+  STORED_ID,
   STORED_PAYLOAD,
   captureCreateConfig,
   stubCreateConfig,
   stubCreateConfigRefusal,
   stubCreateConfigUnreachable,
+  stubGetConfig,
 } from "../support/sharing"
 
 type TestPage = Parameters<typeof stubSignedOut>[0]
@@ -396,6 +404,101 @@ test.describe("signed in", () => {
 
     await expect(dialog.root).toBeHidden()
     await expect(configure.stack("Weekday")).toBeVisible()
+  })
+})
+
+// The worker mints every row's id, so the grid tells an account's rows apart
+// whatever their names. Rows saved before it refused a held name can share
+// one, and it holds "Side project" and "Side-project" as two names.
+test.describe("an account's stacks whose names read alike", () => {
+  const TWICE = "Weekend"
+  const VUE_ID = "VueSav_1"
+  const VUE_SKILL_ID = "web-framework-vue-composition-api"
+  const VUE_PAYLOAD = seedPayload({
+    skills: {
+      [VUE_SKILL_ID]: {
+        install: "plugin",
+        scope: "project",
+        assignments: { "web-developer": "preloaded" },
+      },
+    },
+  })
+  const { name: CATEGORY, first: REACT, second: VUE } = EXCLUSIVE_CATEGORY
+
+  const saveAnother = async (configure: ConfigurePage, name: string) => {
+    const dialog = await openSaveDialog(configure)
+    await dialog.saveAs(name)
+    await expect(accountRow(configure, name)).toBeVisible()
+  }
+
+  test("two under one name are two rows, each opening its own payload", async ({
+    page,
+  }) => {
+    stubSignedIn(page, [stack(TWICE, STORED_ID), stack(TWICE, VUE_ID)])
+    stubGetConfig(page, STORED_ID)
+    stubGetConfig(page, VUE_ID, VUE_PAYLOAD)
+    const configure = await arrive(page)
+    const rows = accountRow(configure, TWICE)
+    const react = configure.skillIn(DOMAINS.web, CATEGORY, REACT)
+    const vue = configure.skillIn(DOMAINS.web, CATEGORY, VUE)
+
+    await expect(rows).toHaveCount(2)
+
+    await rows.nth(0).click()
+    await expect(react.root).toHaveAttribute("aria-pressed", "true")
+    await expect(vue.root).toHaveAttribute("aria-pressed", "false")
+
+    await rows.nth(1).click()
+    await expect(vue.root).toHaveAttribute("aria-pressed", "true")
+    await expect(react.root).toHaveAttribute("aria-pressed", "false")
+  })
+
+  test("two under one name stay two rows once another stack is saved", async ({
+    page,
+  }) => {
+    stubCreateConfig(page)
+    stubSignedIn(page, [stack(TWICE, STORED_ID), stack(TWICE, VUE_ID)])
+    const configure = await arrive(page)
+    await expect(accountRow(configure, TWICE)).toHaveCount(2)
+
+    await saveAnother(configure, "Client work")
+
+    await expect(accountRow(configure, TWICE)).toHaveCount(2)
+  })
+
+  test("a save named a held stack's name but for a hyphen is a row of its own, and each stays one row once another is saved", async ({
+    page,
+  }) => {
+    stubCreateConfig(page)
+    const { created } = stubSignedIn(page, [stack("Side project")])
+    const configure = await arrive(page)
+
+    await saveAnother(configure, "Side-project")
+    await saveAnother(configure, "Client work")
+
+    expect(created.map((body) => body.name)).toStrictEqual([
+      "Side-project",
+      "Client work",
+    ])
+    await expect(accountRow(configure, "Side project")).toHaveCount(1)
+    await expect(accountRow(configure, "Side-project")).toHaveCount(1)
+    await expect(accountRow(configure, "Client work")).toHaveCount(1)
+  })
+
+  // The control: the same journey over names that read apart keeps every row
+  // once, so the two above fail on the names alone.
+  test("two under names that read apart stay one row each once another stack is saved", async ({
+    page,
+  }) => {
+    stubCreateConfig(page)
+    stubSignedIn(page, [stack("Weekday"), stack(TWICE)])
+    const configure = await arrive(page)
+
+    await saveAnother(configure, "Client work")
+
+    await expect(accountRow(configure, "Weekday")).toHaveCount(1)
+    await expect(accountRow(configure, TWICE)).toHaveCount(1)
+    await expect(accountRow(configure, "Client work")).toHaveCount(1)
   })
 })
 
@@ -1441,24 +1544,45 @@ const owingWithTheListHeld = async (
   return { configure, release }
 }
 
-const asksOnceTheConfirmCloses = async (
+const asksOnceTheModalCloses = async (
   page: TestPage,
   configure: ConfigurePage,
   release: () => void,
-  confirm: { root: Locator; cancel: () => Promise<void> }
+  modal: { root: Locator; cancel: () => Promise<void> }
 ) => {
-  await expect(confirm.root).toBeVisible()
+  await expect(modal.root).toBeVisible()
 
   release()
 
   await expect(page.getByText(IN_THE_ACCOUNT)).toBeVisible()
   await expect(openDialogs(page)).toHaveCount(1)
 
-  await confirm.cancel()
+  await modal.cancel()
 
   await expect(configure.saveStackDialog.nameInput).toHaveValue("Alpha")
   await expect(openDialogs(page)).toHaveCount(1)
 }
+
+const [INDEXED_SKILL] = SKILL_INDEX.skills
+const ADDED_SKILL = INDEXED_SKILL!.name
+const ADDED_CATEGORY = `${DOMAINS.web.toLowerCase()} · ${EXCLUSIVE_CATEGORY.name.toLowerCase()}`
+
+// Install `stubSkillIndex` and `stubSkillContents` first. Adding selects
+// nothing, so a stack applies after it without a question.
+const addASkill = async (configure: ConfigurePage) => {
+  const dialog = configure.addSkillDialog
+  await configure.addSkillButton.click()
+  await dialog.stage(ADDED_SKILL)
+  await dialog.categorise(ADDED_SKILL, ADDED_CATEGORY)
+  await dialog.confirm()
+
+  return configure.skillIn(DOMAINS.web, EXCLUSIVE_CATEGORY.name, ADDED_SKILL)
+}
+
+const contentsClosedBy = (configure: ConfigurePage) => ({
+  root: configure.skillContentsDialog.root,
+  cancel: () => configure.skillContentsDialog.close(),
+})
 
 test.describe("an owed save whose name the account now lists", () => {
   test("opens the save dialog on it, the name refused on the field, posting nothing", async ({
@@ -1664,7 +1788,7 @@ test.describe("an owed save whose name the account now lists", () => {
     await configure.skillIn(DOMAINS.web, category, react).toggle()
     await configure.chooseStack(STACKS.nextjs)
 
-    await asksOnceTheConfirmCloses(
+    await asksOnceTheModalCloses(
       page,
       configure,
       release,
@@ -1687,12 +1811,89 @@ test.describe("an owed save whose name the account now lists", () => {
 
     await configure.switchTo(BIGCO_CANONICAL_REF).click()
 
-    await asksOnceTheConfirmCloses(
+    await asksOnceTheModalCloses(
       page,
       configure,
       release,
       configure.marketplaceSwitchDialog
     )
+  })
+
+  test("waits behind an added skill's contents open as the account lands", async ({
+    page,
+  }) => {
+    stubSkillIndex(page)
+    stubSkillContents(page)
+    const { configure, release } = await owingWithTheListHeld(page)
+
+    await (await addASkill(configure)).openContents()
+
+    await asksOnceTheModalCloses(
+      page,
+      configure,
+      release,
+      contentsClosedBy(configure)
+    )
+  })
+
+  // The allowed case for the one above.
+  test("asks at once when an added skill's contents were closed before the account landed", async ({
+    page,
+  }) => {
+    stubSkillIndex(page)
+    stubSkillContents(page)
+    const { configure, release } = await owingWithTheListHeld(page)
+    const contents = configure.skillContentsDialog
+    await (await addASkill(configure)).openContents()
+    await contents.close()
+    await expect(contents.root).toBeHidden()
+
+    release()
+
+    await expect(configure.saveStackDialog.nameInput).toHaveValue("Alpha")
+    await expect(openDialogs(page)).toHaveCount(1)
+  })
+
+  // A load that drops the skill closes its contents with nobody pressing
+  // Close, so nothing clears which skill was asked for. The question must not
+  // wait on a dialog that is no longer there.
+  test("asks once a catalogue load drops the added skill whose contents were open", async ({
+    page,
+  }) => {
+    stubSkillIndex(page)
+    stubSkillContents(page)
+    const releaseCatalogue = stubHeldMarketplaceCatalog(page)
+    stubCreateConfig(page)
+    stubSignedIn(page, [stack("alpha")])
+    const configure = await atTheOrigin(page)
+    await configure.saveStackDialog.seed(
+      [
+        { name: "Elsewhere", payload: MARKETPLACE_PAYLOAD },
+        { name: "Alpha", payload: STORED_PAYLOAD },
+      ],
+      ["Alpha"]
+    )
+    const { release } = holdStackList(page, [stack("alpha")])
+    await configure.goto()
+    const contents = configure.skillContentsDialog
+
+    const added = await addASkill(configure)
+    await configure.stack("Elsewhere").click()
+    await added.openContents()
+    await expect(contents.root).toBeVisible()
+
+    releaseCatalogue()
+    await expect(contents.root).toBeHidden()
+    await expect(configure.skill(MARKETPLACE_SKILL).root).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+
+    release()
+
+    await expect(page.getByText(IN_THE_ACCOUNT)).toBeVisible()
+    await expect(configure.saveStackDialog.nameInput).toHaveValue("Alpha")
+    await expect(openDialogs(page)).toHaveCount(1)
   })
 })
 

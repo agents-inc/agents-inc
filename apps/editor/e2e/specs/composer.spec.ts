@@ -1,4 +1,5 @@
 import { COMPOSE_URL } from "@workspace/api-mocks"
+import { MATRIX } from "@workspace/matrix"
 
 import { expect, test } from "../fixtures"
 
@@ -22,7 +23,7 @@ import {
   stubComposeUnreachable,
   stubSignedIn,
 } from "../support/auth"
-import { DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
+import { DOMAINS, EXCLUSIVE_CATEGORY, MULTI_CATEGORY } from "../support/catalog"
 
 import type { SkillCell } from "../pages/skill-cell"
 import type { Page } from "@playwright/test"
@@ -32,6 +33,7 @@ import type { Page } from "@playwright/test"
 
 const { web } = DOMAINS
 const { name: CATEGORY, first: SKILL } = EXCLUSIVE_CATEGORY
+const { name: OTHER_CATEGORY, first: OTHER_SKILL } = MULTI_CATEGORY
 
 const SENTENCE = "A Next.js app with tRPC and Postgres."
 
@@ -48,6 +50,13 @@ const REFUSAL_UNREACHABLE = "Could not reach the composer. Nothing changed."
 const REFUSAL_TOO_LONG = "That is too long to send. Shorten it and try again."
 const REFUSAL_SESSION_ENDED =
   "Your session ended. Sign in again — nothing changed."
+
+const ONE_CHANGE = "1 change"
+const TWO_CHANGES = "2 changes"
+
+// Anchored at the end, as `1 change` is a prefix of `1 changes`; the
+// lookbehind keeps `11 change` from passing for `1 change`.
+const endsWithCount = (label: string) => new RegExp(`(?<!\\d)${label}$`)
 
 /**
  * Its own `ConfigurePage`: the fixture navigates before a test's stubs are
@@ -638,6 +647,71 @@ test.describe("applying a proposal", () => {
   })
 })
 
+// The count sits in the header's live region, so these read what is announced.
+test.describe("counting what a proposal changes", () => {
+  test("counts a single added skill as one change, in the singular", async ({
+    page,
+  }) => {
+    const configure = await arriveSignedIn(page)
+    const { composer } = configure
+    const skillId = await skillIdOf(
+      configure,
+      configure.skillIn(web, CATEGORY, SKILL)
+    )
+    stubCompose(page, [skillId])
+
+    await composer.type(SENTENCE)
+    await composer.send()
+    await settled(composer)
+
+    await expect(composer.proposalRows).toHaveCount(1)
+    await expect(composer.proposalHeader).toHaveText(endsWithCount(ONE_CHANGE))
+  })
+
+  test("counts two added skills as two changes, in the plural", async ({
+    page,
+  }) => {
+    const configure = await arriveSignedIn(page)
+    const { composer } = configure
+    const skillId = await skillIdOf(
+      configure,
+      configure.skillIn(web, CATEGORY, SKILL)
+    )
+    const otherSkillId = await skillIdOf(
+      configure,
+      configure.skillIn(web, OTHER_CATEGORY, OTHER_SKILL)
+    )
+    stubCompose(page, [skillId, otherSkillId])
+
+    await composer.type(SENTENCE)
+    await composer.send()
+    await settled(composer)
+
+    await expect(composer.proposalRows).toHaveCount(2)
+    await expect(composer.proposalHeader).toHaveText(endsWithCount(TWO_CHANGES))
+  })
+
+  // Two ids, one row: the count is of what the reader can see.
+  test("counts the rows it draws, not every id the model named", async ({
+    page,
+  }) => {
+    const configure = await arriveSignedIn(page)
+    const { composer } = configure
+    const skillId = await skillIdOf(
+      configure,
+      configure.skillIn(web, CATEGORY, SKILL)
+    )
+    stubCompose(page, [skillId, UNKNOWN_SKILL_ID])
+
+    await composer.type(SENTENCE)
+    await composer.send()
+    await settled(composer)
+
+    await expect(composer.proposalRows).toHaveCount(1)
+    await expect(composer.proposalHeader).toHaveText(endsWithCount(ONE_CHANGE))
+  })
+})
+
 test.describe("discarding a proposal", () => {
   // The block just left the DOM, so focus must not fall to `body`.
   test("clears the proposal, keeps the draft and returns focus to the field", async ({
@@ -731,6 +805,77 @@ test.describe("where the keyboard goes when a proposal leaves", () => {
 
     await expect(composer.proposal).toHaveCount(0)
     await expect(composer.field).toBeFocused()
+  })
+})
+
+/**
+ * The block is capped and its list scrolls, and the rows hold nothing to focus,
+ * so a keyboard user scrolls the list itself: a named tab stop before Discard.
+ * Every skill in the catalogue is proposed, so the list outgrows the cap. Only
+ * "moved" is asserted: scroll anchoring makes exact offsets unreliable.
+ * Chromium already makes such a scroller a tab stop on its own, so the order
+ * and the scrolling hold before the app marks it; the name, and axe in
+ * a11y.spec.ts, do not.
+ */
+test.describe("a proposal longer than its block", () => {
+  test.beforeEach(async ({ page }) => {
+    const { composer } = await arriveSignedIn(page)
+    stubCompose(page, Object.keys(MATRIX.skills))
+
+    await composer.type(SENTENCE)
+    await composer.send()
+    await settled(composer)
+
+    // Subject guard: a list that fits has nothing to scroll.
+    await expect
+      .poll(async () => (await composer.proposalBodyScroll()).room)
+      .toBeGreaterThan(0)
+  })
+
+  test("Shift+Tab from Discard lands on the list", async ({ page }) => {
+    const { composer } = new ConfigurePage(page)
+    await composer.discardButton.focus()
+
+    await page.keyboard.press("Shift+Tab")
+
+    await expect(composer.proposalBody).toBeFocused()
+  })
+
+  test("the list has a name of its own", async ({ page }) => {
+    const { composer } = new ConfigurePage(page)
+
+    await expect(composer.proposalBody).toHaveAccessibleName(/\S/)
+  })
+
+  test("the arrow keys and End scroll it once Shift+Tab has reached it", async ({
+    page,
+  }) => {
+    const { composer } = new ConfigurePage(page)
+    await composer.discardButton.focus()
+    await page.keyboard.press("Shift+Tab")
+
+    await page.keyboard.press("ArrowDown")
+    await expect
+      .poll(async () => (await composer.proposalBodyScroll()).top)
+      .toBeGreaterThan(0)
+    const stepped = (await composer.proposalBodyScroll()).top
+
+    await page.keyboard.press("End")
+    await expect
+      .poll(async () => (await composer.proposalBodyScroll()).top)
+      .toBeGreaterThan(stepped)
+  })
+
+  // A control: what the list already does, which reaching it must not change.
+  test("the wheel still scrolls it", async ({ page }) => {
+    const { composer } = new ConfigurePage(page)
+    await composer.proposalBody.hover()
+
+    await page.mouse.wheel(0, 200)
+
+    await expect
+      .poll(async () => (await composer.proposalBodyScroll()).top)
+      .toBeGreaterThan(0)
   })
 })
 

@@ -7,6 +7,7 @@ export class InstallDialog {
   readonly root: Locator
   readonly skillsPane: Locator
   readonly agentsPane: Locator
+  readonly lists: Locator
   readonly footerNote: Locator
   readonly footerCommand: Locator
   // Scoped to the header: both commands below also carry `agents-inc`.
@@ -18,6 +19,10 @@ export class InstallDialog {
     this.root = page.getByRole("dialog").filter({ hasText: "INSTALL" })
     this.skillsPane = this.root.locator('[data-slot="dialog-pane"]').first()
     this.agentsPane = this.root.locator('[data-slot="dialog-pane"]').last()
+    this.lists = this.root.getByRole("region", {
+      name: "Skills and agents",
+      exact: true,
+    })
     this.footerNote = this.root.locator('[data-slot="dialog-footer-note"]')
     this.footerCommand = this.footerNote.getByText("npx agents-inc edit", {
       exact: true,
@@ -201,12 +206,17 @@ export class SkillContentsDialog {
   readonly root: Locator
   // Read through `textContent` where exact bytes matter.
   readonly body: Locator
+  // By slot: its name follows the open file.
+  readonly textPane: Locator
   readonly openPath: Locator
   readonly closeButton: Locator
 
   constructor(page: Page) {
     this.root = page.getByRole("dialog", { name: "Contents" })
     this.body = this.root.locator('[data-slot="contents-body"]')
+    this.textPane = this.root.locator(
+      '[data-slot="dialog-pane"]:has([data-slot="contents-body"])'
+    )
     this.openPath = this.root.locator('[data-slot="contents-open-path"]')
     this.closeButton = this.root
       .locator('[data-slot="dialog-footer"]')

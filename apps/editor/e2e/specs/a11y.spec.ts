@@ -1,16 +1,22 @@
 import AxeBuilder from "@axe-core/playwright"
+import { GITHUB_RAW_ORIGIN } from "@workspace/api-mocks"
+import { EXTERNAL_SKILL, SKILL_INDEX } from "@workspace/api-mocks/fixtures"
+import { MATRIX } from "@workspace/matrix"
+import { http, HttpResponse } from "msw"
 
 import { expect, test } from "../fixtures"
 import { ConfigurePage } from "../pages/configure-page"
 import { stubCompose, stubSignedIn } from "../support/auth"
 import { DOMAINS, EXCLUSIVE_CATEGORY, STACKS } from "../support/catalog"
 import { stubCreateConfig } from "../support/sharing"
+import { stubSkillContents } from "../support/skill-contents"
 import { stubSkillIndex } from "../support/skill-index"
+import { stubWith } from "../support/stub"
+
+import type { Locator } from "@playwright/test"
 
 // axe over the assembled app; every state `visual.spec.ts` captures has an
 // audit here. `color-contrast` is held out permanently.
-// `scrollable-region-focusable` is held out until the output preview's content
-// pane, which scrolls, holds something focusable.
 
 // Enough of a selection that the roster and the sticky bar have something to
 // draw.
@@ -19,9 +25,14 @@ const withSelection = async (configure: ConfigurePage) => {
   await configure.roster.root.waitFor()
 }
 
+// Subject guard for a scrolling pane: one that fits holds nothing for
+// `scrollable-region-focusable` to find. Polled, since the text arrives late.
+const overflows = (pane: Locator) =>
+  pane.evaluate((node) => node.scrollHeight > node.clientHeight)
+
 const audit = async (configure: ConfigurePage) => {
   const { violations } = await new AxeBuilder({ page: configure.page })
-    .disableRules(["color-contrast", "scrollable-region-focusable"])
+    .disableRules(["color-contrast"])
     .analyze()
 
   // Rule and target only; the full node list buries which rule broke.
@@ -130,20 +141,80 @@ test.describe("the dialogs", () => {
     expect(await audit(configure)).toStrictEqual([])
   })
 
+  // A laptop-height window, where the skills and agents lists outgrow the
+  // dialog and the row holding both scrolls.
+  test("install, in a window too short for its lists", async ({
+    configure,
+    page,
+  }) => {
+    stubCreateConfig(page)
+    await page.setViewportSize({ width: 1600, height: 640 })
+    await withSelection(configure)
+    await configure.roster.installButton.click()
+    await configure.installDialog.root.waitFor()
+    await expect.poll(() => overflows(configure.installDialog.lists)).toBe(true)
+
+    expect(await audit(configure)).toStrictEqual([])
+  })
+
   test("output preview", async ({ configure }) => {
+    const preview = configure.outputPreviewDialog
     await withSelection(configure)
     await configure.roster.previewButton.click()
-    await configure.outputPreviewDialog.root.waitFor()
+    await preview.root.waitFor()
+    await expect.poll(() => overflows(preview.contentPane)).toBe(true)
 
     expect(await audit(configure)).toStrictEqual([])
   })
 
   // Fullscreen renames the maximise control and draws a valued `separator`.
   test("output preview in fullscreen", async ({ configure }) => {
+    const preview = configure.outputPreviewDialog
     await withSelection(configure)
     await configure.roster.previewButton.click()
-    await configure.outputPreviewDialog.root.waitFor()
-    await configure.outputPreviewDialog.fullscreenButton.click()
+    await preview.root.waitFor()
+    await preview.fullscreenButton.click()
+    await expect.poll(() => overflows(preview.contentPane)).toBe(true)
+
+    expect(await audit(configure)).toStrictEqual([])
+  })
+
+  // An added skill's SKILL.md, long enough that its pane scrolls, as a real
+  // one does. Served in place of the fixture's few lines.
+  test("skill contents, on a file longer than its pane", async ({
+    configure,
+    page,
+  }) => {
+    const SKILL_NAME = SKILL_INDEX.skills[0]!.name
+    const MANIFEST = "SKILL.md"
+    const LONG_MANIFEST = [
+      EXTERNAL_SKILL.files[MANIFEST],
+      ...Array.from({ length: 200 }, (_, line) => `Line ${line + 1}.`),
+    ].join("\n")
+
+    stubSkillIndex(page)
+    stubSkillContents(page)
+    stubWith(page, [
+      http.get(
+        `${GITHUB_RAW_ORIGIN}/${EXTERNAL_SKILL.repo}/HEAD/${EXTERNAL_SKILL.path}/${MANIFEST}`,
+        () => HttpResponse.text(LONG_MANIFEST)
+      ),
+    ])
+
+    const category = EXCLUSIVE_CATEGORY.name
+    const dialog = configure.addSkillDialog
+    await configure.addSkillButton.click()
+    await dialog.stage(SKILL_NAME)
+    await dialog.categorise(
+      SKILL_NAME,
+      `${DOMAINS.web.toLowerCase()} · ${category.toLowerCase()}`
+    )
+    await dialog.confirm()
+    await configure.skillIn(DOMAINS.web, category, SKILL_NAME).openContents()
+
+    const contents = configure.skillContentsDialog
+    await expect(contents.openPath).toHaveText(MANIFEST)
+    await expect.poll(() => overflows(contents.textPane)).toBe(true)
 
     expect(await audit(configure)).toStrictEqual([])
   })
@@ -185,6 +256,23 @@ test.describe("the composer", () => {
     await configure.composer.type("a react app")
     await configure.composer.send()
     await configure.composer.proposalHeader.waitFor()
+
+    expect(await audit(configure)).toStrictEqual([])
+  })
+
+  // Every skill in the catalogue, so the list outgrows the block's cap and
+  // scrolls.
+  test("with a proposal longer than its block", async ({ page }) => {
+    stubSignedIn(page)
+    stubCompose(page, Object.keys(MATRIX.skills))
+    const configure = new ConfigurePage(page)
+    const { composer } = configure
+    await configure.goto()
+
+    await composer.type("everything")
+    await composer.send()
+    await expect(composer.proposalRows.first()).toBeVisible()
+    await expect.poll(() => overflows(composer.proposalBody)).toBe(true)
 
     expect(await audit(configure)).toStrictEqual([])
   })

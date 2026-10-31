@@ -6,6 +6,9 @@ import {
   INCOMPATIBLE,
 } from "../support/catalog"
 
+import type { ConfigurePage } from "../pages/configure-page"
+import type { Locator } from "@playwright/test"
+
 const { web } = DOMAINS
 const {
   trigger: REACT,
@@ -69,8 +72,8 @@ test.describe("incompatible skills", () => {
   }) => {
     await configure.skillIn(web, triggerCategory, REACT).toggle()
 
-    // `aria-disabled` takes it out of the tab order and out of Playwright's
-    // actionability, the same check assistive tech makes.
+    // `aria-disabled` takes it out of Playwright's actionability, the same
+    // check assistive tech makes.
     await expect(
       configure.skillIn(web, blockedCategory, SVELTEKIT).root
     ).toBeDisabled()
@@ -80,8 +83,8 @@ test.describe("incompatible skills", () => {
     await configure.skillIn(web, triggerCategory, REACT).toggle()
     const sveltekit = configure.skillIn(web, blockedCategory, SVELTEKIT)
 
-    // `aria-disabled` on the cell takes its whole subtree out of
-    // actionability, so each press is forced and each handler must refuse.
+    // Every control on the cell reads disabled, so each press is forced and
+    // each handler must refuse.
     await sveltekit.root.click({ force: true })
     expect(await sveltekit.isSelected()).toBe(false)
 
@@ -184,5 +187,298 @@ test.describe("incompatible skills", () => {
     await configure.skillIn(web, triggerCategory, "Svelte").toggle()
 
     expect(await sveltekit.isIncompatible()).toBe(false)
+  })
+})
+
+const paintOf = (target: Locator) =>
+  target.evaluate((node) => {
+    const style = getComputedStyle(node)
+    return {
+      color: style.color,
+      background: style.backgroundColor,
+      border: style.borderColor,
+      shadow: style.boxShadow,
+      cursor: style.cursor,
+    }
+  })
+
+const theClash = (configure: ConfigurePage) => ({
+  react: configure.skillIn(web, triggerCategory, REACT),
+  sveltekit: configure.skillIn(web, blockedCategory, SVELTEKIT),
+})
+
+// The ••• and both switches read as the cell does: disabled to the eye and to
+// assistive tech while the clash stands, live again once it goes.
+test.describe("a ruled-out cell's own controls", () => {
+  test("its ••• reads as disabled while the clash stands", async ({
+    configure,
+  }) => {
+    const { react, sveltekit } = theClash(configure)
+    await expect(sveltekit.optionsButton).toBeEnabled()
+
+    await react.toggle()
+    await expect(sveltekit.optionsButton).toBeDisabled()
+
+    await react.toggle()
+    await expect(sveltekit.optionsButton).toBeEnabled()
+  })
+
+  test("its ••• opens nothing from the keyboard", async ({
+    configure,
+    page,
+  }) => {
+    const { react, sveltekit } = theClash(configure)
+    await react.toggle()
+
+    await sveltekit.optionsButton.focus()
+    await page.keyboard.press("Enter")
+    await page.keyboard.press("Space")
+
+    await expect(sveltekit.optionsButton).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    )
+    await expect(sveltekit.options.root).toBeHidden()
+  })
+
+  test("its ••• opens the options once the clash goes", async ({
+    configure,
+  }) => {
+    const { react, sveltekit } = theClash(configure)
+    await react.toggle()
+    await react.toggle()
+
+    await sveltekit.openOptions()
+
+    await expect(sveltekit.options.root).toBeVisible()
+    await expect(sveltekit.optionsButton).toHaveAttribute(
+      "aria-expanded",
+      "true"
+    )
+  })
+
+  // Shown, as on any cell under the pointer, but offering no press.
+  test("its ••• still shows on hover, and the pointer changes nothing on it", async ({
+    configure,
+  }) => {
+    const { react, sveltekit } = theClash(configure)
+    await sveltekit.hover()
+    const availableAtRest = await sveltekit.optionsPaint()
+    expect(availableAtRest.cursor).toBe("pointer")
+    await sveltekit.optionsButton.hover()
+    expect(await sveltekit.optionsPaint()).not.toStrictEqual(availableAtRest)
+
+    await react.toggle()
+    await sveltekit.hover()
+    await expect.poll(() => sveltekit.optionsOpacity()).toBe(1)
+
+    const atRest = await sveltekit.optionsPaint()
+    expect(atRest.cursor).not.toBe("pointer")
+    await sveltekit.optionsButton.hover()
+    expect(await sveltekit.optionsPaint()).toStrictEqual(atRest)
+  })
+
+  test("its switches read as disabled while the clash stands", async ({
+    configure,
+  }) => {
+    const { react, sveltekit } = theClash(configure)
+    for (const cell of sveltekit.switches) await expect(cell).toBeEnabled()
+
+    await react.toggle()
+    for (const cell of sveltekit.switches) await expect(cell).toBeDisabled()
+
+    await react.toggle()
+    for (const cell of sveltekit.switches) await expect(cell).toBeEnabled()
+  })
+
+  // Past the ••• come the cell's pairs, until the clash takes them out.
+  test("its switches leave the tab order while the clash stands", async ({
+    configure,
+    page,
+  }) => {
+    const { react, sveltekit } = theClash(configure)
+    const inTheCell = sveltekit.cell.locator(":focus")
+
+    await sveltekit.optionsButton.focus()
+    await page.keyboard.press("Tab")
+    await expect(sveltekit.installMode).toBeFocused()
+
+    await react.toggle()
+    await sveltekit.optionsButton.focus()
+    await expect(sveltekit.optionsButton).toBeFocused()
+    await page.keyboard.press("Tab")
+    await expect(inTheCell).toHaveCount(0)
+  })
+
+  // The paint every refused switch takes, as Codex's refused PROJECT does.
+  test("its switches take the unavailable paint, and the pointer changes nothing on them", async ({
+    configure,
+  }) => {
+    const { react, sveltekit } = theClash(configure)
+    for (const cell of sveltekit.switches) {
+      expect((await paintOf(cell)).cursor).toBe("pointer")
+    }
+
+    await react.toggle()
+
+    for (const cell of sveltekit.switches) {
+      const atRest = await paintOf(cell)
+      expect(atRest.cursor).toBe("not-allowed")
+      await cell.hover()
+      expect(await paintOf(cell)).toStrictEqual(atRest)
+    }
+    const unavailable = await configure.tokenColor("--color-unavailable")
+    for (const off of await sveltekit.offSwitches.all()) {
+      expect((await paintOf(off)).color).toBe(unavailable)
+    }
+  })
+
+  test("pressing one of its switches changes nothing", async ({
+    configure,
+  }) => {
+    const { react, sveltekit } = theClash(configure)
+    await react.toggle()
+    const install = await sveltekit.installMode.textContent()
+    const scope = await sveltekit.scope.textContent()
+
+    for (const off of await sveltekit.offSwitches.all()) {
+      await off.click({ force: true })
+    }
+
+    expect(await sveltekit.installMode.textContent()).toBe(install)
+    expect(await sveltekit.scope.textContent()).toBe(scope)
+    expect(await sveltekit.isSelected()).toBe(false)
+  })
+
+  test("a switch press lands once the clash goes", async ({ configure }) => {
+    const { react, sveltekit } = theClash(configure)
+    await react.toggle()
+    await react.toggle()
+    const install = await sveltekit.installMode.textContent()
+
+    await sveltekit.flipInstall()
+
+    await expect
+      .poll(() => sveltekit.installMode.textContent())
+      .not.toBe(install)
+  })
+})
+
+const pressFromTheKeyboard = async (target: Locator) => {
+  await target.focus()
+  await target.page().keyboard.press("Space")
+}
+
+// Nothing stays editable on a ruled-out skill, so the clash closes its panel
+// as a press outside does, whatever made the choice.
+test.describe("a skill's open options as the selection changes", () => {
+  test("close when a choice from the keyboard rules the skill out", async ({
+    configure,
+  }) => {
+    const { react, sveltekit } = theClash(configure)
+    await sveltekit.openOptions()
+    await expect(sveltekit.options.root).toBeVisible()
+
+    await pressFromTheKeyboard(react.root)
+
+    await expect(sveltekit.root).toBeDisabled()
+    await expect(sveltekit.options.root).toBeHidden()
+    await expect(sveltekit.optionsButton).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    )
+  })
+
+  test("stay closed once the skill is back in reach", async ({ configure }) => {
+    const { react, sveltekit } = theClash(configure)
+    await sveltekit.openOptions()
+    await expect(sveltekit.options.root).toBeVisible()
+
+    await pressFromTheKeyboard(react.root)
+    await expect(sveltekit.root).toBeDisabled()
+    await pressFromTheKeyboard(react.root)
+
+    await expect(sveltekit.root).toBeEnabled()
+    await expect(sveltekit.options.root).toBeHidden()
+    await expect(sveltekit.optionsButton).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    )
+  })
+
+  test("close when a choice with the pointer rules the skill out", async ({
+    configure,
+  }) => {
+    const { react, sveltekit } = theClash(configure)
+    await sveltekit.openOptions()
+    await expect(sveltekit.options.root).toBeVisible()
+
+    await react.toggle()
+
+    await expect(sveltekit.root).toBeDisabled()
+    await expect(sveltekit.options.root).toBeHidden()
+  })
+
+  // Svelte rules Next.js out but is what SvelteKit is built on.
+  test("stay open when a choice from the keyboard leaves the skill in reach", async ({
+    configure,
+  }) => {
+    const sveltekit = configure.skillIn(web, blockedCategory, SVELTEKIT)
+    const svelte = configure.skillIn(web, triggerCategory, "Svelte")
+    const nextjs = configure.skillIn(
+      web,
+      IMPLIED.implierCategory,
+      IMPLIED.implier
+    )
+    await sveltekit.openOptions()
+
+    await pressFromTheKeyboard(svelte.root)
+
+    await expect(nextjs.root).toBeDisabled()
+    await expect(sveltekit.root).toBeEnabled()
+    await expect(sveltekit.options.root).toBeVisible()
+    await expect(sveltekit.optionsButton).toHaveAttribute(
+      "aria-expanded",
+      "true"
+    )
+  })
+
+  test("close without moving the keyboard", async ({ configure }) => {
+    const { react, sveltekit } = theClash(configure)
+    await sveltekit.openOptions()
+
+    await pressFromTheKeyboard(react.root)
+
+    await expect(sveltekit.root).toBeDisabled()
+    await expect(react.root).toBeFocused()
+  })
+
+  test("close with the settings made in them kept", async ({ configure }) => {
+    const { react, sveltekit } = theClash(configure)
+    const assignment = sveltekit.options.matrixCell(web, "dev")
+    await sveltekit.openOptions()
+    await sveltekit.options.choose("eject")
+    await sveltekit.options.choose("global")
+    await expect(assignment).toHaveText("pre")
+    await sveltekit.options.cycleAssignment(web, "dev")
+    await sveltekit.options.cycleAssignment(web, "dev")
+    await expect(assignment).toHaveText("lazy")
+
+    await pressFromTheKeyboard(react.root)
+    await expect(sveltekit.root).toBeDisabled()
+    await expect(sveltekit.installMode).toHaveText("eject")
+    await expect(sveltekit.scope).toHaveText("global")
+
+    await react.toggle()
+    await sveltekit.openOptions()
+    await expect(sveltekit.options.segment("eject")).toHaveAttribute(
+      "aria-checked",
+      "true"
+    )
+    await expect(sveltekit.options.segment("global")).toHaveAttribute(
+      "aria-checked",
+      "true"
+    )
+    await expect(assignment).toHaveText("lazy")
   })
 })

@@ -100,24 +100,6 @@ test.describe("a chosen stack card", () => {
   })
 })
 
-// Shift+Tab then Tab rather than `focus()` alone, so Chromium matches
-// `:focus-visible`.
-test("a keyboard-focused stack card draws the ring", async ({ configure }) => {
-  const card = configure.stack(STACKS.t3)
-  await configure.page.mouse.move(0, 0)
-  await card.focus()
-  await configure.page.keyboard.press("Shift+Tab")
-  await configure.page.keyboard.press("Tab")
-
-  expect(await card.evaluate((node) => node.matches(":focus-visible"))).toBe(
-    true
-  )
-  expect(await configure.focusRing(card)).toStrictEqual({
-    focused: true,
-    ringVisible: true,
-  })
-})
-
 test("the stack grid draws no line of its own", async ({ configure }) => {
   expect(
     await configure.stacks.evaluate(

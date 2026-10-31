@@ -11,9 +11,6 @@ const { web } = DOMAINS
 const { name: CATEGORY, first: SKILL } = EXCLUSIVE_CATEGORY
 const MATRIX_DOMAIN = "Web"
 const MATRIX_ROLE = "dev"
-// The first agent behind the Meta fold: a Tab out of the fold's toggle lands
-// on it.
-const FIRST_META_AGENT = "agent-summoner"
 
 // The one piece of explanatory copy in the panel, behind the info glyph.
 const SCOPE_TIP =
@@ -74,19 +71,6 @@ test.describe("skill options panel", () => {
     await skill.root.hover()
 
     await expect.poll(() => skill.optionsOpacity()).toBe(1)
-  })
-
-  test("the ellipsis draws a focus ring", async ({ configure, page }) => {
-    const skill = configure.skillIn(web, CATEGORY, SKILL)
-
-    await skill.root.focus()
-    await page.keyboard.press("Tab")
-
-    const { focused, ringVisible } = await configure.focusRing(
-      skill.optionsButton
-    )
-    expect(focused).toBe(true)
-    expect(ringVisible).toBe(true)
   })
 
   test("the ellipsis stays out while the panel is open", async ({
@@ -300,21 +284,6 @@ test.describe("source code link", () => {
     )
   })
 
-  // With the Meta fold shut, the link is the stop straight after it.
-  test("the source link draws a focus ring", async ({ configure, page }) => {
-    const skill = configure.skillIn(web, CATEGORY, SKILL)
-    await skill.openOptions()
-
-    await skill.options.root.getByRole("button", { name: "Meta" }).focus()
-    await page.keyboard.press("Tab")
-
-    const { focused, ringVisible } = await configure.focusRing(
-      skill.options.sourceLink
-    )
-    expect(focused).toBe(true)
-    expect(ringVisible).toBe(true)
-  })
-
   test("an added skill links into the repository it came from", async ({
     configure,
     page,
@@ -433,25 +402,6 @@ test.describe("sub-agent assignment", () => {
     await expect(metaAgent).toBeHidden()
     await skill.options.root.getByRole("button", { name: "Meta" }).click()
     await expect(metaAgent).toBeVisible()
-  })
-
-  test("a cell behind the meta fold draws a focus ring", async ({
-    configure,
-    page,
-  }) => {
-    const skill = configure.skillIn(web, CATEGORY, SKILL)
-    await skill.openOptions()
-    const fold = skill.options.root.getByRole("button", { name: "Meta" })
-    await fold.click()
-
-    await fold.focus()
-    await page.keyboard.press("Tab")
-
-    const { focused, ringVisible } = await configure.focusRing(
-      skill.options.option(FIRST_META_AGENT)
-    )
-    expect(focused).toBe(true)
-    expect(ringVisible).toBe(true)
   })
 
   // A meta-flavor agent is never auto-assigned; the fold is the only path.

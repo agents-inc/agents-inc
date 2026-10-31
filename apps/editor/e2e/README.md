@@ -33,7 +33,7 @@ fails the spec.
   `atTheOrigin` in `specs/accounts.spec.ts` stubs an empty page on the origin for this.
 - **Accessibility:** `specs/a11y.spec.ts` runs axe over the assembled page. Every state
   `visual.spec.ts` captures needs an audit there. The held-out rules are listed in that spec.
-  `color-contrast` is a permanent ruling; the others are tracked defects.
+  `color-contrast` is a permanent ruling.
 - **Appearance:** `specs/visual.spec.ts` hands states to Argos. It builds with
   `--mode test` and serves the result statically through `playwright.visual.config.ts`; captures
   failed against the dev server. To add a screen, add a `test` to that file. Captures are

@@ -651,6 +651,21 @@ describe("a signed-in browser", () => {
     expect(await response.json()).toStrictEqual(minted)
   })
 
+  // The worker holds both names, so the account lists two rows.
+  it("mints a different id for each save, though the two names differ only by a hyphen", async () => {
+    const ids: unknown[] = []
+    for (const name of ["Side project", "Side-project"]) {
+      const response = await responseTo(
+        signedInHandlers,
+        sendJson("POST", STACKS_URL, { name, configId: STORED_ID })
+      )
+      const { id } = (await response.json()) as Pick<SavedStack, "id">
+      ids.push(id)
+    }
+
+    expect(new Set(ids).size).toBe(2)
+  })
+
   it("renames a stack in place, changing only its name and when it was updated", async () => {
     const response = await responseTo(
       signedInHandlers,

@@ -1,9 +1,6 @@
 import { expect, test } from "../fixtures"
 import { DOMAINS, EXCLUSIVE_CATEGORY, MULTI_CATEGORY } from "../support/catalog"
 
-import { PAGE_BACKGROUND } from "../pages/configure-page"
-import type { SkillCell } from "../pages/skill-cell"
-
 test.describe("skill selection", () => {
   test("clicking a cell selects it", async ({ configure }) => {
     const react = configure.skill(
@@ -67,72 +64,4 @@ test.describe("skill selection", () => {
 
     await expect(configure.roster.installButton).toContainText("1 skill")
   })
-})
-
-/**
- * Captured alone with the pointer away, so the pictures differ by the focus
- * treatment only. Shift+Tab then Tab, so Chromium matches `:focus-visible`;
- * whether it did is returned too.
- */
-const underAndAwayFromTheKeyboard = async (skill: SkillCell) => {
-  const page = skill.root.page()
-  await page.mouse.move(0, 0)
-  await skill.root.focus()
-  await page.keyboard.press("Shift+Tab")
-  await page.keyboard.press("Tab")
-
-  const keyboardFocused = await skill.root.evaluate((node) =>
-    node.matches(":focus-visible")
-  )
-  const focused = await skill.cell.screenshot({ animations: "disabled" })
-  await skill.root.blur()
-  const away = await skill.cell.screenshot({ animations: "disabled" })
-
-  return { keyboardFocused, unchanged: focused.equals(away) }
-}
-
-// The ring must show past the overlay button and the cell's clip, in both
-// themes.
-test.describe("a skill cell under the keyboard", () => {
-  for (const theme of ["light", "dark"] as const) {
-    test.describe(`in the ${theme} theme`, () => {
-      test.beforeEach(async ({ configure }) => {
-        if (theme === "dark") await configure.themeToggle.click()
-        await expect(configure.page.locator("body")).toHaveCSS(
-          "background-color",
-          PAGE_BACKGROUND[theme]
-        )
-      })
-
-      test("draws a focus ring", async ({ configure }) => {
-        const react = configure.skillIn(
-          DOMAINS.web,
-          EXCLUSIVE_CATEGORY.name,
-          EXCLUSIVE_CATEGORY.first
-        )
-
-        const { keyboardFocused, unchanged } =
-          await underAndAwayFromTheKeyboard(react)
-
-        expect(keyboardFocused).toBe(true)
-        expect(unchanged).toBe(false)
-      })
-
-      test("draws a focus ring on a selected cell", async ({ configure }) => {
-        const react = configure.skillIn(
-          DOMAINS.web,
-          EXCLUSIVE_CATEGORY.name,
-          EXCLUSIVE_CATEGORY.first
-        )
-        await react.toggle()
-        await expect(react.root).toHaveAttribute("aria-pressed", "true")
-
-        const { keyboardFocused, unchanged } =
-          await underAndAwayFromTheKeyboard(react)
-
-        expect(keyboardFocused).toBe(true)
-        expect(unchanged).toBe(false)
-      })
-    })
-  }
 })

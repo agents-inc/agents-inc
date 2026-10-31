@@ -2,6 +2,10 @@ import type { Locator, Page } from "@playwright/test"
 
 import { OptionsPanel } from "./options-panel"
 
+const INSTALL_MODES = ["plugin", "eject"] as const
+
+const SCOPES = ["project", "global"] as const
+
 // `root` is the selection overlay, a sibling of the cell's controls. `cell` is
 // its container, reached with `..` because a class is not a contract.
 export class SkillCell {
@@ -47,6 +51,22 @@ export class SkillCell {
     return this.scopeGroup.getByRole("radio", { name: scope, exact: true })
   }
 
+  // Every cell of both pairs, by name: an open options panel inside the cell
+  // holds radios of its own.
+  get switches(): Locator[] {
+    return [
+      ...INSTALL_MODES.map((mode) => this.installCell(mode)),
+      ...SCOPES.map((scope) => this.scopeCell(scope)),
+    ]
+  }
+
+  // The cells of both pairs that are not on.
+  get offSwitches(): Locator {
+    return this.installGroup
+      .locator('[aria-checked="false"]')
+      .or(this.scopeGroup.locator('[aria-checked="false"]'))
+  }
+
   async setInstallMode(mode: string) {
     await this.installCell(mode).click()
   }
@@ -86,6 +106,25 @@ export class SkillCell {
     return this.optionsButton.evaluate((node) =>
       Number(getComputedStyle(node).opacity)
     )
+  }
+
+  // What the pointer can change on the •••: its own paint and its dots'.
+  // Opacity is left out, since revealing it is the cell's hover, not its own.
+  async optionsPaint() {
+    return this.optionsButton.evaluate((node) => {
+      const style = getComputedStyle(node)
+      const dot = node.firstElementChild
+      return {
+        background: style.backgroundColor,
+        cursor: style.cursor,
+        dots: dot ? getComputedStyle(dot).backgroundColor : undefined,
+      }
+    })
+  }
+
+  // The pointer on the cell itself, clear of the •••, which that reveals.
+  async hover() {
+    await this.root.hover()
   }
 
   async toggle() {

@@ -80,11 +80,8 @@ export const stubPrivateMarketplaceCatalog = (page: Page) =>
 export const stubMissingMarketplace = (page: Page) =>
   stubCatalogWith(page, githubNotFound)
 
-/**
- * Held until the spec releases it, so the form is mounted when the recovery
- * arrives. Returns the release.
- */
-export const stubHeldMissingMarketplace = (page: Page) => {
+// Answered only once the spec releases it. Returns the release.
+const stubHeldCatalog = (page: Page, answer: () => Response) => {
   let release = () => {}
   const released = new Promise<void>((resolve) => {
     release = resolve
@@ -92,11 +89,19 @@ export const stubHeldMissingMarketplace = (page: Page) => {
 
   stubCatalogWith(page, async () => {
     await released
-    return githubNotFound()
+    return answer()
   })
 
   return release
 }
+
+/** Held, so the form is mounted when the recovery arrives. */
+export const stubHeldMissingMarketplace = (page: Page) =>
+  stubHeldCatalog(page, githubNotFound)
+
+/** Held, so something can open while a load is out. */
+export const stubHeldMarketplaceCatalog = (page: Page) =>
+  stubHeldCatalog(page, () => HttpResponse.json(MARKETPLACE_CATALOG))
 
 /** JSON that is not a catalogue. */
 export const stubMalformedCatalog = (page: Page) =>

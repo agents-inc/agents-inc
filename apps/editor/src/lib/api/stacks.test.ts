@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { setReportingSink } from "@/lib/observability/report"
 
+import type { RemoteStack } from "./stacks"
 import type { ReportingSink } from "@/lib/observability/report"
 
 import { createStack, listStacks } from "./stacks"
@@ -92,15 +93,19 @@ describe("listStacks", () => {
 })
 
 describe("createStack", () => {
-  // The mock echoes what it was sent, as the worker does, under a name none of
-  // the account's stacks holds.
+  // The mock echoes what it was sent and mints the id, as the worker does,
+  // under a name none of the account's stacks holds.
   it("returns the stack the worker saved", async () => {
     configMockServer.use(...signedInHandlers)
     const fresh = savedStack("Side project", SAVED_STACK.configId)
+    const saved: Record<keyof RemoteStack, unknown> = {
+      ...fresh,
+      id: expect.any(String),
+    }
 
     await expect(
       createStack(fresh.name, fresh.configId)
-    ).resolves.toStrictEqual({ ok: true, stack: fresh })
+    ).resolves.toStrictEqual({ ok: true, stack: saved })
   })
 
   // The worker's 409. A name in use is the person's to change, not a fault.

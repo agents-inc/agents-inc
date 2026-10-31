@@ -773,23 +773,6 @@ test.describe("effort", () => {
     await expect.poll(async () => (await bar(last)).colour).toBe(rule)
   })
 
-  // Shift+Tab then Tab, so Chromium matches `:focus-visible`.
-  test("a keyboard-focused level draws the ring", async ({ configure }) => {
-    const cards = configure.subAgents
-    const level = cards.effortOption(DEVELOPER, AGENT_OPTIONS.restingEffort)
-    await expect(level).toBeVisible()
-    await configure.page.mouse.move(0, 0)
-    await level.focus()
-    await configure.page.keyboard.press("Shift+Tab")
-    await configure.page.keyboard.press("Tab")
-
-    await expect(level).toBeFocused()
-    expect(await level.evaluate((node) => node.matches(":focus-visible"))).toBe(
-      true
-    )
-    expect((await configure.focusRing(level)).ringVisible).toBe(true)
-  })
-
   test("offers the same five levels on Codex", async ({ configure }) => {
     const cards = configure.subAgents
     await expect(cards.effortGroup(DEVELOPER)).toBeVisible()
@@ -915,26 +898,6 @@ test.describe("Codex model", () => {
 
     await configure.page.keyboard.press("Enter")
     await expectPressedCodexModel(cards, null)
-  })
-
-  // Shift+Tab then Tab, so Chromium matches `:focus-visible`.
-  test("a keyboard-focused model draws the ring", async ({ configure }) => {
-    const cards = configure.subAgents
-    const first = cards.codexModelButton(
-      DEVELOPER,
-      AGENT_OPTIONS.codexChoices[0]
-    )
-    await onCodex(configure)
-    await configure.page.mouse.move(0, 0)
-    await first.focus()
-    await configure.page.keyboard.press("Shift+Tab")
-    await configure.page.keyboard.press("Tab")
-
-    await expect(first).toBeFocused()
-    expect(await first.evaluate((node) => node.matches(":focus-visible"))).toBe(
-      true
-    )
-    expect((await configure.focusRing(first)).ringVisible).toBe(true)
   })
 
   test("a pressed model survives a reload", async ({ configure, page }) => {

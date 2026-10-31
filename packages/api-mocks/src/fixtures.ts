@@ -236,14 +236,13 @@ export const GITHUB_AUTHORIZE_URL =
 export const STACK_SAVED_AT = "2026-08-28T00:00:00.000Z"
 export const STACK_RENAMED_AT = "2026-08-29T00:00:00.000Z"
 
-// The id is derived from the name where the worker uses `crypto.randomUUID()`; nothing reads its
-// form.
+// The id is minted as the worker mints it, so two rows under one name stay two rows.
 export const savedStack = (
   name: string,
   configId: string = STORED_ID,
   at: string = STACK_SAVED_AT
 ) => ({
-  id: `s_${name.toLowerCase().replace(/\s+/g, "-")}`,
+  id: crypto.randomUUID(),
   name,
   configId,
   createdAt: at,

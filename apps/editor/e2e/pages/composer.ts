@@ -50,6 +50,7 @@ export class Composer {
   readonly proposalHeader: Locator
   readonly proposalReason: Locator
   readonly proposalRows: Locator
+  readonly proposalBody: Locator
   readonly applyButton: Locator
   readonly discardButton: Locator
 
@@ -66,6 +67,9 @@ export class Composer {
     this.proposalHeader = this.proposal.getByRole("status")
     this.proposalReason = this.proposal.locator(PROPOSAL_REASON)
     this.proposalRows = this.proposal.locator(PROPOSAL_ROW)
+    this.proposalBody = this.proposal.getByRole("region", {
+      name: "Proposed changes",
+    })
     this.applyButton = page.getByRole("button", { name: "Apply proposal" })
     this.discardButton = page.getByRole("button", { name: "Discard proposal" })
   }
@@ -91,6 +95,14 @@ export class Composer {
     return this.field.evaluate((node) => ({
       client: node.clientHeight,
       scroll: node.scrollHeight,
+    }))
+  }
+
+  /** Measured, as `fieldBox` is; `room` is how far the list can scroll. */
+  async proposalBodyScroll() {
+    return this.proposalBody.evaluate((node) => ({
+      top: node.scrollTop,
+      room: node.scrollHeight - node.clientHeight,
     }))
   }
 

@@ -18,7 +18,7 @@ import { beforeEach, describe, expect, it } from "vitest"
 import { useAccountStore } from "./account-store"
 import { useSavedStackStore } from "./saved-stack-store"
 
-import type { ListRefusal } from "@/lib/api/stacks"
+import type { ListRefusal, RemoteStack } from "@/lib/api/stacks"
 import type { SeedPayload } from "@workspace/matrix"
 
 // Driven through `refresh` and `save`, since the grid reads the store's answer.
@@ -30,6 +30,15 @@ const local = (name: string, payload: SeedPayload) => ({
   name,
   payload,
 })
+
+// A row the worker answered a save with: as sent, under an id it minted.
+const minted = (name: string, configId?: string) => {
+  const row: Record<keyof RemoteStack, unknown> = {
+    ...savedStack(name, configId),
+    id: expect.any(String),
+  }
+  return row
+}
 
 // Newest first, as the store keeps them.
 const withLocalSaves = (...saves: ReturnType<typeof local>[]) =>
@@ -210,14 +219,15 @@ describe("a save a first sign-in could not carry", () => {
   it("is carried over on the next load once the account takes it", async () => {
     const refusing = new Set(["A"])
     const { named } = await firstSignInRefusing(refusing)
+    const listed = savedStack("B")
 
     refusing.delete("A")
-    accountNowLists([savedStack("B")])
+    accountNowLists([listed])
     await useAccountStore.getState().refresh()
 
     expect(named).toStrictEqual(["B", "A"])
     expect(answer()).toStrictEqual({
-      stacks: [savedStack("A"), savedStack("B")],
+      stacks: [minted("A"), listed],
       unadopted: {},
     })
   })
@@ -395,8 +405,9 @@ describe("an account whose list could not be read", () => {
       carriedEarlier()
       await useAccountStore.getState().refresh()
       const before = listRefusal()
+      const listed = [savedStack("B"), savedStack("A")]
 
-      accountNowLists([savedStack("B"), savedStack("A")])
+      accountNowLists(listed)
       await useAccountStore.getState().refresh()
 
       expect({
@@ -407,7 +418,7 @@ describe("an account whose list could not be read", () => {
       }).toStrictEqual({
         before: "refused",
         after: null,
-        stacks: [savedStack("B"), savedStack("A")],
+        stacks: listed,
         posted: [],
       })
     })
@@ -559,7 +570,7 @@ describe("a save landing beside a refusal", () => {
 
     expect(saved.ok).toBe(true)
     expect(answer()).toStrictEqual({
-      stacks: [savedStack(NEXT_JS, STORED_ID)],
+      stacks: [minted(NEXT_JS, STORED_ID)],
       unadopted: { [refused.id]: "unwritable" },
     })
   })
@@ -572,7 +583,7 @@ describe("a save landing beside a refusal", () => {
 
     expect(saved.ok).toBe(true)
     expect(answer()).toStrictEqual({
-      stacks: [savedStack(NEXT_JS, STORED_ID)],
+      stacks: [minted(NEXT_JS, STORED_ID)],
       unadopted: {},
     })
   })
@@ -603,8 +614,10 @@ describe("the account before anything has been read", () => {
 
 // An owed save whose name the account lists is asked for a new name.
 describe("an owed save whose name the account already lists", () => {
+  const held = [savedStack("B"), savedStack("A")]
+
   const owedAndClashing = async (payload: SeedPayload) => {
-    accountHolding([savedStack("B"), savedStack("A")])
+    accountHolding(held)
     const clashing = local("a", payload)
     withLocalSaves(local("B", STORED_PAYLOAD), clashing)
     useSavedStackStore.setState({ owed: [clashing.id] })
@@ -637,9 +650,8 @@ describe("an owed save whose name the account already lists", () => {
     expect(carried.ok).toBe(true)
     expect(named).toStrictEqual(["A renamed"])
     expect(useAccountStore.getState().stacks).toStrictEqual([
-      savedStack("A renamed"),
-      savedStack("B"),
-      savedStack("A"),
+      minted("A renamed"),
+      ...held,
     ])
     expect(useAccountStore.getState().clashes).toStrictEqual([])
     expect(useSavedStackStore.getState().owed).toStrictEqual([])

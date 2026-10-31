@@ -1,14 +1,19 @@
+import { GITHUB_RAW_ORIGIN } from "@workspace/api-mocks"
 import {
   EXTERNAL_SKILL,
   SKILL_INDEX,
   XSS_SENTINEL,
 } from "@workspace/api-mocks/fixtures"
+import { http, HttpResponse } from "msw"
 
 import { expect, test } from "../fixtures"
 import { EXCLUSIVE_CATEGORY, DOMAINS } from "../support/catalog"
 import { stubCreateConfig } from "../support/sharing"
 import { stubSkillContents } from "../support/skill-contents"
 import { stubSkillIndex } from "../support/skill-index"
+import { stubWith } from "../support/stub"
+
+import type { Locator } from "@playwright/test"
 
 // A shared link carries a stranger's files to someone's disk, so they must be
 // readable first.
@@ -165,5 +170,113 @@ test.describe("reading an added skill's contents", () => {
     const cell = configure.skillIn(DOMAINS.web, CATEGORY, CATALOGUE_SKILL)
 
     await expect(cell.contentsButton).toBeHidden()
+  })
+})
+
+// Scroll reads go through `expect.poll`, and only "moved" is asserted: the
+// browser's scroll anchoring makes exact offsets unreliable.
+const scrollOf = (pane: Locator) =>
+  pane.evaluate((node) => ({
+    top: node.scrollTop,
+    room: node.scrollHeight - node.clientHeight,
+  }))
+
+const containing = (text: string) =>
+  new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+
+/**
+ * A real SKILL.md runs to hundreds of lines, and its text holds nothing to
+ * focus, so a keyboard user reads it through the pane itself: a tab stop
+ * before the file list, saying which file it holds. Served long in place of
+ * the fixture's few lines. Chromium already makes such a scroller a tab stop
+ * on its own, so the order and the scrolling hold before the app marks it; the
+ * name, and axe in a11y.spec.ts, do not.
+ */
+test.describe("reading a file longer than its pane from the keyboard", () => {
+  const LONG_MANIFEST = [
+    MANIFEST_TEXT,
+    ...Array.from({ length: 200 }, (_, line) => `Line ${line + 1}.`),
+  ].join("\n")
+
+  test.beforeEach(async ({ page, configure }) => {
+    stubSkillIndex(page)
+    stubSkillContents(page)
+    stubWith(page, [
+      http.get(
+        `${GITHUB_RAW_ORIGIN}/${EXTERNAL_SKILL.repo}/HEAD/${EXTERNAL_SKILL.path}/${MANIFEST}`,
+        () => HttpResponse.text(LONG_MANIFEST)
+      ),
+    ])
+
+    const dialog = configure.addSkillDialog
+    await configure.addSkillButton.click()
+    await dialog.stage(SKILL_NAME)
+    await dialog.categorise(SKILL_NAME, CATEGORY_OPTION)
+    await dialog.confirm()
+    await configure.skillIn(DOMAINS.web, CATEGORY, SKILL_NAME).openContents()
+
+    const contents = configure.skillContentsDialog
+    await expect(contents.openPath).toHaveText(MANIFEST)
+    // Subject guard: the served file really is the long one, and outgrows the
+    // pane.
+    expect(await contents.body.textContent()).toBe(LONG_MANIFEST)
+    await expect
+      .poll(async () => (await scrollOf(contents.textPane)).room)
+      .toBeGreaterThan(0)
+  })
+
+  test("Shift+Tab from the file list lands on the file's text", async ({
+    configure,
+    page,
+  }) => {
+    const contents = configure.skillContentsDialog
+    await contents.file(MANIFEST).focus()
+
+    await page.keyboard.press("Shift+Tab")
+
+    await expect(contents.textPane).toBeFocused()
+  })
+
+  test("its name is the file it shows, and follows the file picked", async ({
+    configure,
+  }) => {
+    const contents = configure.skillContentsDialog
+    const pane = contents.textPane
+
+    await expect(pane).toHaveAccessibleName(containing(MANIFEST))
+
+    await contents.open(NESTED)
+    await expect(contents.openPath).toHaveText(NESTED)
+
+    await expect(pane).toHaveAccessibleName(containing(NESTED))
+  })
+
+  test("the arrow keys and End scroll it once Shift+Tab has reached it", async ({
+    configure,
+    page,
+  }) => {
+    const contents = configure.skillContentsDialog
+    const pane = contents.textPane
+    await contents.file(MANIFEST).focus()
+    await page.keyboard.press("Shift+Tab")
+
+    await page.keyboard.press("ArrowDown")
+    await expect.poll(async () => (await scrollOf(pane)).top).toBeGreaterThan(0)
+    const stepped = (await scrollOf(pane)).top
+
+    await page.keyboard.press("End")
+    await expect
+      .poll(async () => (await scrollOf(pane)).top)
+      .toBeGreaterThan(stepped)
+  })
+
+  // A control: what the pane already does, which reaching it must not change.
+  test("the wheel still scrolls it", async ({ configure, page }) => {
+    const pane = configure.skillContentsDialog.textPane
+    await pane.hover()
+
+    await page.mouse.wheel(0, 400)
+
+    await expect.poll(async () => (await scrollOf(pane)).top).toBeGreaterThan(0)
   })
 })

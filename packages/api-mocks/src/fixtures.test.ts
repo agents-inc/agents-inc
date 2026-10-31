@@ -49,8 +49,11 @@ import {
   freshlyPickedSkill,
   projectMintedPayload,
   projectOwnSkill,
+  savedStack,
   seedPayload,
 } from "./fixtures"
+
+import type { SavedStack } from "./fixtures"
 
 // The real expander, wrapped so one spec can hand the fixture a stack the vendored catalogue lacks.
 vi.mock("@workspace/matrix", async (importOriginal) => {
@@ -385,6 +388,10 @@ describe("the marketplaces", () => {
   })
 })
 
+// `crypto.randomUUID()`, as `createStack` in apps/server's stacks.ts mints it.
+const WORKER_STACK_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+
 describe("the saved stacks", () => {
   it("list both, the more recently updated first", () => {
     expect(SAVED_STACKS).toStrictEqual([SAVED_STACK, OTHER_SAVED_STACK])
@@ -395,6 +402,43 @@ describe("the saved stacks", () => {
 
   it("give each stack its own id", () => {
     expect(SAVED_STACK.id).not.toBe(OTHER_SAVED_STACK.id)
+  })
+
+  // The grid keys an account's rows on the id. An account can hold one name
+  // twice: rows saved before the worker refused a held name are still there.
+  it("give two saves under one name two ids", () => {
+    expect(savedStack(SAVED_STACK.name).id).not.toBe(
+      savedStack(SAVED_STACK.name).id
+    )
+  })
+
+  // The worker compares names trimmed and in any case, and nothing more, so an
+  // account can hold both.
+  it("give two names that differ only by a hyphen two ids", () => {
+    expect(savedStack("Side project").id).not.toBe(
+      savedStack("Side-project").id
+    )
+  })
+
+  it("mint each id as the worker does", () => {
+    const ids = [SAVED_STACK.id, OTHER_SAVED_STACK.id, savedStack("A").id]
+
+    expect(ids.filter((id) => !WORKER_STACK_ID.test(id))).toStrictEqual([])
+  })
+
+  // The control: minting the id leaves the rest of the row as it was given.
+  it("keep the name, pointer and instant each save was given", () => {
+    const given: Record<keyof SavedStack, unknown> = {
+      id: expect.any(String),
+      name: "Side project",
+      configId: DEAD_LINK_ID,
+      createdAt: STACK_RENAMED_AT,
+      updatedAt: STACK_RENAMED_AT,
+    }
+
+    expect(
+      savedStack("Side project", DEAD_LINK_ID, STACK_RENAMED_AT)
+    ).toStrictEqual(given)
   })
 
   it("rename to a later instant than the save", () => {

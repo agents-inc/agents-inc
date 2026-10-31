@@ -13,6 +13,7 @@ import { stubSkillContents } from "../support/skill-contents"
 import { stubSkillIndex } from "../support/skill-index"
 
 import type { ConfigurePage } from "../pages/configure-page"
+import type { Locator } from "@playwright/test"
 
 /**
  * What needs a browser. The bytes are held against `@workspace/compile` in
@@ -553,6 +554,152 @@ test.describe("the content pane", () => {
 
     expect(tree?.width).toBe(TREE_PANE_RENDERED_PX)
     expect(content?.width).toBeGreaterThan(TREE_PANE_RENDERED_PX)
+  })
+})
+
+// Scroll reads go through `expect.poll`, and only "moved" is asserted: the
+// browser's scroll anchoring makes exact offsets unreliable.
+const scrollOf = (pane: Locator) =>
+  pane.evaluate((node) => ({
+    top: node.scrollTop,
+    room: node.scrollHeight - node.clientHeight,
+  }))
+
+const containing = (text: string) =>
+  new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+
+/**
+ * A file longer than its pane is read by scrolling, so a keyboard user needs
+ * the pane itself: its rows are text, with nothing in them to focus. It sits
+ * between the tree and Close, and says which file it holds. Chromium already
+ * makes such a scroller a tab stop on its own, so the order and the scrolling
+ * hold before the app marks it; the name, and axe in a11y.spec.ts, do not.
+ */
+test.describe("the content pane, from the keyboard", () => {
+  test.beforeEach(async ({ configure }) => {
+    await configure.skillIn(web, CATEGORY, REACT).toggle()
+    await configure.roster.previewButton.click()
+
+    const preview = configure.outputPreviewDialog
+    await preview.select(GLOBAL_DEVELOPER_PATH)
+    await expect(preview.subtitle).toHaveText(
+      `${GLOBAL_DEVELOPER_PATH} · ${NEW}`
+    )
+
+    // Subject guard: a sub-agent's markdown outgrows the pane, or nothing here
+    // has anything to scroll.
+    await expect
+      .poll(async () => (await scrollOf(preview.contentPane)).room)
+      .toBeGreaterThan(0)
+  })
+
+  test("Tab from the tree's selected row lands on it", async ({
+    configure,
+    page,
+  }) => {
+    const preview = configure.outputPreviewDialog
+    await preview.row(GLOBAL_DEVELOPER_PATH).focus()
+
+    await page.keyboard.press("Tab")
+
+    await expect(preview.contentPane).toBeFocused()
+  })
+
+  test("Shift+Tab from Close lands on it", async ({ configure, page }) => {
+    const preview = configure.outputPreviewDialog
+    await preview.closeButton.focus()
+
+    await page.keyboard.press("Shift+Tab")
+
+    await expect(preview.contentPane).toBeFocused()
+  })
+
+  test("its name is the file it shows, and follows the selection", async ({
+    configure,
+  }) => {
+    const preview = configure.outputPreviewDialog
+
+    await expect(preview.contentPane).toHaveAccessibleName(
+      containing(GLOBAL_DEVELOPER_PATH)
+    )
+
+    await preview.select(GLOBAL_CONFIG_PATH)
+    await expect(preview.subtitle).toHaveText(`${GLOBAL_CONFIG_PATH} · ${NEW}`)
+
+    await expect(preview.contentPane).toHaveAccessibleName(
+      containing(GLOBAL_CONFIG_PATH)
+    )
+  })
+
+  test("the arrow keys and End scroll it once Tab has reached it", async ({
+    configure,
+    page,
+  }) => {
+    const preview = configure.outputPreviewDialog
+    await preview.row(GLOBAL_DEVELOPER_PATH).focus()
+    await page.keyboard.press("Tab")
+
+    await page.keyboard.press("ArrowDown")
+    await expect
+      .poll(async () => (await scrollOf(preview.contentPane)).top)
+      .toBeGreaterThan(0)
+    const stepped = (await scrollOf(preview.contentPane)).top
+
+    await page.keyboard.press("End")
+    await expect
+      .poll(async () => (await scrollOf(preview.contentPane)).top)
+      .toBeGreaterThan(stepped)
+  })
+
+  /** The tree's arrows are its own: scrolling the bytes picks no other file. */
+  test("scrolling it from the keyboard leaves the selection where it was", async ({
+    configure,
+    page,
+  }) => {
+    const preview = configure.outputPreviewDialog
+    await preview.row(GLOBAL_DEVELOPER_PATH).focus()
+    await page.keyboard.press("Tab")
+    await expect(preview.contentPane).toBeFocused()
+
+    await page.keyboard.press("ArrowDown")
+    await page.keyboard.press("ArrowUp")
+
+    await expect(preview.subtitle).toHaveText(
+      `${GLOBAL_DEVELOPER_PATH} · ${NEW}`
+    )
+    await expect(preview.row(GLOBAL_DEVELOPER_PATH)).toHaveAttribute(
+      "aria-selected",
+      "true"
+    )
+  })
+
+  // Controls: what the pane already does, which reaching it must not change.
+  test("the wheel still scrolls it", async ({ configure, page }) => {
+    const preview = configure.outputPreviewDialog
+    await preview.contentPane.hover()
+
+    await page.mouse.wheel(0, 400)
+
+    await expect
+      .poll(async () => (await scrollOf(preview.contentPane)).top)
+      .toBeGreaterThan(0)
+  })
+
+  test("Tab from the tree leaves a scrolled pane where it was", async ({
+    configure,
+    page,
+  }) => {
+    const preview = configure.outputPreviewDialog
+    await preview.contentPane.hover()
+    await page.mouse.wheel(0, 400)
+    await expect
+      .poll(async () => (await scrollOf(preview.contentPane)).top)
+      .toBeGreaterThan(0)
+
+    await preview.row(GLOBAL_DEVELOPER_PATH).focus()
+    await page.keyboard.press("Tab")
+
+    expect((await scrollOf(preview.contentPane)).top).toBeGreaterThan(0)
   })
 })
 

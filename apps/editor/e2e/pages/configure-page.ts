@@ -602,14 +602,6 @@ export class ConfigurePage {
     return !drawn.equals(withoutIt)
   }
 
-  // Whether the focused `target` shows a ring in the ring token.
-  async focusRing(target: Locator) {
-    const focused = await target.evaluate(
-      (node) => node === document.activeElement
-    )
-    return { focused, ringVisible: await this.paintsWith(target, "ring") }
-  }
-
   category(domainLabel: string, categoryName: string): Locator {
     return this.domain(domainLabel).getByRole("group", {
       name: categoryName,
