@@ -30,7 +30,8 @@ import { silenceConsole } from "../__tests__/helpers/silence-console.js";
 import { firstElement } from "../__tests__/helpers/element-at.js";
 import { DEFAULT_TEST_SKILLS } from "../__tests__/mock-data/mock-skills";
 import { setVerbose } from "../../utils/logger";
-import { DEFAULT_PUBLIC_SOURCE_NAME } from "../../consts";
+import { DEFAULT_PUBLIC_SOURCE_NAME, sourceDirName } from "../../consts";
+import { CODEX_HOME_VAR } from "../installation/install-layout";
 import { DEFAULT_SOURCE, SOURCE_ENV_VAR } from "../configuration/config";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 import type { MergedSkillsMatrix, ResolvedSkill, SkillId } from "../../types";
@@ -201,6 +202,36 @@ describe("source-loader: what the global installation adds to a project's load",
         `  Global installation's marketplace not loaded — Local marketplace not found: '${MISSING_GLOBAL_MARKETPLACE}'`,
       ),
     );
+  });
+
+  it("reads the folder it runs in where it names no project, so a Codex project there never reads Claude's global config", async () => {
+    vi.stubEnv(CODEX_HOME_VAR, undefined);
+    await writeTestTsConfig(
+      projectSource.projectDir,
+      buildProjectConfig({
+        marketplace: projectSource.sourceDir,
+        skills: buildSkillConfigs([SHARED_SKILL.id], {
+          scope: "project",
+          origin: TEST_MARKETPLACE_NAME,
+        }),
+      }),
+      sourceDirName("codex"),
+    );
+    await writeRawTestConfig(fakeHome, renderUnparseableConfigTs(), sourceDirName("claude"));
+    const savedCwd = process.cwd();
+    process.chdir(projectSource.projectDir);
+
+    try {
+      const { matrix } = await loadSkillsMatrixFromSource({
+        sourceFlag: projectSource.sourceDir,
+        skipExtraSources: true,
+      });
+
+      expect(Object.keys(matrix.skills)).toContain(SHARED_SKILL.id);
+    } finally {
+      process.chdir(savedCwd);
+      vi.unstubAllEnvs();
+    }
   });
 
   it("does not load the global installation's marketplace when it holds nothing to seat", async () => {

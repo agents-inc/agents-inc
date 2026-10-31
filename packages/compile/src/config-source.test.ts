@@ -43,8 +43,6 @@ const CATALOG = buildCatalog(
   []
 )
 
-const GLOBAL_IMPORT_PATH = "../../.agents-inc/claude"
-
 /** A global config carrying every field the standalone writer treats on its own. */
 const FULL_GLOBAL = buildProjectConfig({
   name: "global",
@@ -190,67 +188,6 @@ const PROJECT = buildProjectConfig({
   marketplace: "github:acme/skills",
 })
 
-const PROJECT_WITH_GLOBAL_IMPORT_SOURCE = `import globalConfig from '../../.agents-inc/claude/config'
-import type {
-  Domain,
-  ProjectConfig,
-  ProjectAgentName,
-  AgentScopeConfig,
-  SkillConfig,
-  StackAgentConfig,
-} from './config-types'
-
-const skills: SkillConfig[] = [
-  ...globalConfig.skills,
-  { id: 'web-testing-vitest', scope: 'project', origin: 'eject' },
-  { id: 'web-framework-react', scope: 'global', origin: 'agents-inc', excluded: true },
-]
-
-const agents: AgentScopeConfig[] = [
-  ...globalConfig.agents,
-  { name: 'api-developer', scope: 'project' },
-  { name: 'web-developer', scope: 'global', excluded: true },
-]
-
-const stack: Partial<Record<ProjectAgentName, StackAgentConfig>> = {
-  'api-developer': { 'web-testing': [{ id: 'web-testing-vitest', preloaded: true }] },
-}
-
-const selectedDomains: Domain[] = [...(globalConfig.selectedDomains ?? []), 'api', 'web']
-
-export default {
-  ...globalConfig,
-  name: 'my-app',
-  skills,
-  agents,
-  stack,
-  selectedDomains,
-  marketplace: 'github:acme/skills',
-} satisfies ProjectConfig
-`
-
-/** Named like the global config, with nothing of its own. */
-const BARE_PROJECT_NAMED_GLOBAL = buildProjectConfig({
-  name: "global",
-  agents: [],
-  skills: [],
-})
-
-const BARE_PROJECT_WITH_GLOBAL_IMPORT_SOURCE = `import globalConfig from '../config'
-import type { ProjectConfig, AgentScopeConfig, SkillConfig } from './config-types'
-
-const skills: SkillConfig[] = [...globalConfig.skills]
-
-const agents: AgentScopeConfig[] = [...globalConfig.agents]
-
-export default {
-  ...globalConfig,
-  name: 'agents-inc',
-  skills,
-  agents,
-} satisfies ProjectConfig
-`
-
 /** The project's stack also names the global sub-agent it masks, which stays in the global file. */
 const PROJECT_MASKING_A_GLOBAL_STACK: ProjectConfig = {
   ...PROJECT,
@@ -350,6 +287,61 @@ const OWN_DESCRIPTION_INLINED_SOURCE = `import type { ProjectConfig } from './co
 export default {
   name: 'my-app',
   description: 'My app',
+  skills: [],
+  agents: [],
+} satisfies ProjectConfig
+`
+
+/** Set up from a custom marketplace, which records its name beside it. */
+const NAMED_CUSTOM_GLOBAL = buildProjectConfig({
+  ...BARE_GLOBAL,
+  marketplace: "github:acme/skills",
+  marketplaceName: "acme",
+})
+
+/** Set up from the public catalogue, which loads unnamed. */
+const UNNAMED_PUBLIC_PROJECT = buildProjectConfig({
+  ...BARE_PROJECT,
+  marketplace: "github:agents-inc/skills",
+})
+
+const UNNAMED_PUBLIC_PROJECT_INLINED_SOURCE = `import type { ProjectConfig } from './config-types'
+
+export default {
+  name: 'my-app',
+  marketplace: 'github:agents-inc/skills',
+  skills: [],
+  agents: [],
+} satisfies ProjectConfig
+`
+
+const NAMED_PUBLIC_PROJECT = buildProjectConfig({
+  ...UNNAMED_PUBLIC_PROJECT,
+  marketplaceName: "agents-inc",
+})
+
+const NAMED_PUBLIC_PROJECT_INLINED_SOURCE = `import type { ProjectConfig } from './config-types'
+
+export default {
+  name: 'my-app',
+  marketplace: 'github:agents-inc/skills',
+  marketplaceName: 'agents-inc',
+  skills: [],
+  agents: [],
+} satisfies ProjectConfig
+`
+
+const UNNAMED_CUSTOM_PROJECT = buildProjectConfig({
+  ...BARE_PROJECT,
+  marketplace: "github:acme/skills",
+})
+
+const CUSTOM_MARKETPLACE_INLINED_SOURCE = `import type { ProjectConfig } from './config-types'
+
+export default {
+  name: 'my-app',
+  marketplace: 'github:acme/skills',
+  marketplaceName: 'acme',
   skills: [],
   agents: [],
 } satisfies ProjectConfig
@@ -532,36 +524,6 @@ describe("the blank global config", () => {
   })
 })
 
-describe("a project config that imports its global config", () => {
-  it("spreads the global arrays ahead of its own and drops the projects list", () => {
-    expect(
-      generateConfigSource(PROJECT, CATALOG, {
-        isProjectConfig: true,
-        globalImportPath: GLOBAL_IMPORT_PATH,
-      })
-    ).toBe(PROJECT_WITH_GLOBAL_IMPORT_SOURCE)
-  })
-
-  it("leaves out a stack that holds nothing, as the project half of a split always does", () => {
-    expect(
-      generateConfigSource(
-        { ...BARE_PROJECT_NAMED_GLOBAL, stack: {} },
-        CATALOG,
-        { isProjectConfig: true, globalImportPath: ".." }
-      )
-    ).toBe(BARE_PROJECT_WITH_GLOBAL_IMPORT_SOURCE)
-  })
-
-  it("never takes the global config's name, and omits a stack and domains it does not hold", () => {
-    expect(
-      generateConfigSource(BARE_PROJECT_NAMED_GLOBAL, CATALOG, {
-        isProjectConfig: true,
-        globalImportPath: "..",
-      })
-    ).toBe(BARE_PROJECT_WITH_GLOBAL_IMPORT_SOURCE)
-  })
-})
-
 describe("a project config that inlines its global config", () => {
   it("masks each global entry with the project's tombstone and keeps the global sub-agent's stack out", () => {
     expect(
@@ -618,14 +580,52 @@ describe("a project config that inlines its global config", () => {
   })
 })
 
+describe("the marketplace a project config that inlines its global config records", () => {
+  it("a project config with its own marketplace never carries the global's marketplaceName", () => {
+    expect(
+      generateConfigSource(UNNAMED_PUBLIC_PROJECT, CATALOG, {
+        isProjectConfig: true,
+        globalConfig: NAMED_CUSTOM_GLOBAL,
+      })
+    ).toBe(UNNAMED_PUBLIC_PROJECT_INLINED_SOURCE)
+  })
+
+  it("keeps the project's own name beside its own marketplace", () => {
+    expect(
+      generateConfigSource(NAMED_PUBLIC_PROJECT, CATALOG, {
+        isProjectConfig: true,
+        globalConfig: NAMED_CUSTOM_GLOBAL,
+      })
+    ).toBe(NAMED_PUBLIC_PROJECT_INLINED_SOURCE)
+  })
+
+  it("takes the global's name for the global's own marketplace", () => {
+    expect(
+      generateConfigSource(UNNAMED_CUSTOM_PROJECT, CATALOG, {
+        isProjectConfig: true,
+        globalConfig: NAMED_CUSTOM_GLOBAL,
+      })
+    ).toBe(CUSTOM_MARKETPLACE_INLINED_SOURCE)
+  })
+
+  it("takes the global's marketplace and name together when the project records no marketplace", () => {
+    expect(
+      generateConfigSource(BARE_PROJECT, CATALOG, {
+        isProjectConfig: true,
+        globalConfig: NAMED_CUSTOM_GLOBAL,
+      })
+    ).toBe(CUSTOM_MARKETPLACE_INLINED_SOURCE)
+  })
+})
+
 describe("a project config given no global config", () => {
-  it("is refused, naming both ways to supply one", () => {
+  it("is refused, naming the option that supplies one", () => {
     expect(() =>
       generateConfigSource(BARE_PROJECT, CATALOG, { isProjectConfig: true })
     ).toThrow(
       new Error(
         "A project config needs the global config it extends: pass `globalConfig` to inline its " +
-          "entries, or `globalImportPath` to import and spread them. Neither was given."
+          "entries."
       )
     )
   })
@@ -666,11 +666,12 @@ const EXPECTED_SOURCES = {
   EMPTY_GLOBAL_SOURCE,
   SCRAMBLED_STACK_SOURCE,
   BLANK_GLOBAL_SOURCE,
-  PROJECT_WITH_GLOBAL_IMPORT_SOURCE,
-  BARE_PROJECT_WITH_GLOBAL_IMPORT_SOURCE,
   PROJECT_WITH_INLINED_GLOBAL_SOURCE,
   NOTHING_INLINED_SOURCE,
   OWN_DESCRIPTION_INLINED_SOURCE,
+  UNNAMED_PUBLIC_PROJECT_INLINED_SOURCE,
+  NAMED_PUBLIC_PROJECT_INLINED_SOURCE,
+  CUSTOM_MARKETPLACE_INLINED_SOURCE,
   ONLY_GLOBAL_ENTRIES_INLINED_SOURCE,
   ONLY_PROJECT_ENTRIES_INLINED_SOURCE,
   NAMED_ENTRIES_SOURCE,

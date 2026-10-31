@@ -5,6 +5,7 @@ import { extractFrontmatter } from "../../utils/frontmatter";
 import { glob, readFile, directoryExists, fileExists } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
 import { isRecord } from "../../utils/type-guards";
+import { unregisteredSkillsSkipped } from "../../utils/messages";
 import {
   DIRS,
   LOCAL_PSEUDO_CATEGORY,
@@ -223,6 +224,8 @@ type LoadSkillsFromDirOptions = {
    * Skip a SKILL.md whose metadata.yaml is missing or describes no skill; plugin skills carry none.
    */
   requireMetadata?: boolean;
+  /** Names this directory in the one line counting folders skipped for having no metadata.yaml. */
+  folderLabel?: string;
 };
 
 export type UnusableSkillMetadata = {
@@ -244,9 +247,10 @@ export async function loadSkillsFromDir(
   skillsDir: string,
   options: LoadSkillsFromDirOptions = {},
 ): Promise<LoadedSkills> {
-  const { pathPrefix = "", requireMetadata = false } = options;
+  const { pathPrefix = "", requireMetadata = false, folderLabel = `${pathPrefix}/` } = options;
   const skills: SkillDefinitionMap = {};
   const unusableMetadata: UnusableSkillMetadata[] = [];
+  let unregisteredCount = 0;
 
   if (!(await directoryExists(skillsDir))) {
     return { skills, unusableMetadata };
@@ -260,6 +264,7 @@ export async function loadSkillsFromDir(
     if (requireMetadata) {
       const verdict = await judgeSkillMetadata(skill);
       if (verdict.kind === "unusable") unusableMetadata.push(verdict.refusal);
+      if (verdict.kind === "unregistered") unregisteredCount++;
       if (verdict.kind !== "admitted") continue;
     }
 
@@ -267,6 +272,7 @@ export async function loadSkillsFromDir(
     if (definition) skills[definition.id] = definition;
   }
 
+  if (unregisteredCount > 0) warn(unregisteredSkillsSkipped(unregisteredCount, folderLabel));
   return { skills, unusableMetadata };
 }
 
@@ -293,17 +299,21 @@ function locateSkill(skillsDir: string, skillFile: string, pathPrefix: string): 
   };
 }
 
-/** Only an `unusable` file is the caller's to report; a `skipped` skill is logged here. */
+/**
+ * Only an `unusable` file is the caller's to report; `unregistered` folders are counted into one
+ * line, and a `skipped` skill is logged here.
+ */
 type SkillMetadataVerdict =
-  { kind: "admitted" } | { kind: "skipped" } | { kind: "unusable"; refusal: UnusableSkillMetadata };
+  | { kind: "admitted" }
+  | { kind: "unregistered" }
+  | { kind: "skipped" }
+  | { kind: "unusable"; refusal: UnusableSkillMetadata };
 
 async function judgeSkillMetadata(skill: SkillLocation): Promise<SkillMetadataVerdict> {
   const metadataPath = path.join(skill.skillDir, STANDARD_FILES.METADATA_YAML);
   if (!(await fileExists(metadataPath))) {
-    warn(
-      `Skill '${skill.skillDirName}' in '${skill.displayPath}' is missing ${STANDARD_FILES.METADATA_YAML} — skipped. Add ${STANDARD_FILES.METADATA_YAML} to register it with the CLI.`,
-    );
-    return { kind: "skipped" };
+    verbose(`  No ${STANDARD_FILES.METADATA_YAML} in '${skill.skillDirName}'`);
+    return { kind: "unregistered" };
   }
 
   // Reported rather than loaded around: discovery and compile refuse the same file.

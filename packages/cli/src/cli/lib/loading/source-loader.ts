@@ -84,6 +84,7 @@ type SourceLoadOptions = {
   /** Defaults to `"stored"`, so the environment rung is never reached by omission. */
   caller?: SourceCaller;
   sourceFlag?: string;
+  /** Defaults to the cwd, for the config read as for the skills merged. */
   projectDir?: string;
   /** Whose config and copied-in skills are read, where a scope holds two installations. */
   provider?: Provider;
@@ -133,15 +134,20 @@ async function loadCatalogue(options: SourceLoadOptions): Promise<SourceLoadResu
     matrixOnly = false,
   } = options;
 
+  const resolvedProjectDir = projectDir || process.cwd();
+
   // Aborts on an unreadable config: every skill resolves against the marketplace named here.
-  const sourceConfig = await resolveSource({ caller, flag: sourceFlag, projectDir, provider });
+  const sourceConfig = await resolveSource({
+    caller,
+    flag: sourceFlag,
+    projectDir: resolvedProjectDir,
+    provider,
+  });
   const { source } = sourceConfig;
 
   verbose(`Loading skills from source: ${source}`);
 
   const catalogue = await resolveBaseResult(sourceConfig, { purpose, devMode, matrixOnly });
-
-  const resolvedProjectDir = projectDir || process.cwd();
 
   // Read before any local merge, after which a skill's provenance is no longer legible.
   const result: SourceLoadResult = {
@@ -795,7 +801,10 @@ function undeclaredCategoryRefusal(
   metadata: ExtractedSkillMetadata,
   category: CategoryPath,
 ): string {
-  const metadataPath = path.join(metadata.path, STANDARD_FILES.METADATA_YAML);
+  if (metadata.localPath === undefined) {
+    throw new Error(`Local skill '${metadata.id}' was discovered without its directory`);
+  }
+  const metadataPath = path.join(metadata.localPath, STANDARD_FILES.METADATA_YAML);
   return (
     `Skipping local skill '${metadata.id}': ${METADATA_KEYS.CATEGORY} '${category}' is not one this ` +
     `installation declares, so the skill belongs in no grid tab and can be given to no sub-agent. ` +

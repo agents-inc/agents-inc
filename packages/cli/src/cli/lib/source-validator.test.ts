@@ -10,11 +10,14 @@ import {
   PLUGIN_MANIFEST_DIR,
   SKILL_CATEGORIES_PATH,
   SKILL_RULES_PATH,
+  SOURCE_ROOT_DIR,
   STACKS_FILE_PATH,
   STANDARD_DIRS,
   STANDARD_FILES,
   marketplaceManifestPath,
 } from "../consts";
+import { buildSourceConfig } from "./__tests__/factories/config-factories";
+import { writeTestTsConfig } from "./__tests__/helpers/config-io";
 import {
   createMockMarketplace,
   createMockMarketplacePlugin,
@@ -30,7 +33,10 @@ import {
   renderUnparseableMetadataYaml,
   renderUnparseableSkillMd,
 } from "./__tests__/content-generators";
-import { renderUnparseableConfigTs } from "./__tests__/factories/unloadable-config-factories";
+import {
+  renderConfigTsWithNamedExportOnly,
+  renderUnparseableConfigTs,
+} from "./__tests__/factories/unloadable-config-factories";
 import {
   VALID_EMBEDDED_SKILL_METADATA_FILE,
   VALID_SKILL_CATEGORIES_FILE,
@@ -645,6 +651,56 @@ describe("source-validator", () => {
         expect(stacksErrors.map((i) => i.message)).toStrictEqual(["Config is empty"]);
       });
 
+      describe("a stacks file the marketplace's config declares", () => {
+        const DECLARED_STACKS_FILE = "data/stacks.ts";
+
+        beforeEach(async () => {
+          await writeTestTsConfig(
+            sourceDir,
+            buildSourceConfig({ stacksFile: DECLARED_STACKS_FILE }),
+            SOURCE_ROOT_DIR,
+          );
+          await mkdir(path.join(sourceDir, path.dirname(DECLARED_STACKS_FILE)), {
+            recursive: true,
+          });
+        });
+
+        it("is refused at the declared path when its default export fails the schema", async () => {
+          await writeFile(
+            path.join(sourceDir, DECLARED_STACKS_FILE),
+            renderConfigTs({ stacks: "not a list" }),
+          );
+
+          const result = await validateSource(sourceDir);
+
+          expect(result.issues.filter((i) => i.file === DECLARED_STACKS_FILE)).toStrictEqual([
+            {
+              severity: "warning",
+              file: DECLARED_STACKS_FILE,
+              message: expect.stringMatching(
+                /^Cross-reference validation skipped: failed to load data\/stacks\.ts: /,
+              ),
+            },
+            {
+              severity: "error",
+              file: DECLARED_STACKS_FILE,
+              message: expect.stringMatching(/^Failed to load data\/stacks\.ts: .*stacks: /),
+            },
+          ]);
+        });
+
+        it("raises nothing at the declared path when its default export is valid", async () => {
+          await writeFile(
+            path.join(sourceDir, DECLARED_STACKS_FILE),
+            renderConfigTs(VALID_STACKS_CONFIG_FILE),
+          );
+
+          const result = await validateSource(sourceDir);
+
+          expect(result.issues.filter((i) => i.file === DECLARED_STACKS_FILE)).toStrictEqual([]);
+        });
+      });
+
       it("should keep naming the field the schema refused when a default export is present", async () => {
         const configDir = path.join(sourceDir, "config");
         await mkdir(configDir, { recursive: true });
@@ -767,6 +823,177 @@ describe("source-validator", () => {
           "an author's unbuilt repository is one build from fixed, which is a warning",
         ).toStrictEqual(["warning"]);
       });
+    });
+
+    describe("the cross-reference warning when a file the load reads fails to load", () => {
+      const CROSS_REFERENCE_SKIPPED = "Cross-reference validation skipped: ";
+      const DECLARED_STACKS_FILE = "data/stacks.ts";
+      const FAILURES_BEFORE_THE_SCHEMA: [
+        way: string,
+        render: (valid: Record<string, unknown>) => string,
+      ][] = [
+        ["does not parse", renderUnparseableConfigTs],
+        ["exports only named bindings", renderConfigTsWithNamedExportOnly],
+        ["exports nothing", () => ""],
+      ];
+
+      beforeEach(async () => {
+        await writeMarketplaceManifest(sourceDir, MANIFEST_NAME_ACCEPTED);
+        await mkdir(path.join(sourceDir, "config"), { recursive: true });
+      });
+
+      it("is filed against the stacks file at the default path, saying it failed to load", async () => {
+        await writeFile(
+          path.join(sourceDir, STACKS_FILE_PATH),
+          renderConfigTs({ stacks: "not a list" }),
+        );
+
+        const result = await validateSource(sourceDir);
+
+        expect(
+          result.issues.filter((i) => i.message.startsWith(CROSS_REFERENCE_SKIPPED)),
+        ).toStrictEqual([
+          {
+            severity: "warning",
+            file: STACKS_FILE_PATH,
+            message: expect.stringMatching(
+              /^Cross-reference validation skipped: failed to load config\/stacks\.ts: /,
+            ),
+          },
+        ]);
+      });
+
+      it("is filed against the stacks file the marketplace's config declares", async () => {
+        await writeTestTsConfig(
+          sourceDir,
+          buildSourceConfig({ stacksFile: DECLARED_STACKS_FILE }),
+          SOURCE_ROOT_DIR,
+        );
+        await mkdir(path.join(sourceDir, path.dirname(DECLARED_STACKS_FILE)), { recursive: true });
+        await writeFile(
+          path.join(sourceDir, DECLARED_STACKS_FILE),
+          renderConfigTs({ stacks: "not a list" }),
+        );
+
+        const result = await validateSource(sourceDir);
+
+        expect(
+          result.issues.filter((i) => i.message.startsWith(CROSS_REFERENCE_SKIPPED)),
+        ).toStrictEqual([
+          {
+            severity: "warning",
+            file: DECLARED_STACKS_FILE,
+            message: expect.stringMatching(
+              /^Cross-reference validation skipped: failed to load data\/stacks\.ts: /,
+            ),
+          },
+        ]);
+      });
+
+      it("is filed against a stacks file that does not parse", async () => {
+        await writeFile(path.join(sourceDir, STACKS_FILE_PATH), renderUnparseableConfigTs());
+
+        const result = await validateSource(sourceDir);
+
+        expect(
+          result.issues.filter((i) => i.message.startsWith(CROSS_REFERENCE_SKIPPED)),
+        ).toStrictEqual([
+          {
+            severity: "warning",
+            file: STACKS_FILE_PATH,
+            message: expect.stringMatching(
+              /^Cross-reference validation skipped: failed to load config\/stacks\.ts: /,
+            ),
+          },
+        ]);
+      });
+
+      it("is filed against the rules file when its schema refuses it", async () => {
+        await writeFile(
+          path.join(sourceDir, SKILL_RULES_PATH),
+          renderConfigTs({ version: 1, relationships: "not a record" }),
+        );
+
+        const result = await validateSource(sourceDir);
+
+        expect(
+          result.issues.filter((i) => i.message.startsWith(CROSS_REFERENCE_SKIPPED)),
+        ).toStrictEqual([
+          {
+            severity: "warning",
+            file: SKILL_RULES_PATH,
+            message: expect.stringMatching(
+              /^Cross-reference validation skipped: failed to load config\/skill-rules\.ts: /,
+            ),
+          },
+        ]);
+      });
+
+      it.each(FAILURES_BEFORE_THE_SCHEMA)(
+        "is filed against the rules file when it %s",
+        async (_way, render) => {
+          await writeFile(path.join(sourceDir, SKILL_RULES_PATH), render(VALID_SKILL_RULES_FILE));
+
+          const result = await validateSource(sourceDir);
+
+          expect(
+            result.issues.filter((i) => i.message.startsWith(CROSS_REFERENCE_SKIPPED)),
+          ).toStrictEqual([
+            {
+              severity: "warning",
+              file: SKILL_RULES_PATH,
+              message: expect.stringMatching(
+                /^Cross-reference validation skipped: failed to load config\/skill-rules\.ts: /,
+              ),
+            },
+          ]);
+        },
+      );
+
+      it("stays filed against the categories file when that is the file that failed", async () => {
+        await writeFile(
+          path.join(sourceDir, SKILL_CATEGORIES_PATH),
+          renderConfigTs({ categories: {} }),
+        );
+
+        const result = await validateSource(sourceDir);
+
+        expect(
+          result.issues.filter((i) => i.message.startsWith(CROSS_REFERENCE_SKIPPED)),
+        ).toStrictEqual([
+          {
+            severity: "warning",
+            file: SKILL_CATEGORIES_PATH,
+            message: expect.stringMatching(
+              /^Cross-reference validation skipped: failed to load categories\/rules: /,
+            ),
+          },
+        ]);
+      });
+
+      it.each(FAILURES_BEFORE_THE_SCHEMA)(
+        "stays filed against the categories file when it %s",
+        async (_way, render) => {
+          await writeFile(
+            path.join(sourceDir, SKILL_CATEGORIES_PATH),
+            render(VALID_SKILL_CATEGORIES_FILE),
+          );
+
+          const result = await validateSource(sourceDir);
+
+          expect(
+            result.issues.filter((i) => i.message.startsWith(CROSS_REFERENCE_SKIPPED)),
+          ).toStrictEqual([
+            {
+              severity: "warning",
+              file: SKILL_CATEGORIES_PATH,
+              message: expect.stringMatching(
+                /^Cross-reference validation skipped: failed to load categories\/rules: /,
+              ),
+            },
+          ]);
+        },
+      );
     });
 
     /** The load already says each health finding; filing them as rows must not say them again. */
@@ -920,11 +1147,18 @@ describe("validateSource findings, word for word", () => {
     await mkdir(path.join(sourceDir, "config"), { recursive: true });
     await writeFile(path.join(sourceDir, STACKS_FILE_PATH), renderUnparseableConfigTs());
 
-    const stacksErrors = (await validateSource(sourceDir)).issues.filter(
+    const stacksIssues = (await validateSource(sourceDir)).issues.filter(
       (issue) => issue.file === STACKS_FILE_PATH,
     );
 
-    expect(stacksErrors).toStrictEqual([
+    expect(stacksIssues).toStrictEqual([
+      {
+        severity: "warning",
+        file: STACKS_FILE_PATH,
+        message: expect.stringMatching(
+          /^Cross-reference validation skipped: failed to load config\/stacks\.ts: /,
+        ),
+      },
       {
         severity: "error",
         file: STACKS_FILE_PATH,

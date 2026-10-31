@@ -379,6 +379,30 @@ describe("the marketplace a global merge records", () => {
       marketplaceName: "first",
     })
   })
+
+  it("is never named from a session whose marketplace it does not record", () => {
+    const unnamed = buildProjectConfig({
+      name: "global",
+      skills: [],
+      agents: [],
+      marketplace: "github:agents-inc/skills",
+    })
+    const incoming = buildProjectConfig({
+      name: "global",
+      skills: [GLOBAL_HONO],
+      agents: [],
+      ...SOURCE,
+    })
+
+    expect(mergeGlobalConfigs(unnamed, incoming).config).toStrictEqual({
+      name: "global",
+      skills: [GLOBAL_HONO],
+      agents: [],
+      stack: {},
+      selectedDomains: [],
+      marketplace: "github:agents-inc/skills",
+    })
+  })
 })
 
 describe("addSessionToGlobal", () => {

@@ -36,11 +36,19 @@ export async function loadSkillCategories(configPath: string): Promise<CategoryM
   return data.categories;
 }
 
+/** A rules file `loadConfig` answers `null` for: absent, or exporting nothing. */
+export class NoSkillRulesError extends Error {
+  constructor(readonly configPath: string) {
+    super(`Invalid skill rules at '${configPath}': failed to load or validate`);
+    this.name = "NoSkillRulesError";
+  }
+}
+
 export async function loadSkillRules(configPath: string): Promise<SkillRulesConfig> {
   const data = await loadConfig(configPath, skillRulesFileSchema);
 
   if (!data) {
-    throw new Error(`Invalid skill rules at '${configPath}': failed to load or validate`);
+    throw new NoSkillRulesError(configPath);
   }
 
   const config: SkillRulesConfig = {

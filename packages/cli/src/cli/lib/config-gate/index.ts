@@ -4,6 +4,7 @@ import type { ProjectConfig } from "../../types";
 import type { AuthoritativeScope } from "../configuration/config-merger";
 import { CLI_INVOKE_COMMAND } from "../../consts";
 import { ensureDir, writeFile } from "../../utils/fs";
+import { getErrorMessage } from "../../utils/errors";
 import { verbose } from "../../utils/logger";
 import { isHomeDirectory } from "../installation/is-home-directory";
 import type { Provider } from "../../consts";
@@ -47,7 +48,7 @@ import {
   type PropagationResult,
 } from "./propagate.js";
 import { NOTHING_RECOMPILED, pairRewriteSummary, recompilePropagated } from "./recompile.js";
-import { pairsRewrittenSince, snapshotProjectPairs } from "./pair-snapshot.js";
+import { pairsRewrittenSince, restoreProjectPairs, snapshotProjectPairs } from "./pair-snapshot.js";
 import type { PropagatedRecompileSummary } from "../operations/project/recompile-project-agents.js";
 
 export type { GateDeps } from "./deps.js";
@@ -185,7 +186,6 @@ export type WriteConfigByScopeArgs = {
 export async function writeConfigByScope(args: WriteConfigByScopeArgs): Promise<GateReport> {
   return withGateToken(async () => {
     const { matrix, agents, projectDir } = args;
-    // os.homedir() at call time, matching getGlobalConfigImportPath().
     const homeDir = os.homedir();
     const deps: LoadedGateDeps = { matrix, agents };
 
@@ -205,11 +205,8 @@ async function writeFromHome(
   const provider = providerInUse(homeDir);
   const priorGlobal = await loadProjectConfigFromDir(homeDir, provider);
   const changes = classifyGlobalChange(priorGlobal?.config, finalConfig);
-  const globalWritten = await writeGlobalPair(
-    finalConfig,
-    projectConfigPath,
-    deps.matrix,
-    deps.agents,
+  const globalWritten = await restoringThePairsOnFailure([homeDir], provider, () =>
+    writeGlobalPair(finalConfig, projectConfigPath, deps.matrix, deps.agents),
   );
 
   const { propagated, recompile } = await applyConsequences(finalConfig, changes, deps, provider);
@@ -228,6 +225,9 @@ async function writeFromProjectContext(
   const provider = providerInUse(projectDir);
   const globalConfigPath = getProjectConfigPath(homeDir, provider);
 
+  // Before the project's pair, whose types import the global ones only where they exist.
+  await ensureBlankPairInternal(provider);
+
   // Merged into the existing global config: project init adds, never removes.
   const existingGlobal = await loadProjectConfigFromDir(homeDir, provider);
   const effective = await resolveEffectiveGlobalConfig(
@@ -239,7 +239,29 @@ async function writeFromProjectContext(
   const effectiveGlobalConfig = effective.config;
 
   const changes = classifyGlobalChange(existingGlobal?.config, effectiveGlobalConfig);
-  const globalWritten = await writeGlobalPairWhenChanged(effective, globalConfigPath, deps);
+
+  // Reconcile with the inlined global, or a colliding global entry lands active beside ours.
+  const reconciledProjectConfig = reconcileProjectSplitAgainstGlobal(
+    projectSplitConfig,
+    effectiveGlobalConfig,
+    deps.matrix,
+  );
+
+  // The project's pair first, so a project that refuses it leaves the home as it was.
+  const globalWritten = await restoringThePairsOnFailure(
+    [projectDir, homeDir],
+    provider,
+    async () => {
+      await writeProjectPairWhenOwed(
+        args,
+        provider,
+        reconciledProjectConfig,
+        effectiveGlobalConfig,
+        deps,
+      );
+      return writeGlobalPairWhenChanged(effective, globalConfigPath, deps);
+    },
+  );
 
   const { propagated, recompile } = await applyConsequences(
     effectiveGlobalConfig,
@@ -249,21 +271,27 @@ async function writeFromProjectContext(
     projectDir,
   );
 
-  // Reconcile with the inlined global, or a colliding global entry lands active beside ours.
-  const reconciledProjectConfig = reconcileProjectSplitAgainstGlobal(
-    projectSplitConfig,
-    effectiveGlobalConfig,
-    deps.matrix,
-  );
-  await writeProjectPairWhenOwed(
-    args,
-    provider,
-    reconciledProjectConfig,
-    effectiveGlobalConfig,
-    deps,
-  );
-
   return report(globalWritten, changes, propagated, recompile);
+}
+
+/**
+ * Fails with the write's own cause: the restore undoes it and says nothing over it. A pair is two
+ * files written one after the other, so a refused second half must not leave the first one saved.
+ */
+async function restoringThePairsOnFailure<T>(
+  dirs: readonly string[],
+  provider: Provider,
+  write: () => Promise<T>,
+): Promise<T> {
+  const before = await snapshotProjectPairs(dirs, provider);
+  try {
+    return await write();
+  } catch (error) {
+    await restoreProjectPairs(before, provider).catch((restoreError: unknown) => {
+      verbose(`Could not restore a config pair: ${getErrorMessage(restoreError)}`);
+    });
+    throw error;
+  }
 }
 
 async function writeGlobalPairWhenChanged(

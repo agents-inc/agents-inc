@@ -166,14 +166,18 @@ function activeEntriesNotIn<Entry extends { excluded?: boolean }>(
 
 /**
  * Fills only when the merge adds an entry: a project session inlines global entries it did not
- * bring, so its marketplace may not be theirs.
+ * bring, so its marketplace may not be theirs. The pair comes from one config, so a name never
+ * labels another config's marketplace.
  */
 function marketplaceIdentityFilledFrom(
   existing: ProjectConfig,
   arriving: ProjectConfig | null
 ): Pick<ProjectConfig, "marketplace" | "marketplaceName"> {
-  const marketplaceName = existing.marketplaceName ?? arriving?.marketplaceName
-  const marketplace = existing.marketplace ?? arriving?.marketplace
+  const fillsFromArriving =
+    arriving !== null && existing.marketplace === undefined
+  const { marketplace, marketplaceName } = fillsFromArriving
+    ? arriving
+    : existing
   return {
     ...(marketplaceName !== undefined && { marketplaceName }),
     ...(marketplace !== undefined && { marketplace }),

@@ -14,10 +14,13 @@ import type { AgentScopeConfig, SkillConfig } from "../../types/config";
 import type { Provider } from "../../consts";
 import { getInstalledConfigPath, getProjectConfigPath } from "../installation/install-base-dir";
 import { detectInstallations } from "../installation/detect-installations";
-import { providerInUse, sourceFolderInUse } from "../installation/install-layout";
+import {
+  declaresNoContent,
+  providerInUse,
+  sourceFolderInUse,
+} from "../installation/install-layout";
 import {
   ConfigLoadError,
-  declaresNoContent,
   loadInstalledConfig,
   type LoadedProjectConfig,
 } from "../configuration/project-config";

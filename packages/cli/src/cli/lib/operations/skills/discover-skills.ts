@@ -1,3 +1,5 @@
+import path from "path";
+
 import { discoverAllPluginSkills } from "../../plugins/index.js";
 import { isHomeDirectory } from "../../installation/is-home-directory.js";
 import { loadSkillsFromDir, type LoadedSkills } from "../../loading/index.js";
@@ -39,13 +41,21 @@ async function discoverLocalProjectSkills(
   scope: SkillScope,
 ): Promise<LoadedSkills> {
   const provider = providerAtScope(projectDir, scope);
+  const pathPrefix = skillsPathPrefix(provider, scope, projectDir);
   const scan = () =>
     loadSkillsFromDir(skillsDir(provider, scope, projectDir), {
-      pathPrefix: skillsPathPrefix(provider, scope, projectDir),
+      pathPrefix,
       requireMetadata: true,
+      folderLabel: folderLabelAt(pathPrefix, scope),
     });
 
   return scope === "global" ? sayingEachWarningOnce(scan) : scan();
+}
+
+/** From `~/`: saying it once per run matches on text, so it must never equal a project's line. */
+function folderLabelAt(pathPrefix: string, scope: SkillScope): string {
+  const underHome = scope === "global" && !path.isAbsolute(pathPrefix);
+  return underHome ? `~/${pathPrefix}/` : `${pathPrefix}/`;
 }
 
 function skillsRootAt(projectDir: string, scope: SkillScope): string {

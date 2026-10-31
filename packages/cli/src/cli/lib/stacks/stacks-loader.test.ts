@@ -867,17 +867,49 @@ describe("stacks-loader, what it says", () => {
     );
   });
 
-  it("refuses a stack a source does not offer in one wording", () => {
-    expect(stackNotOfferedMessage(BUILT_IN_STACK_ID, TEST_CUSTOM_SOURCE_URL)).toBe(
-      `Stack '${BUILT_IN_STACK_ID}' is not a stack the source '${TEST_CUSTOM_SOURCE_URL}' offers. A marketplace ships its own stacks; the CLI's built-in ones belong to the default public marketplace alone.`,
+  it("refuses a stack a source does not offer in one wording, naming the stack it ships", () => {
+    expect(
+      stackNotOfferedMessage(BUILT_IN_STACK_ID, TEST_CUSTOM_SOURCE_URL, ["acme-starter"]),
+    ).toBe(
+      `Stack '${BUILT_IN_STACK_ID}' is not a stack the source '${TEST_CUSTOM_SOURCE_URL}' offers. A marketplace ships its own stacks; the CLI's built-in ones belong to the default public marketplace alone. It ships: acme-starter.`,
+    );
+  });
+
+  it("names every stack a source ships as one list", () => {
+    expect(
+      stackNotOfferedMessage(BUILT_IN_STACK_ID, TEST_CUSTOM_SOURCE_URL, [
+        "acme-api",
+        "acme-starter",
+        "acme-web",
+      ]),
+    ).toBe(
+      `Stack '${BUILT_IN_STACK_ID}' is not a stack the source '${TEST_CUSTOM_SOURCE_URL}' offers. A marketplace ships its own stacks; the CLI's built-in ones belong to the default public marketplace alone. It ships: acme-api, acme-starter and acme-web.`,
+    );
+  });
+
+  it("says a source that ships no stacks ships none", () => {
+    expect(stackNotOfferedMessage(BUILT_IN_STACK_ID, TEST_CUSTOM_SOURCE_URL, [])).toBe(
+      `Stack '${BUILT_IN_STACK_ID}' is not a stack the source '${TEST_CUSTOM_SOURCE_URL}' offers. A marketplace ships its own stacks; the CLI's built-in ones belong to the default public marketplace alone. It ships no stacks.`,
     );
   });
 
   it("names a stack id a link wrote a terminal control and a line break into inert, on one line", () => {
     expect(
-      stackNotOfferedMessage("stk\u001B]0;S\u0007\nNothing is removed.", TEST_CUSTOM_SOURCE_URL),
+      stackNotOfferedMessage("stk\u001B]0;S\u0007\nNothing is removed.", TEST_CUSTOM_SOURCE_URL, [
+        "acme-starter",
+      ]),
     ).toBe(
-      `Stack 'stk Nothing is removed.' is not a stack the source '${TEST_CUSTOM_SOURCE_URL}' offers. A marketplace ships its own stacks; the CLI's built-in ones belong to the default public marketplace alone.`,
+      `Stack 'stk Nothing is removed.' is not a stack the source '${TEST_CUSTOM_SOURCE_URL}' offers. A marketplace ships its own stacks; the CLI's built-in ones belong to the default public marketplace alone. It ships: acme-starter.`,
+    );
+  });
+
+  it("names a shipped stack id a marketplace wrote a terminal control and a line break into inert, on one line", () => {
+    expect(
+      stackNotOfferedMessage(BUILT_IN_STACK_ID, TEST_CUSTOM_SOURCE_URL, [
+        "stk\u001B]0;S\u0007\nNothing is removed.",
+      ]),
+    ).toBe(
+      `Stack '${BUILT_IN_STACK_ID}' is not a stack the source '${TEST_CUSTOM_SOURCE_URL}' offers. A marketplace ships its own stacks; the CLI's built-in ones belong to the default public marketplace alone. It ships: stk Nothing is removed.`,
     );
   });
 });

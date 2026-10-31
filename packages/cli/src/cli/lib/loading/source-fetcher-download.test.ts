@@ -243,15 +243,24 @@ describe("source-fetcher download", () => {
     );
   });
 
-  it("says no ETag was recorded when it keeps a copy without asking", async () => {
+  it("asks about a copy saved without an ETag with the one HEAD it asks any copy with", async () => {
     await seedCachedCopy(JSON.stringify({ tar: TARBALL }));
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(headResponse(PUBLISHED_ETAG)));
+    const fetchMock = vi.fn().mockResolvedValue(headResponse());
+    vi.stubGlobal("fetch", fetchMock);
 
-    await fetchFromSource(SOURCE);
+    const result = await fetchFromSource(SOURCE);
 
-    expect(verbose).toHaveBeenCalledWith(
-      `No ETag was recorded for ${TARBALL} — keeping the cached copy`,
-    );
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(TARBALL, {
+      method: "HEAD",
+      signal: expect.any(AbortSignal),
+    });
+    expect(result).toStrictEqual({
+      path: cacheDir,
+      fromCache: true,
+      unreachable: false,
+      source: SOURCE,
+    });
+    expect(mockDownloadTemplate).not.toHaveBeenCalled();
   });
 
   it("names the reason it could not revalidate an unreachable source", async () => {

@@ -24,7 +24,7 @@ import type { SkippedSkillAgents } from "@workspace/compile/seed-to-config";
 import { RETIRED_SOURCE_FOLDER } from "../lib/installation/install-layout.js";
 import { isHomeDirectory } from "../lib/installation/is-home-directory.js";
 import { charactersOutsideKebabCase } from "../lib/validate-kebab-name.js";
-import { inertLine, plural } from "./string.js";
+import { inAnEnglishList, inertLine, plural } from "./string.js";
 import type { AgentName, SkillId } from "../types/index.js";
 
 export const ERROR_MESSAGES = {
@@ -99,9 +99,22 @@ export const INFO_MESSAGES = {
   CONFIG_TYPES_REFRESHED: `Refreshed ${STANDARD_FILES.CONFIG_TYPES_TS}`,
   EJECTED_SKILLS_USER_OWNED: `Ejected skills are yours to own — '${CLI_INVOKE_COMMAND} update' does not change them.`,
   NO_PLUGIN_MARKETPLACES: "No plugin marketplaces are configured — nothing to refresh.",
-  /** The owner's words (2026-10-24), on stderr before the command's own output. */
+  /**
+   * The owner's words (2026-10-24), on stderr before the command's own output. The lines after it
+   * are each true of a run this one is not (owner, 2026-10-26: "A line worded for each").
+   */
   GLOBAL_INSTALLATION_STANDS_IN:
     "This project's config declares nothing, so this works on your global installation.",
+  NO_GLOBAL_INSTALLATION_STANDS_IN:
+    "This project's config declares nothing, and there is no global installation for this to work on.",
+  DECLARES_NOTHING_TO_UNINSTALL:
+    "This project's config declares nothing, so there is nothing to uninstall in this project.",
+  DECLARES_NOTHING_TO_EJECT_FROM:
+    "This project's config declares nothing; eject works on this project, not on a global installation.",
+  DECLARES_NOTHING_TO_INIT_OVER:
+    "This project's config declares nothing, so init treats this project as holding no installation.",
+  DECLARES_NOTHING_TO_SEARCH_FROM:
+    "This project's config declares nothing; search reads the marketplace it names, else the global installation's, else the default one.",
   /** Under doctor's marketplace row, when its download replaced a saved copy whose files differed. */
   SAVED_COPY_REPLACED: "The saved copy differed from the marketplace and has been replaced",
   /** Printed under the destination already named, so it names files only. */
@@ -161,23 +174,23 @@ export function propagatedRecompileSummary(recompiled: number, failed: number): 
   return `Registered projects: ${recompiled} recompiled${failureSuffix}`;
 }
 
-export function skillAssignedToNoAgent(skillId: SkillId): string {
-  return `Skill '${skillId}' is assigned to no sub-agent — nothing will load it.`;
+export function skillAssignedToNoAgent(skillId: SkillId, namedBy: NamedBy): string {
+  return `Skill '${skillName(skillId, namedBy)}' is assigned to no sub-agent — nothing will load it.`;
 }
 
-export function scopeBlockedStackAssignment(agentNames: AgentName[], skillId: SkillId): string {
+export function scopeBlockedStackAssignment(
+  agentNames: AgentName[],
+  skillId: SkillId,
+  namedBy: NamedBy,
+): string {
   const subject = agentNames.length === 1 ? "Sub-agent" : "Sub-agents";
   const named = agentNames.map((name) => `'${name}'`).join(", ");
-  return `${subject} ${named} cannot carry project-scoped skill '${skillId}' — global-scoped sub-agents only carry global-scoped skills.`;
+  return `${subject} ${named} cannot carry project-scoped skill '${skillName(skillId, namedBy)}' — global-scoped sub-agents only carry global-scoped skills.`;
 }
 
 export function globalScopedAgentsHint(count: number): string {
   const [subject, object] = count === 1 ? ["agent is", "it"] : ["agents are", "them"];
   return `${count} ${subject} global-scoped — run '${CLI_INVOKE_COMMAND} compile' from your home directory to recompile ${object}.`;
-}
-
-export function marketplacesRefreshed(count: number): string {
-  return `Refreshed ${plural(count, "marketplace listing")}. Installed plugins were not changed.`;
 }
 
 export function marketplaceRefreshFailed(marketplace: string, reason: string): string {
@@ -195,6 +208,19 @@ export function sourceRefusedUsingCache(source: string, status: number): string 
 
 export function marketplacesRefreshFailed(marketplaces: string[]): string {
   return `${plural(marketplaces.length, "marketplace")} could not be updated: ${marketplaces.join(", ")}`;
+}
+
+export function codexPluginLeftSwitchedOn(
+  pluginKey: string,
+  configFile: string,
+  reason: string,
+): string {
+  return `Codex switched plugin ${pluginKey} back on when it was updated, and it could not be switched off again in ${configFile}: ${reason}. To switch it off, set enabled = false in that file, in the table it already has for ${pluginKey}.`;
+}
+
+export function pluginsLeftSwitchedOn(pluginKeys: readonly string[]): string {
+  const are = pluginKeys.length === 1 ? "is" : "are";
+  return `${plural(pluginKeys.length, "plugin")} you had switched off ${are} switched on again: ${pluginKeys.join(", ")}`;
 }
 
 export function marketplaceOwnerHasNoName(packageJsonPath: string): string {
@@ -279,6 +305,11 @@ export function registeredProjectUpdateFailed(projectPath: string): string {
   return `Skipped ${projectPath}: updating it failed.`;
 }
 
+export function unregisteredSkillsSkipped(count: number, folder: string): string {
+  const are = count === 1 ? "isn't" : "aren't";
+  return `Skipped ${plural(count, "skill")} in '${folder}' that ${are} registered with the CLI (no ${STANDARD_FILES.METADATA_YAML}).`;
+}
+
 /** Logged rather than put in the error: oclif hard-wraps error text, breaking copyable paths. */
 export function skillMetadataUnusableDetail({
   skillDirName,
@@ -343,10 +374,10 @@ export function applySharedConfigHere(
     : `To ${verb} it here instead, run '${command} ${id}${named}'.`;
 }
 
-export function shareRefusesEjectedSkills(skillIds: readonly string[]): string {
+export function shareRefusesEjectedSkills(skillIds: readonly SkillId[], namedBy: NamedBy): string {
   return [
     "This installation holds ejected skills, and ejected skills cannot be shared:",
-    ...skillIds.map((id) => `  ${id}`),
+    ...skillIds.map((id) => `  ${skillName(id, namedBy)}`),
     "Only plugins can be shared.",
   ].join("\n");
 }
@@ -355,8 +386,8 @@ export function sharedIdNamesAFolder(folder: string): string {
   return `This id names the marketplace folder ${folder}, so it installs only where that folder exists.`;
 }
 
-export function sharedSkillsLeftBehind(skillIds: readonly string[]): string {
-  return `A shared id names one marketplace, and these skill(s) come from another, so they will not install elsewhere: ${skillIds.join(", ")}`;
+export function sharedSkillsLeftBehind(skillIds: readonly SkillId[], namedBy: NamedBy): string {
+  return `A shared id names one marketplace, and these skill(s) come from another, so they will not install elsewhere: ${skillNames(skillIds, namedBy)}`;
 }
 
 export function sharedConfigExistingInstall(
@@ -376,12 +407,13 @@ export function sharedConfigProjectScopeAtHome(
   agentNames: readonly AgentName[],
   installedHere: boolean,
   provider: Provider | undefined,
+  namedBy: NamedBy,
 ): string {
   return [
     "This configuration cannot be installed here: the home directory is the global scope, and a " +
       "global installation holds only global-scoped content — so these project-scoped entries " +
       "have nowhere to be written:",
-    ...skillIds.map((id) => `  skill ${id} (scope: project)`),
+    ...skillIds.map((id) => `  skill ${skillName(id, namedBy)} (scope: project)`),
     ...agentNames.map((name) => `  sub-agent ${name} (scope: project)`),
     installedHere
       ? changeTheGlobalInstallFromHome(providerArgument(provider))
@@ -442,13 +474,27 @@ export function skippedUnknownAgents(agentNames: readonly string[]): string {
   return `Skipped ${agentNames.length} unknown sub-agent(s): ${unknownKeys(agentNames)}`;
 }
 
-export function carriedSkillsWritten(skillIds: readonly string[]): string {
-  return `Wrote ${skillIds.length} skill(s) this configuration carries: ${skillIds.join(", ")}`;
+export function carriedSkillsWritten(skillIds: readonly SkillId[], namedBy: NamedBy): string {
+  return `Wrote ${skillIds.length} skill(s) this configuration carries: ${skillNames(skillIds, namedBy)}`;
+}
+
+/** Follows the error, so the "Copied" line above it is not read as still true. */
+export function copiedSkillsRemovedAfterRefusedSave(count: number): string {
+  return `Removed the ${plural(count, "skill")} it copied, since the configuration could not be saved`;
+}
+
+export function carriedSkillsRemovedAfterRefusedSave(count: number): string {
+  return `Removed the ${plural(count, "skill")} this configuration carried, since the configuration could not be saved`;
 }
 
 export const SHARED_CONFIG_APPLY = {
   CONFIRM: "Apply this configuration?",
 } as const;
+
+/** `named` is the payload's, unvalidated, since nothing loads it. */
+export function idNamesAnotherMarketplace(named: string, used: string): string {
+  return `This id names the marketplace ${inertLine(named)}; its skills come from this installation's marketplace, ${used}.`;
+}
 
 export function registeredProjectsRecompiled(projectPaths: readonly string[]): string {
   return [
@@ -497,6 +543,10 @@ function skillName(id: SkillId, namedBy: NamedBy): string {
   return getSkillEntryDisplayName(namedBy[id] ?? { id });
 }
 
+function skillNames(skillIds: readonly SkillId[], namedBy: NamedBy): string {
+  return skillIds.map((id) => skillName(id, namedBy)).join(", ");
+}
+
 /**
  * `idAppliedAtHome` is the id only where a run from home would take the configuration;
  * `provider`, the installation that run must name beside another at home.
@@ -526,18 +576,12 @@ function skillsMoved(
   namedBy: NamedBy,
 ): string[] {
   const names = skillIds.map((id) => skillName(id, namedBy));
-  return names.length === 0 ? [] : [`${verb} ${listed(names)}`];
+  return names.length === 0 ? [] : [`${verb} ${inAnEnglishList(names)}`];
 }
 
 /** Unset on either side is the default. */
 function settingMoved({ setting, from, to }: SettingChange): string {
   return `${setting} ${from ?? "default"} \u2192 ${to ?? "default"}`;
-}
-
-/** `A`, `A and B`, `A, B and C`. */
-function listed(names: readonly string[]): string {
-  if (names.length <= 1) return names.join("");
-  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 }
 
 /** Rows that moved without a skill arriving or leaving: a category or a preload changed. */
@@ -562,12 +606,11 @@ export function subAgentChanged({
 }
 
 export function addedToGlobalSubAgents(joined: readonly JoinedAgent[], namedBy: NamedBy): string {
-  const gains = (skillIds: readonly SkillId[]): string =>
-    skillIds.map((id) => skillName(id, namedBy)).join(", ");
-
   return [
     "Added to sub-agents in the global install — each keeps everything it already has, since a project run only adds to the global install:",
-    ...joined.map(({ agentName, skillIds }) => `  sub-agent ${agentName}: + ${gains(skillIds)}`),
+    ...joined.map(
+      ({ agentName, skillIds }) => `  sub-agent ${agentName}: + ${skillNames(skillIds, namedBy)}`,
+    ),
   ].join("\n");
 }
 

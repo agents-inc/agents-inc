@@ -7,11 +7,7 @@
 
 import os from "os";
 
-import {
-  ConfigLoadError,
-  declaresNoContent,
-  loadProjectConfigFromDir,
-} from "../configuration/project-config.js";
+import { ConfigLoadError, loadProjectConfigFromDir } from "../configuration/project-config.js";
 import { scopeRootsInPlay } from "../installation/source-scopes.js";
 import {
   configsDeclaringNothing,
@@ -19,7 +15,11 @@ import {
   type DetectedInstallation,
 } from "../installation/detect-installations.js";
 import { isHomeDirectory } from "../installation/is-home-directory.js";
-import { inheritedGlobalProvider, providerInUse } from "../installation/install-layout.js";
+import {
+  declaresNoContent,
+  inheritedGlobalProvider,
+  providerInUse,
+} from "../installation/install-layout.js";
 import { hostFor } from "../hosts/host-for.js";
 import { refuseUnofferedPlacements } from "../hosts/offered-placements.js";
 import { getVerifiedPluginInstallPaths } from "../plugins/plugin-discovery.js";
@@ -39,8 +39,9 @@ export type Hosts = Record<SkillScope, Provider>;
 export type CheckedInstallation = { projectDir: string; hosts: Hosts };
 
 /**
- * Each scope's provider off its own folder. A project holding no installation is checked as the
- * global one it inherits, whose provider it takes: its own folder would answer a new one's.
+ * The project's provider off its folder, and the global installation's it inherits. A project
+ * holding no installation is checked as the global one it inherits, whose provider it takes: its
+ * own folder would answer a new one's.
  */
 export async function hostsOnDisk(projectDir: string): Promise<Hosts> {
   const found = await detectInstallations(projectDir);

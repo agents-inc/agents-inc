@@ -6,8 +6,7 @@ import {
 } from "../../installation/index.js";
 import type { SourceLoadResult } from "../../loading/index.js";
 import type { AuthoritativeScope } from "../../configuration/index.js";
-import { ensureBlankPair, writeConfigByScope, type GateReport } from "../../config-gate/index.js";
-import { providerInUse } from "../../installation/install-layout.js";
+import { writeConfigByScope, type GateReport } from "../../config-gate/index.js";
 import { loadAgentDefs, type AgentDefs } from "./load-agent-defs.js";
 import { ensureDir } from "../../../utils/fs.js";
 import type { ProjectConfig } from "../../../types/index.js";
@@ -50,11 +49,6 @@ export async function writeProjectConfig(options: ConfigWriteOptions): Promise<C
   const finalConfig = mergeResult.config;
 
   const isProjectContext = !isHomeDirectory(projectDir);
-
-  if (isProjectContext) {
-    // A project inherits only from its own provider's global.
-    await ensureBlankPair(providerInUse(projectDir));
-  }
 
   const propagation = await writeConfigByScope({
     finalConfig,

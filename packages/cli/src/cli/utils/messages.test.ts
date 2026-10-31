@@ -9,13 +9,16 @@ import {
   agentsNotCompiled,
   applySharedConfigHere,
   authoredHereKept,
+  carriedSkillsRemovedAfterRefusedSave,
   carriedSkillsWritten,
+  copiedSkillsRemovedAfterRefusedSave,
   completedWithFailures,
   configFileRemoved,
   configUnreadableError,
   editorSkillMetadataUnusableError,
   globalScopedAgentsHint,
   hostCliNotFound,
+  idNamesAnotherMarketplace,
   initSucceeded,
   installationConfigsUnreadable,
   keptAsInstalledGlobally,
@@ -29,7 +32,6 @@ import {
   marketplaceOwnerHasNoName,
   marketplaceRefreshFailed,
   marketplacesRefreshFailed,
-  marketplacesRefreshed,
   nothingInstalledToApplyTo,
   notInstalledHere,
   pluginsInstalled,
@@ -53,6 +55,7 @@ import {
   sharedConfigProjectScopeAtHome,
   sharedIdNamesAFolder,
   sharedSkillsLeftBehind,
+  skillAssignedToNoAgent,
   skillMetadataUnusableDetail,
   skillMetadataUnusableError,
   skippedUnknownAgents,
@@ -66,6 +69,7 @@ import {
 } from "./messages";
 import { DEFAULT_BRANDING, PROVIDERS } from "../consts";
 import { SKILLS } from "../lib/__tests__/test-fixtures";
+import { buildSkillConfig } from "../lib/__tests__/helpers/skill-config-builders";
 import { initializeMatrix } from "../lib/matrix/matrix-provider";
 import { FULLSTACK_TRIO_MATRIX, WEB_TRIO_MATRIX } from "../lib/__tests__/mock-data/mock-matrices";
 import type { AgentName } from "../types";
@@ -93,6 +97,16 @@ describe("the lines that carry the name a run prints itself under", () => {
     );
     expect(notInstalledHere(DEFAULT_BRANDING.NAME)).toBe(
       `${DEFAULT_BRANDING.NAME} is not installed in this project.`,
+    );
+  });
+});
+
+describe("the line an id naming another marketplace adds", () => {
+  it("prints the marketplace the id names inert and on the line, since nothing loads it to check it", () => {
+    expect(
+      idNamesAnotherMarketplace("github:a\u001B[2J\u001B]0;TITLE\u0007/b\nNext", "/srv/skills"),
+    ).toBe(
+      "This id names the marketplace github:a/b Next; its skills come from this installation's marketplace, /srv/skills.",
     );
   });
 });
@@ -350,25 +364,19 @@ describe("the lines a compile and an install report their counts in", () => {
 
 describe("the refusal of a project-scoped skill on a global-scoped sub-agent", () => {
   it("names one sub-agent in the singular", () => {
-    expect(scopeBlockedStackAssignment([WEB_DEVELOPER], REACT)).toBe(
-      `Sub-agent 'web-developer' cannot carry project-scoped skill '${REACT}' — global-scoped sub-agents only carry global-scoped skills.`,
+    expect(scopeBlockedStackAssignment([WEB_DEVELOPER], REACT, {})).toBe(
+      "Sub-agent 'web-developer' cannot carry project-scoped skill 'React' — global-scoped sub-agents only carry global-scoped skills.",
     );
   });
 
   it("names several sub-agents in the plural, each quoted", () => {
-    expect(scopeBlockedStackAssignment([WEB_DEVELOPER, API_DEVELOPER], HONO)).toBe(
-      `Sub-agents 'web-developer', 'api-developer' cannot carry project-scoped skill '${HONO}' — global-scoped sub-agents only carry global-scoped skills.`,
+    expect(scopeBlockedStackAssignment([WEB_DEVELOPER, API_DEVELOPER], HONO, {})).toBe(
+      "Sub-agents 'web-developer', 'api-developer' cannot carry project-scoped skill 'Hono' — global-scoped sub-agents only carry global-scoped skills.",
     );
   });
 });
 
 describe("the lines a marketplace refresh ends on", () => {
-  it("counts the listings it refreshed and says plugins were left alone", () => {
-    expect(marketplacesRefreshed(2)).toBe(
-      "Refreshed 2 marketplace listings. Installed plugins were not changed.",
-    );
-  });
-
   it("names the marketplace that could not be updated and why", () => {
     expect(marketplaceRefreshFailed("acme", "network unreachable")).toBe(
       "Could not update marketplace acme: network unreachable",
@@ -625,11 +633,11 @@ describe("the lines that point a shared configuration at where it can be applied
 
 describe("the lines share prints about what a shared id can carry", () => {
   it("lists each ejected skill that stops a share, indented, under the refusal", () => {
-    expect(shareRefusesEjectedSkills([REACT, HONO])).toBe(
+    expect(shareRefusesEjectedSkills([REACT, HONO], {})).toBe(
       [
         "This installation holds ejected skills, and ejected skills cannot be shared:",
-        `  ${REACT}`,
-        `  ${HONO}`,
+        "  React",
+        "  Hono",
         "Only plugins can be shared.",
       ].join("\n"),
     );
@@ -642,8 +650,8 @@ describe("the lines share prints about what a shared id can carry", () => {
   });
 
   it("names every skill from another marketplace that a shared id leaves behind", () => {
-    expect(sharedSkillsLeftBehind([REACT, HONO])).toBe(
-      `A shared id names one marketplace, and these skill(s) come from another, so they will not install elsewhere: ${REACT}, ${HONO}`,
+    expect(sharedSkillsLeftBehind([REACT, HONO], {})).toBe(
+      "A shared id names one marketplace, and these skill(s) come from another, so they will not install elsewhere: React, Hono",
     );
   });
 
@@ -659,10 +667,10 @@ describe("the lines share prints about what a shared id can carry", () => {
 
 describe("the lines init --from prints about what a configuration brings", () => {
   it("lists each project-scoped skill and sub-agent a home-directory install cannot write", () => {
-    expect(sharedConfigProjectScopeAtHome([REACT], [WEB_DEVELOPER], false, undefined)).toBe(
+    expect(sharedConfigProjectScopeAtHome([REACT], [WEB_DEVELOPER], false, undefined, {})).toBe(
       [
         "This configuration cannot be installed here: the home directory is the global scope, and a global installation holds only global-scoped content — so these project-scoped entries have nowhere to be written:",
-        `  skill ${REACT} (scope: project)`,
+        "  skill React (scope: project)",
         "  sub-agent web-developer (scope: project)",
         "Run this from inside a project directory, or re-share it with each entry above at global scope.",
       ].join("\n"),
@@ -670,17 +678,17 @@ describe("the lines init --from prints about what a configuration brings", () =>
   });
 
   it("sends a global install to change itself through its own link, which keeps what a project replaced", () => {
-    expect(sharedConfigProjectScopeAtHome([REACT], [], true, undefined)).toBe(
+    expect(sharedConfigProjectScopeAtHome([REACT], [], true, undefined, {})).toBe(
       [
         "This configuration cannot be installed here: the home directory is the global scope, and a global installation holds only global-scoped content — so these project-scoped entries have nowhere to be written:",
-        `  skill ${REACT} (scope: project)`,
+        "  skill React (scope: project)",
         "Run this from inside a project directory, or change the global install from here: run 'npx agents-inc edit', make the change in the editor, then apply the id it gives you with 'npx agents-inc edit --from <id>'.",
       ].join("\n"),
     );
   });
 
   it("names the installation in both commands of that route where another sits beside it", () => {
-    expect(sharedConfigProjectScopeAtHome([], [WEB_DEVELOPER], true, "codex")).toContain(
+    expect(sharedConfigProjectScopeAtHome([], [WEB_DEVELOPER], true, "codex", {})).toContain(
       "run 'npx agents-inc edit --provider codex', make the change in the editor, then apply the id it gives you with 'npx agents-inc edit --from <id> --provider codex'.",
     );
   });
@@ -692,8 +700,26 @@ describe("the lines init --from prints about what a configuration brings", () =>
     expect(skippedUnknownAgents(["web-ghost", "api-ghost"])).toBe(
       "Skipped 2 unknown sub-agent(s): web-ghost, api-ghost",
     );
-    expect(carriedSkillsWritten([REACT, HONO])).toBe(
-      `Wrote 2 skill(s) this configuration carries: ${REACT}, ${HONO}`,
+    expect(carriedSkillsWritten([REACT, HONO], {})).toBe(
+      "Wrote 2 skill(s) this configuration carries: React, Hono",
+    );
+  });
+
+  it("says how many of the skills it copied a refused save removed, one or several", () => {
+    expect(copiedSkillsRemovedAfterRefusedSave(2)).toBe(
+      "Removed the 2 skills it copied, since the configuration could not be saved",
+    );
+    expect(copiedSkillsRemovedAfterRefusedSave(1)).toBe(
+      "Removed the 1 skill it copied, since the configuration could not be saved",
+    );
+  });
+
+  it("says how many of the skills the configuration carried a refused save removed, one or several", () => {
+    expect(carriedSkillsRemovedAfterRefusedSave(2)).toBe(
+      "Removed the 2 skills this configuration carried, since the configuration could not be saved",
+    );
+    expect(carriedSkillsRemovedAfterRefusedSave(1)).toBe(
+      "Removed the 1 skill this configuration carried, since the configuration could not be saved",
     );
   });
 
@@ -897,6 +923,84 @@ describe("the notices under the panel about what a shared configuration keeps or
         "Run 'npx agents-inc update' to refresh this installation's marketplace, then apply the configuration again.",
         `${UNSEATED}: kept, no longer assigned to web-developer's web-client-state`,
       ].join("\n"),
+    );
+  });
+});
+
+describe("the other lines that name skills, each as the panel does", () => {
+  const RECORDED_NAME = "Acme React";
+  const NAMED_BY_RECORD = { [REACT]: buildSkillConfig(REACT, { displayName: RECORDED_NAME }) };
+  /** In no catalogue seated here, so only its id can name it. */
+  const UNSEATED = SKILLS.zustand.id;
+
+  beforeEach(() => {
+    initializeMatrix(FULLSTACK_TRIO_MATRIX);
+  });
+
+  it("names the carried skills it wrote by the name each recorded, else the catalogue's, else the id", () => {
+    expect(carriedSkillsWritten([REACT, HONO, UNSEATED], NAMED_BY_RECORD)).toBe(
+      `Wrote 3 skill(s) this configuration carries: ${RECORDED_NAME}, Hono, ${UNSEATED}`,
+    );
+  });
+
+  it("names a skill no sub-agent loads by the name it recorded, else the catalogue's, else the id", () => {
+    expect(
+      [REACT, HONO, UNSEATED].map((id) => skillAssignedToNoAgent(id, NAMED_BY_RECORD)),
+    ).toStrictEqual([
+      `Skill '${RECORDED_NAME}' is assigned to no sub-agent — nothing will load it.`,
+      "Skill 'Hono' is assigned to no sub-agent — nothing will load it.",
+      `Skill '${UNSEATED}' is assigned to no sub-agent — nothing will load it.`,
+    ]);
+  });
+
+  it("names the project-scoped skill a global sub-agent cannot carry by the name it recorded, else the catalogue's, else the id", () => {
+    expect(
+      [REACT, HONO, UNSEATED].map((id) =>
+        scopeBlockedStackAssignment([WEB_DEVELOPER], id, NAMED_BY_RECORD),
+      ),
+    ).toStrictEqual([
+      `Sub-agent 'web-developer' cannot carry project-scoped skill '${RECORDED_NAME}' — global-scoped sub-agents only carry global-scoped skills.`,
+      "Sub-agent 'web-developer' cannot carry project-scoped skill 'Hono' — global-scoped sub-agents only carry global-scoped skills.",
+      `Sub-agent 'web-developer' cannot carry project-scoped skill '${UNSEATED}' — global-scoped sub-agents only carry global-scoped skills.`,
+    ]);
+  });
+
+  it("names each project-scoped skill home refuses by the name it recorded, else the catalogue's, else the id", () => {
+    expect(
+      sharedConfigProjectScopeAtHome(
+        [REACT, HONO, UNSEATED],
+        [WEB_DEVELOPER],
+        false,
+        undefined,
+        NAMED_BY_RECORD,
+      ),
+    ).toBe(
+      [
+        "This configuration cannot be installed here: the home directory is the global scope, and a global installation holds only global-scoped content — so these project-scoped entries have nowhere to be written:",
+        `  skill ${RECORDED_NAME} (scope: project)`,
+        "  skill Hono (scope: project)",
+        `  skill ${UNSEATED} (scope: project)`,
+        "  sub-agent web-developer (scope: project)",
+        "Run this from inside a project directory, or re-share it with each entry above at global scope.",
+      ].join("\n"),
+    );
+  });
+
+  it("names each ejected skill that stops a share by the name it recorded, else the catalogue's, else the id", () => {
+    expect(shareRefusesEjectedSkills([REACT, HONO, UNSEATED], NAMED_BY_RECORD)).toBe(
+      [
+        "This installation holds ejected skills, and ejected skills cannot be shared:",
+        `  ${RECORDED_NAME}`,
+        "  Hono",
+        `  ${UNSEATED}`,
+        "Only plugins can be shared.",
+      ].join("\n"),
+    );
+  });
+
+  it("names each skill a shared id leaves behind by the name it recorded, else the catalogue's, else the id", () => {
+    expect(sharedSkillsLeftBehind([REACT, HONO, UNSEATED], NAMED_BY_RECORD)).toBe(
+      `A shared id names one marketplace, and these skill(s) come from another, so they will not install elsewhere: ${RECORDED_NAME}, Hono, ${UNSEATED}`,
     );
   });
 });

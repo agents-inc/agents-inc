@@ -53,7 +53,6 @@ const OTHER_MARKETPLACE = "github:plain/skills";
 /** Marketplaces a config file may name: the cloud metadata service, and its private neighbours. */
 const METADATA_ENDPOINT = "http://169.254.169.254/latest";
 const PRIVATE_NETWORK_MARKETPLACE = "https://10.0.0.1/team/skills";
-const LOOPBACK_MARKETPLACE = "http://[::1]:8080/skills";
 const NETWORK_SHARE = "//attacker.example/share";
 const PUBLIC_MARKETPLACE = "https://gitlab.company.com/team/skills";
 const LOCALHOST_MARKETPLACE = "http://localhost:47322/source.tar.gz";
@@ -794,6 +793,27 @@ describe("config", () => {
       });
     });
 
+    /** A shared id naming no marketplace names the public catalogue, not another install's. */
+    describe("the stored rungs are the stored caller's alone", () => {
+      it("should pass over the project config's marketplace for an init caller", async () => {
+        await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: "github:project/repo" }));
+
+        const result = await resolveSource({ caller: "init", projectDir: tempDir });
+
+        expect(result.source).toBe(DEFAULT_SOURCE);
+        expect(result.sourceOrigin).toBe("default");
+      });
+
+      it("should pass over the global config's marketplace for an init caller", async () => {
+        await writeTestTsConfig(homeDir, buildSourceConfig({ marketplace: "github:global/repo" }));
+
+        const result = await resolveSource({ caller: "init", projectDir: tempDir });
+
+        expect(result.source).toBe(DEFAULT_SOURCE);
+        expect(result.sourceOrigin).toBe("default");
+      });
+    });
+
     /** Not aliased, warned about or read: `CC_SOURCE` chooses nothing. */
     describe("the environment rung names the marketplace", () => {
       let warnSpy: ReturnType<typeof vi.spyOn>;
@@ -892,15 +912,15 @@ describe("config", () => {
         expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("invalid value"));
       });
 
-      it("should warn and fall back to project config for invalid env var", async () => {
+      it("should warn and fall back past the project config to the default for invalid env var", async () => {
         process.env[MARKETPLACE_ENV_VAR] = "github:just-a-name";
 
         await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: "github:project/repo" }));
 
         const result = await resolveSource({ caller: "init", projectDir: tempDir });
 
-        expect(result.sourceOrigin).toBe("project");
-        expect(result.source).toBe("github:project/repo");
+        expect(result.sourceOrigin).toBe("default");
+        expect(result.source).toBe(DEFAULT_SOURCE);
         expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("invalid value"));
       });
 
@@ -965,14 +985,6 @@ describe("config", () => {
 
         await expect(resolveSource({ caller: "stored", projectDir: tempDir })).rejects.toThrow(
           `The marketplace in ${configPath} points to a private or reserved IP address: "${PRIVATE_NETWORK_MARKETPLACE}"`,
-        );
-      });
-
-      it("refuses a config's private address for an init caller too, which reads the same rung", async () => {
-        await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: LOOPBACK_MARKETPLACE }));
-
-        await expect(resolveSource({ caller: "init", projectDir: tempDir })).rejects.toThrow(
-          "points to a private or reserved IP address",
         );
       });
 
@@ -1216,6 +1228,41 @@ describe("config", () => {
 
         expect(result.source).toBe(HOME_CONFIG_SOURCE);
         expect(result.sourceOrigin).toBe("global");
+      });
+    });
+
+    describe("a project config that declares nothing, under a global config naming a marketplace", () => {
+      beforeEach(async () => {
+        await writeTestTsConfig(homeDir, buildSourceConfig({ marketplace: HOME_CONFIG_SOURCE }));
+      });
+
+      it("reads the marketplace the same project reads with no config: the global one", async () => {
+        const withoutConfig = await resolveSource({ caller: "stored", projectDir: tempDir });
+        await writeTestTsConfig(tempDir, buildProjectConfig({ skills: [], agents: [] }));
+
+        const declaringNothing = await resolveSource({ caller: "stored", projectDir: tempDir });
+
+        expect(withoutConfig, "subject guard: with no config, the global one").toStrictEqual({
+          source: HOME_CONFIG_SOURCE,
+          sourceOrigin: "global",
+        });
+        expect(declaringNothing).toStrictEqual(withoutConfig);
+      });
+
+      it("is the global one for the listing surfaces' primary entry too", async () => {
+        await writeTestTsConfig(tempDir, buildProjectConfig({ skills: [], agents: [] }));
+
+        const entry = await resolvePrimarySourceEntry(tempDir);
+
+        expect(entry.url).toBe(HOME_CONFIG_SOURCE);
+      });
+
+      it("is not the global one for a project config declaring a skill and naming no marketplace", async () => {
+        await writeTestTsConfig(tempDir, buildProjectConfig());
+
+        const result = await resolveSource({ caller: "stored", projectDir: tempDir });
+
+        expect(result).toStrictEqual({ source: DEFAULT_SOURCE, sourceOrigin: "default" });
       });
     });
 

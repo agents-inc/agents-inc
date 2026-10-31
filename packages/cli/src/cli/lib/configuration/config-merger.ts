@@ -1,6 +1,8 @@
 import { indexBy, omit, pick, uniqueBy } from "remeda";
+import { DEFAULT_SOURCE } from "@workspace/compile";
 import { GLOBAL_IDENTITY_FIELDS, HAND_WRITTEN_FIELDS } from "@workspace/compile/config-source";
 
+import { DEFAULT_PUBLIC_SOURCE_NAME } from "../../consts";
 import type { ProjectConfig } from "../../types";
 import type { AgentScopeConfig, SkillConfig } from "../../types/config";
 import { getProjectConfigPath } from "../installation/install-base-dir";
@@ -94,6 +96,30 @@ function editDrops<Entry extends ScopedEntry>(
 type MergeOptions = Pick<MergeContext, "authoritativeScope">;
 
 /**
+ * A stored name labels only the marketplace it was recorded beside. The public catalogue loads
+ * unnamed, so it is named where another marketplace's name stands to be lent: the writer fills a
+ * project's missing name from the global config.
+ */
+function marketplaceNameBeside(merged: ProjectConfig, existing: ProjectConfig): string | undefined {
+  if (merged.marketplace === existing.marketplace) {
+    return existing.marketplaceName ?? merged.marketplaceName;
+  }
+  if (wouldBorrowAnotherMarketplaceName(merged, existing)) return DEFAULT_PUBLIC_SOURCE_NAME;
+  return merged.marketplaceName;
+}
+
+function wouldBorrowAnotherMarketplaceName(
+  merged: ProjectConfig,
+  existing: ProjectConfig,
+): boolean {
+  return (
+    merged.marketplace === DEFAULT_SOURCE &&
+    merged.marketplaceName === undefined &&
+    existing.marketplaceName !== undefined
+  );
+}
+
+/**
  * Existing identity fields win; `newConfig` is authoritative for every name or id it references. A
  * final compound-key dedup collapses on-disk duplicates. A skill the run could not resolve is
  * removed like any other absent entry.
@@ -139,9 +165,9 @@ export function mergeConfigs(
     merged.author = existingConfig.author;
   }
 
-  // The stored name labels the marketplace it was recorded beside.
-  if (existingConfig.marketplaceName && merged.marketplace === existingConfig.marketplace) {
-    merged.marketplaceName = existingConfig.marketplaceName;
+  const marketplaceName = marketplaceNameBeside(merged, existingConfig);
+  if (marketplaceName !== undefined) {
+    merged.marketplaceName = marketplaceName;
   }
 
   // Hand-written fields have no other record, so a rewrite must keep them.

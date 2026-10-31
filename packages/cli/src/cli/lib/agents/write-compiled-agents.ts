@@ -50,7 +50,7 @@ export async function writeCompiledAgentsByScope(params: {
   agentScopeMap?: Map<AgentName, SkillScope>;
 }): Promise<AgentWriteOutcome[]> {
   const own = params.provider ?? providerInUse(params.projectDir);
-  // Each scope its own: a Codex project under a Claude global is allowed, and inherits only that.
+  // `own` where the project holds an installation of it: no other provider's global reaches it.
   const inherited = inheritedGlobalProvider(params.projectDir, own);
   const hosts: Record<SkillScope, AgentHost> = {
     global: { provider: inherited, agentsDir: agentsDir(inherited, "global", params.projectDir) },

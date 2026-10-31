@@ -25,6 +25,9 @@ import {
 } from "./schemas";
 import { parseFrontmatter } from "./loading/loader";
 import { ConfigDefaultExportError, loadConfig, loadSourceRepoConfig } from "./configuration";
+import { ConfigEvaluationError, ConfigSchemaError } from "./configuration/config-loader";
+import { StacksLoadError } from "./stacks/stacks-loader";
+import { NoSkillRulesError } from "./matrix/matrix-loader";
 import type { MatrixHealthIssue } from "./matrix";
 import { matrixHealthIssues } from "./matrix/matrix-health-check";
 import {
@@ -169,6 +172,7 @@ export async function validateSource(
   // Aborts on an unreadable config; `validateOneSource` turns it into an issue.
   const sourceProjectConfig = await loadSourceRepoConfig(resolvedPath);
   const skillsDirRelPath = sourceProjectConfig?.skillsDir ?? SKILLS_DIR_PATH;
+  const stacksRelFile = sourceProjectConfig?.stacksFile ?? STACKS_FILE_PATH;
   const skillsDir = path.join(resolvedPath, skillsDirRelPath);
 
   if (!(await directoryExists(skillsDir))) {
@@ -181,12 +185,12 @@ export async function validateSource(
   const { pairIssues, validMetadataFiles } = await pairSkillFiles(skillsDir);
   const skillIssues = await validateSkillsInTurn(skillsDir, skillsDirRelPath, validMetadataFiles);
 
-  const crossReferenceIssues = await checkCrossReferences(resolvedPath, reader);
+  const crossReferenceIssues = await checkCrossReferences(resolvedPath, stacksRelFile, reader);
 
   const extraIssues = await Promise.all([
     validateStacks(resolvedPath),
     validateAgents(resolvedPath),
-    validateConfigFiles(resolvedPath),
+    validateConfigFiles(resolvedPath, stacksRelFile),
   ]);
 
   return buildResult(
@@ -274,6 +278,7 @@ const MANIFEST_REQUIRED_SEVERITY = {
 /** Files the load's health findings without saying them again. */
 async function checkCrossReferences(
   resolvedPath: string,
+  stacksRelFile: string,
   reader: MarketplaceReader,
 ): Promise<SourceValidationIssue[]> {
   try {
@@ -282,15 +287,46 @@ async function checkCrossReferences(
       toSourceIssue(healthIssue, resolvedPath, reader),
     );
   } catch (error) {
-    return [matrixLoadFailure(error, reader)];
+    const failedFile = fileThatFailedToLoad(error, resolvedPath, stacksRelFile);
+    return [matrixLoadFailure(error, reader, failedFile)];
   }
+}
+
+/** The stacks or rules file a failed load names by its throw's type, as `doctor` files it. */
+function fileThatFailedToLoad(
+  error: unknown,
+  resolvedPath: string,
+  stacksRelFile: string,
+): string | undefined {
+  if (error instanceof StacksLoadError) return stacksRelFile;
+  if (configThatFailedToLoad(error) === path.join(resolvedPath, SKILL_RULES_PATH)) {
+    return SKILL_RULES_PATH;
+  }
+  return undefined;
+}
+
+function configThatFailedToLoad(error: unknown): string | undefined {
+  if (
+    error instanceof ConfigEvaluationError ||
+    error instanceof ConfigDefaultExportError ||
+    error instanceof ConfigSchemaError ||
+    error instanceof NoSkillRulesError
+  ) {
+    return error.configPath;
+  }
+  return undefined;
 }
 
 /**
  * No valid manifest: the manifest's finding, at the reader's severity. A refused name: this
- * marketplace's error, since nothing installs. Anything else: a warning. Read off the throw's type.
+ * marketplace's error, since nothing installs. A stacks or rules file that failed: a warning
+ * naming it. Anything else: a warning against the categories file. Read off the throw's type.
  */
-function matrixLoadFailure(error: unknown, reader: MarketplaceReader): SourceValidationIssue {
+function matrixLoadFailure(
+  error: unknown,
+  reader: MarketplaceReader,
+  failedFile: string | undefined,
+): SourceValidationIssue {
   if (error instanceof MarketplaceManifestRequiredError) {
     return {
       severity: MANIFEST_REQUIRED_SEVERITY[reader],
@@ -307,10 +343,19 @@ function matrixLoadFailure(error: unknown, reader: MarketplaceReader): SourceVal
     };
   }
 
+  if (failedFile !== undefined) return crossReferenceSkipped(failedFile, failedFile, error);
+  return crossReferenceSkipped(SKILL_CATEGORIES_PATH, "categories/rules", error);
+}
+
+function crossReferenceSkipped(
+  file: string,
+  whatFailed: string,
+  error: unknown,
+): SourceValidationIssue {
   return {
     severity: "warning",
-    file: SKILL_CATEGORIES_PATH,
-    message: `Cross-reference validation skipped: failed to load categories/rules: ${getErrorMessage(error)}`,
+    file,
+    message: `Cross-reference validation skipped: failed to load ${whatFailed}: ${getErrorMessage(error)}`,
   };
 }
 
@@ -398,12 +443,15 @@ async function validateAgents(resolvedPath: string): Promise<SourceValidationIss
   });
 }
 
-/** Runtime-loads each config/*.ts and validates its default export; absent files are skipped. */
-async function validateConfigFiles(resolvedPath: string): Promise<SourceValidationIssue[]> {
+/** Runtime-loads each config file and validates its default export; absent files are skipped. */
+async function validateConfigFiles(
+  resolvedPath: string,
+  stacksRelFile: string,
+): Promise<SourceValidationIssue[]> {
   const results = await Promise.all([
     validateTsConfig(resolvedPath, SKILL_CATEGORIES_PATH, skillCategoriesFileSchema),
     validateTsConfig(resolvedPath, SKILL_RULES_PATH, skillRulesFileSchema),
-    validateTsConfig(resolvedPath, STACKS_FILE_PATH, stacksConfigSchema),
+    validateTsConfig(resolvedPath, stacksRelFile, stacksConfigSchema),
   ]);
   return results.flat();
 }

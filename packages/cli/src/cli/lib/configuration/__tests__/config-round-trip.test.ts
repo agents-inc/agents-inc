@@ -33,17 +33,9 @@ afterEach(async () => {
   await cleanupTempDir(tempDir);
 });
 
-/** jiti cannot resolve the config-types import in a bare temp dir. */
-function stripTypeOnlySyntax(source: string): string {
-  return source
-    .replace(/import type \{[^}]+\} from "\.\/config-types";\n/, "")
-    .replace(/ satisfies ProjectConfig/, "")
-    .replace(/const (\w+): [^=]+=/g, "const $1 =");
-}
-
 async function writeAndLoad(config: ProjectConfig): Promise<unknown> {
   const configPath = path.join(tempDir, STANDARD_FILES.CONFIG_TS);
-  await writeFile(configPath, stripTypeOnlySyntax(generateConfigSource(config, matrix)));
+  await writeFile(configPath, generateConfigSource(config, matrix));
 
   return loadConfig(configPath);
 }
@@ -54,7 +46,7 @@ async function writeAndLoadProjectConfig(config: ProjectConfig): Promise<Project
   await mkdir(claudeSourceDir, { recursive: true });
   await writeFile(
     path.join(claudeSourceDir, STANDARD_FILES.CONFIG_TS),
-    stripTypeOnlySyntax(generateConfigSource(config, matrix)),
+    generateConfigSource(config, matrix),
   );
 
   const loaded = await loadProjectConfig(tempDir);

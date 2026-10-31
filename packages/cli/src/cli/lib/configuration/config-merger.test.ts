@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mergeConfigs, mergeWithExistingConfig } from "./config-merger";
 import { typedKeys } from "../../utils/typed-object";
 import type { ProjectConfig, SkillAssignment, SkillId } from "../../types";
-import { DEFAULT_PLUGIN_NAME } from "../../consts";
+import { DEFAULT_PLUGIN_NAME, DEFAULT_PUBLIC_SOURCE_NAME } from "../../consts";
+import { DEFAULT_SOURCE } from "./config";
 import { getProjectConfigPath } from "../installation/install-base-dir.js";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { writeTestTsConfig } from "../__tests__/helpers/config-io.js";
@@ -769,6 +770,45 @@ describe("config-merger", () => {
           result.marketplaceName,
           "the name recorded beside one marketplace does not label another",
         ).toBe("plain");
+      });
+
+      it("names a config made from the public catalogue its own, under one naming another marketplace", () => {
+        const newConfig = buildProjectConfig({
+          name: "project",
+          skills: [],
+          marketplace: DEFAULT_SOURCE,
+        });
+        const existingConfig = buildProjectConfig({
+          name: "project",
+          skills: [],
+          marketplace: "github:acme/skills",
+          marketplaceName: "acme",
+        });
+
+        const result = mergeConfigs(newConfig, existingConfig);
+
+        expect(
+          pick(result, ["marketplace", "marketplaceName"]),
+          "a project left unnamed takes the global config's name when it is written",
+        ).toStrictEqual({
+          marketplace: DEFAULT_SOURCE,
+          marketplaceName: DEFAULT_PUBLIC_SOURCE_NAME,
+        });
+      });
+
+      it("leaves a config made from the public catalogue unnamed, under one naming none", () => {
+        const newConfig = buildProjectConfig({
+          name: "project",
+          skills: [],
+          marketplace: DEFAULT_SOURCE,
+        });
+        const existingConfig = buildProjectConfig({ name: "project", skills: [] });
+
+        const result = mergeConfigs(newConfig, existingConfig);
+
+        expect(pick(result, ["marketplace", "marketplaceName"])).toStrictEqual({
+          marketplace: DEFAULT_SOURCE,
+        });
       });
 
       it("keeps the branding the existing config carried", () => {

@@ -1,6 +1,6 @@
 import type { Provider } from "../../consts";
 import { getProjectConfigPath } from "../installation/install-base-dir";
-import { fileExists, readFile } from "../../utils/fs";
+import { fileExists, readFile, remove, writeFile } from "../../utils/fs";
 import { typesPathFor } from "./pair-writer.js";
 
 /** What one half of a pair reads as: absent is `null`; unreadable is a symbol equal to nothing. */
@@ -53,6 +53,32 @@ export async function pairsRewrittenSince(
     })),
   );
   return new Set(judged.filter(({ rewritten }) => rewritten).map(({ dir }) => dir));
+}
+
+export async function restoreProjectPairs(before: PairSnapshot, provider: Provider): Promise<void> {
+  await Promise.all([...before].map(([dir, pair]) => restorePair(dir, pair, provider)));
+}
+
+async function restorePair(
+  dir: string,
+  [config, types]: PairContents,
+  provider: Provider,
+): Promise<void> {
+  const configPath = getProjectConfigPath(dir, provider);
+  await Promise.all([
+    restoreHalf(configPath, config),
+    restoreHalf(typesPathFor(configPath), types),
+  ]);
+}
+
+/**
+ * A half that was absent is removed again; an unreadable one has nothing to put back. One that
+ * still reads the same is left alone, so the half whose write was refused is not written again.
+ */
+async function restoreHalf(filePath: string, before: HalfContents): Promise<void> {
+  if ((await readHalf(filePath)) === before) return;
+  if (before === null) return remove(filePath);
+  if (typeof before === "string") return writeFile(filePath, before);
 }
 
 function snapshotOf(before: PairSnapshot, dir: string): PairContents {

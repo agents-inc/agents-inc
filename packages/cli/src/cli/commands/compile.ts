@@ -40,6 +40,7 @@ import {
   skillMetadataUnusableError,
 } from "../utils/messages";
 import { reconcileTypesFromDisk, type GateReport } from "../lib/config-gate/index.js";
+import { namedByActiveEntries } from "../lib/configuration/scope-diff.js";
 import { unofferablePlacementsFound } from "../lib/hosts/configured-placements.js";
 import { providerInUse } from "../lib/installation/install-layout.js";
 import {
@@ -234,8 +235,9 @@ export default class Compile extends BaseCommand {
     const loaded = await loadProjectConfig(projectDir);
     if (!loaded?.config.stack) return;
 
+    const namedBy = namedByActiveEntries(loaded.config.skills);
     for (const [skillId, agentNames] of findScopeDroppedStackPairs(loaded.config)) {
-      this.warn(scopeBlockedStackAssignment(agentNames, skillId));
+      this.warn(scopeBlockedStackAssignment(agentNames, skillId, namedBy));
     }
   }
 

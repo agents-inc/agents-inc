@@ -851,6 +851,23 @@ describe("loadSkillsFromDir with requireMetadata", () => {
     });
   });
 
+  it("warns no line naming a folder it skipped for having no metadata.yaml, and loads the registered skill beside it", async () => {
+    const unregistered = "context7-mcp";
+    vi.mocked(directoryExists).mockResolvedValue(true);
+    vi.mocked(glob).mockResolvedValue(["web-framework-react/SKILL.md", `${unregistered}/SKILL.md`]);
+    vi.mocked(fileExists).mockImplementation(async (filePath) => filePath === METADATA_PATH);
+    filesOnDisk({ [METADATA_PATH]: USABLE_METADATA, [SKILL_MD_PATH]: REACT_SKILL_MD });
+
+    const result = await loadSkillsFromDir("/project/.claude/skills", {
+      pathPrefix: ".claude/skills",
+      requireMetadata: true,
+    });
+
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining(unregistered));
+    expect(typedKeys(result.skills)).toStrictEqual(["web-framework-react"]);
+    expect(result.unusableMetadata).toStrictEqual([]);
+  });
+
   it("skips the skill whose metadata.yaml names the placeholder category", async () => {
     vi.mocked(directoryExists).mockResolvedValue(true);
     vi.mocked(glob).mockResolvedValue(["web-framework-react/SKILL.md"]);

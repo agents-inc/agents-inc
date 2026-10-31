@@ -57,4 +57,4 @@ export function toTitleCase(kebabCase: string): string {
     .join(" ");
 }
 
-export { bytewise } from "@workspace/compile";
+export { bytewise, inAnEnglishList } from "@workspace/compile";

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from "vitest";
 import { spawnSync } from "child_process";
 import path from "path";
 import { chmod, mkdir, rm, writeFile, readFile, readdir, utimes } from "fs/promises";
@@ -30,7 +30,9 @@ import {
   stoppingOnARefusal,
 } from "./source-fetcher";
 import { downloadTemplate } from "giget";
+import type { z } from "zod";
 import { marketplaceManifestPath } from "../../consts";
+import type { sourceRevalidationSchema } from "../schemas";
 import { matchedAsWritten } from "../__tests__/helpers/matched-as-written";
 import { log, warn } from "../../utils/logger";
 import { sourceUnreachableUsingCache, STATUS_MESSAGES } from "../../utils/messages";
@@ -51,14 +53,21 @@ const GIGET_TEMPLATE = "org-repo";
 const GIGET_VERSION = "main";
 
 /**
- * A ref as giget's github provider resolves it: `template` names the folder its tarballs are saved
- * in, `version` the tarball.
+ * A ref as a giget provider resolves it: `template` names the folder its tarballs are saved in,
+ * `version` the tarball, or, where it is empty, `template` does.
  */
-type GigetRef = { source: string; tar: string; template: string; version: string };
+type GigetRef = {
+  source: string;
+  tar: string;
+  provider: string;
+  template: string;
+  version: string;
+};
 
 const MAIN: GigetRef = {
   source: SOURCE,
   tar: TARBALL,
+  provider: "github",
   template: GIGET_TEMPLATE,
   version: GIGET_VERSION,
 };
@@ -67,6 +76,7 @@ const MAIN: GigetRef = {
 const SLASHED_BRANCH: GigetRef = {
   source: `${SOURCE}#feature/x`,
   tar: "https://api.github.com/repos/org/repo/tarball/feature/x",
+  provider: "github",
   template: GIGET_TEMPLATE,
   version: "feature/x",
 };
@@ -75,9 +85,25 @@ const SLASHED_BRANCH: GigetRef = {
 const OTHER_MARKETPLACE: GigetRef = {
   source: "github:org/other",
   tar: "https://api.github.com/repos/org/other/tarball/main",
+  provider: "github",
   template: "org-other",
   version: GIGET_VERSION,
 };
+
+/** A marketplace named by its URL, as giget's http provider resolves it: no version. */
+const BY_URL: GigetRef = {
+  source: "https://example.com/source.tar.gz",
+  tar: "https://example.com/source.tar.gz",
+  provider: "https",
+  template: "source-tar-gz-https---",
+  version: "",
+};
+
+/** The two kinds of remote marketplace: giget keeps a tarball of each, under its provider. */
+const MARKETPLACE_KINDS = [
+  { kind: "on GitHub", ref: MAIN },
+  { kind: "by its URL", ref: BY_URL },
+] as const;
 
 /** Saved by an earlier run: older than anything a download in this test writes. */
 const EARLIER_RUN = new Date("2026-01-01T00:00:00Z");
@@ -88,9 +114,13 @@ const DOWNLOAD_FAILED = "the download failed and only a saved copy came back";
 /** giget's own words for a download it could not answer from a saved tarball. */
 const GIGET_DOWNLOAD_REFUSED = `Failed to download ${TARBALL}: 503 Service Unavailable`;
 
+const SAVED_CONTENT = "content from the tarball giget saved";
 const SAVED_TARBALL_CONTENT = "tarball an earlier download saved";
 const FETCHED_TARBALL_CONTENT = "tarball this download fetched";
 const PARTIAL_TARBALL_CONTENT = "the first half of a tarball";
+
+/** A fetch record as the fetcher writes it beside a saved copy. */
+type SourceRecord = z.infer<typeof sourceRevalidationSchema>;
 
 function headResponse(etag?: string): Response {
   return new Response(null, { headers: etag === undefined ? {} : { etag } });
@@ -138,6 +168,11 @@ function refusedWarning(status: number, source: string = SOURCE): string {
   return `${source} refused the request (${status}) — using the cached copy, which may be out of date.`;
 }
 
+/** What a load says when the marketplace announced newer content and the download of it failed. */
+function updateNotFetchedWarning(source: string): string {
+  return `Could not fetch the update from ${source} — using the cached copy, which is out of date.`;
+}
+
 const HEAD_METHOD_REFUSED = 405;
 
 /** Mirrors `GIGET_FOLDER_LOCK`. */
@@ -183,13 +218,14 @@ describe("source-fetcher revalidation", () => {
     return path.join(mockCacheDir, "sources", sanitizeSourceForCache(source));
   }
 
-  /** Where giget saves every github marketplace's tarballs, each in its template's folder. */
-  function gigetProviderFolder(): string {
-    return path.join(tempDir, "xdg", "giget", "github");
+  /** Where giget saves a provider's tarballs, each in its template's folder. */
+  function gigetProviderFolder(provider: string): string {
+    return path.join(tempDir, "xdg", "giget", provider);
   }
 
-  function gigetTarballOf({ template, version }: GigetRef): string {
-    return path.join(gigetProviderFolder(), template, `${version}.tar.gz`);
+  function gigetTarballOf({ provider, template, version }: GigetRef): string {
+    const stem = version === "" ? template : version;
+    return path.join(gigetProviderFolder(provider), template, `${stem}.tar.gz`);
   }
 
   afterEach(async () => {
@@ -199,7 +235,7 @@ describe("source-fetcher revalidation", () => {
     await cleanupTempDir(tempDir);
   });
 
-  async function seedCachedCopy(record?: { tar: string; etag?: string }): Promise<void> {
+  async function seedCachedCopy(record?: SourceRecord): Promise<void> {
     await writeFile(path.join(cacheDir, ORPHAN_FILE), "content from the previous fetch");
     if (record) await writeFile(recordPath, JSON.stringify(record));
   }
@@ -247,7 +283,7 @@ describe("source-fetcher revalidation", () => {
   function extractingSaved(ref: GigetRef): GigetAnswer {
     return async (source, options) => {
       const dir = await extractionDir(options);
-      await writeFile(path.join(dir, SAVED_FILE), "content from the tarball giget saved");
+      await writeFile(path.join(dir, SAVED_FILE), SAVED_CONTENT);
       return { source, dir, tar: ref.tar, name: ref.template, version: ref.version };
     };
   }
@@ -278,6 +314,53 @@ describe("source-fetcher revalidation", () => {
         ? extractingSaved(ref)(source, options)
         : afterwards(source, options),
     );
+  }
+
+  /**
+   * giget when its download fails: the tarball it saved, extracted, while that tarball is on disk;
+   * the failure itself once it is gone.
+   */
+  function stubFailingDownload(ref: GigetRef, failure: string): void {
+    mockDownloadTemplate.mockImplementation(async (source, options) => {
+      if (await fileExists(gigetTarballOf(ref))) return extractingSaved(ref)(source, options);
+      throw new Error(failure);
+    });
+  }
+
+  /** The copy an earlier download of `ref` left, and its record when given one. */
+  async function seedCopyOf(ref: GigetRef, record?: SourceRecord): Promise<void> {
+    const copy = cacheDirOf(ref.source);
+    await mkdir(copy, { recursive: true });
+    await writeFile(path.join(copy, SAVED_FILE), SAVED_CONTENT);
+    if (record) await writeFile(fetchRecordPath(copy), JSON.stringify(record));
+  }
+
+  /**
+   * What an earlier download of `ref` left: the copy, its record when given one, and giget's
+   * tarball of the same content beside the record of the ETag it was saved under.
+   */
+  async function seedEarlierDownload(ref: GigetRef, record?: SourceRecord): Promise<void> {
+    await seedCopyOf(ref, record);
+    await seedGigetTarball(CACHED_ETAG, ref);
+  }
+
+  async function recordOf(ref: GigetRef): Promise<unknown> {
+    return JSON.parse(await readFile(fetchRecordPath(cacheDirOf(ref.source)), "utf-8"));
+  }
+
+  /**
+   * The next command a user runs: the fetcher and giget loaded afresh, so nothing an earlier run
+   * asked or downloaded is remembered but what it left on disk.
+   */
+  async function aLaterRun(): Promise<{
+    fetchFromSource: typeof fetchFromSource;
+    downloadTemplate: Mock<typeof downloadTemplate>;
+  }> {
+    const laterDownload = vi.fn<typeof downloadTemplate>();
+    vi.doMock("giget", () => ({ downloadTemplate: laterDownload }));
+    vi.resetModules();
+    const fetcher = await import("./source-fetcher");
+    return { fetchFromSource: fetcher.fetchFromSource, downloadTemplate: laterDownload };
   }
 
   it("serves the cached copy when the source still answers with the recorded ETag", async () => {
@@ -338,15 +421,129 @@ describe("source-fetcher revalidation", () => {
     expect(warn).toHaveBeenCalledWith(sourceUnreachableUsingCache(SOURCE));
   });
 
-  it("keeps a copy whose record carries no ETag, and does not ask about it", async () => {
-    await seedCachedCopy({ tar: TARBALL });
-    const fetchMock = vi.fn().mockResolvedValue(headResponse(PUBLISHED_ETAG));
-    vi.stubGlobal("fetch", fetchMock);
+  /** A load outside doctor asks about a copy saved without a version stamp as about any other. */
+  describe("a copy whose record carries no ETag", () => {
+    it("asks about it before anything else, and downloads it again without claiming the source moved on when the source answers with an ETag", async () => {
+      await seedCachedCopy({ tar: TARBALL });
+      const fetchMock = vi.fn().mockResolvedValue(headResponse(PUBLISHED_ETAG));
+      vi.stubGlobal("fetch", fetchMock);
+      stubDownload();
 
-    const result = await fetchFromSource(SOURCE);
+      const result = await fetchFromSource(SOURCE);
 
-    expect(result.fromCache).toBe(true);
-    expect(fetchMock, "nothing was recorded to compare against").not.toHaveBeenCalled();
+      expect(fetchMock.mock.calls[0]?.[0], "the copy was asked about").toBe(TARBALL);
+      expect(fetchMock.mock.calls[0]?.[1]).toStrictEqual(
+        expect.objectContaining({ method: "HEAD" }),
+      );
+      expect(mockDownloadTemplate).toHaveBeenCalledOnce();
+      expect(
+        fetchMock.mock.invocationCallOrder[0],
+        "asked before the download, not only after it",
+      ).toBeLessThan(mockDownloadTemplate.mock.invocationCallOrder[0] ?? 0);
+      expect(await readdir(result.path)).toStrictEqual([FRESH_FILE]);
+      expect(JSON.parse(await readFile(recordPath, "utf-8"))).toStrictEqual({
+        tar: TARBALL,
+        etag: PUBLISHED_ETAG,
+      });
+      expect(
+        log,
+        "a copy of no known version is not said to be superseded",
+      ).not.toHaveBeenCalledWith(STATUS_MESSAGES.MARKETPLACE_HAS_NEWER_CONTENT);
+    });
+
+    it("keeps it after one question a run when the source answers without an ETag either", async () => {
+      await seedCachedCopy({ tar: TARBALL });
+      const fetchMock = vi.fn().mockResolvedValue(headResponse());
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await fetchFromSource(SOURCE);
+      await fetchFromSource(SOURCE, { subdir: "" });
+
+      expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+        TARBALL,
+        expect.objectContaining({ method: "HEAD" }),
+      );
+      expect(mockDownloadTemplate).not.toHaveBeenCalled();
+      expect(result.fromCache).toBe(true);
+      expect(await readdir(cacheDir)).toStrictEqual([ORPHAN_FILE]);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("keeps it and names its staleness once however many times one run loads it, when the source cannot be reached", async () => {
+      await seedCachedCopy({ tar: TARBALL });
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("fetch failed")));
+
+      const result = await fetchFromSource(SOURCE);
+      const second = await fetchFromSource(SOURCE, { subdir: "" });
+
+      expect(warn).toHaveBeenCalledExactlyOnceWith(sourceUnreachableUsingCache(SOURCE));
+      expect(result.fromCache).toBe(true);
+      expect(result.unreachable, "the copy stood in for a source nobody could ask").toBe(true);
+      expect(second.unreachable).toBe(true);
+      expect(mockDownloadTemplate).not.toHaveBeenCalled();
+      expect(await readdir(cacheDir)).toStrictEqual([ORPHAN_FILE]);
+      expect(JSON.parse(await readFile(recordPath, "utf-8"))).toStrictEqual({ tar: TARBALL });
+    });
+
+    it("keeps it over a server error, and says the source refused", async () => {
+      await seedCachedCopy({ tar: TARBALL });
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(refusal(SERVICE_UNAVAILABLE)));
+
+      const result = await fetchFromSource(SOURCE);
+
+      expect(warn).toHaveBeenCalledExactlyOnceWith(refusedWarning(SERVICE_UNAVAILABLE));
+      expect(result.fromCache).toBe(true);
+      expect(mockDownloadTemplate).not.toHaveBeenCalled();
+      expect(await readdir(cacheDir)).toStrictEqual([ORPHAN_FILE]);
+    });
+
+    it("stops a load that stops on a refusal when the source answers 404, leaving the copy and its record", async () => {
+      await seedCachedCopy({ tar: TARBALL });
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(refusal(NOT_FOUND)));
+
+      await expect(stoppingOnARefusal(() => fetchFromSource(SOURCE))).rejects.toMatchObject({
+        message: expect.stringMatching(opening(`Repository not found: ${SOURCE}\n`)),
+      });
+
+      expect(mockDownloadTemplate).not.toHaveBeenCalled();
+      expect(await readdir(cacheDir)).toStrictEqual([ORPHAN_FILE]);
+      expect(JSON.parse(await readFile(recordPath, "utf-8"))).toStrictEqual({ tar: TARBALL });
+    });
+
+    it("downloads it on a later run after a server error answered the check right after its download", async () => {
+      await rm(cacheDir, { recursive: true });
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(refusal(SERVICE_UNAVAILABLE)));
+      stubDownload();
+      await fetchFromSource(SOURCE);
+      expect(
+        JSON.parse(await readFile(recordPath, "utf-8")),
+        "subject guard: the copy was saved without an ETag",
+      ).toStrictEqual({ tar: TARBALL });
+
+      const later = await aLaterRun();
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(headResponse(PUBLISHED_ETAG)));
+      later.downloadTemplate.mockImplementation(async (source, options) =>
+        downloading(source === OTHER_MARKETPLACE.source ? OTHER_MARKETPLACE : MAIN)(
+          source,
+          options,
+        ),
+      );
+      await later.fetchFromSource(OTHER_MARKETPLACE.source);
+      await later.fetchFromSource(SOURCE);
+
+      expect(
+        later.downloadTemplate,
+        "subject guard: the later run's downloads are the ones observed, a cold cache's among them",
+      ).toHaveBeenCalledWith(OTHER_MARKETPLACE.source, expect.anything());
+      expect(later.downloadTemplate, "the later run refreshes the copy").toHaveBeenCalledWith(
+        SOURCE,
+        expect.anything(),
+      );
+      expect(JSON.parse(await readFile(recordPath, "utf-8"))).toStrictEqual({
+        tar: TARBALL,
+        etag: PUBLISHED_ETAG,
+      });
+    });
   });
 
   it("asks once however many times one run loads the same source", async () => {
@@ -452,6 +649,164 @@ describe("source-fetcher revalidation", () => {
 
     expect(JSON.parse(await readFile(recordPath, "utf-8"))).toStrictEqual({ tar: TARBALL });
   });
+
+  /**
+   * Outside doctor a failed download falls back on what the earlier download left, whichever copy
+   * holds it, and says so: after the marketplace announced newer content, and when the copy lost its
+   * record and the marketplace cannot be reached. giget extracts the tarball it saved while it is on
+   * disk, so the CLI's copy and giget's tarball hold the same content here, as they do on disk.
+   */
+  describe.each(MARKETPLACE_KINDS)(
+    "a download failing for a marketplace named $kind",
+    ({ ref }) => {
+      it("replaces the copy and says nothing of a fallback when the download succeeds", async () => {
+        await seedEarlierDownload(ref, { tar: ref.tar, etag: CACHED_ETAG });
+        vi.stubGlobal("fetch", vi.fn().mockResolvedValue(headResponse(PUBLISHED_ETAG)));
+        stubDownload(ref);
+
+        const result = await fetchFromSource(ref.source);
+
+        expect(await readdir(result.path)).toStrictEqual([FRESH_FILE]);
+        expect(await recordOf(ref)).toStrictEqual({ tar: ref.tar, etag: PUBLISHED_ETAG });
+        expect(warn).not.toHaveBeenCalled();
+      });
+
+      it("reads what the earlier download left when the marketplace announced newer content, and says once that the update could not be fetched", async () => {
+        await seedEarlierDownload(ref, { tar: ref.tar, etag: CACHED_ETAG });
+        vi.stubGlobal("fetch", vi.fn().mockResolvedValue(headResponse(PUBLISHED_ETAG)));
+        stubFailingDownload(ref, `Failed to download ${ref.tar}: 503 Service Unavailable`);
+
+        const result = await fetchFromSource(ref.source);
+        const second = await fetchFromSource(ref.source, { subdir: "" });
+
+        expect(log, "subject guard: the marketplace announced newer content").toHaveBeenCalledWith(
+          STATUS_MESSAGES.MARKETPLACE_HAS_NEWER_CONTENT,
+        );
+        expect(mockDownloadTemplate, "one download tried a run").toHaveBeenCalledOnce();
+        expect(await readdir(result.path)).toStrictEqual([SAVED_FILE]);
+        expect(await readFile(path.join(result.path, SAVED_FILE), "utf-8")).toBe(SAVED_CONTENT);
+        expect(second.path, "every load this run reads the same copy").toBe(result.path);
+        expect(
+          await recordOf(ref),
+          "the record still names the version the copy holds",
+        ).toStrictEqual({ tar: ref.tar, etag: CACHED_ETAG });
+        expect(warn).toHaveBeenCalledExactlyOnceWith(updateNotFetchedWarning(ref.source));
+      });
+
+      it("reads what the earlier download left when the copy lost its record and the marketplace cannot be reached, and says once that it could not be reached", async () => {
+        await seedEarlierDownload(ref);
+        vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("fetch failed")));
+        stubFailingDownload(ref, `Failed to download ${ref.tar}: TypeError: fetch failed`);
+
+        const result = await fetchFromSource(ref.source);
+        const second = await fetchFromSource(ref.source, { subdir: "" });
+
+        expect(await readdir(result.path)).toStrictEqual([SAVED_FILE]);
+        expect(await readFile(path.join(result.path, SAVED_FILE), "utf-8")).toBe(SAVED_CONTENT);
+        expect(second.path, "every load this run reads the same copy").toBe(result.path);
+        expect(log, "nothing announced newer content").not.toHaveBeenCalledWith(
+          STATUS_MESSAGES.MARKETPLACE_HAS_NEWER_CONTENT,
+        );
+        expect(warn).toHaveBeenCalledExactlyOnceWith(sourceUnreachableUsingCache(ref.source));
+      });
+
+      /**
+       * With no record and no tarball of giget's, giget's failed download is the only answer the load
+       * gets, so a refusal in it is taken as the version check's would be.
+       */
+      describe("over a copy that lost its record, with no tarball of giget's to fall back on", () => {
+        const copy = () => cacheDirOf(ref.source);
+
+        /** Every request answered `status`, giget's download among them. */
+        function refusingEveryRequest(status: number, statusText: string): void {
+          vi.stubGlobal("fetch", vi.fn().mockResolvedValue(refusal(status)));
+          stubFailingDownload(ref, `Failed to download ${ref.tar}: ${status} ${statusText}`);
+        }
+
+        it("stops a load that stops on a refusal when the download is refused 404, leaving the copy", async () => {
+          await seedCopyOf(ref);
+          refusingEveryRequest(NOT_FOUND, "Not Found");
+          expect(
+            await fileExists(gigetTarballOf(ref)),
+            "subject guard: no tarball of giget's",
+          ).toBe(false);
+
+          await expect(stoppingOnARefusal(() => fetchFromSource(ref.source))).rejects.toMatchObject(
+            {
+              message: expect.stringMatching(opening(`Repository not found: ${ref.source}\n`)),
+            },
+          );
+
+          expect(
+            mockDownloadTemplate,
+            "subject guard: giget's download was tried",
+          ).toHaveBeenCalledOnce();
+          expect(await readdir(copy()), "the copy stays for every other load").toStrictEqual([
+            SAVED_FILE,
+          ]);
+          expect(await fileExists(fetchRecordPath(copy())), "nothing vouched for the copy").toBe(
+            false,
+          );
+          expect(warn).not.toHaveBeenCalled();
+        });
+
+        it("leaves a load outside it keeping the copy over the same 404, saying nothing of it", async () => {
+          await seedCopyOf(ref);
+          refusingEveryRequest(NOT_FOUND, "Not Found");
+
+          const result = await fetchFromSource(ref.source);
+
+          expect(
+            mockDownloadTemplate,
+            "subject guard: giget's download was tried",
+          ).toHaveBeenCalledOnce();
+          expect(result.fromCache).toBe(true);
+          expect(result.unreachable, "the marketplace answered, with a refusal").toBe(false);
+          expect(await readdir(result.path)).toStrictEqual([SAVED_FILE]);
+          expect(await fileExists(fetchRecordPath(copy())), "nothing vouched for the copy").toBe(
+            false,
+          );
+          expect(warn).not.toHaveBeenCalled();
+        });
+
+        it("keeps the copy over a 503, and says once that the marketplace refused", async () => {
+          await seedCopyOf(ref);
+          refusingEveryRequest(SERVICE_UNAVAILABLE, "Service Unavailable");
+
+          const result = await fetchFromSource(ref.source);
+          const second = await fetchFromSource(ref.source, { subdir: "" });
+
+          expect(mockDownloadTemplate, "one download tried a run").toHaveBeenCalledOnce();
+          expect(result.fromCache).toBe(true);
+          expect(result.unreachable, "the marketplace answered, with a refusal").toBe(false);
+          expect(second.path, "every load this run reads the same copy").toBe(result.path);
+          expect(await readdir(result.path)).toStrictEqual([SAVED_FILE]);
+          expect(await fileExists(fetchRecordPath(copy())), "nothing vouched for the copy").toBe(
+            false,
+          );
+          expect(warn).toHaveBeenCalledExactlyOnceWith(
+            refusedWarning(SERVICE_UNAVAILABLE, ref.source),
+          );
+        });
+
+        it("keeps the copy when the marketplace cannot be reached, and says once that it could not be reached", async () => {
+          await seedCopyOf(ref);
+          vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("fetch failed")));
+          stubFailingDownload(ref, `Failed to download ${ref.tar}: TypeError: fetch failed`);
+
+          const result = await fetchFromSource(ref.source);
+          const second = await fetchFromSource(ref.source, { subdir: "" });
+
+          expect(mockDownloadTemplate, "one download tried a run").toHaveBeenCalledOnce();
+          expect(result.fromCache).toBe(true);
+          expect(result.unreachable, "no answer is not a refusal").toBe(true);
+          expect(second.path, "every load this run reads the same copy").toBe(result.path);
+          expect(await readdir(result.path)).toStrictEqual([SAVED_FILE]);
+          expect(warn).toHaveBeenCalledExactlyOnceWith(sourceUnreachableUsingCache(ref.source));
+        });
+      });
+    },
+  );
 
   describe("asked by a load that must reach the marketplace itself", () => {
     const askingItself = () => askingEachMarketplaceItself(() => fetchFromSource(SOURCE));
@@ -1503,7 +1858,7 @@ describe("source-fetcher revalidation", () => {
     const BOTH = [MAIN, OTHER_MARKETPLACE] as const;
 
     function gigetFolderLock(): string {
-      return path.join(gigetProviderFolder(), GIGET_FOLDER_LOCK);
+      return path.join(gigetProviderFolder(MAIN.provider), GIGET_FOLDER_LOCK);
     }
 
     /** Each saved record reads as giget wrote it, and nothing is left beside giget's own files. */
@@ -1517,7 +1872,7 @@ describe("source-fetcher revalidation", () => {
           `${GIGET_VERSION}.tar.gz.json`,
         ]);
       }
-      expect((await readdir(gigetProviderFolder())).sort()).toStrictEqual([
+      expect((await readdir(gigetProviderFolder(MAIN.provider))).sort()).toStrictEqual([
         OTHER_MARKETPLACE.template,
         MAIN.template,
       ]);
@@ -1614,7 +1969,7 @@ describe("source-fetcher revalidation", () => {
         JSON.stringify({ etag: CACHED_ETAG }),
       );
       expect(await readFile(gigetTarballOf(MAIN), "utf-8")).toBe(FETCHED_TARBALL_CONTENT);
-      expect((await readdir(gigetProviderFolder())).sort()).toStrictEqual([
+      expect((await readdir(gigetProviderFolder(MAIN.provider))).sort()).toStrictEqual([
         OTHER_MARKETPLACE.template,
         MAIN.template,
       ]);

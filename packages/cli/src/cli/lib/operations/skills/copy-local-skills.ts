@@ -1,6 +1,7 @@
+import path from "path";
 import { resolveInstallPaths } from "../../installation/index.js";
 import { copySkillsToLocalFlattened, type CopiedSkill } from "../../skills/index.js";
-import { ensureDir } from "../../../utils/fs.js";
+import { ensureDir, listDirectories, remove } from "../../../utils/fs.js";
 import type { SkillConfig } from "../../../types/config.js";
 import type { SourceLoadResult } from "../../loading/source-loader.js";
 
@@ -53,4 +54,28 @@ export async function copyLocalSkills(
     globalCopied,
     totalCopied: projectCopied.length + globalCopied.length,
   };
+}
+
+/** Every skill folder at both scopes, as a full path. */
+export async function skillFoldersAt(projectDir: string): Promise<ReadonlySet<string>> {
+  const skillsDirs = [
+    resolveInstallPaths(projectDir, "project").skillsDir,
+    resolveInstallPaths(projectDir, "global").skillsDir,
+  ];
+  const folders = await Promise.all(skillsDirs.map(foldersIn));
+  return new Set(folders.flat());
+}
+
+async function foldersIn(dir: string): Promise<string[]> {
+  return (await listDirectories(dir)).map((name) => path.join(dir, name));
+}
+
+/** A folder already in `before` stays, whatever was written into it since. */
+export async function removeSkillFoldersCreatedSince(
+  before: ReadonlySet<string>,
+  projectDir: string,
+): Promise<ReadonlySet<string>> {
+  const created = [...(await skillFoldersAt(projectDir))].filter((folder) => !before.has(folder));
+  await Promise.all(created.map(remove));
+  return new Set(created);
 }

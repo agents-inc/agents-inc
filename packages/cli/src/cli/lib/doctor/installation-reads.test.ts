@@ -61,11 +61,11 @@ describe("installation-reads", () => {
   }
 
   describe("hostsOnDisk", () => {
-    it("reads each scope's provider off that scope's own folder", async () => {
+    it("reads a home holding only the other provider's installation as the project's own provider's global", async () => {
       await writeTestTsConfig(projectDir, buildProjectConfig(), folderOf("codex"));
       await writeTestTsConfig(home.dir, buildProjectConfig(), folderOf("claude"));
 
-      expect(await hostsOnDisk(projectDir)).toStrictEqual({ project: "codex", global: "claude" });
+      expect(await hostsOnDisk(projectDir)).toStrictEqual({ project: "codex", global: "codex" });
     });
 
     it("checks a project holding no installation as the global one it inherits", async () => {

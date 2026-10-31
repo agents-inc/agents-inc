@@ -25,7 +25,11 @@ import {
   NO_VALID_DEFAULT_EXPORT,
 } from "./config-loader";
 import { getInstalledConfigPath, getProjectConfigPath } from "../installation/install-base-dir";
-import { inheritedGlobalProvider, providerInUse } from "../installation/install-layout";
+import {
+  declaresNoContent,
+  inheritedGlobalProvider,
+  providerInUse,
+} from "../installation/install-layout";
 import { initProviderToNameAt, providerToNameAt } from "../installation/provider-to-name";
 import { isHomeDirectory } from "../installation/is-home-directory";
 import type { ScopeKind } from "../installation/source-scopes";
@@ -47,8 +51,9 @@ export type ResolvedConfig = {
 type RecordedMarketplaceName = { marketplace: string; marketplaceRecordedIn: string };
 
 /**
- * Choosing a marketplace is install-time, so only `"init"` reads the environment rung. `"stored"`
- * callers get project, then global, then the default, though any caller may still name one to read.
+ * `"init"` chooses a marketplace: the one named, then the environment's, then the default, since
+ * a shared id naming none names the public catalogue. `"stored"` reads the one recorded: project,
+ * then global, then the default, though any caller may still name one to read.
  */
 export type SourceCaller = "init" | "stored";
 
@@ -62,16 +67,18 @@ type ResolveSourceRequest = {
   provider?: Provider | undefined;
 };
 
+type StoredConfig = { settings: Partial<ProjectConfig>; declaresNothing: boolean };
+
 /**
  * `null` only when the file is absent. A present file that cannot load is raised, never reported as
  * absence, and is judged as the full-config reader judges it. Callers abort, except
  * `validateRegisteredSources`, which degrades.
  */
-async function loadSourceConfig(
+async function readStoredConfig(
   dir: string,
   scope: ScopeKind,
   provider?: Provider,
-): Promise<Partial<ProjectConfig> | null> {
+): Promise<StoredConfig | null> {
   const scopeLabel = scope === "project" ? "Project" : "Global";
   const configPath = storedConfigPath(dir, provider);
 
@@ -91,7 +98,22 @@ async function loadSourceConfig(
   const settings = readSettings(configPath, installation);
 
   verbose(`Loaded ${scope} config from ${dir}`);
-  return settings;
+  return {
+    settings,
+    declaresNothing: declaresNoContent({
+      skills: installation.skills ?? [],
+      agents: installation.agents ?? [],
+    }),
+  };
+}
+
+async function loadSourceConfig(
+  dir: string,
+  scope: ScopeKind,
+  provider?: Provider,
+): Promise<Partial<ProjectConfig> | null> {
+  const stored = await readStoredConfig(dir, scope, provider);
+  return stored === null ? null : stored.settings;
 }
 
 /** How a reader words a config that is there and will not load, from the reason it gives. */
@@ -207,7 +229,13 @@ async function loadEffectiveSourceConfig(
 ): Promise<EffectiveSourceConfig | null> {
   const ownDir = ownProjectDir(projectDir);
   const own = ownDir === null ? null : await readStoredRung(ownDir, "project", provider);
-  return own ?? (await readStoredRung(os.homedir(), "global", provider ?? inheritedBy(projectDir)));
+  if (own !== null && !readsAsNoConfig(own)) return own;
+  return readStoredRung(os.homedir(), "global", provider ?? inheritedBy(projectDir));
+}
+
+/** A project config declaring nothing reads as none, though a marketplace it names is still read. */
+function readsAsNoConfig(own: StoredRung): boolean {
+  return own.declaresNothing && own.config.marketplace === undefined;
 }
 
 /** The global installation a project inherits, or home's own where the run names no project. */
@@ -215,14 +243,23 @@ function inheritedBy(projectDir: string | undefined): Provider {
   return inheritedGlobalProvider(projectDir ?? os.homedir());
 }
 
+type StoredRung = EffectiveSourceConfig & Pick<StoredConfig, "declaresNothing">;
+
 /** One stored rung: the config at `dir` and the file it was read from, or null when it has none. */
 async function readStoredRung(
   dir: string,
   origin: ScopeKind,
   provider?: Provider,
-): Promise<EffectiveSourceConfig | null> {
-  const config = await loadSourceConfig(dir, origin, provider);
-  return config && { config, origin, configPath: storedConfigPath(dir, provider) };
+): Promise<StoredRung | null> {
+  const stored = await readStoredConfig(dir, origin, provider);
+  return (
+    stored && {
+      config: stored.settings,
+      declaresNothing: stored.declaresNothing,
+      origin,
+      configPath: storedConfigPath(dir, provider),
+    }
+  );
 }
 
 /** The named installation's config, or the one the folder holds where none is named. */
@@ -253,7 +290,7 @@ function recordedMarketplaceName(
   };
 }
 
-/** Precedence: flag > env > project > global > default; the env rung is read for `init` only. */
+/** Precedence: flag > env > project > global > default; `init` reads env, never the configs. */
 export async function resolveSource(request: ResolveSourceRequest): Promise<ResolvedConfig> {
   const { caller, flag, projectDir, provider } = request;
   const effective = await loadEffectiveSourceConfig(projectDir, provider);
@@ -273,7 +310,7 @@ export async function resolveSource(request: ResolveSourceRequest): Promise<Reso
     return { source: envSource, sourceOrigin: "env", ...labelFor(envSource) };
   }
 
-  if (effective?.config.marketplace) {
+  if (caller === "stored" && effective?.config.marketplace) {
     assertStoredSourceUsable(effective.config.marketplace, effective.configPath);
     verbose(`Marketplace from ${effective.origin} config: ${effective.config.marketplace}`);
     return {

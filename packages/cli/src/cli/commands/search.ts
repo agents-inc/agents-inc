@@ -6,7 +6,7 @@ import { BaseCommand } from "../base-command.js";
 import { EDITOR_ADDRESS } from "../consts.js";
 import { loadSource } from "../lib/operations/index.js";
 import type { ResolvedSkill } from "../types/index.js";
-import { STATUS_MESSAGES } from "../utils/messages.js";
+import { INFO_MESSAGES, STATUS_MESSAGES } from "../utils/messages.js";
 import { plural, stripTerminalControls, truncateText } from "../utils/string.js";
 import { typedValues } from "../utils/typed-object.js";
 
@@ -50,6 +50,9 @@ export default class Search extends BaseCommand {
 
   async run(): Promise<void> {
     const { args } = await this.parse(Search);
+    await this.sayWhenTheProjectsConfigDeclaresNothing(
+      INFO_MESSAGES.DECLARES_NOTHING_TO_SEARCH_FROM,
+    );
     // The configs name the marketplace searched, so an unreadable one is not read past.
     await this.ensureConfigReadable(process.cwd());
     await this.runSearch(args.query);

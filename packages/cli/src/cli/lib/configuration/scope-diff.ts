@@ -217,6 +217,15 @@ function toRemovedAgentRow(agent: AgentScopeConfig): AgentDiffRow {
 /** The entry each skill is named by, as a panel row drawn from that entry names it. */
 export type NamedBy = Partial<Record<SkillId, Pick<SkillConfig, "id" | "displayName">>>;
 
+export function namedByActiveEntries(
+  entries: readonly Pick<SkillConfig, "id" | "displayName" | "excluded">[],
+): NamedBy {
+  return indexBy(
+    entries.filter((entry) => !entry.excluded),
+    ({ id }) => id,
+  );
+}
+
 /** A sub-agent that keeps its slot and still changes: the skills its rows gain and lose, and its retunes. */
 export type AgentChange = {
   name: AgentName;
@@ -280,9 +289,8 @@ function namedByEntries(
   return { ...change, namedBy };
 }
 
-function activeEntriesOf(skillIds: readonly SkillId[], skills: SkillConfig[]) {
-  const active = skills.filter((entry) => !entry.excluded && skillIds.includes(entry.id));
-  return indexBy(active, ({ id }) => id);
+function activeEntriesOf(skillIds: readonly SkillId[], skills: SkillConfig[]): NamedBy {
+  return namedByActiveEntries(skills.filter((entry) => skillIds.includes(entry.id)));
 }
 
 /** Its active entry, never the mask a project's own copy leaves; `undefined` where none is. */

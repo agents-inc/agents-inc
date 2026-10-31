@@ -5,11 +5,7 @@ import os from "os";
 import path from "path";
 import { describe, it, expect } from "vitest";
 import { matrix } from "../../matrix/matrix-provider";
-import {
-  generateConfigSource,
-  generateBlankGlobalConfigSource,
-  getGlobalConfigImportPath,
-} from "../config-writer";
+import { generateConfigSource, generateBlankGlobalConfigSource } from "../config-writer";
 import { generateBlankGlobalConfigTypesSource } from "../config-types-writer";
 import { buildSkillConfigs } from "../../__tests__/helpers/skill-config-builders.js";
 import {
@@ -428,39 +424,16 @@ describe("generateConfigSource", () => {
     });
   });
 
-  describe("standalone generation (no global import)", () => {
-    it("does not import from global config when isProjectConfig is not set", () => {
-      const config = buildProjectConfig();
-      const source = generateConfigSource(config, matrix);
-      expect(source).not.toContain("globalConfig");
-      expect(source).not.toContain("...globalConfig");
-      expect(source).toContain("from './config-types'");
-    });
-
-    it("does not import from global config when options is undefined", () => {
-      const config = buildProjectConfig();
-      const source = generateConfigSource(config, matrix, undefined);
-      expect(source).not.toContain("globalConfig");
-    });
-
-    it("does not import from global config when isProjectConfig is false", () => {
-      const config = buildProjectConfig();
-      const source = generateConfigSource(config, matrix, { isProjectConfig: false });
-      expect(source).not.toContain("globalConfig");
-    });
-  });
-
-  /** A project emission must inline or import its global; both permitted pairings sit beside it. */
-  describe("project config with neither half of the global it extends", () => {
+  describe("project config without the global it extends", () => {
     it("refuses the emission rather than answering it with a global-shaped file", () => {
       const config = buildProjectConfig({ name: "project-without-a-global" });
 
       expect(() => generateConfigSource(config, matrix, { isProjectConfig: true })).toThrowError(
-        "pass `globalConfig` to inline its entries, or `globalImportPath` to import and spread them",
+        "pass `globalConfig` to inline its entries.",
       );
     });
 
-    it("emits the project config once either half is given", () => {
+    it("emits the project config once its global is given", () => {
       const config = buildProjectConfig({ name: "project-without-a-global" });
       const globalConfig = buildProjectConfig({
         name: "global",
@@ -469,115 +442,9 @@ describe("generateConfigSource", () => {
       });
 
       expect(
-        generateConfigSource(config, matrix, {
-          isProjectConfig: true,
-          globalImportPath: getGlobalConfigImportPath("claude"),
-        }),
-        "an import path is one of the two halves the refusal above asks for",
-      ).toContain("import globalConfig from");
-
-      expect(
         generateConfigSource(config, matrix, { isProjectConfig: true, globalConfig }),
-        "the inlined global is the other, and neither may be caught by the refusal",
+        "the inlined global must not be caught by the refusal",
       ).toContain("'web-framework-react'");
-    });
-  });
-
-  describe("project config with global import (spread fallback)", () => {
-    it("imports from global config when isProjectConfig is true and a globalImportPath is given", () => {
-      const config = buildProjectConfig();
-      const source = generateConfigSource(config, matrix, {
-        isProjectConfig: true,
-        globalImportPath: getGlobalConfigImportPath("claude"),
-      });
-      expect(source).toContain("import globalConfig from");
-      expect(source).toContain("...globalConfig,");
-    });
-
-    it("spreads global skills and agents into project arrays", () => {
-      const config = buildProjectConfig({
-        name: "project-with-global",
-        skills: buildSkillConfigs(["web-framework-react"]),
-        agents: buildAgentConfigs(["web-developer"]),
-      });
-      const source = generateConfigSource(config, matrix, {
-        isProjectConfig: true,
-        globalImportPath: getGlobalConfigImportPath("claude"),
-      });
-      expect(source).toContain("...globalConfig.skills,");
-      expect(source).toContain("...globalConfig.agents,");
-    });
-
-    it("always declares skills and agents variables even when empty", () => {
-      const config = buildProjectConfig({
-        name: "project-empty",
-        skills: [],
-        agents: [],
-      });
-      const source = generateConfigSource(config, matrix, {
-        isProjectConfig: true,
-        globalImportPath: getGlobalConfigImportPath("claude"),
-      });
-      expect(source).toContain("const skills: SkillConfig[]");
-      expect(source).toContain("const agents: AgentScopeConfig[]");
-      expect(source).toContain("[...globalConfig.skills]");
-      expect(source).toContain("[...globalConfig.agents]");
-    });
-
-    it("spreads global selected domains when project has selected domains", () => {
-      const config = buildProjectConfig({
-        name: "project-domains",
-        skills: [],
-        agents: [],
-        selectedDomains: ["web"],
-      });
-      const source = generateConfigSource(config, matrix, {
-        isProjectConfig: true,
-        globalImportPath: getGlobalConfigImportPath("claude"),
-      });
-      expect(source).toContain("[...(globalConfig.selectedDomains ?? []), 'web']");
-      expect(source).toContain("'web'");
-    });
-
-    it("does not declare a selectedDomains variable when project has no selected domains", () => {
-      const config = buildProjectConfig({
-        name: "project-no-domains",
-        skills: [],
-        agents: [],
-      });
-      const source = generateConfigSource(config, matrix, {
-        isProjectConfig: true,
-        globalImportPath: getGlobalConfigImportPath("claude"),
-      });
-      expect(source).not.toContain("const selectedDomains:");
-    });
-
-    it("never emits a selectedAgents constant or field", () => {
-      const config = buildProjectConfig({
-        name: "project-agents",
-        skills: [],
-        agents: buildAgentConfigs(["web-developer"]),
-      });
-      const source = generateConfigSource(config, matrix, {
-        isProjectConfig: true,
-        globalImportPath: getGlobalConfigImportPath("claude"),
-      });
-      expect(source, "the active agents list is the only record of who is selected").not.toContain(
-        "selectedAgents",
-      );
-    });
-
-    it("uses default plugin name when config name is 'global'", () => {
-      const config = buildProjectConfig({
-        name: "global",
-        skills: [],
-        agents: [],
-      });
-      const source = generateConfigSource(config, matrix, {
-        isProjectConfig: true,
-        globalImportPath: getGlobalConfigImportPath("claude"),
-      });
-      expect(source).toContain("name: 'agents-inc'");
     });
   });
 
@@ -588,20 +455,6 @@ describe("generateConfigSource", () => {
       agents: buildAgentConfigs(["web-researcher"], { scope: "global" }),
       marketplace: "/path/to/skills",
       marketplaceName: "agents-inc",
-    });
-
-    it("does not generate import globalConfig line when globalConfig is provided", () => {
-      const projectConfig = buildProjectConfig({
-        name: "my-project",
-        skills: buildSkillConfigs(["web-styling-tailwind"]),
-        agents: buildAgentConfigs(["web-developer"]),
-      });
-      const source = generateConfigSource(projectConfig, matrix, {
-        isProjectConfig: true,
-        globalConfig,
-      });
-      expect(source).not.toContain("import globalConfig");
-      expect(source).not.toContain("...globalConfig");
     });
 
     it("inlines global skills with // global comment", () => {
@@ -1353,15 +1206,6 @@ describe("generateConfigSource", () => {
       const source = generateConfigSource(config, matrix);
       expect(source).toContain("} satisfies ProjectConfig");
     });
-
-    it("contains satisfies for the spread form a globalImportPath selects", () => {
-      const config = buildProjectConfig();
-      const source = generateConfigSource(config, matrix, {
-        isProjectConfig: true,
-        globalImportPath: getGlobalConfigImportPath("claude"),
-      });
-      expect(source).toContain("} satisfies ProjectConfig");
-    });
   });
 
   describe("scalar fields", () => {
@@ -1624,23 +1468,5 @@ describe("generateBlankGlobalConfigTypesSource", () => {
   it("contains SkillAssignment type", () => {
     const source = generateBlankGlobalConfigTypesSource();
     expect(source).toContain("export type SkillAssignment");
-  });
-});
-
-describe("getGlobalConfigImportPath", () => {
-  it("returns a path under the home directory", () => {
-    const importPath = getGlobalConfigImportPath("claude");
-    expect(importPath.startsWith(os.homedir())).toBe(true);
-  });
-
-  // The home holds neither folder; a literal, as it is text on a user's disk.
-  it("names the source folder a new global installation is created in", () => {
-    const importPath = getGlobalConfigImportPath("claude");
-    expect(importPath).toContain(path.join(".agents-inc", "claude"));
-  });
-
-  it("returns an absolute path", () => {
-    const importPath = getGlobalConfigImportPath("claude");
-    expect(path.isAbsolute(importPath)).toBe(true);
   });
 });

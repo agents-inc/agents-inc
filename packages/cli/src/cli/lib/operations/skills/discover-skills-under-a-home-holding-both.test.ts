@@ -41,9 +41,10 @@ import { typedKeys } from "../../../utils/typed-object.js";
  * A project under a home holding a Claude and a Codex global installation inherits only its own
  * provider's: the global skills it discovers, copied in and plugin alike, are that installation's.
  * Each global holds skills the other does not, so which one was read is visible. Claude is the
- * control, being also the provider a home holding both would otherwise be read as.
+ * control, being also the provider a home holding both would otherwise be read as. Under a home
+ * holding only the other provider's, the project inherits no global installation at all.
  *
- * CLI-984.
+ * CLI-984, CLI-991.
  */
 
 const GLOBAL_COPIED_IN = {
@@ -55,6 +56,13 @@ const GLOBAL_PLUGIN = {
   claude: SKILLS.vitest.id,
   codex: SKILLS.hono.id,
 } as const satisfies Record<Provider, SkillId>;
+
+/** Copied into the project, so a discovery that read nothing at all is not taken for the answer. */
+const PROJECT_COPIED_IN = SKILLS.drizzle.id;
+
+function otherThan(provider: Provider): Provider[] {
+  return PROVIDERS.filter((candidate) => candidate !== provider);
+}
 
 describe("discoverInstalledSkills in a project under a home holding a Claude and a Codex global installation", () => {
   const consoleSpies = silenceConsole(["log"]);
@@ -68,7 +76,9 @@ describe("discoverInstalledSkills in a project under a home holding a Claude and
     tempDir = await createTempDir("cc-discover-home-holding-both-");
     projectDir = path.join(tempDir, "project");
     await mkdir(projectDir, { recursive: true });
-    initializeMatrix(createMockMatrix(SKILLS.react, SKILLS.hono, SKILLS.zustand, SKILLS.vitest));
+    initializeMatrix(
+      createMockMatrix(SKILLS.react, SKILLS.hono, SKILLS.zustand, SKILLS.vitest, SKILLS.drizzle),
+    );
   });
 
   afterEach(async () => {
@@ -82,24 +92,33 @@ describe("discoverInstalledSkills in a project under a home holding a Claude and
   /** Each global installation copies in one skill and installs another as a plugin. */
   async function installBothAtHomeThenTheProjectOn(provider: Provider): Promise<void> {
     await writeTestTsConfig(projectDir, buildProjectConfig(), sourceDirName(provider));
+    for (const atHome of PROVIDERS) await installTheGlobalOf(atHome);
+  }
 
-    for (const atHome of PROVIDERS) {
-      await writeTestTsConfig(home.dir, buildProjectConfig(), sourceDirName(atHome));
-      await writeTestSkill(skillsDir(atHome, "global", home.dir), GLOBAL_COPIED_IN[atHome]);
+  /** The home `uninstall --provider <provider>` leaves there: the other provider's global alone. */
+  async function installOnlyTheOtherAtHomeThenTheProjectOn(provider: Provider): Promise<void> {
+    await writeTestTsConfig(projectDir, buildProjectConfig(), sourceDirName(provider));
+    await writeTestSkill(skillsDir(provider, "project", projectDir), PROJECT_COPIED_IN);
+    vi.mocked(hostFor(provider).listPlugins).mockResolvedValue([]);
+    for (const atHome of otherThan(provider)) await installTheGlobalOf(atHome);
+  }
 
-      const pluginId = GLOBAL_PLUGIN[atHome];
-      const installPath = path.join(tempDir, "plugin-cache", atHome, pluginId);
-      await writeTestPluginManifest(installPath, { name: pluginId });
-      await writeTestSkill(path.join(installPath, "skills"), pluginId);
-      const installed = {
-        pluginKey: `${pluginId}@test-marketplace`,
-        installPath,
-        enabled: true,
-      };
-      vi.mocked(hostFor(atHome).listPlugins).mockImplementation((root) =>
-        Promise.resolve(root === home.dir ? [installed] : []),
-      );
-    }
+  async function installTheGlobalOf(atHome: Provider): Promise<void> {
+    await writeTestTsConfig(home.dir, buildProjectConfig(), sourceDirName(atHome));
+    await writeTestSkill(skillsDir(atHome, "global", home.dir), GLOBAL_COPIED_IN[atHome]);
+
+    const pluginId = GLOBAL_PLUGIN[atHome];
+    const installPath = path.join(tempDir, "plugin-cache", atHome, pluginId);
+    await writeTestPluginManifest(installPath, { name: pluginId });
+    await writeTestSkill(path.join(installPath, "skills"), pluginId);
+    const installed = {
+      pluginKey: `${pluginId}@test-marketplace`,
+      installPath,
+      enabled: true,
+    };
+    vi.mocked(hostFor(atHome).listPlugins).mockImplementation((root) =>
+      Promise.resolve(root === home.dir ? [installed] : []),
+    );
   }
 
   it.each(PROVIDERS)(
@@ -122,6 +141,35 @@ describe("discoverInstalledSkills in a project under a home holding a Claude and
       expect(consoleSpies.log).toHaveBeenCalledWith(
         `    Found 1 global local skills from ${skillsDir(provider, "global", home.dir)}`,
       );
+    },
+  );
+
+  it.each(PROVIDERS)(
+    "discovers no global skills for a %s project under a home holding only the other provider's installation",
+    async (provider) => {
+      await installOnlyTheOtherAtHomeThenTheProjectOn(provider);
+
+      const { allSkills, unusableMetadata, ...counts } = await discoverInstalledSkills(projectDir);
+
+      expect(
+        typedKeys<SkillId>(allSkills),
+        "the project's own skill alone: no global installation is inherited",
+      ).toStrictEqual([PROJECT_COPIED_IN]);
+      expect(counts).toStrictEqual({
+        totalSkillCount: 1,
+        pluginSkillCount: 0,
+        globalPluginSkillCount: 0,
+        globalLocalSkillCount: 0,
+      });
+      expect(unusableMetadata).toStrictEqual([]);
+      expect(consoleSpies.log).toHaveBeenCalledWith(
+        `    Found 1 local skills from ${skillsDir(provider, "project", projectDir)}`,
+      );
+      for (const other of otherThan(provider)) {
+        expect(consoleSpies.log).not.toHaveBeenCalledWith(
+          `    Found 1 global local skills from ${skillsDir(other, "global", home.dir)}`,
+        );
+      }
     },
   );
 });

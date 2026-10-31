@@ -10,7 +10,11 @@ import { normalizeStackRecord } from "../stacks/stacks-loader";
 import { projectConfigLoaderSchema } from "../schemas";
 import { formatZodErrors } from "../schema-validator";
 import { getProjectConfigPath } from "../installation/install-base-dir";
-import { inheritedGlobalProvider, providerInUse } from "../installation/install-layout";
+import {
+  declaresNoContent,
+  inheritedGlobalProvider,
+  providerInUse,
+} from "../installation/install-layout";
 import { initProviderToNameAt, providerToNameAt } from "../installation/provider-to-name";
 import { isHomeDirectory } from "../installation/is-home-directory";
 import type { ScopeKind } from "../installation/source-scopes";
@@ -46,17 +50,6 @@ export class ConfigLoadError extends Error {
     this.providerToName = providerToNameAt(scopeRoot, provider);
     this.initProviderToName = initProviderToNameAt(scopeRoot, provider);
   }
-}
-
-/**
- * A project config declaring no skill and no sub-agent is not an installation (owner, 2026-10-24).
- * The one definition: the roster, the listing and `doctor` all ask it.
- */
-export function declaresNoContent(config: {
-  skills: readonly unknown[];
-  agents: readonly unknown[];
-}): boolean {
-  return config.skills.length === 0 && config.agents.length === 0;
 }
 
 /**

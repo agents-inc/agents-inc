@@ -206,6 +206,12 @@ describe("matrix-loader", () => {
       );
     });
 
+    it("refuses an empty rules file, naming its path", async () => {
+      await writeTestFile(rulesPath, "");
+
+      await expect(loadSkillRules(rulesPath)).rejects.toThrow(rulesPath);
+    });
+
     it("refuses a rules file the schema rejects, naming its path", async () => {
       await writeTestFile(rulesPath, renderConfigTs({ version: "1.0.0", relationships: "none" }));
 

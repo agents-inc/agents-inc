@@ -94,11 +94,18 @@ export class MarketplaceUnreachableError extends Error {
 class TarballWithheldError extends Error {
   readonly status: number;
 
-  constructor({ status, statusText }: Response) {
+  constructor({ status, statusText }: Pick<Response, "status" | "statusText">) {
     super(`the marketplace answered ${status} ${statusText}`.trimEnd());
     this.name = "TarballWithheldError";
     this.status = status;
   }
+}
+
+/** No answer at all, or a refusal: nothing the marketplace said vouches for a saved copy. */
+type Unanswered = "unreachable" | TarballWithheldError;
+
+function isUnanswered(answer: unknown): answer is Unanswered {
+  return answer === "unreachable" || answer instanceof TarballWithheldError;
 }
 
 /** The marketplaces whose saved copy a download in the scope found differing, and replaced. */
@@ -273,18 +280,10 @@ async function fetchFromRemoteSource(source: string, subdir?: string): Promise<F
 
   if (await directoryExists(cacheDir)) {
     const verdict = await revalidateCachedCopy(cacheDir, source);
-    if (keepsTheCopy(verdict)) {
-      verbose(`Using cached marketplace: ${cacheDir}`);
-      return {
-        path: cacheDir,
-        fromCache: true,
-        unreachable: verdict === "unreachable",
-        source: fullSource,
-      };
-    }
+    if (keepsTheCopy(verdict)) return readSavedCopy(cacheDir, fullSource, verdict);
 
     announceRefetch(verdict);
-    if (!mustAnswer()) await discardCachedCopy(cacheDir, source);
+    if (!mustAnswer()) return refreshSavedCopy(cacheDir, source, fullSource, verdict);
   }
 
   const differingCopiesReplaced = marketplaceMustAnswer.getStore();
@@ -293,9 +292,109 @@ async function fetchFromRemoteSource(source: string, subdir?: string): Promise<F
     : downloadFreshCopy(cacheDir, source, fullSource);
 }
 
-async function discardCachedCopy(cacheDir: string, source: string): Promise<void> {
-  await clearGigetCache(source);
-  await remove(cacheDir);
+function readSavedCopy(cacheDir: string, fullSource: string, verdict: CopyKept): FetchResult {
+  verbose(`Using cached marketplace: ${cacheDir}`);
+  return {
+    path: cacheDir,
+    fromCache: true,
+    unreachable: verdict === "unreachable",
+    source: fullSource,
+  };
+}
+
+/**
+ * Staged beside the saved copy, so a download that fails leaves the copy and its record as they
+ * were, standing in or stopping the load as what the run learned of the marketplace says.
+ */
+async function refreshSavedCopy(
+  cacheDir: string,
+  source: string,
+  fullSource: string,
+  verdict: Exclude<CacheVerdict, CopyKept>,
+): Promise<FetchResult> {
+  if (verdict === "superseded") await clearGigetCache(source);
+  const staged = `${cacheDir}${STAGED_DOWNLOAD_SUFFIX}`;
+
+  try {
+    const download = await downloadUnlessItFails(source, fullSource, staged);
+    if (isUnanswered(download)) {
+      const failed = verdictOnFailedDownload(verdict, download, source);
+      return keepSavedCopyUnlessStopped(cacheDir, fullSource, failed);
+    }
+
+    const downloaded = await verdictOnDownload(download, source);
+    if (downloaded !== "current") {
+      return keepSavedCopyUnlessStopped(cacheDir, fullSource, downloaded);
+    }
+
+    await moveIntoPlace(cacheDir, staged);
+    await recordFetchedCopy(cacheDir, download.result, download.savedTarball);
+    settleForThisRun(cacheDir, "current");
+    return { path: cacheDir, fromCache: false, unreachable: false, source: fullSource };
+  } catch (error) {
+    throw createDetailedFetchError(error, source);
+  } finally {
+    await remove(staged);
+  }
+}
+
+/** A refusal that stops the load is thrown for `refreshSavedCopy` to detail, as a failed download is. */
+function keepSavedCopyUnlessStopped(
+  cacheDir: string,
+  fullSource: string,
+  verdict: CopyKept | TarballWithheldError,
+): FetchResult {
+  if (verdict instanceof TarballWithheldError) throw verdict;
+  settleForThisRun(cacheDir, verdict);
+  return readSavedCopy(cacheDir, fullSource, verdict);
+}
+
+async function downloadUnlessItFails(
+  source: string,
+  fullSource: string,
+  staged: string,
+): Promise<GigetDownload | Unanswered> {
+  try {
+    return await downloadStaged(source, fullSource, staged);
+  } catch (error) {
+    verbose(`Could not download ${fullSource}: ${getErrorMessage(error)}`);
+    return refusalIn(error) ?? "unreachable";
+  }
+}
+
+/** giget's error for a download the marketplace answered with an error status. */
+const GIGET_DOWNLOAD_REFUSED = /^Failed to download \S+: (?<status>\d{3}) (?<statusText>.*)$/;
+
+/** The status is in giget's message only: its error carries no response. */
+function refusalIn(error: unknown): TarballWithheldError | undefined {
+  const answered = GIGET_DOWNLOAD_REFUSED.exec(getErrorMessage(error))?.groups;
+  if (answered?.status === undefined || answered.statusText === undefined) return undefined;
+
+  const status = Number(answered.status);
+  if (postureOn(status) === undefined) return undefined;
+  return new TarballWithheldError({ status, statusText: answered.statusText });
+}
+
+/** An `unrecorded` copy was asked nothing, so giget's failure is all the run learned of it. */
+function verdictOnFailedDownload(
+  verdict: Exclude<CacheVerdict, CopyKept>,
+  failure: Unanswered,
+  source: string,
+): CopyKept | TarballWithheldError {
+  if (verdict === "unrecorded") return verdictOnUnanswered(failure, source);
+  warn(updateNotFetchedUsingCache(source));
+  return "outdated";
+}
+
+function updateNotFetchedUsingCache(source: string): string {
+  return `Could not fetch the update from ${source} — using the cached copy, which is out of date.`;
+}
+
+async function verdictOnDownload(
+  { result, savedTarball }: GigetDownload,
+  source: string,
+): Promise<CopyKept | TarballWithheldError> {
+  return savedTarball ? verdictOnSavedTarball(result, savedTarball, source) : "current";
 }
 
 async function downloadFreshCopy(
@@ -306,16 +405,21 @@ async function downloadFreshCopy(
   await ensureDir(path.dirname(cacheDir));
 
   try {
-    const { result, savedTarball } = await gigetDownload(source, fullSource, {
+    const download = await gigetDownload(source, fullSource, {
       dir: cacheDir,
       force: true, // Always force when downloading to avoid "already exists" error
       offline: false,
     });
+    const { result, savedTarball } = download;
 
     verbose(`Downloaded to: ${result.dir}`);
-    if (savedTarball) await askBeforeKeepingTheSavedTarball(cacheDir, result, source);
+    const downloaded = await verdictOnDownload(download, source);
+    if (downloaded instanceof TarballWithheldError) {
+      await remove(cacheDir);
+      throw downloaded;
+    }
     await recordFetchedCopy(cacheDir, result, savedTarball);
-    markCopyCurrentForThisRun(cacheDir);
+    settleForThisRun(cacheDir, "current");
 
     return {
       path: result.dir,
@@ -330,37 +434,43 @@ async function downloadFreshCopy(
 
 /**
  * giget answers a failed download with the tarball it saved, saying nothing, so the marketplace is
- * asked before that tarball is kept: a refusal that stops the load keeps nothing giget extracted, and
- * the tarball stands in for any other, or for no answer, said as it is for the saved copy.
+ * asked before that tarball is kept. Under the ETag it was saved with it is the marketplace's
+ * current content; otherwise it stands in, said as a saved copy is, or the refusal that stops the
+ * load comes back to keep none of it.
  */
-async function askBeforeKeepingTheSavedTarball(
-  cacheDir: string,
+async function verdictOnSavedTarball(
   result: DownloadTemplateResult,
+  savedTarball: SavedTarball,
   source: string,
-): Promise<void> {
+): Promise<CopyKept | TarballWithheldError> {
   const tar = tarballOf(result);
-  if (tar === undefined) return;
+  if (tar === undefined) return "current";
 
   const answer = await answerAbout(tar);
-  if (answer === "answered") return;
-  if (answer === "unreachable") {
+  if (isUnanswered(answer)) return verdictOnUnanswered(answer, source);
+  if (answer.etag === savedTarball.etag) return "current";
+  warn(updateNotFetchedUsingCache(source));
+  return "outdated";
+}
+
+/** A copy stands in, said as `postureOn` says, or the refusal that stops the load comes back. */
+function verdictOnUnanswered(
+  unanswered: Unanswered,
+  source: string,
+): "unreachable" | "refused" | TarballWithheldError {
+  if (unanswered === "unreachable") {
     warn(sourceUnreachableUsingCache(source));
-    return;
+    return "unreachable";
   }
-  if (stopsTheLoad(answer)) {
-    await remove(cacheDir);
-    throw answer;
-  }
-  announceTheCopyKept(answer, source);
+  if (stopsTheLoad(unanswered)) return unanswered;
+  announceTheCopyKept(unanswered, source);
+  return "refused";
 }
 
 /** The refusal itself where the marketplace answered with one. */
-async function answerAbout(
-  tar: string,
-): Promise<"answered" | "unreachable" | TarballWithheldError> {
+async function answerAbout(tar: string): Promise<{ etag: string | undefined } | Unanswered> {
   try {
-    await fetchEtag(tar);
-    return "answered";
+    return { etag: await fetchEtag(tar) };
   } catch (error) {
     if (error instanceof TarballWithheldError) return error;
     verbose(`Could not ask ${tar} about the tarball giget saved: ${getErrorMessage(error)}`);
@@ -388,23 +498,17 @@ async function downloadAnsweredFor(
   differingCopiesReplaced: Set<string>,
 ): Promise<FetchResult> {
   const staged = `${cacheDir}${STAGED_DOWNLOAD_SUFFIX}`;
-  const downloadStaged = () =>
-    gigetDownload(source, fullSource, {
-      dir: staged,
-      force: true,
-      forceClean: true,
-      offline: false,
-    });
+  const download = () => downloadStaged(source, fullSource, staged);
   await ensureDir(path.dirname(cacheDir));
 
   try {
-    const { result, savedTarball } = await downloadStaged();
+    const { result, savedTarball } = await download();
     const record = await askAfterTheDownload(result, source);
-    if (savedTarball) await downloadPast(savedTarball, record, downloadStaged, source);
+    if (savedTarball) await downloadPast(savedTarball, record, download, source);
     const differed = await savedCopyDiffers(cacheDir, staged);
     await replaceCopy(cacheDir, staged, record);
     if (differed) differingCopiesReplaced.add(source);
-    markCopyCurrentForThisRun(cacheDir);
+    settleForThisRun(cacheDir, "current");
 
     return { path: cacheDir, fromCache: false, unreachable: false, source: fullSource };
   } catch (error) {
@@ -413,6 +517,19 @@ async function downloadAnsweredFor(
   } finally {
     await remove(staged);
   }
+}
+
+function downloadStaged(
+  source: string,
+  fullSource: string,
+  staged: string,
+): Promise<GigetDownload> {
+  return gigetDownload(source, fullSource, {
+    dir: staged,
+    force: true,
+    forceClean: true,
+    offline: false,
+  });
 }
 
 /**
@@ -501,9 +618,13 @@ async function replaceCopy(
   staged: string,
   record: SourceRevalidation,
 ): Promise<void> {
+  await moveIntoPlace(cacheDir, staged);
+  await writeFile(fetchRecordPath(cacheDir), JSON.stringify(record));
+}
+
+async function moveIntoPlace(cacheDir: string, staged: string): Promise<void> {
   await remove(cacheDir);
   await rename(staged, cacheDir);
-  await writeFile(fetchRecordPath(cacheDir), JSON.stringify(record));
 }
 
 /** Present when giget extracted the tarball it saved on an earlier run, rather than one it fetched. */
@@ -784,17 +905,31 @@ function savedUnder(savedTarball: SavedTarball, record: SourceRevalidation): boo
 
 /**
  * `unrecorded`: no fetch record beside the cache, so it is re-fetched once, quietly.
+ * `unstamped`: the marketplace names a version the copy's record lacks, so it is re-fetched quietly.
  * `answered`: a load that must reach the marketplace downloads it whatever ETag it answered with.
  * `refused`: the marketplace refused the version check, and `postureOn` keeps or passes it over.
+ * `outdated`: the marketplace has moved on and its download failed, so the saved copy stands in.
  */
 type CacheVerdict =
-  "current" | "superseded" | "unrecorded" | "answered" | "unreachable" | "refused";
+  | "current"
+  | "superseded"
+  | "unrecorded"
+  | "unstamped"
+  | "answered"
+  | "unreachable"
+  | "refused"
+  | "outdated";
 
 /** The verdicts a load reads its saved copy under. */
-type CopyKept = Extract<CacheVerdict, "current" | "unreachable" | "refused">;
+type CopyKept = Extract<CacheVerdict, "current" | "unreachable" | "refused" | "outdated">;
 
 function keepsTheCopy(verdict: CacheVerdict): verdict is CopyKept {
-  return verdict === "current" || verdict === "unreachable" || verdict === "refused";
+  return (
+    verdict === "current" ||
+    verdict === "unreachable" ||
+    verdict === "refused" ||
+    verdict === "outdated"
+  );
 }
 
 type SourceRevalidation = z.infer<typeof sourceRevalidationSchema>;
@@ -833,26 +968,22 @@ function revalidateCachedCopy(cacheDir: string, source: string): Promise<CacheVe
 }
 
 /**
- * A copy this run just downloaded is current by construction, so later loads do not re-fetch it: a
- * load that must reach the marketplace downloads it once a run.
+ * A copy this run just downloaded is current by construction, and one a failed download left standing
+ * in has been said, so later loads neither re-fetch it nor say it again: a load that must reach the
+ * marketplace downloads it once a run.
  */
-function markCopyCurrentForThisRun(cacheDir: string): void {
-  verdictsThisRun().set(cacheDir, Promise.resolve("current"));
+function settleForThisRun(cacheDir: string, verdict: CopyKept): void {
+  verdictsThisRun().set(cacheDir, Promise.resolve(verdict));
 }
 
 /**
  * Warns about an unreachable source, or a refusal kept over, here, where the verdict is memoised:
- * once per run. A load that must reach the marketplace asks even with no ETag to compare, and an
- * unanswered one throws.
+ * once per run. Every load asks, an ETag recorded or not; one that must reach the marketplace throws
+ * when it goes unanswered.
  */
 async function classifyCachedCopy(cacheDir: string, source: string): Promise<CacheVerdict> {
   const record = await readFetchRecord(cacheDir);
   if (!record) return "unrecorded";
-
-  if (record.etag === undefined && !mustAnswer()) {
-    verbose(`No ETag was recorded for ${record.tar} — keeping the cached copy`);
-    return "current";
-  }
 
   try {
     return judgeAnswer(record, await fetchEtag(record.tar));
@@ -871,10 +1002,14 @@ function stopOrKeepTheCopy(refusal: TarballWithheldError, source: string): "refu
   return "refused";
 }
 
-/** A load that must reach the marketplace downloads it whatever else it answers; others keep it. */
+/**
+ * A load that must reach the marketplace downloads it whatever else it answers; others keep it unless
+ * the marketplace names a version it does not hold.
+ */
 function judgeAnswer(record: SourceRevalidation, live: string | undefined): CacheVerdict {
   if (movedOn(record, live)) return "superseded";
   if (mustAnswer()) return "answered";
+  if (record.etag === undefined && live !== undefined) return "unstamped";
 
   if (live === undefined) {
     verbose(`${record.tar} answered without an ETag — keeping the cached copy`);
@@ -958,7 +1093,7 @@ async function recordFetchedCopy(
   await writeFile(fetchRecordPath(cacheDir), JSON.stringify(fetchRecord(tar, etag)));
 }
 
-/** Outside the scope an unanswered question records no ETag, and the copy is kept as it is. */
+/** Outside the scope an unanswered question records no ETag, so the next run asks about the copy. */
 async function etagIfAnswered(tar: string): Promise<string | undefined> {
   try {
     return await fetchEtag(tar);

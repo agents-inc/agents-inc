@@ -14,7 +14,6 @@ import {
   renderArrayLine,
   renderTypeImportLine,
   renderValueLine,
-  sourceEntry,
   valueEntries,
   type ArrayEntry,
   type LinePosition,
@@ -32,18 +31,14 @@ import type {
 // Renders `config.ts` sources and writes nothing; writing is `config-gate/`'s alone.
 
 /**
- * `isProjectConfig: true` needs `globalConfig` or `globalImportPath` (`globalConfig` wins).
- * {@link generateProjectConfig} enforces it at runtime: a discriminated union on the literal widens
- * to `boolean` at un-annotated call sites.
+ * `isProjectConfig: true` needs `globalConfig`. {@link generateProjectConfig} enforces it at
+ * runtime: a discriminated union on the literal widens to `boolean` at un-annotated call sites.
  */
 export type ConfigSourceOptions = {
   isProjectConfig?: boolean
 
   /** Inlines global skills/agents for a self-contained snapshot. */
   globalConfig?: ProjectConfig
-
-  /** For the spread form. A parameter because this package runs in a browser. */
-  globalImportPath?: string
 }
 
 /**
@@ -283,7 +278,7 @@ export function generateConfigSource(
 }
 
 /**
- * Refuses options naming neither emission: the standalone writer would answer a project request
+ * Refuses options without `globalConfig`: the standalone writer would answer a project request
  * with a global-shaped file carrying `projects`.
  */
 function generateProjectConfig(
@@ -293,73 +288,17 @@ function generateProjectConfig(
 ): string {
   const cleaned = cleanForEmission(config, catalog, { dropProjects: true })
 
-  if (options.globalConfig) {
-    return generateProjectConfigWithInlinedGlobal(
-      cleaned,
-      cleanForEmission(options.globalConfig, catalog, { dropProjects: true })
-    )
-  }
-  if (options.globalImportPath !== undefined) {
-    return generateProjectConfigWithGlobalImport(
-      cleaned,
-      options.globalImportPath
+  if (!options.globalConfig) {
+    throw new Error(
+      "A project config needs the global config it extends: pass `globalConfig` to inline its " +
+        "entries."
     )
   }
 
-  throw new Error(
-    "A project config needs the global config it extends: pass `globalConfig` to inline its " +
-      "entries, or `globalImportPath` to import and spread them. Neither was given."
+  return generateProjectConfigWithInlinedGlobal(
+    cleaned,
+    cleanForEmission(options.globalConfig, catalog, { dropProjects: true })
   )
-}
-
-function generateProjectConfigWithGlobalImport(
-  cleaned: Record<string, unknown>,
-  globalImportPath: string
-): string {
-  const { skills, agents, stack, selectedDomains } =
-    extractConfigArrays(cleaned)
-  const emitted: EmittedSections = {
-    hasSkills: true,
-    hasAgents: true,
-    hasStack: hasStackEntries(stack),
-    hasSelectedDomains: selectedDomains.length > 0,
-  }
-  const scalarFields = Object.entries(cleaned)
-    .filter(([key]) => isCopiedScalarField(key))
-    .map(([key, value]) => renderScalarField(key, value))
-
-  return assembleConfigSource({
-    imports: [
-      `import globalConfig from ${quoteText(`${globalImportPath}/config`)}`,
-      renderTypeImportLine(buildTypeImports(emitted), CONFIG_TYPES_SPECIFIER),
-    ],
-    declarations: [
-      ...entryDeclaration("skills", "SkillConfig[]", [
-        sourceEntry("...globalConfig.skills"),
-        ...valueEntries(skills),
-      ]),
-      ...entryDeclaration("agents", "AgentScopeConfig[]", [
-        sourceEntry("...globalConfig.agents"),
-        ...valueEntries(agents),
-      ]),
-      ...(emitted.hasStack ? declaration("stack", STACK_TYPE, stack) : []),
-      ...(emitted.hasSelectedDomains
-        ? entryDeclaration("selectedDomains", "Domain[]", [
-            sourceEntry("...(globalConfig.selectedDomains ?? [])"),
-            ...valueEntries(selectedDomains),
-          ])
-        : []),
-    ],
-    exportFields: [
-      `  ...globalConfig,`,
-      renderScalarField("name", resolveProjectName(cleaned)),
-      `  skills,`,
-      `  agents,`,
-      ...(emitted.hasStack ? [`  stack,`] : []),
-      ...(emitted.hasSelectedDomains ? [`  selectedDomains,`] : []),
-      ...scalarFields,
-    ],
-  })
 }
 
 function generateStandaloneConfig(cleaned: Record<string, unknown>): string {
@@ -468,7 +407,7 @@ function isCopiedScalarField(key: string): boolean {
   return !isExtractedField(key) && key !== "name"
 }
 
-/** Project configs never inherit "global" as their name from the globalConfig spread. */
+/** A project config is never named "global", the global config's own name. */
 function resolveProjectName(cleaned: Record<string, unknown>): unknown {
   return cleaned.name && cleaned.name !== GLOBAL_CONFIG_NAME
     ? cleaned.name
@@ -555,10 +494,31 @@ function mergeInlinedScalarFields(
 ): [string, unknown][] {
   return Object.entries(
     canonicalizeFieldOrder({
-      ...omit(cleanedGlobal, GLOBAL_IDENTITY_FIELDS),
+      ...globalScalarsLentTo(cleaned, cleanedGlobal),
       ...cleaned,
     })
   ).filter(([key]) => isCopiedScalarField(key))
+}
+
+/** The global's `marketplaceName` labels the global's marketplace, never a project's own. */
+function globalScalarsLentTo(
+  cleaned: Record<string, unknown>,
+  cleanedGlobal: Record<string, unknown>
+): Record<string, unknown> {
+  const lent = omit(cleanedGlobal, GLOBAL_IDENTITY_FIELDS)
+  return recordsAnotherMarketplace(cleaned, cleanedGlobal)
+    ? omit(lent, ["marketplaceName"])
+    : lent
+}
+
+function recordsAnotherMarketplace(
+  cleaned: Record<string, unknown>,
+  cleanedGlobal: Record<string, unknown>
+): boolean {
+  return (
+    cleaned.marketplace !== undefined &&
+    cleaned.marketplace !== cleanedGlobal.marketplace
+  )
 }
 
 /** Self-contained: global items under `// global`, then project items under `// project`. */

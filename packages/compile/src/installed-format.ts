@@ -42,9 +42,7 @@ export function renderKey(key: string): string {
 
 /** A comment is an entry because a `//` line is what forces the array to break. */
 export type ArrayEntry =
-  | { kind: "value"; value: unknown }
-  | { kind: "source"; source: string }
-  | { kind: "comment"; text: string }
+  { kind: "value"; value: unknown } | { kind: "comment"; text: string }
 
 export function valueEntries(values: readonly unknown[]): ArrayEntry[] {
   return values.map((value) => ({ kind: "value", value }))
@@ -52,10 +50,6 @@ export function valueEntries(values: readonly unknown[]): ArrayEntry[] {
 
 export function commentEntry(text: string): ArrayEntry {
   return { kind: "comment", text }
-}
-
-export function sourceEntry(source: string): ArrayEntry {
-  return { kind: "source", source }
 }
 
 export type LinePosition = {
@@ -223,8 +217,6 @@ function renderEntryLine(entry: ArrayEntry, indent: number): string {
   switch (entry.kind) {
     case "comment":
       return `${spaces(indent)}// ${entry.text}`
-    case "source":
-      return `${spaces(indent)}${entry.source},`
     case "value":
       return renderValueLine(entry.value, { indent, prefix: "", suffix: "," })
     default: {
@@ -273,8 +265,6 @@ function flatEntry(entry: ArrayEntry): string | undefined {
     // A `//` line cannot fold onto one line.
     case "comment":
       return undefined
-    case "source":
-      return entry.source
     case "value":
       return flatValue(entry.value)
     default: {

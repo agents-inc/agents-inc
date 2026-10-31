@@ -2,7 +2,7 @@ import path from "path";
 import { flatMap, groupBy, mapValues, partition, pipe, unique, uniqueBy } from "remeda";
 import { getErrorMessage } from "../../utils/errors";
 import { verbose, warn } from "../../utils/logger";
-import { inertLine } from "../../utils/string";
+import { inAnEnglishList, inertLine } from "../../utils/string";
 import { matrix } from "../matrix/matrix-provider";
 import type {
   AgentName,
@@ -18,7 +18,7 @@ import { typedEntries } from "../../utils/typed-object";
 import { isSkillAssignment } from "../../utils/type-guards";
 import { LOCAL_PSEUDO_CATEGORY, STACKS_FILE_PATH } from "../../consts";
 import { loadConfig } from "../configuration/config-loader";
-import { offersBuiltInStacks } from "../configuration/config";
+import { loadSourceRepoConfig, offersBuiltInStacks } from "../configuration/config";
 import { defaultStacks } from "../configuration/default-stacks";
 
 const stacksCache = new Map<string, Stack[]>();
@@ -104,6 +104,14 @@ export function normalizeStackRecord(
   );
 }
 
+/** A type, so a caller tells a broken stacks file apart without reading the message. */
+export class StacksLoadError extends Error {
+  constructor(stacksPath: string, reason: string, options: ErrorOptions) {
+    super(`Failed to load stacks from '${stacksPath}': ${reason}`, options);
+    this.name = "StacksLoadError";
+  }
+}
+
 export async function loadStacks(configDir: string, stacksFile?: string): Promise<Stack[]> {
   const resolvedStacksFile = stacksFile ?? STACKS_FILE_PATH;
   const cacheKey = `${configDir}:${resolvedStacksFile}`;
@@ -134,10 +142,7 @@ export async function loadStacks(configDir: string, stacksFile?: string): Promis
 
     return stacks;
   } catch (error) {
-    const errorMessage = getErrorMessage(error);
-    throw new Error(`Failed to load stacks from '${stacksPath}': ${errorMessage}`, {
-      cause: error,
-    });
+    throw new StacksLoadError(stacksPath, getErrorMessage(error), { cause: error });
   }
 }
 
@@ -147,7 +152,8 @@ export async function loadStackById(
   configDir: string,
   source: string,
 ): Promise<Stack | null> {
-  const stacks = await loadStacks(configDir);
+  const declared = await loadSourceRepoConfig(configDir);
+  const stacks = await loadStacks(configDir, declared?.stacksFile);
   const stack = stacks.find((s) => s.id === stackId);
 
   if (stack) {
@@ -172,13 +178,25 @@ export async function loadStackById(
   return defaultStack;
 }
 
-/** One wording for both callers that turn a null from `loadStackById` into a failure. */
-export function stackNotOfferedMessage(stackId: string, source: string): string {
+export function stackNotOfferedMessage(
+  stackId: string,
+  source: string,
+  shippedStackIds: readonly string[],
+): string {
   return (
     `Stack '${inertLine(stackId)}' is not a stack the source '${source}' offers. ` +
     `A marketplace ships its own stacks; the CLI's built-in ones belong to the default ` +
-    `public marketplace alone.`
+    `public marketplace alone. ${whatItShips(shippedStackIds)}`
   );
+}
+
+function whatItShips(stackIds: readonly string[]): string {
+  if (stackIds.length === 0) return "It ships no stacks.";
+  return withClosingFullStop(`It ships: ${inAnEnglishList(stackIds.map(inertLine))}`);
+}
+
+function withClosingFullStop(sentence: string): string {
+  return sentence.endsWith(".") ? sentence : `${sentence}.`;
 }
 
 /** Exported so every surface writes the fallback word for word; the editor preview mirrors it. */

@@ -2224,8 +2224,12 @@ const UNDECLARED_CATEGORY = "acme-invented";
 /** A skill answering to no marketplace, so wearing the `external-` namespace. */
 const CUSTOM_LOCAL_SKILL_ID = "external-acme-house" as SkillId;
 
+const CUSTOM_LOCAL_SKILL_DIR = "acme-house";
+
+const CUSTOM_LOCAL_SKILL_PATH = `.claude/skills/${CUSTOM_LOCAL_SKILL_DIR}/`;
+
 /** Where that skill's files sit, and so the metadata.yaml a refusal must name. */
-const CUSTOM_LOCAL_SKILL_PATH = ".claude/skills/acme-house/";
+const CUSTOM_LOCAL_SKILL_LOCAL_PATH = `/project/${CUSTOM_LOCAL_SKILL_PATH}`;
 
 function customSkillDeclaring(category: string): LocalSkillDiscoveryResult {
   return {
@@ -2233,7 +2237,7 @@ function customSkillDeclaring(category: string): LocalSkillDiscoveryResult {
       createMockExtractedSkill(CUSTOM_LOCAL_SKILL_ID, {
         local: true,
         custom: true,
-        localPath: `/project/${CUSTOM_LOCAL_SKILL_PATH}`,
+        localPath: CUSTOM_LOCAL_SKILL_LOCAL_PATH,
         path: CUSTOM_LOCAL_SKILL_PATH,
         // Boundary cast: the fixture names categories outside the generated union
         category: category as CategoryPath,
@@ -2243,6 +2247,29 @@ function customSkillDeclaring(category: string): LocalSkillDiscoveryResult {
     ],
     localSkillsPath: "/project/.claude/skills",
   };
+}
+
+/** The same skill copied in under `root`, for a load to discover; answers its metadata.yaml. */
+async function copyInCustomSkillDeclaring(root: string, category: string): Promise<string> {
+  const skillDir = path.join(root, CLAUDE_DIR, STANDARD_DIRS.SKILLS, CUSTOM_LOCAL_SKILL_DIR);
+  const metadataYaml = path.join(skillDir, STANDARD_FILES.METADATA_YAML);
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(
+    metadataYaml,
+    renderMetadataYaml({
+      custom: true,
+      category,
+      domain: "web",
+      displayName: "Acme House",
+      slug: "acme-house",
+      contentHash: "abc123",
+    }),
+  );
+  await writeFile(
+    path.join(skillDir, STANDARD_FILES.SKILL_MD),
+    renderSkillMd(CUSTOM_LOCAL_SKILL_ID),
+  );
+  return metadataYaml;
 }
 
 /** A custom skill's category must already exist; an undeclared one means no pick happened. */
@@ -2307,7 +2334,39 @@ describe("mergeLocalSkillsIntoMatrix — a custom skill's category", () => {
     const refusal = warnings.find((text) => text.includes(CUSTOM_LOCAL_SKILL_ID));
     expect(refusal, "a dropped skill the user wrote must say so").toBeDefined();
     expect(refusal).toContain(UNDECLARED_CATEGORY);
-    expect(refusal).toContain(`${CUSTOM_LOCAL_SKILL_PATH}${STANDARD_FILES.METADATA_YAML}`);
+    expect(refusal).toContain(`${CUSTOM_LOCAL_SKILL_LOCAL_PATH}${STANDARD_FILES.METADATA_YAML}`);
+  });
+
+  describe("when a project's load reads the skill off disk", () => {
+    let projectDir: string;
+
+    beforeEach(async () => {
+      projectDir = await createTempDir("cc-custom-category-project-");
+    });
+
+    afterEach(async () => {
+      await cleanupTempDir(projectDir);
+    });
+
+    it("names the home folder's metadata.yaml when it refuses a global skill", async () => {
+      const metadataYaml = await copyInCustomSkillDeclaring(fakeHome, UNDECLARED_CATEGORY);
+
+      const { warnings } = await loadWithWarnings(fixtureDirs.sourceDir, projectDir);
+
+      expect(warnings.filter((text) => text.includes(CUSTOM_LOCAL_SKILL_ID))).toStrictEqual([
+        expect.stringContaining(`Set category in ${metadataYaml} to a category that already`),
+      ]);
+    });
+
+    it("names the project's metadata.yaml by its full path when it refuses a project skill", async () => {
+      const metadataYaml = await copyInCustomSkillDeclaring(projectDir, UNDECLARED_CATEGORY);
+
+      const { warnings } = await loadWithWarnings(fixtureDirs.sourceDir, projectDir);
+
+      expect(warnings.filter((text) => text.includes(CUSTOM_LOCAL_SKILL_ID))).toStrictEqual([
+        expect.stringContaining(`Set category in ${metadataYaml} to a category that already`),
+      ]);
+    });
   });
 
   it("refuses in words that send the author to the metadata.yaml to edit", () => {
@@ -2319,7 +2378,7 @@ describe("mergeLocalSkillsIntoMatrix — a custom skill's category", () => {
     expect(warnings).toStrictEqual([
       `Skipping local skill '${CUSTOM_LOCAL_SKILL_ID}': category '${UNDECLARED_CATEGORY}' is not one this ` +
         "installation declares, so the skill belongs in no grid tab and can be given to no sub-agent. " +
-        `Set category in ${CUSTOM_LOCAL_SKILL_PATH}${STANDARD_FILES.METADATA_YAML} to a category that already exists — a skill ` +
+        `Set category in ${CUSTOM_LOCAL_SKILL_LOCAL_PATH}${STANDARD_FILES.METADATA_YAML} to a category that already exists — a skill ` +
         "is placed in the taxonomy, it does not extend it.",
     ]);
   });

@@ -33,6 +33,18 @@ export class ConfigDefaultExportError extends Error {
   }
 }
 
+/** The config did not evaluate: a syntax error, an unresolved import, or a throw while it ran. */
+export class ConfigEvaluationError extends Error {
+  constructor(
+    readonly configPath: string,
+    reason: string,
+    options: ErrorOptions,
+  ) {
+    super(configLoadFailure(configPath, reason), options);
+    this.name = "ConfigEvaluationError";
+  }
+}
+
 /**
  * Tells `export const x = {}` (named exports) from CommonJS `module.exports = { x }` (the default).
  */
@@ -102,6 +114,6 @@ async function importConfigModule(configPath: string): Promise<unknown> {
     });
     return await jiti.import(configPath);
   } catch (error) {
-    throw new Error(configLoadFailure(configPath, getErrorMessage(error)), { cause: error });
+    throw new ConfigEvaluationError(configPath, getErrorMessage(error), { cause: error });
   }
 }
