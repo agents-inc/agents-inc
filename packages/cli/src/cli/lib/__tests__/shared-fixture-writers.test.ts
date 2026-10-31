@@ -21,8 +21,7 @@ const EVERY_MODULE = ["src/**/*.ts", "src/**/*.tsx", "e2e/**/*.ts", "scripts/**/
  * that leaves the writer with none. `handrun-journeys.ts` is a top-level runner, not a spec.
  */
 const MACHINE_WIDE_FIXTURE_WRITERS: Record<string, readonly string[]> = {
-  buildSharedSource: ["e2e/global-setup.ts", "e2e/handrun-journeys.ts"],
-  removeSharedSource: ["e2e/global-setup.ts", "e2e/handrun-journeys.ts"],
+  setUpSharedSource: ["e2e/global-setup.ts", "e2e/handrun-journeys.ts"],
   ensureSharedMarketplaceCheckout: ["vitest.global-setup.ts"],
 };
 

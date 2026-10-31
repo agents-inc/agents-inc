@@ -1,14 +1,15 @@
 import path from "path";
 import { isSharedSource } from "./helpers/shared-source.js";
 import os from "os";
-import { mkdtemp, rm, stat } from "fs/promises";
+import { mkdtemp, realpath, rm, stat } from "fs/promises";
 
 const DEFAULT_TEMP_PREFIX = "ai-test-";
 const CLEANUP_MAX_RETRIES = 3;
 const CLEANUP_RETRY_DELAY_MS = 100;
 
+/** The real path, as `process.cwd()` answers it: on macOS `os.tmpdir()` is behind a symlink. */
 export async function createTempDir(prefix = DEFAULT_TEMP_PREFIX): Promise<string> {
-  return mkdtemp(path.join(os.tmpdir(), prefix));
+  return realpath(await mkdtemp(path.join(os.tmpdir(), prefix)));
 }
 
 /**

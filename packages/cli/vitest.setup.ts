@@ -1,6 +1,6 @@
 import os from "os";
 import path from "path";
-import { mkdtemp, rm } from "fs/promises";
+import { rm } from "fs/promises";
 import { fileURLToPath } from "url";
 import { WORKER_ORIGIN } from "@workspace/api-mocks/fixtures";
 import chalk from "chalk";
@@ -8,6 +8,7 @@ import { beforeAll, beforeEach, afterAll, afterEach, vi } from "vitest";
 import { initializeMatrix } from "./src/cli/lib/matrix/matrix-provider";
 import { guardAgainstDistReplacement } from "./src/cli/lib/testing/dist-staleness";
 import { SPEC_TERMINAL_COLUMNS, SPEC_TERMINAL_ROWS } from "./src/cli/lib/__tests__/test-constants";
+import { createTempDir } from "./src/cli/lib/__tests__/test-fs-utils";
 import { BUILT_IN_MATRIX } from "./src/cli/types/generated/matrix";
 
 const COLOR_DISABLED_CHALK_LEVEL = 0;
@@ -44,7 +45,7 @@ const realHomedir = os.homedir();
 let testHomeDir: string;
 
 beforeAll(async () => {
-  testHomeDir = await mkdtemp(path.join(os.tmpdir(), "vitest-home-"));
+  testHomeDir = await createTempDir("vitest-home-");
 });
 
 beforeEach(() => {

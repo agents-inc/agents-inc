@@ -19,6 +19,7 @@ import {
 import {
   buildPreRenameProjectConfig,
   buildPreRenameSkillEntryConfig,
+  buildProjectConfig,
 } from "../factories/config-factories.js";
 import { renderUnparseableConfigTs } from "../factories/unloadable-config-factories.js";
 import { readTestTsConfig, writeRawTestConfig, writeTestTsConfig } from "../helpers/config-io.js";
@@ -242,9 +243,10 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
 
   describe("marketplace resolution", () => {
     it("should resolve marketplace from project config", async () => {
-      await createProjectConfig(projectDir, {
-        marketplaceName: "https://enterprise.example.com/plugins",
-      });
+      await createProjectConfig(
+        projectDir,
+        buildProjectConfig({ marketplaceName: "https://enterprise.example.com/plugins" }),
+      );
 
       const result = await resolveSource({ caller: "stored", projectDir });
 
@@ -504,8 +506,10 @@ describe("User Journey: Config Edge Cases", () => {
     expect(config?.marketplaceName).toBe("https://marketplace.example.com");
 
     const result = await resolveSource({ caller: "stored", projectDir });
-    expect(result.sourceOrigin).toBe("default");
-    expect(result.marketplace).toBe("https://marketplace.example.com");
+    expect(
+      result,
+      "a config declaring nothing reads as none, so the name it records labels nothing",
+    ).toStrictEqual({ source: DEFAULT_SOURCE, sourceOrigin: "default" });
   });
 
   it("refuses a config file that is there and declares nothing, rather than reading it as absent", async () => {

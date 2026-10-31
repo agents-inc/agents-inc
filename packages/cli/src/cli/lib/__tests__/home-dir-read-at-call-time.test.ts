@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -45,6 +46,6 @@ describe("the home-directory isolation survives a spec that restores every mock"
     expect(
       path.dirname(os.homedir()),
       "the spy is re-installed per test, so the withdrawal above cannot outlive the test that made it",
-    ).toBe(os.tmpdir());
+    ).toBe(realpathSync(os.tmpdir()));
   });
 });

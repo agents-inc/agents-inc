@@ -10,14 +10,22 @@ export function readGeneratedUnion(typesSource: string, alias: string): string |
   return body?.trimEnd();
 }
 
-/** Throws on an undeclared alias, since `[]` is a real answer (`never`, or a bare reference). */
+/**
+ * Throws rather than answer `[]`: an empty answer passes every `not.toContain`, so a quote style
+ * this reader misses would turn each caller's assertion vacuous.
+ */
 export function readGeneratedUnionMembers(typesSource: string, alias: string): readonly string[] {
   const union = readGeneratedUnion(typesSource, alias);
   if (union === undefined) {
     throw new Error(`Generated types declare no \`export type ${alias} = ...\` to read members of`);
   }
 
-  return stringLiteralsIn(union);
+  const members = stringLiteralsIn(union);
+  if (members.length === 0) {
+    throw new Error(`\`export type ${alias} =${union}\` names no single-quoted member to read`);
+  }
+
+  return members;
 }
 
 const QUOTED_LITERAL = /'[^']*'/g;

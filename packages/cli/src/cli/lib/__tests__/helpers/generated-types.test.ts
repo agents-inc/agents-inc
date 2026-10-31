@@ -1,9 +1,15 @@
 import { describe, it, expect } from "vitest";
 import { readGeneratedUnion, readGeneratedUnionMembers } from "./generated-types.js";
+import { generateConfigTypesSource } from "../../configuration/config-types-writer.js";
+import { FULLSTACK_PAIR_MATRIX } from "../mock-data/mock-matrices.js";
+import { SKILLS } from "../test-fixtures.js";
 
 const INLINE_UNION_SOURCE = `export type AgentName = 'api-developer' | 'web-developer'
 
 export type SelectedAgentName = 'web-developer'
+`;
+
+const DOUBLE_QUOTED_UNION_SOURCE = `export type AgentName = "api-developer" | "web-developer"
 `;
 
 // Reversed from the emitted order, so a reader anchored on a bare `AgentName =` would fail.
@@ -109,11 +115,44 @@ describe("readGeneratedUnionMembers", () => {
     );
   });
 
-  it("answers an empty list for an alias that falls back to a bare type reference", () => {
-    expect(readGeneratedUnionMembers(FALLBACK_UNION_SOURCE, "SelectedAgentName")).toStrictEqual([]);
+  it("throws naming the alias and its body when its members are quoted in a style it does not read", () => {
+    const read = () => readGeneratedUnionMembers(DOUBLE_QUOTED_UNION_SOURCE, "AgentName");
+
+    expect(read).toThrow("AgentName");
+    expect(read).toThrow('"api-developer" | "web-developer"');
   });
 
-  it("answers an empty list for an alias declared as never", () => {
-    expect(readGeneratedUnionMembers(FALLBACK_UNION_SOURCE, "ProjectAgentName")).toStrictEqual([]);
+  it("throws naming the alias when it falls back to a bare type reference", () => {
+    expect(() => readGeneratedUnionMembers(FALLBACK_UNION_SOURCE, "SelectedAgentName")).toThrow(
+      "SelectedAgentName",
+    );
+  });
+
+  it("throws naming the alias when it is declared as never", () => {
+    const read = () => readGeneratedUnionMembers(FALLBACK_UNION_SOURCE, "ProjectAgentName");
+
+    expect(read).toThrow("ProjectAgentName");
+    expect(read).toThrow("never");
+  });
+});
+
+describe("readGeneratedUnionMembers over the writer's own output", () => {
+  const written = generateConfigTypesSource(FULLSTACK_PAIR_MATRIX, [
+    "web-developer",
+    "api-developer",
+  ]);
+
+  it("names every skill the writer declares", () => {
+    expect(readGeneratedUnionMembers(written, "SkillId")).toStrictEqual([
+      SKILLS.hono.id,
+      SKILLS.react.id,
+    ]);
+  });
+
+  it("names every sub-agent the writer declares", () => {
+    expect(readGeneratedUnionMembers(written, "AgentName")).toStrictEqual([
+      "api-developer",
+      "web-developer",
+    ]);
   });
 });

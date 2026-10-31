@@ -41,12 +41,6 @@ type TestOnlyExport = ExportSite & { posture: Posture };
  */
 const TEST_ONLY_EXPORTS = [
   {
-    file: "src/cli/lib/configuration/config-writer.ts",
-    name: "getGlobalConfigImportPath",
-    // A production function with no caller: nothing selects the import-the-global-config form.
-    posture: "unjudged",
-  },
-  {
     file: "src/cli/lib/hosts/claude-host.ts",
     name: "claudePluginMarketplaceRemove",
     // A marketplace is user-level state, so no project command may remove one; e2e setup does.
