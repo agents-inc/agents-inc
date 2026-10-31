@@ -5,7 +5,7 @@ affected_files:
   - ../skills/src/skills/web-data-fetching-graphql-apollo/examples/core.md
   - ../skills/src/skills/web-data-fetching-graphql-apollo/examples/fragments.md
 standards_docs:
-  - .ai-docs/standards/briefing.md
+  - docs/briefing.md
 date: 2026-10-21
 reporting_agent: skill-summoner
 category: typescript

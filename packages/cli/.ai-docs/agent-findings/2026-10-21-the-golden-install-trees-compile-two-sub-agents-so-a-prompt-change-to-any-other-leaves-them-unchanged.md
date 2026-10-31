@@ -7,7 +7,7 @@ affected_files:
   - e2e/fixtures/claude-golden-trees/global-eject.json
   - e2e/fixtures/claude-golden-trees/project-plugin.json
 standards_docs:
-  - .ai-docs/standards/briefing.md
+  - docs/briefing.md
 date: 2026-10-21
 reporting_agent: cli-developer
 category: testing

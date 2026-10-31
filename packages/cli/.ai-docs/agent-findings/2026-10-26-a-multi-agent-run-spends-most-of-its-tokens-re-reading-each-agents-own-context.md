@@ -5,7 +5,7 @@ affected_files:
   - CLAUDE.md
 standards_docs:
   - CLAUDE.md
-  - .ai-docs/standards/briefing.md
+  - docs/briefing.md
 date: 2026-10-26
 reporting_agent: orchestrator
 category: performance

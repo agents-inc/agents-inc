@@ -2,9 +2,9 @@
 type: missing-standard
 severity: medium
 affected_files:
-  - packages/cli/.ai-docs/standards/briefing.md
+  - docs/briefing.md
 standards_docs:
-  - .ai-docs/standards/briefing.md
+  - docs/briefing.md
 date: 2026-10-26
 reporting_agent: cli-developer
 category: testing

@@ -11,7 +11,11 @@ reporting_agent: pm
 category: architecture
 domain: cli
 root_cause: enforcement-gap
-status: open
+status: resolved
+resolved_by: >-
+  The import-from-global branch, its option and its specs are deleted (CLI-1010), and so is
+  getGlobalConfigImportPath, the helper only that branch used (CLI-1012). Neither lane ran the
+  class census or wrote the Proposed Standard.
 ---
 
 ## What Was Wrong

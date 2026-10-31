@@ -4,7 +4,7 @@ severity: low
 affected_files:
   - apps/editor/src/features/configure/lib/output-preview.ts
 standards_docs:
-  - .ai-docs/standards/briefing.md
+  - docs/briefing.md
 date: 2026-10-20
 reporting_agent: web-developer
 category: testing

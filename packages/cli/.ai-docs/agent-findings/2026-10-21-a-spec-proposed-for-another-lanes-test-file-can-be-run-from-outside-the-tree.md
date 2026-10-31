@@ -2,10 +2,10 @@
 type: missing-standard
 severity: low
 affected_files:
-  - packages/cli/.ai-docs/standards/briefing.md
+  - docs/briefing.md
   - apps/server/vitest.config.ts
 standards_docs:
-  - .ai-docs/standards/briefing.md
+  - docs/briefing.md
 date: 2026-10-21
 reporting_agent: cli-developer
 category: testing

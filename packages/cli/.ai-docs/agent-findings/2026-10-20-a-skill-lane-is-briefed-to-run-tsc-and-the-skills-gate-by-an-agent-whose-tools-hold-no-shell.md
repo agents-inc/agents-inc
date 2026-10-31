@@ -3,9 +3,9 @@ type: standard-gap
 severity: medium
 affected_files:
   - src/agents/meta/skill-summoner/metadata.yaml
-  - .ai-docs/standards/briefing.md
+  - docs/briefing.md
 standards_docs:
-  - .ai-docs/standards/briefing.md
+  - docs/briefing.md
 date: 2026-10-20
 reporting_agent: skill-summoner
 category: architecture
