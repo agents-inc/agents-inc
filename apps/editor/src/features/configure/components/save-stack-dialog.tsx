@@ -77,18 +77,34 @@ const useTakenNames = (owed: SavedStack | undefined) => {
   ]
 }
 
-// The two switch confirms open outside `dialog`.
-const useOwedToAsk = () => {
-  const firstClash = useAccountStore((state) => state.clashes[0])
-  const clashing = useSavedStackStore((state) =>
-    state.saves.find((save) => save.id === firstClash)
+// Open exactly as `SkillContentsDialog` is. A catalogue load that drops the
+// skill closes it and leaves the id set, so the id alone would wait forever.
+const useContentsOpen = () => {
+  const skillId = useUiStore((state) => state.previewSkillId)
+  return useCatalogStore(
+    (state) => skillId !== null && state.external[skillId] !== undefined
   )
-  const anotherModalOpen = useUiStore(
+}
+
+// The two switch confirms and the contents dialog open outside `dialog`.
+const useAnotherModalOpen = () => {
+  const uiModalOpen = useUiStore(
     (state) =>
       state.dialog !== "none" ||
       state.pendingStack !== null ||
       state.pendingMarketplace !== null
   )
+  const contentsOpen = useContentsOpen()
+
+  return uiModalOpen || contentsOpen
+}
+
+const useOwedToAsk = () => {
+  const firstClash = useAccountStore((state) => state.clashes[0])
+  const clashing = useSavedStackStore((state) =>
+    state.saves.find((save) => save.id === firstClash)
+  )
+  const anotherModalOpen = useAnotherModalOpen()
 
   return anotherModalOpen ? undefined : clashing
 }

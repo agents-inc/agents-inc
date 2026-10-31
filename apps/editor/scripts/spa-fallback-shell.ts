@@ -32,8 +32,10 @@ export function spaFallbackShell(): Plugin {
 
     /**
      * After Vite writes: emitting it would rewrite the URLs the copy must keep.
+     * Not `closeBundle`, which also runs after a failed build and whose throw
+     * would replace that build's error.
      */
-    closeBundle() {
+    writeBundle() {
       if (!servesFromPrefix(config)) return
 
       const outDir = outputDirectory(config)

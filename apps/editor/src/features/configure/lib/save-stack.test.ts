@@ -13,6 +13,8 @@ import { useSavedStackStore } from "@/stores/saved-stack-store"
 
 import { saveStack } from "./save-stack"
 
+import type { RemoteStack } from "@/lib/api/stacks"
+
 const NAME = "Weekday"
 
 beforeEach(() => {
@@ -46,11 +48,14 @@ describe("saveStack", () => {
     configMockServer.use(...signedInHandlers)
     useAccountStore.setState({ session: SIGNED_IN_SESSION })
 
+    const saved: Record<keyof RemoteStack, unknown> = {
+      ...savedStack(NAME, STORED_ID),
+      id: expect.any(String),
+    }
+
     expect(await saveStack(NAME, STORED_PAYLOAD)).toMatchObject({ ok: true })
 
-    expect(useAccountStore.getState().stacks).toStrictEqual([
-      savedStack(NAME, STORED_ID),
-    ])
+    expect(useAccountStore.getState().stacks).toStrictEqual([saved])
     expect(useSavedStackStore.getState().saves).toStrictEqual([])
   })
 })

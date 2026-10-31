@@ -282,7 +282,14 @@ export function InstallDialog({ config }: { config: ConfigSelection }) {
           }
         />
 
-        <DialogPanes>
+        {/* In a short window both lists scroll here as one, and they are
+            mostly text, so the row itself takes focus for the keyboard. */}
+        <DialogPanes
+          role="region"
+          aria-label="Skills and agents"
+          tabIndex={0}
+          className="outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
+        >
           <DialogPane side="left">
             <DialogPaneHeading>Skills</DialogPaneHeading>
             <ScopeGroup label="Project" skills={inventory.project} first />

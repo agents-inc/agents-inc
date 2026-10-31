@@ -10,7 +10,7 @@ import {
   DialogPaneHeading,
   DialogPanes,
 } from "@workspace/ui/components/dialog"
-import { useState } from "react"
+import { useId, useState } from "react"
 
 import {
   toSkillContents,
@@ -48,6 +48,7 @@ export function SkillContentsDialog() {
 function Contents({ contents }: { contents: SkillContents }) {
   const { displayName, coordinate, files } = contents
   const [chosenPath, setChosenPath] = useState<string | null>(null)
+  const openPathId = useId()
   // `inReadingOrder` puts SKILL.md first.
   const openFile = files.find((file) => file.path === chosenPath) ?? files[0]
 
@@ -67,10 +68,20 @@ function Contents({ contents }: { contents: SkillContents }) {
       {/* A floor, not a height (the flex basis wins), so Close stays put as
           files are picked. Each pane scrolls on its own. */}
       <DialogPanes className="min-h-[26rem] overflow-hidden">
-        <DialogPane side="left" className="overflow-auto">
+        {/* The text holds nothing to focus, so the pane is what the keyboard
+            scrolls, named by the path it shows. */}
+        <DialogPane
+          side="left"
+          role="region"
+          aria-labelledby={openPathId}
+          tabIndex={0}
+          className="overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
+        >
           {/* Not uppercased: a path is case-sensitive. */}
           <DialogPaneHeading className="normal-case">
-            <span data-slot="contents-open-path">{openFile?.path}</span>
+            <span id={openPathId} data-slot="contents-open-path">
+              {openFile?.path}
+            </span>
           </DialogPaneHeading>
 
           {openFile && (

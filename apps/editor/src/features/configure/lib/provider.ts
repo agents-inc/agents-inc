@@ -39,7 +39,7 @@ export const patchForPress = (
     ? { ...patch, scope: "global" }
     : patch
 
-const inAnEnglishList = (items: readonly string[]) =>
+const inAnEnglishAlternative = (items: readonly string[]) =>
   items.length < 2
     ? items.join("")
     : `${items.slice(0, -1).join(", ")} or ${items.at(-1)}`
@@ -48,7 +48,7 @@ const inAnEnglishList = (items: readonly string[]) =>
 // `unbackedPluginInstallError` does.
 const unofferedPlacementReason = (): string =>
   `Codex installs plugins for the whole machine, so plugin+project is not offered. ` +
-  `It installs ${inAnEnglishList(CODEX_OFFERS)}.`
+  `It installs ${inAnEnglishAlternative(CODEX_OFFERS)}.`
 
 export const placementRefusal = (
   provider: Provider,
@@ -98,10 +98,11 @@ export const agentRefusal = (
 ): string | undefined =>
   compilesAgent(provider, agentId) ? undefined : leftOutOfCodexReason()
 
+// At most the two `AGENTS_LEFT_OUT_OF_CODEX`, so a plain "and" joins them.
 export const agentsLeftOutOfCodexNotice = (
   agentNames: readonly string[]
 ): string =>
-  `${inAnEnglishList(agentNames)} ${agentNames.length === 1 ? "is" : "are"} ` +
+  `${agentNames.join(" and ")} ${agentNames.length === 1 ? "is" : "are"} ` +
   `not installed on Codex — left out for v1, because their roster mechanics there are not proven.`
 
 // An untrusted Codex project reads `.agents/skills` but silently ignores role

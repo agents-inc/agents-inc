@@ -39,26 +39,32 @@ import { SkillOptionsPanel } from "./skill-options-panel"
 
 const DOTS = ["top", "middle", "bottom"] as const
 
-// `aria-disabled`, since `disabled` would suppress the `title` reason.
+// `aria-disabled`, since `disabled` would suppress the `title` reason. A clash
+// rules the whole cell out, so the pair leaves the Tab order as the cell does.
 function PairCell({
   value,
   active,
+  clash,
   refusal,
   error = false,
   onPick,
 }: {
   value: string
   active: boolean
+  clash: string | undefined
   refusal: string | undefined
   error?: boolean
   onPick: () => void
 }) {
+  const reason = clash ?? refusal
+
   return (
     <ButtonGroupItem
       active={active}
       error={error}
-      aria-disabled={refusal !== undefined || undefined}
-      title={refusal}
+      aria-disabled={reason !== undefined || undefined}
+      title={reason}
+      tabIndex={clash !== undefined ? -1 : undefined}
       onClick={onPick}
     >
       {value}
@@ -165,6 +171,11 @@ export function SkillCell({
     }
   }, [open, openPanel])
 
+  // Nothing stays editable on a ruled-out skill.
+  useEffect(() => {
+    if (open && incompatible) openPanel(null)
+  }, [open, incompatible, openPanel])
+
   return (
     <LatticeCell
       ref={cellRef}
@@ -240,20 +251,24 @@ export function SkillCell({
         <button
           ref={optionsButtonRef}
           type="button"
+          tabIndex={incompatible ? -1 : 0}
           aria-label={`Options for ${skill.displayName}`}
           aria-expanded={open}
+          aria-disabled={incompatible || undefined}
           onClick={requestPanel}
-          className={`group/dots pointer-events-auto ml-auto flex shrink-0 cursor-pointer flex-col gap-[2px] p-1 transition-opacity duration-[120ms] outline-none hover:bg-badge focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring ${
+          className={cn(
+            "group/dots pointer-events-auto ml-auto flex shrink-0 flex-col gap-[2px] p-1 transition-opacity duration-[120ms] outline-none focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring",
+            incompatible
+              ? "cursor-not-allowed"
+              : "cursor-pointer hover:bg-badge",
             open ? "opacity-100" : "opacity-0 group-hover/cell:opacity-100"
-          }`}
+          )}
         >
           {DOTS.map((dot) => (
             <span
               key={dot}
               aria-hidden
-              className={`block size-[2px] ${
-                open ? "bg-brand-ink" : "bg-faint group-hover/dots:bg-brand-ink"
-              }`}
+              className={cn("block size-[2px]", dotsPaint(open, incompatible))}
             />
           ))}
         </button>
@@ -282,6 +297,7 @@ export function SkillCell({
                 key={mode}
                 value={mode}
                 active={options.install === mode}
+                clash={view.incompatibleReason}
                 refusal={changeRefusal ?? refusalFor({ install: mode })}
                 onPick={() => flip({ install: mode })}
               />
@@ -298,6 +314,7 @@ export function SkillCell({
               key={scope}
               value={scope}
               active={options.scope === scope}
+              clash={view.incompatibleReason}
               refusal={refusalFor({ scope })}
               error={errored && options.scope === scope}
               onPick={() => flip({ scope })}
@@ -317,4 +334,11 @@ export function SkillCell({
       )}
     </LatticeCell>
   )
+}
+
+// Lit while the panel is open; a ruled-out ••• opens nothing, so takes no hover.
+function dotsPaint(open: boolean, incompatible: boolean) {
+  if (open) return "bg-brand-ink"
+  if (incompatible) return "bg-faint"
+  return "bg-faint group-hover/dots:bg-brand-ink"
 }

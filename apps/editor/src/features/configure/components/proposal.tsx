@@ -36,6 +36,8 @@ const SEPARATOR = " · "
 
 const NO_CHANGES = "no changes"
 
+const CHANGE_LIST_NAME = "Proposed changes"
+
 // Capped, or the sticky dock would cover the page. A whole utility: Tailwind
 // cannot read an interpolated class.
 const PROPOSAL_HEIGHT_CAP = "max-h-[21rem]"
@@ -46,8 +48,11 @@ const headingOf = ({ subject, verb, rows }: ProposalGroup) =>
 const totalOf = (groups: ProposalGroup[]) =>
   groups.reduce((count, group) => count + group.rows.length, 0)
 
-const totalLabel = (total: number) =>
-  total === 0 ? NO_CHANGES : `${total} changes`
+const totalLabel = (total: number) => {
+  if (total === 0) return NO_CHANGES
+
+  return `${total} ${total === 1 ? "change" : "changes"}`
+}
 
 function Row({ row }: { row: ProposalRow }) {
   return (
@@ -108,8 +113,15 @@ export function ProposalBlock({
         )}
       </div>
 
+      {/* Its rows hold nothing to focus, so the list is what the keyboard
+          scrolls once the cap is reached. */}
       {proposal.groups.length > 0 && (
-        <div className="min-h-0 overflow-y-auto px-gutter pt-[0.875rem] pb-[1.125rem] shadow-[inset_0_1px_0_var(--color-tree-border)]">
+        <div
+          role="region"
+          aria-label={CHANGE_LIST_NAME}
+          tabIndex={0}
+          className="min-h-0 overflow-y-auto px-gutter pt-[0.875rem] pb-[1.125rem] shadow-[inset_0_1px_0_var(--color-tree-border)] outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
+        >
           {proposal.groups.map((group, index) => (
             <div
               key={headingOf(group)}

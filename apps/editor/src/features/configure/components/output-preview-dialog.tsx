@@ -47,6 +47,9 @@ const ROW_SELECTOR = '[data-slot="preview-row"]'
 
 const IDLE_FALLBACK_MS = 200
 
+// The content pane's name while the preview loads or has failed.
+const PANE_NAME_WITHOUT_FILE = "No file selected"
+
 // The DOM types call this check unnecessary, but Safari before 18.4 lacks
 // `requestIdleCallback` and is in the build target.
 function whenIdle(run: () => void): () => void {
@@ -411,10 +414,15 @@ function ContentPane({
   const lines = known ?? uncoloured(body)
 
   return (
+    // Its lines hold nothing to focus, so the pane is what the keyboard scrolls.
+    // One element across files, so it keeps its scroll position.
     <DialogPane
       side="content"
       data-slot="preview-content"
-      className="overflow-auto pt-3.5 pb-4.5 font-mono text-9_5 leading-[1.75] font-normal text-ink-2"
+      role="region"
+      aria-label={node?.id ?? PANE_NAME_WITHOUT_FILE}
+      tabIndex={0}
+      className="overflow-auto pt-3.5 pb-4.5 font-mono text-9_5 leading-[1.75] font-normal text-ink-2 outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
     >
       {failure.status === "failed" && (
         <p role="alert" className="whitespace-pre-wrap text-destructive">

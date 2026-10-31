@@ -6,7 +6,10 @@ import { fileURLToPath } from "node:url"
 const resolve = (path: string) => fileURLToPath(new URL(path, import.meta.url))
 
 export default mergeConfig(nodeConfig, {
-  test: { setupFiles: ["./vitest.setup.ts"] },
+  test: {
+    include: ["scripts/**/*.test.ts"],
+    setupFiles: ["./vitest.setup.ts"],
+  },
   resolve: {
     alias: {
       // Before the bare alias: string aliases match by prefix.

@@ -128,7 +128,7 @@ describe("the sentences Codex's limits are explained in", () => {
     [
       "two sub-agents",
       ["agent-summoner", "skill-summoner"],
-      "agent-summoner or skill-summoner are not installed on Codex — left out for v1, because their roster mechanics there are not proven.",
+      "agent-summoner and skill-summoner are not installed on Codex — left out for v1, because their roster mechanics there are not proven.",
     ],
   ])("names %s left out of a Codex install", (_label, agentNames, notice) => {
     expect(agentsLeftOutOfCodexNotice(agentNames)).toBe(notice)
