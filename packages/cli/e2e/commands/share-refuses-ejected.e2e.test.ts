@@ -51,6 +51,7 @@ const WEB_DEV = E2E_AGENT["web-developer"].name;
 
 /** Non-exclusive, for the reason `init-from-external-skills.e2e.test.ts` gives. */
 const EXTERNAL_ID = "external-web-tooling-brainstorming";
+const EXTERNAL_NAME = "Brainstorming";
 const EXTERNAL_REPO = "obra/superpowers";
 const EXTERNAL_PATH = "skills/brainstorming";
 const EXTERNAL_FILES = {
@@ -60,6 +61,7 @@ const EXTERNAL_FILES = {
 
 function externalEntry() {
   return buildSeedExternalSkill({
+    displayName: EXTERNAL_NAME,
     categoryId: "web-tooling",
     repo: EXTERNAL_REPO,
     path: EXTERNAL_PATH,
@@ -134,10 +136,10 @@ describe("share refuses ejected skills", () => {
     expect(exitCode, `share must refuse an installation of ejected skills, and said: ${said}`).toBe(
       EXIT_CODES.ERROR,
     );
-    expect(said).toContain(STEP_TEXT.SHARE_EJECTED_SKILLS_REFUSED);
-    expect(said).toContain(STEP_TEXT.SHARE_ONLY_PLUGINS);
-    expect(said).toContain(E2E_SKILL.react.id);
-    expect(said).toContain(E2E_SKILL.vitest.id);
+    // Named as the install recorded them: share seats no catalogue that knows them.
+    expect(said).toContain(
+      `${STEP_TEXT.SHARE_EJECTED_SKILLS_REFUSED}: ${E2E_SKILL.react.display} ${E2E_SKILL.vitest.display} ${STEP_TEXT.SHARE_ONLY_PLUGINS}`,
+    );
     // Refused locally, so no store write is spent.
     expect(store.requests).toStrictEqual([]);
     expect(await readTreeSnapshot(origin)).toStrictEqual(before);
@@ -167,8 +169,9 @@ describe("share refuses ejected skills", () => {
     expect(exitCode, `share must refuse the ejected skills a project inherits: ${said}`).toBe(
       EXIT_CODES.ERROR,
     );
-    expect(said).toContain(STEP_TEXT.SHARE_EJECTED_SKILLS_REFUSED);
-    expect(said).toContain(E2E_SKILL.react.id);
+    expect(said).toContain(
+      `${STEP_TEXT.SHARE_EJECTED_SKILLS_REFUSED}: ${E2E_SKILL.react.display} ${STEP_TEXT.SHARE_ONLY_PLUGINS}`,
+    );
     expect(store.requests).toStrictEqual([]);
     // The project sits inside this HOME, so one snapshot covers both scopes.
     expect(await readTreeSnapshot(env.fakeHome)).toStrictEqual(before);
@@ -190,8 +193,9 @@ describe("share refuses ejected skills", () => {
     const said = flattenCliOutput(output);
 
     expect(exitCode, `share must refuse an editor-added skill: ${said}`).toBe(EXIT_CODES.ERROR);
-    expect(said).toContain(STEP_TEXT.SHARE_EJECTED_SKILLS_REFUSED);
-    expect(said).toContain(EXTERNAL_ID);
+    expect(said).toContain(
+      `${STEP_TEXT.SHARE_EJECTED_SKILLS_REFUSED}: ${EXTERNAL_NAME} ${STEP_TEXT.SHARE_ONLY_PLUGINS}`,
+    );
     expect(store.requests).toStrictEqual([]);
   });
 

@@ -15,7 +15,12 @@ import {
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { CLI } from "../fixtures/cli.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { cleanupFixture, cleanupTempDir, flattenCliOutput } from "../helpers/test-utils.js";
+import {
+  cleanupFixture,
+  cleanupTempDir,
+  compactedWithoutTempFolder,
+  flattenCliOutput,
+} from "../helpers/test-utils.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
@@ -92,9 +97,10 @@ describe("doctor on a healthy Codex installation", () => {
       expect(said).toContain(STEP_TEXT.DOCTOR_ROW_SKILLS_INSTALLED);
       expect(said).toContain("1/1 eject-mode skill installed");
       // Broad on purpose, so any row naming it fails.
-      expect(said, "no doctor row may name Claude's state directory here").not.toContain(
-        CLAUDE_STATE_DIR,
-      );
+      expect(
+        compactedWithoutTempFolder(examined.output),
+        "no doctor row may name Claude's state directory here",
+      ).not.toContain(CLAUDE_STATE_DIR);
 
       // Proves nothing alone, but a later change making either row a `fail` is not silent.
       expect(examined.exitCode, said).toBe(EXIT_CODES.SUCCESS);

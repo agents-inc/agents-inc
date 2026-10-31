@@ -43,10 +43,9 @@ import { buildSkillConfig } from "../../src/cli/lib/__tests__/helpers/skill-conf
  * the global config records it with that `origin` beside its own `marketplaceName`. The user docs
  * say such an entry "is installed as a Claude Code plugin under that marketplace name"
  * (configuration/config-reference.md). `edit --from` at home then applies a configuration that
- * leaves out that plugin and one of its own marketplace's. Measured against the built CLI and the
- * real `claude`: both entries leave the config, the home marketplace's plugin is uninstalled, and
- * the other stays registered and enabled, because the removal is addressed to
- * `<id>@<marketplaceName>` and the host answers that it holds no such plugin.
+ * leaves out that plugin and one of its own marketplace's. Both leave the config and the real
+ * `claude`: the other marketplace's plugin is removed under the name its install recorded,
+ * `<id>@<origin>`, since the host holds nothing under `<id>@<marketplaceName>`.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
@@ -203,17 +202,11 @@ describe.skipIf(!claudeAvailable)(
       );
     });
 
-    // KNOWN GAP: the removal asks the host for `<id>@<marketplaceName>`, which holds nothing, so the
-    // plugin installed as `<id>@<origin>` stays registered and enabled for every project.
-    it.fails(
-      "uninstalls the plugin the project installed from its own marketplace",
-      { retry: 0 },
-      async () => {
-        const projectPluginRef = pluginKeyFor(PROJECT_SKILL, PROJECT_MARKETPLACE);
+    it("uninstalls the plugin the project installed from its own marketplace", async () => {
+      const projectPluginRef = pluginKeyFor(PROJECT_SKILL, PROJECT_MARKETPLACE);
 
-        await expect({ dir: env.fakeHome }).not.toHavePluginInRegistry(projectPluginRef);
-        await expect({ dir: env.fakeHome }).not.toHavePlugin(projectPluginRef);
-      },
-    );
+      await expect({ dir: env.fakeHome }).not.toHavePluginInRegistry(projectPluginRef);
+      await expect({ dir: env.fakeHome }).not.toHavePlugin(projectPluginRef);
+    });
   },
 );

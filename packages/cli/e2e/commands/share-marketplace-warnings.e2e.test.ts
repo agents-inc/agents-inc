@@ -101,10 +101,21 @@ describe("share names the marketplace its id installs from", () => {
    */
   async function writeTwoMarketplaceProject(
     env: TestEnvironment,
-    global: { marketplace?: string; marketplaceName?: string; origin: string },
+    global: {
+      marketplace?: string;
+      marketplaceName?: string;
+      origin: string;
+      recordedName?: string;
+    },
   ): Promise<void> {
     const inherited = {
-      skills: [buildSkillConfig(E2E_SKILL.react.id, { scope: "global", origin: global.origin })],
+      skills: [
+        buildSkillConfig(E2E_SKILL.react.id, {
+          scope: "global",
+          origin: global.origin,
+          ...(global.recordedName !== undefined && { displayName: global.recordedName }),
+        }),
+      ],
       agents: buildAgentConfigs([WEB_DEV], { scope: "global" }),
     };
     await writeProjectConfig(
@@ -172,6 +183,7 @@ describe("share names the marketplace its id installs from", () => {
       marketplace: FIXTURE_ON_GITHUB,
       marketplaceName: E2E_MARKETPLACE_NAME,
       origin: E2E_MARKETPLACE_NAME,
+      recordedName: E2E_SKILL.react.display,
     });
 
     const { exitCode, output } = await runShare(store, {
@@ -189,8 +201,10 @@ describe("share names the marketplace its id installs from", () => {
     expect(Object.keys(posted.skills).sort()).toStrictEqual(
       [E2E_SKILL.react.id, ACME_SKILL_ID].sort(),
     );
-    expect(said).toContain(STEP_TEXT.SHARE_SKILLS_NOT_INSTALLED_ELSEWHERE);
-    expect(said).toContain(E2E_SKILL.react.id);
+    // Named as HOME's install recorded it: share seats no catalogue that knows it.
+    expect(said).toContain(
+      `${STEP_TEXT.SHARE_SKILLS_NOT_INSTALLED_ELSEWHERE}: ${E2E_SKILL.react.display}`,
+    );
     expect(said).not.toContain(ACME_SKILL_ID);
   });
 
@@ -210,7 +224,10 @@ describe("share names the marketplace its id installs from", () => {
     expect(said, "the id names Acme alone, so the catalogue's skills stay behind").toContain(
       STEP_TEXT.SHARE_SKILLS_NOT_INSTALLED_ELSEWHERE,
     );
-    expect(said).toContain(E2E_SKILL.react.id);
+    // No name recorded, and no catalogue share seats knows it, so its id names it.
+    expect(said).toContain(
+      `${STEP_TEXT.SHARE_SKILLS_NOT_INSTALLED_ELSEWHERE}: ${E2E_SKILL.react.id}`,
+    );
     expect(said).not.toContain(ACME_SKILL_ID);
   });
 });

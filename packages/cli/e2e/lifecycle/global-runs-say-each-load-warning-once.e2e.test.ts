@@ -49,7 +49,8 @@ const HEALTH_FINDING_SAID = `${STEP_TEXT.MATRIX_HEALTH_SAID} ${STEP_TEXT.UNRESOL
 /** Copied into the global installation by hand, with no metadata.yaml. */
 const STRAY_SKILL = "hand-copied-skill";
 
-const STRAY_SAID = `'${DIRS.CLAUDE}/${DIRS.SKILLS}/${STRAY_SKILL}/' ${STEP_TEXT.INSTALLED_SKILL_METADATA_MISSING}`;
+/** Starts at `.claude`: the global folder may be named relative to HOME or as `~/`. */
+const STRAY_SKIPPED_SAID = `${DIRS.CLAUDE}/${DIRS.SKILLS}/' that isn't ${STEP_TEXT.INSTALLED_SKILL_METADATA_MISSING}`;
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const API_DEV = E2E_AGENT["api-developer"].name;
@@ -215,8 +216,10 @@ describe("a global run says each warning once, however many projects are registe
       expectSaidOnce(said, HEALTH_FINDING_SAID, run.output);
     });
 
-    it("says the global skill with no metadata.yaml once", () => {
-      expectSaidOnce(said, STRAY_SAID, run.output);
+    it("says the global folder with no metadata.yaml in one line, once, without naming it", () => {
+      expect(said).toContain("Warning: Skipped 1 skill in '");
+      expectSaidOnce(said, STRAY_SKIPPED_SAID, run.output);
+      expect(said, "the folder is named only under --verbose").not.toContain(STRAY_SKILL);
     });
 
     it("leaves every scope's config as it was", () => {
@@ -269,8 +272,10 @@ describe("a global run says each warning once, however many projects are registe
       expectSaidOnce(said, HEALTH_FINDING_SAID, run.output);
     });
 
-    it("says the global skill with no metadata.yaml once", () => {
-      expectSaidOnce(said, STRAY_SAID, run.output);
+    it("says the global folder with no metadata.yaml in one line, once, without naming it", () => {
+      expect(said).toContain("Warning: Skipped 1 skill in '");
+      expectSaidOnce(said, STRAY_SKIPPED_SAID, run.output);
+      expect(said, "the folder is named only under --verbose").not.toContain(STRAY_SKILL);
     });
 
     it("drops Web Developer from the global config and from every project's, and keeps every skill", () => {

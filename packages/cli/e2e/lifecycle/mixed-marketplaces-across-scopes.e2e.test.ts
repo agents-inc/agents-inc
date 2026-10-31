@@ -1,10 +1,12 @@
 import path from "path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
 import { CLI, type CLIResult } from "../fixtures/cli.js";
+import { seedDefaultSourceCache } from "../fixtures/default-source-cache.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT } from "../fixtures/expected-values.js";
+import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
 import {
   runInitFrom,
   startSeedConfigStore,
@@ -25,6 +27,8 @@ import {
   E2E_MARKETPLACE_PREFIX,
   EXIT_CODES,
   FILES,
+  PUBLIC_MARKETPLACE_NAME,
+  PUBLIC_MARKETPLACE_SOURCE,
   SCAFFOLDED_SKILL_DISPLAY_NAME,
   SOURCE_PATHS,
   STEP_TEXT,
@@ -35,7 +39,13 @@ import {
   buildSeedPayload,
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
+import { useClaudeStub } from "../../src/cli/lib/__tests__/helpers/claude-stub.js";
+import {
+  buildSkillConfig,
+  buildSkillConfigs,
+} from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
+import { BUILT_IN_MATRIX } from "../../src/cli/types/generated/matrix.js";
+import type { SkillId } from "../../src/cli/types/index.js";
 
 /** Output is flattened because oclif wraps the warning. */
 
@@ -90,6 +100,53 @@ const UNASSIGNED_PROJECT_CONFIGURATION = buildSeedPayload({
   },
   agents: { [API_DEV]: { on: true, scope: "project" } },
 });
+
+/** Constrained to `SkillId`, so retiring either from the public catalogue reddens this line. */
+const PUBLIC_SKILL = "web-framework-react" as const satisfies SkillId;
+const PUBLIC_PLUGIN_SKILL = "web-testing-vitest" as const satisfies SkillId;
+
+/** The cache fixture's own parameter; it only has to be a skill no payload here asks for. */
+const NOT_IN_THE_CHECKOUT = "meta-reviewing-infra-reviewing" as const satisfies SkillId;
+
+const onTheProjectApiDeveloper = (install: "eject" | "plugin") =>
+  buildSeedSkill({ install, scope: "project", assignments: { [API_DEV]: "lazy" } });
+
+/** No `marketplace` field, as the editor and `share` mint an id for the public catalogue. */
+const PUBLIC_CONFIGURATION = buildSeedPayload({
+  v: PINNED_WIRE_VERSION,
+  skills: { [PUBLIC_SKILL]: onTheProjectApiDeveloper("eject") },
+  agents: { [API_DEV]: { scope: "project" } },
+});
+
+const PUBLIC_CONFIGURATION_ADDING_A_PLUGIN = buildSeedPayload({
+  v: PINNED_WIRE_VERSION,
+  skills: {
+    [PUBLIC_SKILL]: onTheProjectApiDeveloper("eject"),
+    [PUBLIC_PLUGIN_SKILL]: onTheProjectApiDeveloper("plugin"),
+  },
+  agents: { [API_DEV]: { scope: "project" } },
+});
+
+/** The installed record copies the catalogue's display name. */
+function catalogueDisplayName(skillId: SkillId): string {
+  const skill = BUILT_IN_MATRIX.skills[skillId];
+  if (skill === undefined) throw new Error(`The public catalogue has no skill '${skillId}'`);
+  return skill.displayName;
+}
+
+const acmeGlobalSkillAsTheProjectListsIt = () =>
+  buildSkillConfigs([GLOBAL_SKILL], {
+    scope: "global",
+    origin: "eject",
+    displayName: SCAFFOLDED_SKILL_DISPLAY_NAME,
+  });
+
+const publicSkillAsTheProjectListsIt = () =>
+  buildSkillConfig(PUBLIC_SKILL, {
+    scope: "project",
+    origin: "eject",
+    displayName: catalogueDisplayName(PUBLIC_SKILL),
+  });
 
 describe("a global installation from one marketplace under a project from another", () => {
   let marketplacesDir: string;
@@ -355,12 +412,407 @@ describe("a global installation from one marketplace under a project from anothe
       expect(
         flattenCliOutput(output),
         "a skill this configuration selected and gave to no sub-agent is loaded by nothing, so the user is told",
-      ).toContain(`Skill '${PROJECT_SKILL}' ${STEP_TEXT.SKILL_ASSIGNED_TO_NO_AGENT}`);
+      ).toContain(
+        `Skill '${SCAFFOLDED_SKILL_DISPLAY_NAME}' ${STEP_TEXT.SKILL_ASSIGNED_TO_NO_AGENT}`,
+      );
 
       expect(await listFiles(skillsPath(env.projectDir))).toStrictEqual([PROJECT_SKILL]);
       await expect({ dir: env.projectDir }).toHaveAgentDynamicSkills(API_DEV, {
         noSkillIds: [PROJECT_SKILL],
       });
     });
+  });
+
+  describe("a project from the public catalogue, under a global installation from a custom marketplace", () => {
+    const PUBLIC_ID = "PublicP1";
+    const PUBLIC_PLUGIN_ID = "PublicP2";
+    const NAMES_PLAIN_ID = "NamesPln";
+    const NAMES_ACME_ID = "NamesAcm";
+
+    const claude = useClaudeStub();
+    let env: TestEnvironment | undefined;
+    let prompt: InteractivePrompt | undefined;
+
+    beforeAll(() => {
+      store.publish(PUBLIC_ID, PUBLIC_CONFIGURATION);
+      store.publish(PUBLIC_PLUGIN_ID, PUBLIC_CONFIGURATION_ADDING_A_PLUGIN);
+      store.publish(NAMES_PLAIN_ID, {
+        ...PROJECT_CONFIGURATION,
+        marketplace: projectMarketplaceDir,
+      });
+      // Names a marketplace that ships nothing the payload asks for, so only the flag can install it.
+      store.publish(NAMES_ACME_ID, { ...PROJECT_CONFIGURATION, marketplace: globalMarketplaceDir });
+    });
+
+    afterEach(async () => {
+      await prompt?.destroy();
+      prompt = undefined;
+      if (env) await cleanupTempDir(env.tempDir);
+      env = undefined;
+    });
+
+    /** Holds a checkout of the public catalogue, so installing from it is offline. */
+    async function takeEnvironmentWithAcmeGlobal(): Promise<TestEnvironment> {
+      const environment = await createTestEnvironment({ permissions: false });
+      await seedDefaultSourceCache(environment.fakeHome, { omitting: NOT_IN_THE_CHECKOUT });
+
+      const globalInstall = await runInitFrom(
+        store,
+        "GlobalX1",
+        { dir: environment.fakeHome },
+        globalMarketplaceDir,
+      );
+      expect(globalInstall.exitCode, globalInstall.output).toBe(EXIT_CODES.SUCCESS);
+      const globalConfig = await loadConfigOrFail(environment.fakeHome);
+      expect(
+        { marketplace: globalConfig.marketplace, marketplaceName: globalConfig.marketplaceName },
+        "precondition: a global installation recording the custom marketplace and its name",
+      ).toStrictEqual({ marketplace: globalMarketplaceDir, marketplaceName: GLOBAL_MARKETPLACE });
+      return environment;
+    }
+
+    /** No `--marketplace`: what the id carries decides the marketplace. */
+    function initFromWithoutTheFlag(environment: TestEnvironment, id: string): Promise<CLIResult> {
+      return CLI.run(
+        ["init", "--from", id],
+        { dir: environment.projectDir, globalHome: environment.fakeHome },
+        { env: { AGENTS_INC_API_URL: store.url } },
+      );
+    }
+
+    it(
+      "installs an id that names no marketplace from the public catalogue, and records it under its own name",
+      { timeout: TIMEOUTS.LIFECYCLE },
+      async () => {
+        env = await takeEnvironmentWithAcmeGlobal();
+
+        const { exitCode, output } = await initFromWithoutTheFlag(env, PUBLIC_ID);
+
+        expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+        expect(
+          flattenCliOutput(output),
+          "a public-catalogue id is not resolved against the global installation's marketplace",
+        ).not.toContain(STEP_TEXT.CATALOG_DOES_NOT_KNOW);
+        expect(await listFiles(skillsPath(env.projectDir))).toStrictEqual([PUBLIC_SKILL]);
+
+        const projectConfig = await loadConfigOrFail(env.projectDir);
+        expect(projectConfig.skills).toStrictEqual([
+          ...acmeGlobalSkillAsTheProjectListsIt(),
+          buildSkillConfig(PUBLIC_SKILL, {
+            scope: "project",
+            origin: "eject",
+            displayName: catalogueDisplayName(PUBLIC_SKILL),
+          }),
+        ]);
+        expect(
+          {
+            marketplace: projectConfig.marketplace,
+            marketplaceName: projectConfig.marketplaceName,
+          },
+          "the project's marketplace is the public catalogue, under the public catalogue's own name",
+        ).toStrictEqual({
+          marketplace: PUBLIC_MARKETPLACE_SOURCE,
+          marketplaceName: PUBLIC_MARKETPLACE_NAME,
+        });
+        await expect({ dir: env.projectDir }).toHaveAgentDynamicSkills(API_DEV, {
+          skillIds: [PUBLIC_SKILL],
+        });
+      },
+    );
+
+    it(
+      "records the public catalogue named by the flag under its own name, not the global installation's",
+      { timeout: TIMEOUTS.LIFECYCLE },
+      async () => {
+        env = await takeEnvironmentWithAcmeGlobal();
+
+        const { exitCode, output } = await runInitFrom(
+          store,
+          PUBLIC_ID,
+          { dir: env.projectDir, globalHome: env.fakeHome },
+          PUBLIC_MARKETPLACE_SOURCE,
+        );
+
+        expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+        expect(await listFiles(skillsPath(env.projectDir))).toStrictEqual([PUBLIC_SKILL]);
+        const projectConfig = await loadConfigOrFail(env.projectDir);
+        expect(
+          {
+            marketplace: projectConfig.marketplace,
+            marketplaceName: projectConfig.marketplaceName,
+          },
+          "a name labels only the marketplace it was read beside; the global's names another",
+        ).toStrictEqual({
+          marketplace: PUBLIC_MARKETPLACE_SOURCE,
+          marketplaceName: PUBLIC_MARKETPLACE_NAME,
+        });
+      },
+    );
+
+    it(
+      "installs a public plugin a later edit --from adds under the public catalogue's name",
+      { timeout: TIMEOUTS.LIFECYCLE },
+      async () => {
+        env = await takeEnvironmentWithAcmeGlobal();
+        const projectInstall = await runInitFrom(
+          store,
+          PUBLIC_ID,
+          { dir: env.projectDir, globalHome: env.fakeHome },
+          PUBLIC_MARKETPLACE_SOURCE,
+        );
+        expect(projectInstall.exitCode, projectInstall.output).toBe(EXIT_CODES.SUCCESS);
+
+        prompt = new InteractivePrompt(["edit", "--from", PUBLIC_PLUGIN_ID], env.projectDir, {
+          env: { AGENTS_INC_API_URL: store.url, HOME: env.fakeHome },
+        });
+        await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM, TIMEOUTS.WIZARD_LOAD);
+        await prompt.confirm();
+        const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
+
+        expect(exitCode, `apply failed: ${prompt.getOutput()}`).toBe(EXIT_CODES.SUCCESS);
+        expect(
+          await claude.changes(),
+          "the plugin is asked for under the marketplace it ships from, not the global installation's",
+        ).toStrictEqual([
+          "plugin marketplace add agents-inc/skills",
+          `plugin install ${PUBLIC_PLUGIN_SKILL}@${PUBLIC_MARKETPLACE_NAME} --scope project`,
+        ]);
+        expect((await loadConfigOrFail(env.projectDir)).skills).toStrictEqual([
+          ...acmeGlobalSkillAsTheProjectListsIt(),
+          buildSkillConfig(PUBLIC_SKILL, {
+            scope: "project",
+            origin: "eject",
+            displayName: catalogueDisplayName(PUBLIC_SKILL),
+          }),
+          buildSkillConfig(PUBLIC_PLUGIN_SKILL, {
+            scope: "project",
+            origin: PUBLIC_MARKETPLACE_NAME,
+            displayName: catalogueDisplayName(PUBLIC_PLUGIN_SKILL),
+          }),
+        ]);
+        expect(await listFiles(skillsPath(env.projectDir))).toStrictEqual([PUBLIC_SKILL]);
+      },
+    );
+
+    it(
+      "installs an id naming a custom marketplace from that marketplace",
+      { timeout: TIMEOUTS.LIFECYCLE },
+      async () => {
+        env = await takeEnvironmentWithAcmeGlobal();
+
+        const { exitCode, output } = await initFromWithoutTheFlag(env, NAMES_PLAIN_ID);
+
+        expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+        expect(await listFiles(skillsPath(env.projectDir))).toStrictEqual([PROJECT_SKILL]);
+        const projectConfig = await loadConfigOrFail(env.projectDir);
+        expect(projectConfig.skills).toStrictEqual([
+          ...acmeGlobalSkillAsTheProjectListsIt(),
+          ...buildSkillConfigs([PROJECT_SKILL], {
+            scope: "project",
+            origin: "eject",
+            displayName: SCAFFOLDED_SKILL_DISPLAY_NAME,
+          }),
+        ]);
+        expect({
+          marketplace: projectConfig.marketplace,
+          marketplaceName: projectConfig.marketplaceName,
+        }).toStrictEqual({
+          marketplace: projectMarketplaceDir,
+          marketplaceName: PROJECT_MARKETPLACE,
+        });
+      },
+    );
+
+    it(
+      "installs from the marketplace the flag names over the one the id names",
+      { timeout: TIMEOUTS.LIFECYCLE },
+      async () => {
+        env = await takeEnvironmentWithAcmeGlobal();
+
+        const { exitCode, output } = await runInitFrom(
+          store,
+          NAMES_ACME_ID,
+          { dir: env.projectDir, globalHome: env.fakeHome },
+          projectMarketplaceDir,
+        );
+
+        expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+        expect(await listFiles(skillsPath(env.projectDir))).toStrictEqual([PROJECT_SKILL]);
+        const projectConfig = await loadConfigOrFail(env.projectDir);
+        expect({
+          marketplace: projectConfig.marketplace,
+          marketplaceName: projectConfig.marketplaceName,
+        }).toStrictEqual({
+          marketplace: projectMarketplaceDir,
+          marketplaceName: PROJECT_MARKETPLACE,
+        });
+      },
+    );
+
+    // The CI recipe: CC_MARKETPLACE applies "when neither --marketplace nor the id names one".
+    it(
+      "installs an id that names no marketplace from the one CC_MARKETPLACE names",
+      { timeout: TIMEOUTS.LIFECYCLE },
+      async () => {
+        env = await takeEnvironmentWithAcmeGlobal();
+
+        const { exitCode, output } = await CLI.run(
+          ["init", "--from", "ProjectY"],
+          { dir: env.projectDir, globalHome: env.fakeHome },
+          { env: { AGENTS_INC_API_URL: store.url, CC_MARKETPLACE: projectMarketplaceDir } },
+        );
+
+        expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+        expect(await listFiles(skillsPath(env.projectDir))).toStrictEqual([PROJECT_SKILL]);
+        const projectConfig = await loadConfigOrFail(env.projectDir);
+        expect({
+          marketplace: projectConfig.marketplace,
+          marketplaceName: projectConfig.marketplaceName,
+        }).toStrictEqual({
+          marketplace: projectMarketplaceDir,
+          marketplaceName: PROJECT_MARKETPLACE,
+        });
+      },
+    );
+  });
+
+  describe("a project from the public catalogue, before a global installation from a custom marketplace", () => {
+    const PUBLIC_ID = "PublicB1";
+    const PUBLIC_PLUGIN_ID = "PublicB2";
+
+    const claude = useClaudeStub();
+    let env: TestEnvironment | undefined;
+    let prompt: InteractivePrompt | undefined;
+
+    beforeAll(() => {
+      store.publish(PUBLIC_ID, PUBLIC_CONFIGURATION);
+      store.publish(PUBLIC_PLUGIN_ID, PUBLIC_CONFIGURATION_ADDING_A_PLUGIN);
+    });
+
+    afterEach(async () => {
+      await prompt?.destroy();
+      prompt = undefined;
+      if (env) await cleanupTempDir(env.tempDir);
+      env = undefined;
+    });
+
+    /** No global installation yet; the seeded checkout keeps installing from the public catalogue offline. */
+    async function takeEnvironmentWithPublicProject(): Promise<TestEnvironment> {
+      const environment = await createTestEnvironment({ permissions: false });
+      await seedDefaultSourceCache(environment.fakeHome, { omitting: NOT_IN_THE_CHECKOUT });
+
+      const projectInstall = await CLI.run(
+        ["init", "--from", PUBLIC_ID],
+        { dir: environment.projectDir, globalHome: environment.fakeHome },
+        { env: { AGENTS_INC_API_URL: store.url } },
+      );
+      expect(projectInstall.exitCode, projectInstall.output).toBe(EXIT_CODES.SUCCESS);
+      return environment;
+    }
+
+    async function installAcmeGlobal(environment: TestEnvironment): Promise<void> {
+      const globalInstall = await runInitFrom(
+        store,
+        "GlobalX1",
+        { dir: environment.fakeHome },
+        globalMarketplaceDir,
+      );
+      expect(globalInstall.exitCode, globalInstall.output).toBe(EXIT_CODES.SUCCESS);
+    }
+
+    async function applyAddingAPublicPlugin(environment: TestEnvironment): Promise<number> {
+      prompt = new InteractivePrompt(["edit", "--from", PUBLIC_PLUGIN_ID], environment.projectDir, {
+        env: { AGENTS_INC_API_URL: store.url, HOME: environment.fakeHome },
+      });
+      await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM, TIMEOUTS.WIZARD_LOAD);
+      await prompt.confirm();
+      return prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
+    }
+
+    it(
+      "keeps the project's own marketplace and name when the global installation arrives",
+      { timeout: TIMEOUTS.LIFECYCLE },
+      async () => {
+        env = await takeEnvironmentWithPublicProject();
+        const before = await loadConfigOrFail(env.projectDir);
+        expect(before.marketplace, "precondition: a project set up from the public catalogue").toBe(
+          PUBLIC_MARKETPLACE_SOURCE,
+        );
+
+        await installAcmeGlobal(env);
+
+        const after = await loadConfigOrFail(env.projectDir);
+        expect(
+          after.skills,
+          "the global installation is written into the project's config",
+        ).toStrictEqual([
+          ...acmeGlobalSkillAsTheProjectListsIt(),
+          publicSkillAsTheProjectListsIt(),
+        ]);
+        expect(
+          { marketplace: after.marketplace, marketplaceName: after.marketplaceName },
+          "a global installation from another marketplace leaves the project's marketplace and its name as they were",
+        ).toStrictEqual({
+          marketplace: before.marketplace,
+          marketplaceName: before.marketplaceName,
+        });
+        expect(await listFiles(skillsPath(env.projectDir))).toStrictEqual([PUBLIC_SKILL]);
+      },
+    );
+
+    it(
+      "installs a public plugin a later edit --from adds under the public catalogue's name",
+      { timeout: TIMEOUTS.LIFECYCLE },
+      async () => {
+        env = await takeEnvironmentWithPublicProject();
+        await installAcmeGlobal(env);
+
+        const exitCode = await applyAddingAPublicPlugin(env);
+
+        expect(exitCode, `apply failed: ${prompt?.getOutput()}`).toBe(EXIT_CODES.SUCCESS);
+        expect(
+          await claude.changes(),
+          "the plugin is asked for under the marketplace it ships from, not the global installation's",
+        ).toStrictEqual([
+          "plugin marketplace add agents-inc/skills",
+          `plugin install ${PUBLIC_PLUGIN_SKILL}@${PUBLIC_MARKETPLACE_NAME} --scope project`,
+        ]);
+        expect((await loadConfigOrFail(env.projectDir)).skills).toStrictEqual([
+          ...acmeGlobalSkillAsTheProjectListsIt(),
+          publicSkillAsTheProjectListsIt(),
+          buildSkillConfig(PUBLIC_PLUGIN_SKILL, {
+            scope: "project",
+            origin: PUBLIC_MARKETPLACE_NAME,
+            displayName: catalogueDisplayName(PUBLIC_PLUGIN_SKILL),
+          }),
+        ]);
+        expect(await listFiles(skillsPath(env.projectDir))).toStrictEqual([PUBLIC_SKILL]);
+      },
+    );
+
+    it(
+      "installs a public plugin a later edit --from adds under the public catalogue's name, with no global installation",
+      { timeout: TIMEOUTS.LIFECYCLE },
+      async () => {
+        env = await takeEnvironmentWithPublicProject();
+
+        const exitCode = await applyAddingAPublicPlugin(env);
+
+        expect(exitCode, `apply failed: ${prompt?.getOutput()}`).toBe(EXIT_CODES.SUCCESS);
+        expect(await claude.changes()).toStrictEqual([
+          "plugin marketplace add agents-inc/skills",
+          `plugin install ${PUBLIC_PLUGIN_SKILL}@${PUBLIC_MARKETPLACE_NAME} --scope project`,
+        ]);
+        expect((await loadConfigOrFail(env.projectDir)).skills).toStrictEqual([
+          publicSkillAsTheProjectListsIt(),
+          buildSkillConfig(PUBLIC_PLUGIN_SKILL, {
+            scope: "project",
+            origin: PUBLIC_MARKETPLACE_NAME,
+            displayName: catalogueDisplayName(PUBLIC_PLUGIN_SKILL),
+          }),
+        ]);
+        expect(await listFiles(skillsPath(env.projectDir))).toStrictEqual([PUBLIC_SKILL]);
+      },
+    );
   });
 });

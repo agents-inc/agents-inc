@@ -272,10 +272,15 @@ async function publishE2EMarketplace(sourceDir: string, marketplaceName: string)
 
 const SHARED_PLAIN_SEGMENT = "plain";
 
-// Written once by globalSetup and frozen; a spec writing into it fails at the write.
+// Written once per run by globalSetup and frozen; a spec writing into it fails at the write. Read
+// when used, not at import: modules outside a run (the hand-run bundle, unit specs) import it too.
 export const E2E_SOURCE: E2ESource = {
-  sourceDir: path.join(sharedSourcePath(), SHARED_PLAIN_SEGMENT),
-  tempDir: sharedSourcePath(),
+  get sourceDir() {
+    return path.join(sharedSourcePath(), SHARED_PLAIN_SEGMENT);
+  },
+  get tempDir() {
+    return sharedSourcePath();
+  },
 };
 
 export async function buildSharedE2ESourceInto(root: string): Promise<void> {

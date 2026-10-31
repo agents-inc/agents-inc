@@ -19,6 +19,7 @@ import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   cleanupFixture,
   cleanupTempDir,
+  compactedWithoutTempFolder,
   directoryExists,
   flattenCliOutput,
 } from "../helpers/test-utils.js";
@@ -151,9 +152,10 @@ describe("a Codex install talks about the host it is acting on", () => {
       const said = flattenCliOutput(output);
       expect(exitCode, said).toBe(EXIT_CODES.SUCCESS);
 
-      expect(said, "a Codex install must not name Claude's state directory").not.toContain(
-        CLAUDE_STATE_DIR,
-      );
+      expect(
+        compactedWithoutTempFolder(output),
+        "a Codex install must not name Claude's state directory",
+      ).not.toContain(CLAUDE_STATE_DIR);
       expect(said).toContain(path.join(env.projectDir, DIRS.CODEX_PROJECT_SKILLS));
     },
   );

@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CLI, type CLIResult } from "../fixtures/cli.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   runInitFrom,
   startSeedConfigStore,
@@ -17,14 +18,23 @@ import {
 } from "../helpers/tarball-source-server.js";
 import {
   cleanupTempDir,
+  createTempDir,
   directoryExists,
+  fileExists,
   flattenCliOutput,
   loadConfigOrFail,
   matchedAsWritten,
+  readInstallTree,
   readTreeSnapshot,
+  writeProjectConfig,
+  type InstallTree,
   type TreeSnapshotEntry,
 } from "../helpers/test-utils.js";
 import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import {
+  fetchRecordPath,
+  sanitizeSourceForCache,
+} from "../../src/cli/lib/loading/source-fetcher.js";
 
 import type { ProjectConfig } from "../../src/cli/types/index.js";
 import type { ProjectHandle } from "../fixtures/project-handle.js";
@@ -138,3 +148,97 @@ describe("compile against a marketplace it cannot reach", () => {
     });
   });
 });
+
+/** How a project names the marketplace the server serves, and what sends giget's download there. */
+type Naming = {
+  naming: string;
+  marketplaceOn: (server: TarballSourceServer) => string;
+  envFor: (server: TarballSourceServer) => Record<string, string>;
+};
+
+const NAMINGS: Naming[] = [
+  { naming: "by its URL", marketplaceOn: (server) => server.url, envFor: () => ({}) },
+  {
+    naming: "on GitHub",
+    marketplaceOn: () => "github:org/repo",
+    envFor: (server) => ({ GIGET_GITHUB_URL: new URL(server.url).origin }),
+  },
+];
+
+/**
+ * The saved copy lost the record beside it and the marketplace is closed for good: the next load
+ * reads what the earlier download left, for a git source as for a URL, and says the marketplace
+ * could not be reached. `search` stands for the load here, since what it lists is what the
+ * catalogue it read holds.
+ */
+describe.each(NAMINGS)(
+  "a load over a saved copy that lost its record, against a marketplace named $naming it cannot reach",
+  ({ marketplaceOn, envFor }) => {
+    let server: TarballSourceServer;
+    let projectDir: string;
+    let copyDir: string;
+    let recordOnDisk: boolean;
+    let copyBefore: InstallTree;
+    let configBefore: ProjectConfig;
+    let result: CLIResult;
+
+    beforeAll(async () => {
+      server = await startTarballSourceServer(E2E_SOURCE.sourceDir);
+      projectDir = await createTempDir();
+      await writeProjectConfig(projectDir, {
+        name: "lost-record-fixture",
+        marketplace: marketplaceOn(server),
+      });
+      const env = envFor(server);
+      const search = () => CLI.run(["search", E2E_SKILL.vitest.slug], { dir: projectDir }, { env });
+
+      const online = await search();
+      expect(online.exitCode, `the download failed: ${online.output}`).toBe(EXIT_CODES.SUCCESS);
+
+      // HOME is the project directory, so the saved copy is under it.
+      copyDir = path.join(
+        projectDir,
+        DIRS.SOURCE_CACHE_COPIES,
+        sanitizeSourceForCache(marketplaceOn(server)),
+      );
+      await rm(fetchRecordPath(copyDir));
+      await server.close();
+
+      recordOnDisk = await fileExists(fetchRecordPath(copyDir));
+      copyBefore = await readInstallTree(copyDir);
+      configBefore = await loadConfigOrFail(projectDir);
+      result = await search();
+    }, TIMEOUTS.SETUP_DUAL);
+
+    afterAll(async () => {
+      await server.close();
+      await cleanupTempDir(projectDir);
+    });
+
+    it("reads it, and says once that the marketplace could not be reached", async () => {
+      const said = flattenCliOutput(result.output);
+      const warning = `Could not reach ${marketplaceOn(server)} — ${STEP_TEXT.SOURCE_UNREACHABLE_CACHED}`;
+
+      expect(recordOnDisk, "subject guard: the copy lost its record").toBe(false);
+      expect(copyBefore.files, "subject guard: the copy is on disk").not.toStrictEqual({});
+      expect(result.exitCode, result.output).toBe(EXIT_CODES.SUCCESS);
+      expect(result.output, "the saved catalogue was read").toContain(E2E_SKILL.vitest.display);
+      expect(said, "a saved copy standing in for a marketplace nobody could ask is said").toContain(
+        warning,
+      );
+      expect(said, "said once, however many times the run loads the marketplace").not.toMatch(
+        new RegExp(`${matchedAsWritten(warning)}[\\s\\S]*${matchedAsWritten(warning)}`),
+      );
+      expect(said, "an unanswered check is no refusal").not.toContain(
+        STEP_TEXT.MARKETPLACE_REFUSED_CACHED,
+      );
+      expect(await loadConfigOrFail(projectDir), "the config is as it was").toStrictEqual(
+        configBefore,
+      );
+      expect(
+        await readInstallTree(copyDir),
+        "the copy holds what the earlier download left",
+      ).toStrictEqual(copyBefore);
+    });
+  },
+);

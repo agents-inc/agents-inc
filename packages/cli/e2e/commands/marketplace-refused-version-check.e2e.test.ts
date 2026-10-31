@@ -25,12 +25,17 @@ import {
   cleanupTempDir,
   configTsPath,
   createTempDir,
+  directoryExists,
   fileExists,
   flattenCliOutput,
   loadConfigOrFail,
   readTreeSnapshot,
 } from "../helpers/test-utils.js";
 import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import {
+  fetchRecordPath,
+  sanitizeSourceForCache,
+} from "../../src/cli/lib/loading/source-fetcher.js";
 
 import type { ProjectHandle } from "../fixtures/project-handle.js";
 
@@ -113,6 +118,18 @@ describe("init --from and edit --from against a marketplace that refuses its ver
   /** Who refused and with what, then that the saved copy stood in, as the unreachable warning says. */
   function refusedWarning(status: number): string {
     return `${server.url} ${STEP_TEXT.MARKETPLACE_REFUSED_CACHED} (${status}) — ${STEP_TEXT.SOURCE_UNREACHABLE_CACHED}`;
+  }
+
+  /** Leaves the saved copy as all a load has: its record and giget's tarball are removed. */
+  async function loseTheRecordAndGigetsTarball(): Promise<void> {
+    const copy = path.join(
+      env.fakeHome,
+      DIRS.SOURCE_CACHE_COPIES,
+      sanitizeSourceForCache(server.url),
+    );
+    expect(await directoryExists(copy), "subject guard: the saved copy is on disk").toBe(true);
+    await rm(fetchRecordPath(copy), { force: true });
+    await rm(path.join(env.fakeHome, DIRS.GIGET_CACHE), { recursive: true, force: true });
   }
 
   function launchEdit(project: Required<ProjectHandle>, id: string): InteractivePrompt {
@@ -415,6 +432,100 @@ describe("init --from and edit --from against a marketplace that refuses its ver
             "giget's saved tarball standing in for a refusing marketplace is said",
           ).toContain(refusedWarning(status));
           expect(await readConfigSkillIds(project.dir)).toContain(E2E_SKILL.react.id);
+        },
+      );
+    },
+  );
+
+  /**
+   * With the saved copy's record lost and giget's tarball gone, giget's refused download is the only
+   * answer a load gets, and it is taken as a refused version check is.
+   */
+  describe.each(REFUSALS)(
+    "once the marketplace answers $status over a saved copy that lost its record, with no tarball of giget's left",
+    ({ status, refusal }) => {
+      beforeAll(() => {
+        server.refuse(status);
+      });
+
+      it(
+        "init --from stops with an error naming the refusal, writes nothing and keeps the saved copy",
+        { timeout: TIMEOUTS.INSTALL },
+        async () => {
+          await loseTheRecordAndGigetsTarball();
+          await expectInitStopped({ status, refusal }, async (project) => ({
+            installations: await snapshotInstallations(project),
+            savedCopies: await snapshotSavedCopies(),
+          }));
+        },
+      );
+
+      it(
+        "compile keeps compiling from the saved copy, and says nothing of the refusal",
+        { timeout: TIMEOUTS.INSTALL },
+        async () => {
+          await loseTheRecordAndGigetsTarball();
+          const savedCopies = await snapshotSavedCopies();
+          const asked = server.requests.length;
+
+          const { exitCode, output } = await CLI.run(["compile"], installed);
+
+          expect(
+            server.requests.slice(asked),
+            "subject guard: giget's download was refused",
+          ).toContain(`GET ${status}`);
+          expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+          expect(output, "compile read the saved copy's catalogue").toContain(
+            STEP_TEXT.CONFIG_TYPES_REFRESHED,
+          );
+          const said = flattenCliOutput(output);
+          expect(said, "a refusal stops init --from and edit --from, not compile").not.toContain(
+            `${refusal} ${server.url}`,
+          );
+          expect(said, "compile says nothing of the saved copy standing in").not.toContain(
+            STEP_TEXT.SOURCE_UNREACHABLE_CACHED,
+          );
+          expect(
+            await snapshotSavedCopies(),
+            "compile keeps the saved copy, and writes it no record",
+          ).toStrictEqual(savedCopies);
+        },
+      );
+    },
+  );
+
+  describe.each(KEPT_OVER)(
+    "once the marketplace answers %i over a saved copy that lost its record, with no tarball of giget's left",
+    (status) => {
+      beforeAll(() => {
+        server.refuse(status);
+      });
+
+      it(
+        "init --from installs from the saved copy and says the marketplace refused",
+        { timeout: TIMEOUTS.INSTALL },
+        async () => {
+          await loseTheRecordAndGigetsTarball();
+          const project = await freshProject();
+          const savedCopies = await snapshotSavedCopies();
+          const asked = server.requests.length;
+
+          const { exitCode, output } = await runInitFrom(store, INSTALL_ID, project, server.url);
+
+          expect(
+            server.requests.slice(asked),
+            "subject guard: giget's download was refused",
+          ).toContain(`GET ${status}`);
+          expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+          expect(
+            flattenCliOutput(output),
+            "a saved copy standing in for a refusing marketplace is said",
+          ).toContain(refusedWarning(status));
+          expect(await readConfigSkillIds(project.dir)).toContain(E2E_SKILL.react.id);
+          expect(
+            await snapshotSavedCopies(),
+            "init keeps the saved copy, and writes it no record",
+          ).toStrictEqual(savedCopies);
         },
       );
     },

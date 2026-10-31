@@ -1,9 +1,10 @@
-import { mkdir } from "fs/promises";
+import { appendFile, mkdir } from "fs/promises";
 import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { hostFor } from "../../src/cli/lib/hosts/host-for.js";
-import type { PluginHost } from "../../src/cli/lib/hosts/plugin-host.js";
+import type { HostCallOptions, PluginHost } from "../../src/cli/lib/hosts/plugin-host.js";
+import { CLI } from "../fixtures/cli.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   createE2EPluginSource,
@@ -13,16 +14,41 @@ import {
   cleanupFixture,
   cleanupIsolatedClaudeHome,
   cleanupTempDir,
+  codexHome,
   createIsolatedClaudeHome,
   createTempDir,
   type IsolatedClaudeHome,
 } from "../helpers/test-utils.js";
-import { DIRS, TIMEOUTS } from "../pages/constants.js";
+import { DIRS, EXIT_CODES, FILES, SOURCE_PATHS, TIMEOUTS } from "../pages/constants.js";
 
 // The plugin-host contract against the real `claude` binary: the only layer that notices when Claude
-// rewords the not-found message `uninstallPlugin` classifies. Skipped where `claude` is absent.
+// rewords the not-found message `uninstallPlugin` classifies. Skipped where `claude` is absent. The
+// update cases run against the pinned `codex` as well, which is never skipped.
 
 const NEVER_INSTALLED = "never-installed-plugin@never-registered-marketplace";
+
+const UPDATED_SKILL = E2E_SKILL.react.id;
+
+/** What a first build gives a plugin, and what a build after a content change gives it. */
+const INSTALLED_VERSION = "1.0.0";
+const OFFERED_VERSION = "2.0.0";
+
+const SOURCE_EDIT = "## A section added to the marketplace after installation";
+
+/** Edits the skill in the source, then rebuilds, so the marketplace offers its next version. */
+async function offerANewVersionOf(fixture: E2EPluginSource, skillId: string): Promise<void> {
+  await appendFile(
+    path.join(fixture.sourceDir, SOURCE_PATHS.SKILLS_DIR, skillId, FILES.SKILL_MD),
+    `\n\n${SOURCE_EDIT}\n`,
+  );
+  for (const build of [
+    ["build", "plugins"],
+    ["build", "marketplace"],
+  ]) {
+    const built = await CLI.run(build, { dir: fixture.sourceDir });
+    expect(built.exitCode, `${build.join(" ")} failed: ${built.output}`).toBe(EXIT_CODES.SUCCESS);
+  }
+}
 
 const host: PluginHost = hostFor("claude");
 const claudeAvailable = await host.isAvailable();
@@ -146,5 +172,120 @@ describe.skipIf(!claudeAvailable)("the Claude host against the real binary", () 
         "the second removal is the one uninstall must not count, and it is the same call that returned removed a moment ago",
       ).toBe("absent");
     });
+  });
+});
+
+// Both hosts install a plugin into a directory named for its version, so that name is the version.
+describe.skipIf(!claudeAvailable)(
+  "the Claude host updating a plugin against the real binary",
+  () => {
+    let fixture: E2EPluginSource;
+    let isolated: IsolatedClaudeHome;
+    let projectTempDir: string;
+    let projectDir: string;
+    let pluginRef: string;
+    let pinned: HostCallOptions;
+
+    beforeAll(async () => {
+      fixture = await createE2EPluginSource({ owned: true });
+      isolated = await createIsolatedClaudeHome();
+      pinned = { configDir: isolated.configDir };
+      projectTempDir = await createTempDir();
+      projectDir = path.join(projectTempDir, "project");
+      await mkdir(path.join(projectDir, DIRS.CLAUDE), { recursive: true });
+      pluginRef = `${UPDATED_SKILL}@${fixture.marketplaceName}`;
+
+      await host.addMarketplace(fixture.sourceDir, pinned);
+      await host.installPlugin(pluginRef, "project", projectDir, pinned);
+      await offerANewVersionOf(fixture, UPDATED_SKILL);
+    }, TIMEOUTS.SETUP);
+
+    afterAll(async () => {
+      await cleanupTempDir(fixture.tempDir);
+      await cleanupTempDir(projectTempDir);
+      await cleanupIsolatedClaudeHome(isolated);
+    });
+
+    it("holds the plugin at the version it was installed at, though a newer one is on offer", async () => {
+      expect(
+        (await host.listPlugins(projectDir, pinned)).map((plugin) => [
+          plugin.pluginKey,
+          path.basename(plugin.installPath),
+        ]),
+      ).toStrictEqual([[pluginRef, INSTALLED_VERSION]]);
+    });
+
+    it("keeps it there when only the marketplace listing is refreshed", async () => {
+      await host.refreshMarketplace(fixture.marketplaceName, pinned);
+
+      expect(
+        (await host.listPlugins(projectDir, pinned)).map((plugin) => [
+          plugin.pluginKey,
+          path.basename(plugin.installPath),
+        ]),
+        "Claude's marketplace refresh moves no installed plugin, which is why the host has a member that does",
+      ).toStrictEqual([[pluginRef, INSTALLED_VERSION]]);
+    });
+
+    it("moves it to the version the marketplace now offers once it is updated", async () => {
+      await host.updatePlugin(pluginRef, "project", projectDir, pinned);
+
+      expect(
+        (await host.listPlugins(projectDir, pinned)).map((plugin) => [
+          plugin.pluginKey,
+          path.basename(plugin.installPath),
+        ]),
+        "the update must reach the installation the caller pinned, at the scope the plugin holds",
+      ).toStrictEqual([[pluginRef, OFFERED_VERSION]]);
+    });
+  },
+);
+
+describe("the Codex host updating a plugin against the pinned binary", () => {
+  const codex: PluginHost = hostFor("codex");
+
+  let fixture: E2EPluginSource;
+  let home: string;
+  let projectDir: string;
+  let pluginRef: string;
+  let pinned: HostCallOptions;
+
+  beforeAll(async () => {
+    fixture = await createE2EPluginSource({ owned: true });
+    home = await createTempDir();
+    pinned = { configDir: codexHome(home) };
+    projectDir = path.join(home, "project");
+    await mkdir(projectDir, { recursive: true });
+    pluginRef = `${UPDATED_SKILL}@${fixture.marketplaceName}`;
+
+    await codex.addMarketplace(fixture.sourceDir, pinned);
+    await codex.installPlugin(pluginRef, "global", projectDir, pinned);
+    await offerANewVersionOf(fixture, UPDATED_SKILL);
+  }, TIMEOUTS.SETUP);
+
+  afterAll(async () => {
+    await cleanupTempDir(fixture.tempDir);
+    await cleanupTempDir(home);
+  });
+
+  it("holds the plugin at the version it was installed at, though a newer one is on offer", async () => {
+    expect(
+      (await codex.listPlugins(projectDir, pinned)).map((plugin) => [
+        plugin.pluginKey,
+        path.basename(plugin.installPath),
+      ]),
+    ).toStrictEqual([[pluginRef, INSTALLED_VERSION]]);
+  });
+
+  it("moves it to the version the marketplace now offers once it is updated", async () => {
+    await codex.updatePlugin(pluginRef, "global", projectDir, pinned);
+
+    expect(
+      (await codex.listPlugins(projectDir, pinned)).map((plugin) => [
+        plugin.pluginKey,
+        path.basename(plugin.installPath),
+      ]),
+      "Codex has no update verb, so this is the one place that shows its stand-in really installs the newer version",
+    ).toStrictEqual([[pluginRef, OFFERED_VERSION]]);
   });
 });

@@ -7,6 +7,7 @@ import {
   cleanupTempDir,
   directoryExists,
   fileExists,
+  flattenCliOutput,
   loadConfigOrFail,
   readAgentEntriesFor,
   skillsPath,
@@ -149,11 +150,15 @@ describe("a project-only sub-agent moved to global scope", () => {
         },
       ]);
 
+      const said = flattenCliOutput(editOutput);
+      expect(said).toContain(
+        `Skill '${E2E_SKILL.hono.display}' ${STEP_TEXT.SKILL_ASSIGNED_TO_NO_AGENT}`,
+      );
+      expect(said).toContain(
+        `${STEP_TEXT.STACK_PAIR_DROPPED_BY_SCOPE} '${E2E_SKILL.hono.display}'`,
+      );
       // The sub-agent is quoted: its bare name also matches the change summary row.
-      expect(editOutput).toContain(STEP_TEXT.SKILL_ASSIGNED_TO_NO_AGENT);
-      expect(editOutput).toContain(E2E_SKILL.hono.id);
-      expect(editOutput).toContain(STEP_TEXT.STACK_PAIR_DROPPED_BY_SCOPE);
-      expect(editOutput).toContain(`'${API_DEVELOPER}'`);
+      expect(said).toContain(`'${API_DEVELOPER}'`);
     },
   );
 });

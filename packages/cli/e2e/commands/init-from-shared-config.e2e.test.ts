@@ -22,7 +22,7 @@ import {
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
 import { PINNED_WIRE_VERSION, ejectedGlobalSkill } from "../fixtures/seed-wire-contract.js";
-import { flattenCliOutput } from "../helpers/test-utils.js";
+import { compactCliOutput, flattenCliOutput } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";
@@ -143,9 +143,11 @@ describe("init --from <id>", () => {
     );
 
     expect(exitCode, output).toBe(EXIT_CODES.ERROR);
-    // Flattened, because the refusal wraps at the width; it is new, so this can fail.
-    expect(flattenCliOutput(output)).toContain(
-      `The marketplace contains invalid characters: "${sourceDir} Nothing is removed."`,
+    // Compacted: the refusal wraps at the width, and a long path breaks mid-word.
+    expect(compactCliOutput(output)).toContain(
+      compactCliOutput(
+        `The marketplace contains invalid characters: "${sourceDir} Nothing is removed."`,
+      ),
     );
     await expectNoSourceFolder(tempDir, "a marketplace written across lines is refused first");
   });

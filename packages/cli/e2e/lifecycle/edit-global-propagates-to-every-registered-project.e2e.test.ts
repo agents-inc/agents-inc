@@ -15,9 +15,9 @@ import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   agentsPath,
   cleanupTempDir,
+  compactCliOutput,
   configTypesTsPath,
   createPermissionsFile,
-  flattenCliOutput,
   listFiles,
   loadConfigOrFail,
   readTestFile,
@@ -195,10 +195,11 @@ describe("a global edit propagates to every registered project, from nothing", (
   });
 
   it("names both registered projects the run recompiles", () => {
-    const said = flattenCliOutput(editOutput);
+    // Compacted: a path longer than the terminal wraps onto the next row.
+    const said = compactCliOutput(editOutput);
     const named = (dir: string): RegExp =>
       new RegExp(
-        `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_REGISTERED_RECOMPILED)}[\\s\\S]*${matchedAsWritten(realpathSync(dir))}`,
+        `${matchedAsWritten(compactCliOutput(STEP_TEXT.SHARED_CONFIG_REGISTERED_RECOMPILED))}[\\s\\S]*${matchedAsWritten(compactCliOutput(realpathSync(dir)))}`,
       );
 
     expect(said, "the confirm must name the first registered project").toMatch(

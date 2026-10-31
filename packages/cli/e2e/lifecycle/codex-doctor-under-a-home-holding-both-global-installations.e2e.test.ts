@@ -1,4 +1,5 @@
 import path from "path";
+import { writeFile } from "fs/promises";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { CLI } from "../fixtures/cli.js";
@@ -15,6 +16,7 @@ import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-con
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
+  compactCliOutput,
   directoryExists,
   fileExists,
   flattenCliOutput,
@@ -31,6 +33,7 @@ import {
   TIMEOUTS,
 } from "../pages/constants.js";
 import { PROVIDERS, type Provider } from "../../src/cli/consts.js";
+import { renderUnparseableConfigTs } from "../../src/cli/lib/__tests__/factories/unloadable-config-factories.js";
 import {
   buildSeedExternalSkill,
   buildSeedPayload,
@@ -42,6 +45,11 @@ import {
  * skill no marketplace offers: doctor checks the project beside the global installation of its own
  * provider, the one it inherits, so it finds that installation's carried skill where it was copied.
  * Claude is the control, being also the provider a home holding both would otherwise be read as.
+ * Once `uninstall --provider` at home removes the project's own provider's global, doctor checks
+ * the project with no global installation, and names nothing of the other provider's. Nor does it
+ * read the other's global config: doctor goes on where that config cannot load, naming it nowhere.
+ *
+ * CLI-991.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -94,8 +102,8 @@ const DOCTOR_RUNS = [
   {
     at: "with no terminal",
     run: async (project: ProjectHandle) => {
-      const { exitCode, stdout } = await CLI.run(["doctor"], project);
-      return { exitCode, said: stdout, prompt: undefined };
+      const { exitCode, output } = await CLI.run(["doctor"], project);
+      return { exitCode, said: output, prompt: undefined };
     },
   },
   {
@@ -117,6 +125,10 @@ const EACH_PROVIDER_AT_EACH_TERMINAL = PROVIDERS.flatMap((provider) =>
 
 function otherThan(provider: Provider): Provider[] {
   return PROVIDERS.filter((candidate) => candidate !== provider);
+}
+
+function configIn(root: string, provider: Provider): string {
+  return path.join(root, SOURCE_FOLDER[provider], FILES.CONFIG_TS);
 }
 
 describe("doctor in a project under a home holding a Claude and a Codex global installation", () => {
@@ -230,6 +242,51 @@ describe("doctor in a project under a home holding a Claude and a Codex global i
     return project;
   }
 
+  /** As a user removes one provider's global installation: `uninstall --provider` at home. */
+  async function uninstallTheGlobalOf(provider: Provider): Promise<void> {
+    if (!env) throw new Error("no test environment: install one first");
+    const home = env.fakeHome;
+    const uninstalled = await CLI.run(["uninstall", "--yes", "--provider", provider], {
+      dir: home,
+      globalHome: home,
+    });
+    expect(uninstalled.exitCode, flattenCliOutput(uninstalled.output)).toBe(EXIT_CODES.SUCCESS);
+
+    // Subject guards: the home now holds the other provider's global installation alone.
+    expect(
+      await fileExists(path.join(home, SOURCE_FOLDER[provider], FILES.CONFIG_TS)),
+      `the ${provider} global installation is gone`,
+    ).toBe(false);
+    for (const other of otherThan(provider)) {
+      expect(
+        await fileExists(path.join(home, SOURCE_FOLDER[other], FILES.CONFIG_TS)),
+        `the ${other} global installation stays`,
+      ).toBe(true);
+    }
+  }
+
+  /** Left in place but unloadable, so a run that reads it says so. */
+  async function breakTheGlobalConfigsOtherThan(provider: Provider): Promise<void> {
+    if (!env) throw new Error("no test environment: install one first");
+    for (const other of otherThan(provider)) {
+      await writeFile(configIn(env.fakeHome, other), renderUnparseableConfigTs());
+    }
+  }
+
+  function expectNothingOfTheOtherGlobalsConfig(provider: Provider, said: string): void {
+    if (!env) throw new Error("no test environment: install one first");
+    for (const other of otherThan(provider)) {
+      expect(
+        compactCliOutput(said),
+        `nothing names the ${other} global's config, which this project does not inherit`,
+      ).not.toContain(compactCliOutput(configIn(env.fakeHome, other)));
+    }
+    expect(
+      flattenCliOutput(said),
+      "no global installation's config is reported unreadable",
+    ).not.toContain(STEP_TEXT.CONFIG_UNREADABLE_GLOBAL);
+  }
+
   it.each(EACH_PROVIDER_AT_EACH_TERMINAL)(
     "checks the $provider project beside its own provider's global installation, exiting 0 $at",
     { timeout: TIMEOUTS.LIFECYCLE },
@@ -251,6 +308,74 @@ describe("doctor in a project under a home holding a Claude and a Codex global i
         ),
       );
       expect(said, "no row reports a skill missing").not.toContain("(not found");
+      expect(exitCode, said).toBe(EXIT_CODES.SUCCESS);
+    },
+  );
+
+  it.each(EACH_PROVIDER_AT_EACH_TERMINAL)(
+    "checks the $provider project with no global installation once its provider's is uninstalled, naming nothing of the other's, exiting 0 $at",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async ({ provider, run }) => {
+      const project = await installBothAtHomeThenTheProjectOn(provider);
+      await uninstallTheGlobalOf(provider);
+
+      const doctor = await run(project);
+      prompt = doctor.prompt;
+      const { exitCode, said } = doctor;
+
+      expect(said, "the project's own installation is checked").toContain(
+        `This project is on ${SOURCE_FOLDER[provider]}/`,
+      );
+      expect(said, "the project's config is the only one to validate").toContain(
+        STEP_TEXT.DOCTOR_ONE_CONFIG_VALIDATED,
+      );
+      expect(said, "no global installation is named").not.toContain(
+        "The global installation is on",
+      );
+      for (const other of otherThan(provider)) {
+        expect(said, `nothing names the ${other} global's carried skill`).not.toContain(
+          CARRIED[other].id,
+        );
+      }
+      expect(exitCode, said).toBe(EXIT_CODES.SUCCESS);
+    },
+  );
+
+  it.each(EACH_PROVIDER_AT_EACH_TERMINAL)(
+    "checks the $provider project although the other provider's global config does not load, exiting 0 $at",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async ({ provider, run }) => {
+      const project = await installBothAtHomeThenTheProjectOn(provider);
+      await breakTheGlobalConfigsOtherThan(provider);
+
+      const doctor = await run(project);
+      prompt = doctor.prompt;
+      const { exitCode, said } = doctor;
+
+      expect(said, "the global installation named is the one the project inherits").toContain(
+        `The global installation is on ${SOURCE_FOLDER[provider]}/`,
+      );
+      expectNothingOfTheOtherGlobalsConfig(provider, said);
+      expect(exitCode, said).toBe(EXIT_CODES.SUCCESS);
+    },
+  );
+
+  it.each(EACH_PROVIDER_AT_EACH_TERMINAL)(
+    "checks the $provider project although the other provider's global config does not load, once its provider's global installation is uninstalled, exiting 0 $at",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async ({ provider, run }) => {
+      const project = await installBothAtHomeThenTheProjectOn(provider);
+      await uninstallTheGlobalOf(provider);
+      await breakTheGlobalConfigsOtherThan(provider);
+
+      const doctor = await run(project);
+      prompt = doctor.prompt;
+      const { exitCode, said } = doctor;
+
+      expect(said, "the project's own installation is checked").toContain(
+        `This project is on ${SOURCE_FOLDER[provider]}/`,
+      );
+      expectNothingOfTheOtherGlobalsConfig(provider, said);
       expect(exitCode, said).toBe(EXIT_CODES.SUCCESS);
     },
   );

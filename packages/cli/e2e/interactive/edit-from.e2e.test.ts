@@ -6,6 +6,7 @@ import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import "../matchers/setup.js";
 import {
   cleanupTempDir,
+  compactCliOutput,
   createLocalSkill,
   FORKED_FROM_METADATA,
   listFiles,
@@ -40,6 +41,7 @@ import {
   STEP_TEXT,
   TIMEOUTS,
   UNCHANGED_MARKER,
+  idNamesAnotherMarketplace,
   panelRow,
 } from "../pages/constants.js";
 import {
@@ -109,10 +111,11 @@ describe("edit --from <id> interactive", () => {
   }
 
   /** Names React alone, so applying it removes Vitest. */
-  function publishReactOnly(id: string): void {
+  function publishReactOnly(id: string, marketplace?: string): void {
     store.publish(
       id,
       buildSeedPayload({
+        ...(marketplace !== undefined && { marketplace }),
         skills: {
           [E2E_SKILL.react.id]: buildSeedSkill({
             scope: "project",
@@ -198,8 +201,40 @@ describe("edit --from <id> interactive", () => {
       const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
 
       expect(exitCode).toBe(EXIT_CODES.CANCELLED);
+      expect(
+        prompt.getOutput().endsWith(`\n${STEP_TEXT.EDIT_CANCELLED}`),
+        `a declined apply ends on its one cancel line: ${prompt.getOutput()}`,
+      ).toBe(true);
       // Nothing at all moved: a decline must not rewrite config.ts or recompile.
       expect(await readTreeSnapshot(projectDir)).toStrictEqual(before);
+    });
+  });
+
+  describe("an id naming a marketplace", () => {
+    const ANOTHER_MARKETPLACE = "github:a-teammate/their-skills";
+
+    it("says, before asking, that the skills of an id naming another marketplace come from this installation's", async () => {
+      const projectDir = await takeProject();
+      publishReactOnly(APPLY_ID, ANOTHER_MARKETPLACE);
+
+      prompt = launch(APPLY_ID, projectDir);
+      await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM, TIMEOUTS.WIZARD_LOAD);
+
+      expect(compactCliOutput(prompt.getOutput())).toContain(
+        compactCliOutput(idNamesAnotherMarketplace(ANOTHER_MARKETPLACE, sourceDir)),
+      );
+    });
+
+    it("says nothing of a marketplace for an id naming this installation's own", async () => {
+      const projectDir = await takeProject();
+      publishReactOnly(APPLY_ID, sourceDir);
+
+      prompt = launch(APPLY_ID, projectDir);
+      await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM, TIMEOUTS.WIZARD_LOAD);
+
+      const written = compactCliOutput(prompt.getRawOutput());
+      expect(written).toContain(compactCliOutput(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM));
+      expect(written).not.toContain(compactCliOutput(STEP_TEXT.SHARED_CONFIG_MARKETPLACE_USED));
     });
   });
 

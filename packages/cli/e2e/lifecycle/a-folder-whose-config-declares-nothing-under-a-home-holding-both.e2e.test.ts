@@ -36,20 +36,15 @@ import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/projec
  * (configuration/providers.md). The state is reached through real commands only: `eject` writes
  * exactly this config into a project with no installation of its own.
  *
- * CLI-971, measured against the built CLI: the refusal and `list`'s line counted the project's
- * config as its installation, while the command itself skipped it and read HOME by roster order.
- * `compile` rewrote the Claude installation, `edit --from` applied a configuration to it (at a
- * terminal, removing a skill from it), `list` and `doctor` reported it with nothing about the
- * Codex one, `share` and `edit` said no installation existed, and `uninstall --yes` removed the
- * project's config, leaving HOME's two as they were. A project holding nothing at all, under the
- * same HOME, is refused by each of them. Each refusal is paired with the same command under
- * `--provider`, which must not be refused. The tree snapshot behind "nothing changed" was seen red
- * in compile's case, with HOME's Claude agent file back on disk.
+ * A project holding nothing at all, under the same HOME, is refused by each of them; each refusal
+ * is paired with the same command under `--provider`, which must not be refused.
  *
- * Owner 2026-10-24 (card q-cli-empty-config-counts, "Never count it, and say so"): such a config is
- * never the project's installation, and a command run there first prints one line saying so, on
- * stderr as the old-`.claude-src/` line is. `uninstall` is held to the refusal and to removing
- * nothing; whether it prints the line waits on the owner, as its words are not true of it.
+ * Owner 2026-10-24 ("Never count it, and say so"): such a config is never the project's
+ * installation, and a command run there first prints one line saying so, on stderr as the
+ * old-`.claude-src/` line is. Owner 2026-10-26 ("A line worded for each"): `uninstall`, `eject`,
+ * `init` and `search` print a line of their own in its place, true for each; `uninstall`'s says
+ * there is nothing to remove, so only a run finding nothing prints it. Under the refusal, which
+ * comes first, no line is pinned.
  */
 
 const SEED_ID = "DeclNone";
@@ -61,10 +56,7 @@ const COMPILED_AGENT = E2E_AGENT["web-developer"].name;
 
 const NAME_EITHER = "--provider <claude|codex>";
 
-/** Rendered text, word for word as the owner chose it; the refusal beside it is a literal too. */
-const SAYS_SO =
-  "This project's config declares nothing, so this works on your global installation.\n";
-
+/** The refusal is a literal: it composes the subject a run passes. */
 function refusal(home: string, subject: string): string {
   return `${home} holds 2 installations — claude and codex — so ${subject} cannot tell which one you mean. Name it with ${NAME_EITHER}. Nothing has been changed.`;
 }
@@ -132,14 +124,20 @@ describe("a folder whose config declares nothing, under a HOME holding a Claude 
     return CLI.run([...args], project, { env: { AGENTS_INC_API_URL: store.url } });
   }
 
-  function expectTheLineFirst({ stderr }: CLIResult): void {
+  function expectTheLineFirst(
+    { stderr }: CLIResult,
+    line: string = STEP_TEXT.DECLARES_NOTHING_GLOBAL_STANDS_IN,
+  ): void {
     // execa strips one final newline, which is the line's own when nothing is written after it.
     const printed = `${stderr}\n`;
+    const lineAsPrinted = `${line}\n`;
     expect(
-      printed.slice(0, SAYS_SO.length),
+      printed.slice(0, lineAsPrinted.length),
       `stderr opens with the one line saying the project's config declares nothing:\n${stderr}`,
-    ).toBe(SAYS_SO);
-    expect(printed.slice(SAYS_SO.length), "the line is printed once").not.toContain(SAYS_SO);
+    ).toBe(lineAsPrinted);
+    expect(printed.slice(lineAsPrinted.length), "the line is printed once").not.toContain(
+      STEP_TEXT.DECLARES_NOTHING_OPENING,
+    );
   }
 
   async function expectRefusedNamingBoth(
@@ -264,12 +262,13 @@ describe("a folder whose config declares nothing, under a HOME holding a Claude 
   );
 
   it(
-    "uninstall naming a provider is not refused, and removes nothing at HOME or in the project",
+    "uninstall naming a provider is not refused, and removes nothing at HOME or in the project, after its own line",
     { timeout: TIMEOUTS.INSTALL },
     async () => {
       const before = await readTreeSnapshot(home);
 
-      const { exitCode, stdout, output } = await run(["uninstall", "--yes", ...PROVIDER_CLAUDE]);
+      const result = await run(["uninstall", "--yes", ...PROVIDER_CLAUDE]);
+      const { exitCode, stdout, output } = result;
 
       expect(
         await readTreeSnapshot(home),
@@ -279,6 +278,64 @@ describe("a folder whose config declares nothing, under a HOME holding a Claude 
       expect(flattenCliOutput(stdout), "as from a project holding no installation").toContain(
         STEP_TEXT.UNINSTALL_NOT_INSTALLED,
       );
+      expectTheLineFirst(result, STEP_TEXT.DECLARES_NOTHING_UNINSTALL);
+    },
+  );
+
+  /** The partials the setup ejected are already in the project, so this run copies none. */
+  it(
+    "eject naming a provider works on the project, leaving HOME's two installations as they were, after its own line",
+    { timeout: TIMEOUTS.INSTALL },
+    async () => {
+      const before = await readTreeSnapshot(home);
+
+      const result = await run(["eject", "agent-partials", ...PROVIDER_CLAUDE]);
+      const { exitCode, output } = result;
+
+      expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
+      expect(
+        compactCliOutput(output),
+        "the run worked on this project's partials, which it found already there",
+      ).toContain(compactCliOutput(path.join(project.dir, DIRS.SOURCE_CLAUDE, DIRS.AGENTS)));
+      expect(
+        await readTreeSnapshot(home),
+        "neither of HOME's installations, nor the partials already in the project, change",
+      ).toStrictEqual(before);
+      expectTheLineFirst(result, STEP_TEXT.DECLARES_NOTHING_EJECT);
+    },
+  );
+
+  it(
+    "init shows what it shows from a project with no installation, after its own line",
+    { timeout: TIMEOUTS.INSTALL },
+    async () => {
+      const before = await readTreeSnapshot(home);
+
+      const result = await run(["init"]);
+      const { exitCode, output } = result;
+
+      expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
+      expect(await readTreeSnapshot(home), "a bare init writes nothing").toStrictEqual(before);
+      expectTheLineFirst(result, STEP_TEXT.DECLARES_NOTHING_INIT);
+    },
+  );
+
+  /** Eject wrote the project's config naming the marketplace HOME read, so search reads that one. */
+  it(
+    "search reads the marketplace the project's config names, after its own line",
+    { timeout: TIMEOUTS.INSTALL },
+    async () => {
+      const before = await readTreeSnapshot(home);
+
+      const result = await run(["search", "react"]);
+      const { exitCode, stdout, output } = result;
+
+      expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
+      expect(stdout, "subject guard: search found what it searched for").toContain(
+        'matching "react"\n',
+      );
+      expect(await readTreeSnapshot(home), "search writes nothing").toStrictEqual(before);
+      expectTheLineFirst(result, STEP_TEXT.DECLARES_NOTHING_SEARCH);
     },
   );
 

@@ -1,6 +1,8 @@
 import { execa } from "execa";
+import { realpathSync } from "fs";
 import { mkdir, readdir, readFile, realpath, stat, writeFile } from "fs/promises";
 import { stripVTControlCharacters } from "node:util";
+import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import { z } from "zod";
@@ -35,6 +37,7 @@ import {
 } from "../../src/cli/lib/__tests__/helpers/golden-tree.js";
 import { writeTestPluginManifest } from "../../src/cli/lib/__tests__/helpers/disk-writers.js";
 import { matchedAsWritten } from "../../src/cli/lib/__tests__/helpers/matched-as-written.js";
+import { compactCliOutput } from "../../src/cli/lib/__tests__/helpers/flatten-cli-output.js";
 import { buildClaudeTrustState } from "../../src/cli/lib/__tests__/factories/claude-settings-factories.js";
 import { buildProjectConfig } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import {
@@ -214,8 +217,6 @@ export async function recordInstallSource(baseDirs: string[], source: string): P
   );
 }
 
-// The spread-import form (`globalImportPath`) is not offered: its reread holds the imported global's
-// fields as the project's own, so the round-trip guard below could never accept it.
 type InlinedGlobalOptions = { isProjectConfig: true; globalConfig: ProjectConfig };
 
 // Written through the product's own writer, so specs assert on the shape the CLI really emits.
@@ -314,6 +315,16 @@ export async function writeRetiredSourceFolder(root: string): Promise<void> {
 
 export function stripAnsi(text: string): string {
   return stripVTControlCharacters(text);
+}
+
+/**
+ * Leaves out the temp folder, so a negative about a folder name reads only what the CLI named. Both
+ * spellings, since not every fixture resolves a temp folder that is a link.
+ */
+export function compactedWithoutTempFolder(output: string): string {
+  return compactCliOutput(output)
+    .replaceAll(compactCliOutput(realpathSync(os.tmpdir())), "<tmp>")
+    .replaceAll(compactCliOutput(os.tmpdir()), "<tmp>");
 }
 
 // HOME defaults to a fresh temp dir (removed after the run), never cwd, so a project command is not

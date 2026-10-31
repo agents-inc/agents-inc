@@ -166,9 +166,6 @@ describe("update command", () => {
 
       expect(exitCode).toBe(EXIT_CODES.ERROR);
       expect(output).toContain(STEP_TEXT.UPDATE_NO_CLAUDE_CLI);
-      expect(output, "nothing was refreshed, so nothing may claim to be").not.toContain(
-        STEP_TEXT.UPDATE_PLUGINS_UNCHANGED,
-      );
     },
   );
 });

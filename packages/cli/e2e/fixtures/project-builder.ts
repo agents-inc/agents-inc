@@ -1,9 +1,11 @@
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import {
+  configTypesTsPath,
   createTempDir,
   createLocalSkill,
   createPermissionsFile,
+  loadConfigOrFail,
   sourceFolderIn,
   writeProjectConfig,
   writeAgentStubs,
@@ -21,11 +23,28 @@ import {
   buildSkillConfigs,
 } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { buildClaudeSettings } from "../../src/cli/lib/__tests__/factories/claude-settings-factories.js";
-import { sa } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
+import { createMockSkill, sa } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
+import { buildProjectTypesExtras } from "../../src/cli/lib/config-gate/propagate.js";
+import {
+  generateConfigTypesSource,
+  generateProjectConfigTypesSource,
+} from "../../src/cli/lib/configuration/config-types-writer.js";
+import {
+  activeAgentNames,
+  activeProjectAgentNames,
+} from "../../src/cli/lib/configuration/scope-predicates.js";
+import { matrix } from "../../src/cli/lib/matrix/matrix-provider.js";
+import { AGENT_NAMES } from "../../src/cli/types/agents.js";
 import { E2E_SKILL } from "./expected-values.js";
 import { pluginKeyFor } from "./plugin-install-state.js";
 import { DIRS, FILES } from "../pages/constants.js";
-import type { AgentName, Domain } from "../../src/cli/types/index.js";
+import type {
+  AgentName,
+  Domain,
+  MergedSkillsMatrix,
+  SkillId,
+  SkillSlug,
+} from "../../src/cli/types/index.js";
 import type { ProjectHandle } from "./project-handle.js";
 
 export type DualScopeHandle = {
@@ -192,6 +211,71 @@ export const MINIMAL_PROJECT_AGENT_NAMES = [
 // Deliberately outside the `SkillId` union.
 export const CUSTOM_PROJECT_SKILL_ID = "web-custom-e2e-widget";
 
+/** The built-in catalogue, with the custom skill seated as compile seats it from its metadata. */
+function catalogueSeatingTheCustomSkill(): MergedSkillsMatrix {
+  // Boundary casts: a custom skill's id and slug are outside the generated unions.
+  const customSkill = createMockSkill(CUSTOM_PROJECT_SKILL_ID as SkillId, {
+    category: "web-tooling",
+    slug: "e2e-widget" as SkillSlug,
+    custom: true,
+  });
+  return { ...matrix, skills: { ...matrix.skills, [customSkill.id]: customSkill } };
+}
+
+/** As compile writes them at home: narrowed to the config, with no extras. */
+async function writeGlobalConfigTypes(globalHome: string): Promise<void> {
+  const config = await loadConfigOrFail(globalHome);
+  await writeFile(
+    configTypesTsPath(globalHome),
+    generateConfigTypesSource(matrix, [...AGENT_NAMES], [], undefined, config),
+  );
+}
+
+/** As compile writes them in a project whose HOME holds no global config-types.ts. */
+async function writeStandaloneProjectConfigTypes(
+  projectDir: string,
+  catalogue: MergedSkillsMatrix,
+): Promise<void> {
+  const config = await loadConfigOrFail(projectDir);
+  await writeFile(
+    configTypesTsPath(projectDir),
+    generateConfigTypesSource(
+      catalogue,
+      [...AGENT_NAMES],
+      [],
+      buildProjectTypesExtras(config, catalogue),
+      config,
+    ),
+  );
+}
+
+/** As compile writes them in a project whose HOME is `globalHome`: each union extends the global's. */
+async function writeProjectConfigTypesExtendingGlobal(
+  projectDir: string,
+  globalHome: string,
+): Promise<void> {
+  const config = await loadConfigOrFail(projectDir);
+  const extras = buildProjectTypesExtras(config, matrix);
+
+  await writeFile(
+    configTypesTsPath(projectDir),
+    generateProjectConfigTypesSource({
+      globalTypesImportPath: posixPathFrom(sourceFolderIn(projectDir), sourceFolderIn(globalHome)),
+      projectSkillIds: extras.extraSkillIds,
+      projectAgentNames: extras.extraAgentNames,
+      projectDomains: extras.extraDomains,
+      projectCategories: extras.extraCategories,
+      selectedAgentNames: activeAgentNames(config.agents),
+      projectScopedAgentNames: activeProjectAgentNames(config.agents),
+    }),
+  );
+}
+
+// An import specifier, so `/` on every platform.
+function posixPathFrom(fromDir: string, toDir: string): string {
+  return path.relative(fromDir, toDir).split(path.sep).join("/");
+}
+
 export class ProjectBuilder {
   static async minimal(): Promise<ProjectHandle> {
     const tempDir = await createTempDir();
@@ -352,8 +436,8 @@ export class ProjectBuilder {
     };
   }
 
-  // The project config imports the global one.
-  static async dualScopeWithImport(): Promise<DualScopeHandle> {
+  // The project's config-types.ts imports the global's, which it finds only with HOME at `globalHome`.
+  static async dualScopeWithGlobalTypes(): Promise<DualScopeHandle> {
     const tempDir = await createTempDir();
     const globalHome = path.join(tempDir, "fake-home");
     const projectDir = path.join(tempDir, "project");
@@ -382,60 +466,19 @@ export class ProjectBuilder {
       }),
     });
 
-    const configTypesContent = `// AUTO-GENERATED
-export type SkillId = "web-framework-react" | "web-testing-vitest";
-export type AgentName = "web-developer" | "api-developer";
-export type Domain = "web";
-export type Category = "web-framework" | "web-testing";
-export type SkillConfig = { id: SkillId; scope: "project" | "global"; origin: string };
-export type SkillAssignment = SkillId | { id: SkillId; preloaded: boolean };
-export type StackAgentConfig = Partial<Record<Category, SkillAssignment>>;
-export type AgentScopeConfig = { name: AgentName; scope: "project" | "global" };
-export interface ProjectConfig {
-  version?: "1";
-  name: string;
-  description?: string;
-  agents: AgentScopeConfig[];
-  skills: SkillConfig[];
-  author?: string;
-  stack?: Partial<Record<AgentName, StackAgentConfig>>;
-  marketplace?: string;
-  marketplaceName?: string;
-  selectedDomains?: Domain[];
-}
-`;
-    const globalConfigDir = sourceFolderIn(globalHome);
-    const projectConfigDir = sourceFolderIn(projectDir);
-    await mkdir(projectConfigDir, { recursive: true });
+    await writeGlobalConfigTypes(globalHome);
 
-    await writeFile(path.join(globalConfigDir, FILES.CONFIG_TYPES_TS), configTypesContent);
-    await writeFile(path.join(projectConfigDir, FILES.CONFIG_TYPES_TS), configTypesContent);
-
-    const globalImportPath = path
-      .relative(projectConfigDir, globalConfigDir)
-      .split(path.sep)
-      .join("/");
-
-    const projectConfigContent = `import globalConfig from "${globalImportPath}/config";
-import type { ProjectConfig } from "./config-types";
-
-const skills = [
-  ...globalConfig.skills,
-  {"id":"web-testing-vitest","scope":"project","origin":"eject"},
-];
-
-const agents = [
-  ...globalConfig.agents,
-  {"name":"api-developer","scope":"project"},
-];
-
-export default {
-  ...globalConfig,
-  name: "test-project",
-  skills,
-  agents } satisfies ProjectConfig;
-`;
-    await writeFile(path.join(projectConfigDir, FILES.CONFIG_TS), projectConfigContent);
+    await writeProjectConfig(
+      projectDir,
+      buildProjectConfig({
+        name: "test-project",
+        skills: buildSkillConfigs(["web-testing-vitest"], { scope: "project", origin: "eject" }),
+        agents: buildAgentConfigs(["api-developer"], { scope: "project" }),
+        selectedDomains: ["web"],
+      }),
+      { isProjectConfig: true, globalConfig: await loadConfigOrFail(globalHome) },
+    );
+    await writeProjectConfigTypesExtendingGlobal(projectDir, globalHome);
 
     await createLocalSkill(projectDir, "web-testing-vitest", {
       description: "Vitest testing skill for project scope testing",
@@ -457,75 +500,23 @@ export default {
     const tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
 
-    const configDir = sourceFolderIn(projectDir);
     const skillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, CUSTOM_PROJECT_SKILL_ID);
 
-    await mkdir(configDir, { recursive: true });
     await mkdir(skillDir, { recursive: true });
 
-    const configTypesContent = `// AUTO-GENERATED by agents-inc — DO NOT EDIT
-
-export type SkillId =
-  // Custom
-  | "${CUSTOM_PROJECT_SKILL_ID}"
-  // Marketplace
-  | "web-framework-react";
-
-export type AgentName =
-  | "web-developer";
-
-export type Domain =
-  | "web";
-
-export type Category =
-  | "web-framework"
-  | "web-tooling";
-
-export type SkillConfig = { id: SkillId; scope: "project" | "global"; origin: string };
-
-export type SkillAssignment = SkillId | { id: SkillId; preloaded: boolean };
-
-export type StackAgentConfig = Partial<Record<Category, SkillAssignment>>;
-
-export type AgentScopeConfig = { name: AgentName; scope: "project" | "global" };
-
-export interface ProjectConfig {
-  version?: "1";
-  name: string;
-  description?: string;
-  agents: AgentScopeConfig[];
-  skills: SkillConfig[];
-  author?: string;
-  stack?: Partial<Record<AgentName, StackAgentConfig>>;
-  marketplace?: string;
-  marketplaceName?: string;
-  selectedDomains?: Domain[];
-}
-`;
-
-    await writeFile(path.join(configDir, FILES.CONFIG_TYPES_TS), configTypesContent);
-
-    const marketplaceLine =
-      options?.marketplace === undefined ? "" : `\n  marketplace: "${options.marketplace}",`;
-    const configContent = `import type { ProjectConfig } from "./config-types";
-
-export default {
-  name: "test-custom-skill-project",${marketplaceLine}
-  agents: [{ name: "web-developer", scope: "project" }],
-  skills: [{ id: "${CUSTOM_PROJECT_SKILL_ID}", scope: "project", origin: "eject" }],
-  selectedDomains: ["web"],
-  stack: {
-    "web-developer": {
-      "web-tooling": {
-        id: "${CUSTOM_PROJECT_SKILL_ID}",
-        preloaded: true,
-      },
-    },
-  },
-} satisfies ProjectConfig;
-`;
-
-    await writeFile(path.join(configDir, FILES.CONFIG_TS), configContent);
+    await writeProjectConfig(
+      projectDir,
+      buildProjectConfig({
+        name: "test-custom-skill-project",
+        ...(options?.marketplace !== undefined && { marketplace: options.marketplace }),
+        skills: buildSkillConfigs([CUSTOM_PROJECT_SKILL_ID], { scope: "project", origin: "eject" }),
+        agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+        selectedDomains: ["web"],
+        stack: { "web-developer": { "web-tooling": [sa(CUSTOM_PROJECT_SKILL_ID, true)] } },
+      }),
+    );
+    // A recorded marketplace's catalogue could type them differently; no spec compares that case.
+    await writeStandaloneProjectConfigTypes(projectDir, catalogueSeatingTheCustomSkill());
 
     // Not via createLocalSkill: the id is outside the SkillId union.
     await writeFile(

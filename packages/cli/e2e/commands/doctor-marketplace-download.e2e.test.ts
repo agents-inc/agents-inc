@@ -14,6 +14,7 @@ import {
 import {
   cleanupTempDir,
   createTempDir,
+  flattenCliOutput,
   pollUntil,
   readInstallTree,
   writeAgentFile,
@@ -388,57 +389,79 @@ describe("a marketplace whose download fails once after it withdrew a skill", ()
   });
 
   /**
-   * Over the URL only: a load outside doctor discards a superseded copy of a git source together
-   * with giget's tarball of it, so giget has nothing saved to fall back on there.
+   * Every load outside doctor falls back on what the earlier download saved, for a git source as
+   * for a URL, and says the update it announced could not be fetched.
    */
-  describe("met by a load outside doctor", () => {
-    let server: TarballSourceServer;
-    let projectDir: string;
-    let searched: CLIResult;
-    let searchedRequests: string[];
-    let copiesBefore: InstallTree;
-    let copiesAfter: InstallTree;
-    let doctored: CLIResult;
+  describe.each(NAMINGS)(
+    "met by a load outside doctor, named $naming",
+    ({ marketplaceOn, envFor }) => {
+      let server: TarballSourceServer;
+      let projectDir: string;
+      let searched: CLIResult;
+      let searchedRequests: string[];
+      let copiesBefore: InstallTree;
+      let copiesAfter: InstallTree;
+      let doctored: CLIResult;
 
-    beforeAll(async () => {
-      server = await startTarballSourceServer(published.sourceDir);
-      projectDir = await projectOn(server.url);
-      await CLI.run(["search", E2E_SKILL.vitest.slug], { dir: projectDir });
+      beforeAll(async () => {
+        server = await startTarballSourceServer(published.sourceDir);
+        projectDir = await projectOn(marketplaceOn(server));
+        const env = envFor(server);
+        await CLI.run(["search", E2E_SKILL.vitest.slug], { dir: projectDir }, { env });
 
-      await server.publish(withdrawn.sourceDir);
-      // `search` asks with a HEAD, so the first GET is the download.
-      server.failOnce("GET", UNAVAILABLE);
-      copiesBefore = await savedCopies(projectDir);
-      const before = server.requests.length;
-      searched = await CLI.run(["search", E2E_SKILL.vitest.slug], { dir: projectDir });
-      searchedRequests = server.requests.slice(before);
-      copiesAfter = await savedCopies(projectDir);
+        await server.publish(withdrawn.sourceDir);
+        // `search` asks with a HEAD, so the first GET is the download.
+        server.failOnce("GET", UNAVAILABLE);
+        copiesBefore = await savedCopies(projectDir);
+        const before = server.requests.length;
+        searched = await CLI.run(["search", E2E_SKILL.vitest.slug], { dir: projectDir }, { env });
+        searchedRequests = server.requests.slice(before);
+        copiesAfter = await savedCopies(projectDir);
 
-      doctored = await CLI.run(["doctor"], { dir: projectDir });
-    }, TIMEOUTS.SETUP_DUAL);
+        doctored = await CLI.run(["doctor"], { dir: projectDir }, { env });
+      }, TIMEOUTS.SETUP_DUAL);
 
-    afterAll(async () => {
-      await server.close();
-      await cleanupTempDir(projectDir);
-    });
+      afterAll(async () => {
+        await server.close();
+        await cleanupTempDir(projectDir);
+      });
 
-    it("still reads the copy giget saved, as every load outside doctor may", () => {
-      expect(searchedRequests, "the download was the request refused").toContain(DOWNLOAD_REFUSED);
-      expect(searched.exitCode, searched.output).toBe(EXIT_CODES.SUCCESS);
-      expect(searched.output).toContain(E2E_SKILL.vitest.display);
-    });
+      it("still reads the copy the earlier download saved", () => {
+        expect(searchedRequests, "the download was the request refused").toContain(
+          DOWNLOAD_REFUSED,
+        );
+        expect(searched.exitCode, searched.output).toBe(EXIT_CODES.SUCCESS);
+        expect(searched.output).toContain(E2E_SKILL.vitest.display);
+      });
 
-    it("records that copy under the ETag it was saved with, not the marketplace's new one", () => {
-      expect(
-        copiesAfter,
-        "the copy and its record are what the earlier download left",
-      ).toStrictEqual(copiesBefore);
-    });
+      it("says once, after announcing the update, that it could not be fetched", () => {
+        const warning = `Could not fetch the update from ${marketplaceOn(server)} — using the cached copy, which is out of date.`;
+        const said = flattenCliOutput(searched.output);
 
-    it("so doctor afterwards counts what the marketplace serves", () => {
-      expect(doctored.exitCode, doctored.output).toBe(EXIT_CODES.SUCCESS);
-      expect(doctored.stdout).toContain(WITHDRAWN_COUNT_LINE);
-      expect(doctored.stdout).not.toContain(PUBLISHED_COUNT_LINE);
-    });
-  });
+        expect(said, "subject guard: the update was announced").toContain(
+          STEP_TEXT.SOURCE_HAS_NEWER_CONTENT,
+        );
+        expect(said).toContain(warning);
+        expect(said, "said once, however many times the run loads the marketplace").not.toMatch(
+          new RegExp(`${matchedAsWritten(warning)}[\\s\\S]*${matchedAsWritten(warning)}`),
+        );
+        expect(said, "a download that failed is no unreachable marketplace").not.toContain(
+          STEP_TEXT.SOURCE_UNREACHABLE_CACHED,
+        );
+      });
+
+      it("leaves the copy and its record as the earlier download left them, so the next run asks again", () => {
+        expect(
+          copiesAfter,
+          "the copy and its record are what the earlier download left",
+        ).toStrictEqual(copiesBefore);
+      });
+
+      it("so doctor afterwards counts what the marketplace serves", () => {
+        expect(doctored.exitCode, doctored.output).toBe(EXIT_CODES.SUCCESS);
+        expect(doctored.stdout).toContain(WITHDRAWN_COUNT_LINE);
+        expect(doctored.stdout).not.toContain(PUBLISHED_COUNT_LINE);
+      });
+    },
+  );
 });

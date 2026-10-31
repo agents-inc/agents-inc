@@ -20,8 +20,10 @@ import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   cleanupFixture,
   cleanupTempDir,
+  compactCliOutput,
   directoryExists,
   isClaudeCLIAvailable,
+  matchedAsWritten,
   readTestFile,
   readTreeSnapshot,
   skillsPath,
@@ -46,8 +48,8 @@ import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-con
  * Its control is the same installation under a config.ts written before names were recorded: it
  * draws exactly what 0.173.0 draws, ids, though each copy's metadata.yaml still names it, because
  * one record names every summary and no copy is read for a name. Each screen is pinned whole at
- * `MIDDLE`'s 100 columns, so a line drawn under the last row fails it and the Marketplace line stays
- * the path it names; the sub-agent rows are the subject guard in each. The piped half is
+ * `MIDDLE`'s 100 columns, so a line drawn under the last row fails it; the sub-agent rows are the
+ * subject guard in each. The piped half is
  * `commands/list-prints-paths-beside-recorded-names`.
  *
  * A plugin leaves no copy, and its marketplace folder is moved away before the run, so the name its
@@ -63,6 +65,19 @@ const API_DEV = E2E_AGENT["api-developer"].name;
 
 const BOTH_SCOPES_ID = "ListName1";
 const PLUGIN_ID = "ListNamePlugin1";
+
+/** The rows as drawn; the head compacted, as a Marketplace path that outruns its line wraps. */
+function expectListScreen(
+  screen: string,
+  head: readonly string[],
+  rows: readonly string[],
+  message: string,
+): void {
+  expect(compactCliOutput(screen), message).toBe(
+    compactCliOutput(["", ...head, "", ...rows].join("\n")),
+  );
+  expect(screen, message).toMatch(new RegExp(`\\n${matchedAsWritten(rows.join("\n"))}$`));
+}
 
 describe("list at a terminal over skills the built-in catalogue does not list", () => {
   let store: SeedConfigStore;
@@ -146,15 +161,10 @@ describe("list at a terminal over skills the built-in catalogue does not list", 
 
       const screen = await listAtATerminal(installation);
 
-      expect(
+      expectListScreen(
         screen,
-        "each row is named as the install recorded it, not by its id, under the marketplace's path",
-      ).toBe(
+        [" Mode Eject", ` Marketplace ${E2E_SOURCE.sourceDir}`],
         [
-          "",
-          " Mode Eject",
-          ` Marketplace ${E2E_SOURCE.sourceDir}`,
-          "",
           " Skills                                                         │  Agents",
           "                                                                │",
           "  Project                                                       │   Project",
@@ -162,7 +172,8 @@ describe("list at a terminal over skills the built-in catalogue does not list", 
           "                                                                │",
           "  Global                                                        │   Global",
           " • E2E React ⏏                                                  │  • web-developer",
-        ].join("\n"),
+        ],
+        "each row is named as the install recorded it, not by its id, under the marketplace's path",
       );
     },
   );
@@ -203,15 +214,10 @@ describe("list at a terminal over skills the built-in catalogue does not list", 
 
       const screen = await listAtATerminal(installation);
 
-      expect(
+      expectListScreen(
         screen,
-        "an unrecorded row falls back to the built-in catalogue, then the id, never to its copy",
-      ).toBe(
+        [" Mode Eject", ` Marketplace ${E2E_SOURCE.sourceDir}`],
         [
-          "",
-          " Mode Eject",
-          ` Marketplace ${E2E_SOURCE.sourceDir}`,
-          "",
           " Skills                                                         │  Agents",
           "                                                                │",
           "  Project                                                       │   Project",
@@ -221,7 +227,8 @@ describe("list at a terminal over skills the built-in catalogue does not list", 
           "  Global                                                        │  • web-developer",
           " • e2e-test-fixture-web-framew                                  │",
           "   ork-react ⏏                                                  │",
-        ].join("\n"),
+        ],
+        "an unrecorded row falls back to the built-in catalogue, then the id, never to its copy",
       );
     },
   );
@@ -289,15 +296,10 @@ describe("list at a terminal over skills the built-in catalogue does not list", 
 
         const screen = await listAtATerminal(installation);
 
-        expect(
+        expectListScreen(
           screen,
-          "the plugin is named as its install recorded, with no copy and no marketplace left to name it",
-        ).toBe(
+          [" Mode Mixed", ` Marketplace ${fixture.sourceDir}`],
           [
-            "",
-            " Mode Mixed",
-            ` Marketplace ${fixture.sourceDir}`,
-            "",
             " Skills                                                         │  Agents",
             "                                                                │",
             "  Project                                                       │   Project",
@@ -305,7 +307,8 @@ describe("list at a terminal over skills the built-in catalogue does not list", 
             "                                                                │",
             "  Global                                                        │   Global",
             " • E2E React ⏏                                                  │  • web-developer",
-          ].join("\n"),
+          ],
+          "the plugin is named as its install recorded, with no copy and no marketplace left to name it",
         );
       },
     );

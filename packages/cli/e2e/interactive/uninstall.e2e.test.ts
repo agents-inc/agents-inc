@@ -12,6 +12,7 @@ import {
 import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
 import {
   cleanupTempDir,
+  compactCliOutput,
   configTsPath,
   directoryExists,
   sourceFolderIn,
@@ -229,8 +230,10 @@ describe("uninstall interactive", () => {
 
       await prompt.waitForText(STEP_TEXT.CONFIRM_UNINSTALL, TIMEOUTS.WIZARD_LOAD);
 
-      const output = prompt.getOutput();
-      expect(output).toContain(`${REMOVED_MARKER} ${configTsPath(projectDir)}`);
+      // Compacted: a path longer than the terminal wraps onto the next row.
+      expect(compactCliOutput(prompt.getOutput())).toContain(
+        compactCliOutput(`${REMOVED_MARKER} ${configTsPath(projectDir)}`),
+      );
     });
   });
 

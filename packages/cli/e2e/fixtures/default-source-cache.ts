@@ -10,11 +10,17 @@ import {
   renderMetadataYaml,
   renderSkillMd,
 } from "../../src/cli/lib/__tests__/content-generators.js";
+import {
+  createMockMarketplace,
+  createMockMarketplacePlugin,
+} from "../../src/cli/lib/__tests__/factories/plugin-factories.js";
 import { computeFileHash } from "../../src/cli/lib/versioning.js";
 import { BUILT_IN_MATRIX } from "../../src/cli/types/generated/matrix.js";
 import {
   DEFAULT_PLUGIN_NAME,
+  DEFAULT_PUBLIC_SOURCE_NAME,
   LOCAL_PSEUDO_CATEGORY,
+  marketplaceManifestPath,
   SOURCE_SRC_DIR,
   STANDARD_FILES,
 } from "../../src/cli/consts.js";
@@ -23,6 +29,8 @@ import type { CategoryPath, SkillId } from "../../src/cli/types/index.js";
 
 // Seeds the default marketplace's fetch cache, the one source whose matrix (BUILT_IN_MATRIX) and files
 // can disagree; `omitting` produces that state. A record with a `tar` and no `etag` keeps it offline.
+// The manifest is seeded too, as the real catalogue ships one: an unnamed project's plugin key reads
+// its name.
 export async function seedDefaultSourceCache(
   home: string,
   { omitting }: { omitting: SkillId },
@@ -37,6 +45,7 @@ export async function seedDefaultSourceCache(
 
   const carried = typedKeys<SkillId>(BUILT_IN_MATRIX.skills).filter((id) => id !== omitting);
   await Promise.all(carried.map(async (id) => writeCatalogueSkill(cacheDir, id)));
+  await writeCatalogueManifest(cacheDir, carried);
 
   await mkdir(path.dirname(cacheDir), { recursive: true });
   await writeFile(
@@ -45,6 +54,18 @@ export async function seedDefaultSourceCache(
   );
 
   return cacheDir;
+}
+
+async function writeCatalogueManifest(cacheDir: string, carried: SkillId[]): Promise<void> {
+  const manifestPath = marketplaceManifestPath(cacheDir);
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  await writeFile(
+    manifestPath,
+    JSON.stringify({
+      ...createMockMarketplace(carried.map((id) => createMockMarketplacePlugin(id))),
+      name: DEFAULT_PUBLIC_SOURCE_NAME,
+    }),
+  );
 }
 
 // Writes metadata.yaml too: the copy stamps provenance into it and fails without one.

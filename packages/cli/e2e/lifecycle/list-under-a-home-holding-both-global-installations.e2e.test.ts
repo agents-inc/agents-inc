@@ -15,6 +15,7 @@ import {
   agentsPath,
   cleanupTempDir,
   compactCliOutput,
+  fileExists,
   flattenCliOutput,
   listFiles,
 } from "../helpers/test-utils.js";
@@ -32,7 +33,11 @@ import {
  * provider's format and names the global agents folder of the installation the project inherits,
  * its own provider's. The config check `list` runs first reads that same global config: it refuses
  * when that one does not load, and lists when only the other provider's does not. Claude is the
- * control, being also the provider a home holding both would otherwise be read as.
+ * control, being also the provider a home holding both would otherwise be read as. Once
+ * `uninstall --provider` at home removes the project's own provider's global, the project inherits
+ * no global installation: the other provider's is neither listed nor read.
+ *
+ * CLI-991.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -76,6 +81,9 @@ const EJECTED_INTO_THE_PROJECT = {
 
 /** One sub-agent at each scope, so a listing reading one folder too few or too many miscounts. */
 const AGENTS_IN_THE_LISTING = 2;
+
+/** The project's own sub-agent, once no global installation of its provider holds one. */
+const AGENTS_IN_THE_PROJECT_ALONE = 1;
 
 function otherThan(provider: Provider): Provider[] {
   return EVERY_PROVIDER.filter((candidate) => candidate !== provider);
@@ -165,6 +173,27 @@ describe("list in a project under a home holding a Claude and a Codex global ins
     await writeFile(configIn(home, provider), renderUnparseableConfigTs());
   }
 
+  /** As a user removes one provider's global installation: `uninstall --provider` at home. */
+  async function uninstallTheGlobalOf(provider: Provider, home: string): Promise<void> {
+    const uninstalled = await CLI.run(["uninstall", "--yes", "--provider", provider], {
+      dir: home,
+      globalHome: home,
+    });
+    expect(uninstalled.exitCode, flattenCliOutput(uninstalled.output)).toBe(EXIT_CODES.SUCCESS);
+
+    // Subject guards: the home now holds the other provider's global installation alone.
+    expect(
+      await fileExists(configIn(home, provider)),
+      `the ${provider} global installation is gone`,
+    ).toBe(false);
+    for (const other of otherThan(provider)) {
+      expect(
+        await listFiles(GLOBAL_AGENTS_DIR[other](home)),
+        `the ${other} global installation keeps its sub-agent`,
+      ).toStrictEqual([agentFile(WEB_DEV, other)]);
+    }
+  }
+
   it.each(EVERY_PROVIDER)(
     "counts the %s project's sub-agents and names its own provider's global agents folder, not the other's",
     { timeout: TIMEOUTS.LIFECYCLE },
@@ -237,6 +266,57 @@ describe("list in a project under a home holding a Claude and a Codex global ins
       );
       expect(output, "a refused run lists nothing").not.toContain(configIn(project.dir, provider));
       expect(exitCode, output).toBe(EXIT_CODES.ERROR);
+    },
+  );
+
+  it.each(EVERY_PROVIDER)(
+    "counts only the %s project's own sub-agent once its provider's global installation is uninstalled, naming nothing of the other's",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async (provider) => {
+      const { home, project } = await installBothAtHomeThenTheProjectOn(provider);
+      await uninstallTheGlobalOf(provider, home);
+
+      const { exitCode, stdout } = await CLI.run(["list"], project);
+
+      for (const other of otherThan(provider)) {
+        expect(stdout, `nothing names the ${other} global's agents folder`).not.toContain(
+          GLOBAL_AGENTS_DIR[other](home),
+        );
+      }
+      const listingTail = [
+        `  Agents:  ${AGENTS_IN_THE_PROJECT_ALONE}`,
+        `  Config:  ${configIn(project.dir, provider)}`,
+        `  Agents:  ${PROJECT_AGENTS_DIR[provider](project.dir)}`,
+        "",
+      ].join("\n");
+      expect(stdout, "the count and the agents folder are the project's alone").toContain(
+        listingTail,
+      );
+      expect(stdout.endsWith(listingTail), "nothing is printed under the agents folder").toBe(true);
+      expect(exitCode, stdout).toBe(EXIT_CODES.SUCCESS);
+    },
+  );
+
+  it.each(EVERY_PROVIDER)(
+    "lists the %s project although the other provider's global config does not load, once its own provider's global installation is uninstalled",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async (provider) => {
+      const { home, project } = await installBothAtHomeThenTheProjectOn(provider);
+      await uninstallTheGlobalOf(provider, home);
+      for (const other of otherThan(provider)) await breakTheGlobalConfigOf(other, home);
+
+      const { exitCode, output } = await CLI.run(["list"], project);
+
+      for (const other of otherThan(provider)) {
+        expect(
+          compactCliOutput(output),
+          `nothing names the ${other} global's config, which this project does not inherit`,
+        ).not.toContain(compactCliOutput(configIn(home, other)));
+      }
+      expect(output, "the project's own installation is listed").toContain(
+        `  Config:  ${configIn(project.dir, provider)}\n`,
+      );
+      expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
     },
   );
 });

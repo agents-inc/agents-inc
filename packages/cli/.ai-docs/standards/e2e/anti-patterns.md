@@ -64,7 +64,7 @@ Every "never do this" rule with rationale. Organized by category.
 
 **Why:** This couples the test to the config file format. When the format changes, the test breaks even though the CLI behavior didn't change.
 
-**Instead:** Use `ProjectBuilder` methods in `beforeEach` or as inline fixture calls. If `ProjectBuilder` doesn't support your scenario, extend it with a new static method rather than inlining. See `ProjectBuilder.dualScopeWithImport()` as an example of encapsulating complex setup. See [test-data.md](./test-data.md).
+**Instead:** Use `ProjectBuilder` methods in `beforeEach` or as inline fixture calls. If `ProjectBuilder` doesn't support your scenario, extend it with a new static method rather than inlining. See `ProjectBuilder.dualScopeWithGlobalTypes()` as an example of encapsulating complex setup. See [test-data.md](./test-data.md).
 
 ### Never use `readFile`/`readdir` in `it()` blocks for assertions
 

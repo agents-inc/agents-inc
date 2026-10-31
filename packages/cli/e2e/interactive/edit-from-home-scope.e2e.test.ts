@@ -141,7 +141,7 @@ describe("edit --from <id> at the global root", () => {
       // Not `uninstall`: the configuration is installable, the location is not.
       expect(said).toContain(STEP_TEXT.SHARED_CONFIG_PROJECT_SCOPE_HINT);
       // Both kinds named: only the sharer knows which they meant.
-      expect(said).toContain(`skill ${E2E_SKILL.react.id}`);
+      expect(said).toContain(`skill ${E2E_SKILL.react.display}`);
       expect(said).toContain(`sub-agent ${WEB_DEV}`);
     });
 

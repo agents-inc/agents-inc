@@ -17,10 +17,13 @@ import {
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { CLI } from "../fixtures/cli.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
+import type { ProjectHandle } from "../fixtures/project-handle.js";
 import {
   cleanupFixture,
   cleanupTempDir,
+  codexHome,
   directoryExists,
+  fileExists,
   flattenCliOutput,
   listFiles,
   renderSkillMd,
@@ -35,6 +38,9 @@ import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
 /**
  * `codex plugin remove` exits 0 with the same output whether or not anything was removed, so the
  * count comes from the listing taken before.
+ *
+ * An uninstall run at HOME removes the global installation, whose ejected skills Codex keeps in
+ * `$CODEX_HOME/skills`, not in the `~/.agents/skills` a project installation uses.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -250,6 +256,58 @@ describe("uninstalling a Codex installation", () => {
       );
     },
   );
+  it(
+    "removes a global installation's ejected skills from $CODEX_HOME/skills when run at HOME, and leaves a stranger alone",
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
+    async () => {
+      env = await createTestEnvironment({ permissions: false });
+      const atHome: ProjectHandle = { dir: env.fakeHome, globalHome: env.fakeHome };
+      store.publish(
+        "CdxUnHome",
+        buildSeedPayload({
+          skills: {
+            [E2E_SKILL.react.id]: buildSeedSkill({
+              install: "eject",
+              scope: "global",
+              assignments: { [WEB_DEV]: "lazy" },
+            }),
+          },
+          agents: { [WEB_DEV]: { scope: "global" } },
+        }),
+      );
+
+      const installed = await runInitFromOnCodex(store, "CdxUnHome", atHome, fixture.sourceDir);
+      expect(installed.exitCode, flattenCliOutput(installed.output)).toBe(EXIT_CODES.SUCCESS);
+
+      const globalSkills = codexGlobalSkillsDir(env.fakeHome);
+      const globalRoles = path.join(codexHome(env.fakeHome), DIRS.AGENTS);
+      const configAtHome = path.join(env.fakeHome, DIRS.SOURCE_CODEX, FILES.CONFIG_TS);
+      // Subject guards: the install put its copy and its role file under $CODEX_HOME.
+      expect(await listFiles(globalSkills)).toStrictEqual([E2E_SKILL.react.id]);
+      expect(await listFiles(globalRoles)).toStrictEqual([
+        `${WEB_DEV}${FILES.CODEX_AGENT_EXTENSION}`,
+      ]);
+      await mkdir(path.join(globalSkills, FOREIGN_SKILL), { recursive: true });
+      await writeFile(
+        path.join(globalSkills, FOREIGN_SKILL, FILES.SKILL_MD),
+        renderSkillMd(FOREIGN_SKILL, "A skill its author wrote by hand"),
+      );
+
+      const uninstalled = await CLI.run(["uninstall", "--yes"], atHome);
+      expect(uninstalled.exitCode, flattenCliOutput(uninstalled.output)).toBe(EXIT_CODES.SUCCESS);
+
+      expect(
+        await listFiles(globalSkills),
+        "the copy the install wrote is removed, and the user's own skill beside it is kept",
+      ).toStrictEqual([FOREIGN_SKILL]);
+      expect(
+        await listFiles(globalRoles),
+        "the role file the install compiled is removed",
+      ).toStrictEqual([]);
+      expect(await fileExists(configAtHome), "the global config is removed").toBe(false);
+    },
+  );
+
   it(
     "removes the role files it compiled, and leaves one the user wrote beside them",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },

@@ -69,10 +69,10 @@ const EXTERNAL_REPO = "obra/superpowers";
 const PINNED_TO_PROJECT = { scope: "project" } as const;
 
 /**
- * Owned by the shipped catalogue but not by the E2E marketplace, so a guard reading only the loaded
- * matrix finds no incumbent.
+ * Another marketplace's namespace: neither the catalogue the payload loads nor the shipped one owns
+ * it, so only its name can refuse it.
  */
-const CATALOGUE_ID_THE_FIXTURE_LACKS = "web-framework-react";
+const ANOTHER_MARKETPLACES_ID = "acme-web-tooling-house-style";
 
 /** Longer than the `cliDescription` doctor accepts. */
 const LONG_EXTERNAL_DESCRIPTION =
@@ -151,9 +151,10 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
 
     // Carries the red: reported as unknown while its content sat unread in the payload.
     expect(flattenCliOutput(output)).not.toContain("does not know");
-    // The panel names it by its display name; the line under the panel names its id.
     expect(stdout).toContain(panelRow(ADDED_MARKER, EXTERNAL_DISPLAY));
-    expect(stdout).toContain(`\nWrote 1 skill(s) this configuration carries: ${EXTERNAL_ID}\n`);
+    expect(stdout).toContain(
+      `\nWrote 1 skill(s) this configuration carries: ${EXTERNAL_DISPLAY}\n`,
+    );
 
     // "eject" is the only origin an added skill can have.
     const config = await loadConfigOrFail(env.projectDir);
@@ -521,7 +522,7 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
     );
   });
 
-  it("refuses a carried skill claiming an id the loaded catalogue already owns, and writes nothing", async () => {
+  it("refuses a carried skill under an id the loaded catalogue owns, for its name, and writes nothing", async () => {
     env = await createTestEnvironment({ permissions: false });
     store.publish(
       "External4",
@@ -556,12 +557,13 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
       sourceDir,
     );
 
-    // This assertion carries the red: unguarded, the impostor installs, exits 0, and the report
-    // names the id, so the two below stay green.
+    // Unguarded, the impostor installs and exits 0; refused only as a collision, the reason
+    // assertion below is the one that fails.
     expect(exitCode).toBe(EXIT_CODES.ERROR);
     // Named: the sharer has to re-mint this id.
     expect(flattenCliOutput(output)).toContain(E2E_SKILL.react.id);
-    // For the right reason: an unknown-id skip names the id too.
+    // For the right reason: the name, not the collision it would cause.
+    expect(flattenCliOutput(output)).toContain("under ids that do not start with 'external-'");
     expect(flattenCliOutput(output)).not.toContain("does not know");
 
     // Content and mtime under both scopes: a refusal owes every surface. Watched go red by flipping
@@ -571,7 +573,7 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
     expect(await readTreeSnapshot(env.fakeHome)).toStrictEqual(homeBefore);
   });
 
-  it("refuses a carried skill claiming a shipped catalogue id, even under a marketplace the payload chose", async () => {
+  it("refuses a carried skill under another marketplace's id, for its name, even under a marketplace the payload chose", async () => {
     env = await createTestEnvironment({ permissions: false });
     store.publish(
       "External5",
@@ -580,14 +582,14 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
         // payload.marketplace`), and it lacks the id it impersonates.
         marketplace: sourceDir,
         skills: {
-          [CATALOGUE_ID_THE_FIXTURE_LACKS]: buildSeedSkill({
+          [ANOTHER_MARKETPLACES_ID]: buildSeedSkill({
             install: "eject",
             scope: "project",
             assignments: { [WEB_DEV]: "lazy" },
           }),
         },
         external: {
-          [CATALOGUE_ID_THE_FIXTURE_LACKS]: buildSeedExternalSkill({
+          [ANOTHER_MARKETPLACES_ID]: buildSeedExternalSkill({
             categoryId: EXTERNAL_CATEGORY,
             repo: EXTERNAL_REPO,
             files: EXTERNAL_FILES,
@@ -606,8 +608,10 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
       { env: { AGENTS_INC_API_URL: store.url } },
     );
 
-    expect(exitCode).toBe(EXIT_CODES.ERROR);
-    expect(flattenCliOutput(output)).toContain(CATALOGUE_ID_THE_FIXTURE_LACKS);
+    // Carries the red: no catalogue the receiver can see owns the id, so it installs.
+    expect(exitCode, `the bypass installed: ${output}`).toBe(EXIT_CODES.ERROR);
+    expect(flattenCliOutput(output)).toContain(ANOTHER_MARKETPLACES_ID);
+    expect(flattenCliOutput(output)).toContain("under ids that do not start with 'external-'");
     // For the right reason: an id the loaded marketplace lacks is also skipped by name.
     expect(flattenCliOutput(output)).not.toContain("does not know");
     expect(await readTreeSnapshot(env.fakeHome)).toStrictEqual(homeBefore);

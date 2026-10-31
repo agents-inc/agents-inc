@@ -39,9 +39,8 @@ import type { SeedPayload, SeedSkill } from "@workspace/matrix/seed";
 
 /**
  * A configuration naming a stack its marketplace does not ship is refused before anything is
- * written, by `init --from` and `edit --from`. Each refusal is paired with the shipped stack
- * installing or asking. Against the unfixed build the snapshot carries the red for `init --from`,
- * the question for `edit --from`.
+ * written, by `init --from` and `edit --from`, naming the stacks the marketplace does ship. Each
+ * refusal is paired with the shipped stack installing or asking.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -163,6 +162,9 @@ describe("--from refuses a stack its marketplace does not ship before writing an
       const said = flattenCliOutput(output);
       expect(said).toContain(STEP_TEXT.SHARED_CONFIG_STACK_NOT_OFFERED);
       expect(said).toContain(`'${UNSHIPPED_STACK_ID}'`);
+      expect(said, "the refusal names the stacks the marketplace does ship").toContain(
+        `${STEP_TEXT.SHARED_CONFIG_STACKS_SHIPPED} ${E2E_STACK_ID}.`,
+      );
 
       expect(
         await readTreeSnapshot(env.tempDir),
@@ -210,6 +212,9 @@ describe("--from refuses a stack its marketplace does not ship before writing an
         const said = flattenCliOutput(output);
         expect(said).toContain(STEP_TEXT.SHARED_CONFIG_STACK_NOT_OFFERED);
         expect(said).toContain(`'${UNSHIPPED_STACK_ID}'`);
+        expect(said, "the refusal names the stacks the marketplace does ship").toContain(
+          `${STEP_TEXT.SHARED_CONFIG_STACKS_SHIPPED} ${E2E_STACK_ID}.`,
+        );
 
         // HOME holds the plugin registry and known marketplaces and the project holds settings, so
         // one comparison covers all three.
@@ -236,6 +241,7 @@ describe("--from refuses a stack its marketplace does not ship before writing an
 
       expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
       expect(flattenCliOutput(output)).not.toContain(STEP_TEXT.SHARED_CONFIG_STACK_NOT_OFFERED);
+      expect(flattenCliOutput(output)).not.toContain(STEP_TEXT.SHARED_CONFIG_STACKS_SHIPPED);
       expect(
         (await loadConfigOrFail(env.projectDir)).description,
         "the stack resolved, so the configuration records its description",
@@ -283,6 +289,9 @@ describe("--from refuses a stack its marketplace does not ship before writing an
         const said = flattenCliOutput(prompt.getOutput());
         expect(said).toContain(STEP_TEXT.SHARED_CONFIG_STACK_NOT_OFFERED);
         expect(said).toContain(`'${UNSHIPPED_STACK_ID}'`);
+        expect(said, "the refusal names the stacks the marketplace does ship").toContain(
+          `${STEP_TEXT.SHARED_CONFIG_STACKS_SHIPPED} ${E2E_STACK_ID}.`,
+        );
         expect(await readTreeSnapshot(env.tempDir)).toStrictEqual(before);
       },
     );
@@ -303,6 +312,7 @@ describe("--from refuses a stack its marketplace does not ship before writing an
         expect(shown).toContain(panelRow(ADDED_MARKER, E2E_SKILL.vitest.display));
         expect(shown).toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
         expect(flattenCliOutput(shown)).not.toContain(STEP_TEXT.SHARED_CONFIG_STACK_NOT_OFFERED);
+        expect(flattenCliOutput(shown)).not.toContain(STEP_TEXT.SHARED_CONFIG_STACKS_SHIPPED);
 
         await prompt.deny();
         expect(await prompt.waitForExit(TIMEOUTS.EXIT_WAIT)).toBe(EXIT_CODES.CANCELLED);

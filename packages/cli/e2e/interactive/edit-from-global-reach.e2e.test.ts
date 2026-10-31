@@ -7,6 +7,7 @@ import "../matchers/setup.js";
 import {
   agentsPath,
   cleanupTempDir,
+  compactCliOutput,
   createLocalSkill,
   createPermissionsFile,
   createTempDir,
@@ -279,7 +280,9 @@ describe("edit --from <id> and a global install the configuration leaves out", (
           `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED)}[\\s\\S]*${matchedAsWritten(`skill ${E2E_SKILL.vitest.display}`)}`,
         ),
       );
-      expect(planned).not.toContain(realpathSync(fixture.projectB));
+      expect(compactCliOutput(planned)).not.toContain(
+        compactCliOutput(realpathSync(fixture.projectB)),
+      );
     });
 
     it("names the global sub-agent it keeps though the configuration leaves it out", () => {
@@ -399,10 +402,11 @@ describe("edit --from <id> and a global install the configuration leaves out", (
     });
 
     it("names each registered project the run recompiles before asking", () => {
+      // Compacted: a path longer than the terminal wraps onto the next row.
       for (const project of [fixture.projectA, fixture.projectB]) {
-        expect(planned).toMatch(
+        expect(compactCliOutput(planned)).toMatch(
           new RegExp(
-            `${matchedAsWritten(STEP_TEXT.SHARED_CONFIG_REGISTERED_RECOMPILED)}[\\s\\S]*${matchedAsWritten(realpathSync(project))}`,
+            `${matchedAsWritten(compactCliOutput(STEP_TEXT.SHARED_CONFIG_REGISTERED_RECOMPILED))}[\\s\\S]*${matchedAsWritten(compactCliOutput(realpathSync(project)))}`,
           ),
         );
       }

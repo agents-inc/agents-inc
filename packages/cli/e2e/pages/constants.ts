@@ -62,6 +62,8 @@ export const STEP_TEXT = {
   COMPLETED_WITH_FAILURES: "the changes above landed, these did not",
   COMPILE_SUCCESS: "Compiled",
   COMPILE_COMPLETE: "compile complete", // "Global/Project compile complete!"
+  // `Marketplace: ${sourceOrigin}` in commands/compile.ts.
+  COMPILE_MARKETPLACE_GLOBAL: "Marketplace: global",
   CONFIG_LOAD_FAILED: "could not be loaded", // ConfigLoadError
   // Single unbroken tokens: oclif word-wraps error text at the terminal width.
   CONFIG_UNREADABLE_RECREATE: "recreate",
@@ -142,8 +144,9 @@ export const STEP_TEXT = {
   // Inside an oclif error box: assert through `flattenCliOutput`.
   COMPILE_METADATA_UNUSABLE: "does not describe",
   COMPILE_METADATA_MISSING_FIELD: "missing required field",
-  // `judgeSkillMetadata`.
-  INSTALLED_SKILL_METADATA_MISSING: "is missing metadata.yaml — skipped",
+  // Ends the one line a scan says for its folders with no metadata.yaml, composed as
+  // `Skipped <n> skills in '<folder>' that aren't ${INSTALLED_SKILL_METADATA_MISSING}` ("isn't" for 1).
+  INSTALLED_SKILL_METADATA_MISSING: "registered with the CLI (no metadata.yaml).",
   // Assert through `flattenCliOutput`.
   METADATA_UNUSABLE_WAY_OUT: "Fix the file, or delete the skill directory",
   // Every project reached and recompiled, whether or not its files came out changed.
@@ -165,8 +168,9 @@ export const STEP_TEXT = {
   UPDATE_NO_MARKETPLACES: "No plugin marketplaces are configured",
   UPDATE_MARKETPLACE_REFRESHED: "Updated marketplace",
   UPDATE_COMPLETE: "Update complete!",
-  UPDATE_PLUGINS_UNCHANGED: "Installed plugins were not changed",
   UPDATE_NO_CLAUDE_CLI: "Claude CLI not found",
+  // `ensureMarketplace`'s, when refreshing a marketplace the host already holds fails.
+  MARKETPLACE_KEPT_CACHED: "continuing with cached version",
 
   CONFIRM_UNINSTALL: "Are you sure you want to uninstall",
   UNINSTALL_PROJECTS_UPDATED_ONE: "Updated 1 registered project",
@@ -188,6 +192,19 @@ export const STEP_TEXT = {
   UNINSTALL_AGENTS_KEPT_REASON: "no agents-inc marker",
   UNINSTALL_SOURCE_ROOT_REMOVED: "Removed .agents-inc/",
   UNINSTALL_SOURCE_ROOT_KEPT: "Kept .agents-inc/ (contains user content)",
+
+  // A project whose config declares nothing: each command's own line, first on stderr.
+  DECLARES_NOTHING_OPENING: "This project's config declares nothing",
+  DECLARES_NOTHING_GLOBAL_STANDS_IN:
+    "This project's config declares nothing, so this works on your global installation.",
+  DECLARES_NOTHING_UNINSTALL:
+    "This project's config declares nothing, so there is nothing to uninstall in this project.",
+  DECLARES_NOTHING_EJECT:
+    "This project's config declares nothing; eject works on this project, not on a global installation.",
+  DECLARES_NOTHING_INIT:
+    "This project's config declares nothing, so init treats this project as holding no installation.",
+  DECLARES_NOTHING_SEARCH:
+    "This project's config declares nothing; search reads the marketplace it names, else the global installation's, else the default one.",
 
   DASHBOARD: "Doctor",
   DASHBOARD_DOCTOR_FOCUSED: "❯ Doctor",
@@ -241,6 +258,8 @@ export const STEP_TEXT = {
   // Whole: both halves are the claim (which marketplace, and that the network reached it).
   DOCTOR_MARKETPLACE_DEFAULT_REACHED:
     "Reached github:agents-inc/skills over the network — nothing here names one, so this is the default",
+  // `MARKETPLACE_CHOSEN_BY.global` in commands/doctor.ts.
+  DOCTOR_MARKETPLACE_NAMED_BY_GLOBAL: "named by the global configuration",
   DOCTOR_AGENTS_NEED_RECOMPILATION: "recompilation",
   // The half without `CLI_INVOKE_COMMAND`; never assert the bare word "compile".
   DOCTOR_TIP_COMPILE_AGENTS: "to generate missing agent files",
@@ -296,8 +315,15 @@ export const STEP_TEXT = {
   SKILLS_COPIED_TO: "Skills copied to:",
   AGENTS_COMPILED_TO: "Agents compiled to:",
   CONFIGURATION_LABEL: "Configuration:",
+  GENERATING_CONFIGURATION: "Generating configuration...",
+  // oclif's framing around Node's message for a write the file system refuses; ends before the path.
+  CONFIG_WRITE_REFUSED: "Error: EACCES: permission denied, open",
+  // `${PREFIX} <n> ${SUFFIX}`, after a refused save took back its copies.
+  COPIES_REMOVED_PREFIX: "Removed the",
+  COPIES_REMOVED_SUFFIX: "skills it copied, since the configuration could not be saved",
   NO_SKILLS_FOUND: "No skills found",
   UNINSTALL_CANCELLED: "Uninstall cancelled",
+  EDIT_CANCELLED: "Edit cancelled",
   RUN_CANCELLED: "Error: Cancelled",
   ROOT_HELP_USAGE: "$ agents-inc [COMMAND]",
 
@@ -314,6 +340,8 @@ export const STEP_TEXT = {
   SHARED_CONFIG_NOTHING_INSTALLABLE: "contains no skills this catalog can install",
   // Stops short of the ref, which oclif may wrap.
   SHARED_CONFIG_STACK_NOT_OFFERED: "is not a stack the source",
+  // Assert on flattened output.
+  SHARED_CONFIG_STACKS_SHIPPED: "the default public marketplace alone. It ships:",
   SHARED_CONFIG_WRONG_VERSION: "is not in a format this version of the CLI can install",
   SHARED_CONFIG_RESHARE: "re-share the configuration",
   CODEX_MODEL_NOT_OFFERED:
@@ -332,6 +360,8 @@ export const STEP_TEXT = {
 
   // Short fragments: oclif wraps error text.
   SHARED_CONFIG_APPLY_CONFIRM: "Apply this configuration?",
+  // Composed by `idNamesAnotherMarketplace`.
+  SHARED_CONFIG_MARKETPLACE_USED: "its skills come from this installation's marketplace",
   SHARED_CONFIG_NEEDS_TERMINAL: "no terminal here to confirm it at",
   UNINSTALL_NEEDS_TERMINAL: "Uninstalling removes files, so it has to be confirmed",
   UNINSTALL_NEEDS_TERMINAL_REMEDY: "uninstall --yes",
@@ -431,6 +461,11 @@ export function oldSourceFolderIgnored(
   return `${root}/${DIRS.RETIRED_SOURCE}/ is ignored; agents-inc reads ${root}/${readFrom}/. Delete the old folder once you have kept anything you need from it.`;
 }
 
+/** `edit --from`'s line for an id naming a marketplace other than the one the installation reads. */
+export function idNamesAnotherMarketplace(named: string, used: string): string {
+  return `This id names the marketplace ${named}; ${STEP_TEXT.SHARED_CONFIG_MARKETPLACE_USED}, ${used}.`;
+}
+
 /** Mirrors `CLI_INVOKE_COMMAND` in `src/cli/consts.ts`. */
 export const CLI_INVOKE_COMMAND = "npx agents-inc";
 
@@ -497,6 +532,9 @@ export const E2E_MARKETPLACE_NAME = `${E2E_MARKETPLACE_PREFIX}fixture`;
 
 /** Mirrors `DEFAULT_PUBLIC_SOURCE_NAME`. */
 export const PUBLIC_MARKETPLACE_NAME = "agents-inc";
+
+/** Mirrors `DEFAULT_SOURCE`. */
+export const PUBLIC_MARKETPLACE_SOURCE = "github:agents-inc/skills";
 
 /** Mirrors `EJECT_SOURCE`. */
 export const EJECT_SOURCE_NAME = "eject";

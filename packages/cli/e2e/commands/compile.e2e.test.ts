@@ -1,7 +1,7 @@
 import path from "path";
 import { realpathSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import {
   agentsPath,
   cleanupTempDir,
@@ -10,6 +10,7 @@ import {
   createTempDir,
   directoryExists,
   listFiles,
+  loadConfigOrFail,
   readTestFile,
   renderMetadataYaml,
   sourceFolderIn,
@@ -243,51 +244,97 @@ describe("compile command", () => {
     });
   });
 
-  describe("invalid skill handling", () => {
-    it("should skip skill with missing metadata.yaml", async () => {
+  /** A project beside an empty HOME, so every folder named is the project's own. */
+  describe("skill folders with no metadata.yaml", () => {
+    const REGISTERED = E2E_SKILL.vitest;
+    const WEB_DEV = E2E_AGENT["web-developer"].name;
+    const UNREGISTERED_FOLDERS = ["context7-mcp", "frontend-design", "pdf-tools"] as const;
+    const SKIPPED_SAID = `Warning: Skipped 3 skills in '${DIRS.CLAUDE}/${DIRS.SKILLS}/' that aren't ${STEP_TEXT.INSTALLED_SKILL_METADATA_MISSING}\n`;
+
+    let project: { dir: string; globalHome: string };
+
+    beforeEach(async () => {
       tempDir = await createTempDir();
-      const projectDir = path.join(tempDir, "project");
-      // Agents declared so the project is a detected installation; local skills come from disk.
+      project = { dir: path.join(tempDir, "project"), globalHome: path.join(tempDir, "home") };
+      await mkdir(project.globalHome, { recursive: true });
+      await createPermissionsFile(project.dir);
+
       await writeProjectConfig(
-        projectDir,
+        project.dir,
         buildProjectConfig({
-          name: "e2e-test",
-          skills: [],
-          agents: buildAgentConfigs(
-            [E2E_AGENT["web-developer"].name, E2E_AGENT["api-developer"].name],
-            { scope: "project" },
-          ),
+          name: "e2e-unregistered-folders",
+          skills: buildSkillConfigs([REGISTERED.id], {
+            scope: "project",
+            origin: EJECT_SOURCE_NAME,
+          }),
+          agents: buildAgentConfigs([WEB_DEV], { scope: "project" }),
+          stack: { [WEB_DEV]: { "web-testing": [saUnflagged(REGISTERED.id)] } },
         }),
       );
-
-      await createLocalSkill(projectDir, "web-state-jotai", {
-        description: "Valid skill",
+      await createLocalSkill(project.dir, REGISTERED.id, {
+        description: "The one registered skill",
         metadata: renderMetadataYaml({
-          ...metadataFieldsFor("web-state-jotai"),
-          contentHash: "hash-valid",
+          ...metadataFieldsFor(REGISTERED.id),
+          contentHash: "hash-registered",
         }),
       });
+    });
 
-      // SKILL.md only, no metadata.yaml.
-      await createLocalSkill(projectDir, "web-state-mobx", {
-        description: "Missing metadata",
-        body: "# No Metadata",
-      });
+    it("says one line for the folders it skipped, naming how many and where, and compiles the registered skill", async () => {
+      for (const folder of UNREGISTERED_FOLDERS) {
+        await createLocalSkill(project.dir, folder, { description: "Another tool's skill" });
+      }
+      const configBefore = await loadConfigOrFail(project.dir);
 
-      const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
+      const { exitCode, output, stderr } = await CLI.run(["compile"], project);
 
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(output).toContain("missing metadata.yaml");
+      expect(exitCode, `compile failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
+      // execa strips the final newline, so it is put back for the line's end to be pinned.
+      const warned = `${stderr}\n`;
+      expect(warned).toContain(SKIPPED_SAID);
+      expect(warned.indexOf(SKIPPED_SAID), `said once:\n${stderr}`).toBe(
+        warned.lastIndexOf(SKIPPED_SAID),
+      );
+      for (const folder of UNREGISTERED_FOLDERS) {
+        expect(output, `'${folder}' is named only under --verbose`).not.toContain(folder);
+      }
+
       expect(output).toContain("Discovered 1 local skill");
       expect(output).not.toContain("Discovered 1 local skills");
+      await expect(project).toHaveCompiledAgentContent(WEB_DEV, {
+        contains: [REGISTERED.id],
+        notContains: [...UNREGISTERED_FOLDERS],
+      });
+      expect(await loadConfigOrFail(project.dir)).toStrictEqual(configBefore);
+      for (const folder of UNREGISTERED_FOLDERS) {
+        expect(
+          await directoryExists(path.join(project.dir, DIRS.CLAUDE, DIRS.SKILLS, folder)),
+          `another tool's '${folder}' is left where it was`,
+        ).toBe(true);
+      }
+    });
 
-      await expect({ dir: projectDir }).toHaveCompiledAgentContent(
-        E2E_AGENT["web-developer"].name,
-        {
-          contains: ["name: web-developer"],
-          notContains: ["web-state-mobx"],
-        },
-      );
+    it("names each skipped folder under --verbose, beside the same one line", async () => {
+      for (const folder of UNREGISTERED_FOLDERS) {
+        await createLocalSkill(project.dir, folder, { description: "Another tool's skill" });
+      }
+
+      const { exitCode, output, stderr } = await CLI.run(["compile", "--verbose"], project);
+
+      expect(exitCode, `compile --verbose failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
+      expect(`${stderr}\n`).toContain(SKIPPED_SAID);
+      for (const folder of UNREGISTERED_FOLDERS) {
+        expect(output).toContain(folder);
+      }
+    });
+
+    it("says no skip line when every folder is registered", async () => {
+      const { exitCode, output } = await CLI.run(["compile"], project);
+
+      expect(exitCode, `compile failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
+      expect(output).toContain("Discovered 1 local skill");
+      expect(output).not.toContain(STEP_TEXT.INSTALLED_SKILL_METADATA_MISSING);
+      await expect(project).toHaveCompiledAgentContent(WEB_DEV, { contains: [REGISTERED.id] });
     });
   });
 

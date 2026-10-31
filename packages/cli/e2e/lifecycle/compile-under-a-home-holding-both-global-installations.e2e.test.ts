@@ -35,9 +35,11 @@ import {
  * skill no marketplace offers: `compile` reads the global installation the project inherits, its
  * own provider's, and nothing of the other. So a skill whose metadata describes nothing stops the
  * project's compile when it sits in that installation, and not when it sits in the other. Claude
- * is the control, being also the provider a home holding both would otherwise be read as.
+ * is the control, being also the provider a home holding both would otherwise be read as. Once
+ * `uninstall --provider` at home removes the project's own provider's global, the project inherits
+ * no global installation, and the other provider's is still never read.
  *
- * CLI-984.
+ * CLI-984, CLI-991.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -222,6 +224,27 @@ describe("compile in a project under a home holding a Claude and a Codex global 
     await writeFile(carriedMetadataPath(atHome), renderUnparseableMetadataYaml());
   }
 
+  /** As a user removes one provider's global installation: `uninstall --provider` at home. */
+  async function uninstallTheGlobalOf(provider: Provider, home: string): Promise<void> {
+    const uninstalled = await CLI.run(["uninstall", "--yes", "--provider", provider], {
+      dir: home,
+      globalHome: home,
+    });
+    expect(uninstalled.exitCode, flattenCliOutput(uninstalled.output)).toBe(EXIT_CODES.SUCCESS);
+
+    // Subject guards: the home now holds the other provider's global installation alone.
+    expect(
+      await fileExists(path.join(home, SOURCE_FOLDER[provider], FILES.CONFIG_TS)),
+      `the ${provider} global installation is gone`,
+    ).toBe(false);
+    for (const other of otherThan(provider)) {
+      expect(
+        await fileExists(carriedMetadataPath(other)),
+        `the ${other} global installation keeps its carried skill`,
+      ).toBe(true);
+    }
+  }
+
   it.each(PROVIDERS)(
     "reads the %s project's inherited global from its own provider's installation, and nothing of the other",
     { timeout: TIMEOUTS.LIFECYCLE },
@@ -279,6 +302,33 @@ describe("compile in a project under a home holding a Claude and a Codex global 
 
       expect(output, "the project's compile completes").toContain(STEP_TEXT.COMPILE_COMPLETE);
       for (const other of otherThan(provider)) {
+        expect(output, `nothing names the ${other} global's broken skill`).not.toContain(
+          CARRIED[other].id,
+        );
+      }
+      expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+    },
+  );
+
+  it.each(PROVIDERS)(
+    "compiles the %s project once its provider's global installation is uninstalled, reading nothing of the other's",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async (provider) => {
+      const { project, home } = await installBothAtHomeThenTheProjectOn(provider);
+      await uninstallTheGlobalOf(provider, home);
+      // A skill there that stops any compile reading it, so a read is seen as well as named.
+      for (const other of otherThan(provider)) await breakTheCarriedSkillOf(other);
+
+      const { exitCode, output } = await CLI.run(["compile", "--verbose"], project);
+
+      expect(output, "the project's compile completes").toContain(STEP_TEXT.COMPILE_COMPLETE);
+      for (const other of otherThan(provider)) {
+        expect(output, `nothing is read from the ${other} global's skills`).not.toContain(
+          GLOBAL_SKILLS_DIR[other](home),
+        );
+        expect(output, `nothing is read from the ${other} global's configuration`).not.toContain(
+          path.join(home, SOURCE_FOLDER[other]),
+        );
         expect(output, `nothing names the ${other} global's broken skill`).not.toContain(
           CARRIED[other].id,
         );

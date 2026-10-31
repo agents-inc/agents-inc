@@ -88,7 +88,7 @@ describe("init --from <id>: project-scoped content at the global root", () => {
     expect(said).toContain(STEP_TEXT.SHARED_CONFIG_PROJECT_SCOPE_AT_HOME);
     expect(said).toContain(STEP_TEXT.SHARED_CONFIG_PROJECT_SCOPE_HINT);
     // Both kinds named: only the sharer knows which they meant to move.
-    expect(said).toContain(`skill ${E2E_SKILL.react.id}`);
+    expect(said).toContain(`skill ${E2E_SKILL.react.display} (scope: project)`);
     expect(said).toContain(`sub-agent ${WEB_DEV}`);
 
     // The refusal lands before the install, so no success line.
@@ -133,9 +133,9 @@ describe("init --from <id>: project-scoped content at the global root", () => {
     expect(exitCode).toBe(EXIT_CODES.ERROR);
     const said = flattenCliOutput(output);
     expect(said).toContain(STEP_TEXT.SHARED_CONFIG_PROJECT_SCOPE_AT_HOME);
-    expect(said).toContain(`skill ${E2E_SKILL.react.id}`);
+    expect(said).toContain(`skill ${E2E_SKILL.react.display} (scope: project)`);
     // The global skill is not the problem and must not be listed.
-    expect(said).not.toContain(`skill ${E2E_SKILL.vitest.id}`);
+    expect(said).not.toContain(`skill ${E2E_SKILL.vitest.display}`);
 
     await expectNoSourceFolder(
       env.fakeHome,

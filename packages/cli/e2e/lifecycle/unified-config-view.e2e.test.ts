@@ -15,7 +15,7 @@ describe("unified config view -- split writes", () => {
 
   describe("dual-scope compile verification", () => {
     it("should compile agents from project with global-only config", async () => {
-      handle = await ProjectBuilder.dualScopeWithImport();
+      handle = await ProjectBuilder.dualScopeWithGlobalTypes();
       const projectDir = handle.project.dir;
       const globalHome = handle.globalHome.dir;
 

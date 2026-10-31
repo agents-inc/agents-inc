@@ -100,9 +100,12 @@ describe("a project-scoped skill installed alongside only global sub-agents", ()
     expect(JSON.stringify(globalStack)).not.toContain(E2E_SKILL.react.id);
   });
 
-  it("says so, naming the skill", () => {
-    expect(flattenCliOutput(initOutput)).toContain(
-      `Skill '${E2E_SKILL.react.id}' ${STEP_TEXT.SKILL_ASSIGNED_TO_NO_AGENT}`,
+  it("says so, naming the skill as its install recorded it", () => {
+    const said = flattenCliOutput(initOutput);
+
+    expect(said).toContain(
+      `Skill '${E2E_SKILL.react.display}' ${STEP_TEXT.SKILL_ASSIGNED_TO_NO_AGENT}`,
     );
+    expect(said).toContain(`${STEP_TEXT.STACK_PAIR_DROPPED_BY_SCOPE} '${E2E_SKILL.react.display}'`);
   });
 });

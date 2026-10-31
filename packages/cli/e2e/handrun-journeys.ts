@@ -35,10 +35,7 @@ import {
   createE2EPluginSource,
   buildPluginSourceInto,
 } from "./helpers/create-e2e-plugin-source.js";
-import {
-  buildSharedSource,
-  removeSharedSource,
-} from "../src/cli/lib/__tests__/helpers/shared-source.js";
+import { setUpSharedSource } from "../src/cli/lib/__tests__/helpers/shared-source.js";
 import { claudePluginMarketplaceAdd } from "../src/cli/lib/hosts/claude-host.js";
 import {
   CLAUDE_SOURCE_REL,
@@ -1135,7 +1132,7 @@ async function journeyCodexUninstallLeavesClaude(
 async function withSharedFixtures(run: () => Promise<void>): Promise<void> {
   process.stdout.write("building the shared fixtures (plugin tree + plain tree)...\n");
   await installCodexOnPath();
-  await buildSharedSource(async (root) => {
+  const removeSharedSource = await setUpSharedSource(async (root) => {
     await buildPluginSourceInto(root);
     await buildSharedE2ESourceInto(root);
   });

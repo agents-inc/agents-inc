@@ -1,7 +1,9 @@
+import path from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
 import { generateConfigSource } from "../../src/cli/lib/configuration/config-writer.js";
+import { splitConfigByScope } from "../../src/cli/lib/configuration/config-generator.js";
 import { matrix } from "../../src/cli/lib/matrix/matrix-provider.js";
 import { loadInstalledConfig } from "../../src/cli/lib/configuration/project-config.js";
 import {
@@ -91,7 +93,7 @@ describe("a fixture's config survives the product's own load-then-write cycle", 
       ).toBe(await readTestFile(configTsPath(dir)));
     }
 
-    await cleanupTempDir(project.dir);
+    await cleanupTempDir(path.dirname(project.dir));
   });
 
   it("round-trips a config whose stack names each skill's declared category", async () => {
@@ -114,6 +116,41 @@ describe("a fixture's config survives the product's own load-then-write cycle", 
       );
 
     await cleanupTempDir(dir);
+  });
+});
+
+describe("a ProjectBuilder config.ts is the file the CLI writes for it", () => {
+  let tempDir: string | undefined;
+
+  afterEach(async () => {
+    if (tempDir) await cleanupTempDir(tempDir);
+    tempDir = undefined;
+  });
+
+  it.each([
+    { label: "without a marketplace", options: {} },
+    { label: "recording a marketplace", options: { marketplace: TEST_SOURCE_URL } },
+  ])("round-trips withCustomSkill's config $label byte for byte", async ({ options }) => {
+    const project = await ProjectBuilder.withCustomSkill(options);
+    tempDir = path.dirname(project.dir);
+
+    expect(
+      generateConfigSource(await loadConfigOrFail(project.dir), matrix),
+      "the fixture holds a config.ts the CLI would not have written",
+    ).toBe(await readTestFile(configTsPath(project.dir)));
+  });
+
+  it("writes dualScopeWithGlobalTypes's project config as the CLI writes one beneath a global config", async () => {
+    const { project, globalHome } = await ProjectBuilder.dualScopeWithGlobalTypes();
+    tempDir = path.dirname(project.dir);
+
+    const globalConfig = await loadConfigOrFail(globalHome.dir);
+    const projectHalf = splitConfigByScope(await loadConfigOrFail(project.dir)).project;
+
+    expect(
+      generateConfigSource(projectHalf, matrix, { isProjectConfig: true, globalConfig }),
+      "the CLI inlines the global config's entries into a project config; it writes no import of it",
+    ).toBe(await readTestFile(configTsPath(project.dir)));
   });
 });
 

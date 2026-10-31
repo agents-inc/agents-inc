@@ -11,6 +11,7 @@ import {
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
+import { buildSkillConfig } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import "../matchers/setup.js";
 
 /**
@@ -27,14 +28,20 @@ describe("compile over a hand-edited stack pair the scope rule forbids", () => {
     }
   });
 
-  it("names the agent and the skill whose assignment it dropped", async () => {
+  async function compileOverADroppedPair(recordedName?: string) {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
     const fakeHome = path.join(tempDir, "fake-home");
 
     await writeProjectConfig(projectDir, {
       name: "scope-dropped-pair",
-      skills: [{ id: E2E_SKILL.react.id, scope: "project", origin: "eject" }],
+      skills: [
+        buildSkillConfig(E2E_SKILL.react.id, {
+          scope: "project",
+          origin: "eject",
+          ...(recordedName !== undefined && { displayName: recordedName }),
+        }),
+      ],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
       selectedDomains: ["web"],
       stack: {
@@ -54,11 +61,12 @@ describe("compile over a hand-edited stack pair the scope rule forbids", () => {
       }),
     });
 
-    const { exitCode, output } = await CLI.run(
-      ["compile"],
-      { dir: projectDir },
-      { env: { HOME: fakeHome } },
-    );
+    const run = await CLI.run(["compile"], { dir: projectDir }, { env: { HOME: fakeHome } });
+    return { ...run, projectDir };
+  }
+
+  it("names the agent and the skill whose assignment it dropped", async () => {
+    const { exitCode, output, projectDir } = await compileOverADroppedPair();
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
@@ -71,9 +79,19 @@ describe("compile over a hand-edited stack pair the scope rule forbids", () => {
     expect(output).not.toContain(STEP_TEXT.SKILL_NOT_FOUND_WARNING);
 
     // Flattened: oclif wraps warnings with ` › `.
-    const flattened = flattenCliOutput(output);
-    expect(flattened).toContain(STEP_TEXT.STACK_PAIR_DROPPED_BY_SCOPE);
-    expect(flattened).toContain(E2E_AGENT["web-developer"].name);
-    expect(flattened).toContain(E2E_SKILL.react.id);
+    expect(flattenCliOutput(output)).toContain(
+      `'${E2E_AGENT["web-developer"].name}' ${STEP_TEXT.STACK_PAIR_DROPPED_BY_SCOPE} '${E2E_SKILL.react.display}'`,
+    );
+  });
+
+  it("names the skill by the name its install recorded, over the catalogue's", async () => {
+    const recordedName = "House React";
+
+    const { exitCode, output } = await compileOverADroppedPair(recordedName);
+
+    expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+    expect(flattenCliOutput(output)).toContain(
+      `'${E2E_AGENT["web-developer"].name}' ${STEP_TEXT.STACK_PAIR_DROPPED_BY_SCOPE} '${recordedName}'`,
+    );
   });
 });

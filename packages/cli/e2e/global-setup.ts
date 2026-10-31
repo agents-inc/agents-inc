@@ -1,8 +1,5 @@
 import path from "path";
-import {
-  buildSharedSource,
-  removeSharedSource,
-} from "../src/cli/lib/__tests__/helpers/shared-source.js";
+import { setUpSharedSource } from "../src/cli/lib/__tests__/helpers/shared-source.js";
 import { buildPluginSourceInto } from "./helpers/create-e2e-plugin-source.js";
 import { installCodexOnPath } from "./fixtures/codex-on-path.js";
 import { buildSharedE2ESourceInto } from "./helpers/create-e2e-source.js";
@@ -26,8 +23,9 @@ export default async function setup() {
   // The `codex` every spawned CLI resolves by name.
   await installCodexOnPath();
 
-  // Built once per run and frozen read-only, so a spec writing into a shared source fails at the write.
-  await buildSharedSource(async (root) => {
+  // Built once per run, in a folder of its own, and frozen read-only, so a spec writing into a
+  // shared source fails at the write.
+  const removeSharedSource = await setUpSharedSource(async (root) => {
     await buildPluginSourceInto(root);
     await buildSharedE2ESourceInto(root);
   });

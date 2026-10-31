@@ -103,24 +103,41 @@ export async function createPluginInstalledProject(
 
   await writeJson(settingsPath(projectDir), buildClaudeSettings(pluginKeys));
 
-  await writeJson(registryPath(home), {
+  await writeJson(registryPath(home), userScopedRegistry(options));
+
+  return { project: { dir: projectDir }, home, pluginKeys };
+}
+
+type RegisteredPlugins = Pick<
+  PluginInstalledProjectOptions,
+  "pluginsDir" | "marketplace" | "skillIds"
+>;
+
+function userScopedRegistry({ pluginsDir, marketplace, skillIds }: RegisteredPlugins) {
+  return {
     version: REGISTRY_VERSION,
     plugins: Object.fromEntries(
-      options.skillIds.map((id) => [
-        pluginKeyFor(id, options.marketplace),
+      skillIds.map((id) => [
+        pluginKeyFor(id, marketplace),
         [
           {
             scope: "user",
-            installPath: path.join(options.pluginsDir, id),
+            installPath: path.join(pluginsDir, id),
             version: PLUGIN_VERSION,
             installedAt: PLUGIN_INSTALLED_AT,
           },
         ],
       ]),
     ),
-  });
+  };
+}
 
-  return { project: { dir: projectDir }, home, pluginKeys };
+/** As `claude plugin install --scope user` leaves HOME's registry, holding only these plugins. */
+export async function holdPluginsForTheUser(
+  home: string,
+  plugins: RegisteredPlugins,
+): Promise<void> {
+  await writeJson(registryPath(home), userScopedRegistry(plugins));
 }
 
 // As `claude plugin uninstall` leaves it: other keys survive, and config.ts still declares the skills.
