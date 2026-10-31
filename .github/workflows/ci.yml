@@ -59,21 +59,46 @@ jobs:
       - run: bun run typecheck --filter='!agents-inc'
       - run: bun run lint --filter='!agents-inc'
 
-      # packages/ui's `test` uses vitest browser mode, so it needs chromium too.
+      # packages/ui's `test` uses vitest browser mode, so it needs chromium.
       - run: bunx playwright install --with-deps chromium
 
       - run: bun run test --filter='!agents-inc'
 
-      - run: bun run test:e2e --filter='!agents-inc'
+      # e2e-editor runs the editor's suite.
+      - run: bun run test:e2e --filter='!agents-inc' --filter='!editor'
+
+  e2e-editor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      # Otherwise a red half cancels the other, and its tests never run.
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - run: bun install --frozen-lockfile
+
+      - run: bunx playwright install --with-deps chromium
+
+      - run: bun run test:e2e --filter=editor -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
 
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: apps/editor/playwright-report/
           retention-days: 7
 
-  # Separate job: its pty E2E suite is slow, and deploy does not wait for it.
   check-cli:
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -95,14 +120,43 @@ jobs:
 
       - run: bun run typecheck --filter=agents-inc
       - run: bun run lint --filter=agents-inc
-      - run: bun run test --filter=agents-inc
-      - run: bun run test:e2e --filter=agents-inc
+
+      - name: Reach the temp folder through a symlink, as on a Mac
+        run: |
+          mkdir "$RUNNER_TEMP/tmp-real"
+          ln -s "$RUNNER_TEMP/tmp-real" "$RUNNER_TEMP/tmp-link"
+      # Loose, because turbo's default strict mode drops TMPDIR before vitest sees it.
+      - run: bun run test --filter=agents-inc --env-mode=loose
+        env:
+          TMPDIR: ${{ runner.temp }}/tmp-link
 
       # `test:e2e` does not collect the smoke files. The Claude probes skip here (no `claude`);
       # the Codex probe runs for real.
       - name: The smoke files must at least still load
         working-directory: packages/cli
         run: bun run test:smoke
+
+  e2e-cli:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun run test:e2e --filter=agents-inc -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
 
   # Chromatic baseline diffs for packages/ui. Own job: needs full history, and an outage
   # should not block the type check. Does not gate deploy.
@@ -167,8 +221,8 @@ jobs:
           retention-days: 7
 
   deploy:
-    # check-cli is absent: nothing it covers changes what Cloudflare serves.
-    needs: check-web
+    # check-cli and e2e-cli are absent: nothing they cover changes what Cloudflare serves.
+    needs: [check-web, e2e-editor]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 10

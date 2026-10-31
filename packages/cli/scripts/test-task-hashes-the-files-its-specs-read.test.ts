@@ -33,6 +33,7 @@ const DryRunSchema = z.object({
  */
 const READ_OUTSIDE_THE_PACKAGE = [
   { reader: "pre-push-hook.test.ts", files: [".husky/pre-push"] },
+  { reader: "pre-commit-hook.test.ts", files: [".husky/pre-commit"] },
   { reader: "generate-compile-package.test.ts", files: [".github/workflows/ci.yml"] },
   {
     reader: "check-shared-tsconfig.test.ts",
@@ -73,8 +74,28 @@ const READ_OUTSIDE_THE_PACKAGE = [
     ],
   },
   {
+    reader: "check-vitest-collects-every-test.test.ts",
+    files: [
+      "package.json",
+      "apps/editor/package.json",
+      "apps/editor/vitest.config.ts",
+      "apps/editor/scripts/spa-fallback-shell.test.ts",
+      "apps/editor/src/features/configure/lib/provider.test.ts",
+      "apps/server/package.json",
+      "apps/server/vitest.config.ts",
+      "apps/server/src/auth.test.ts",
+      "apps/server/wrangler.jsonc",
+      "apps/server/migrations/0000_accounts_and_saved_stacks.sql",
+      "packages/ui/package.json",
+      "packages/ui/vitest.config.ts",
+      "packages/ui/.storybook/main.ts",
+      "packages/ui/src/lib/utils.test.ts",
+      "packages/vitest-config/node.js",
+    ],
+  },
+  {
     reader: "check-briefing-contract.test.ts",
-    files: ["README.md", "docs/architecture.md", "package.json"],
+    files: ["README.md", "docs/architecture.md", "docs/briefing.md", "package.json"],
   },
 ];
 

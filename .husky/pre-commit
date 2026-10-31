@@ -3,11 +3,11 @@ bunx lint-staged
 
 staged=$(git diff --cached --name-only --no-renames)
 
-# These files feed the cross-workspace checks wherever they sit. The grep sits inside
+# The cross-workspace checks read these files wherever they sit. The grep sits inside
 # an `if` because husky runs this with `sh -e`.
 run_deps=no
 
-if printf '%s\n' "$staged" | grep -qE '(^|/)(package\.json|bun\.lock|tsconfig[^/]*\.json|vitest\.config\.[^/]+|eslint\.config\.[^/]+)$'; then
+if printf '%s\n' "$staged" | grep -qE '(^|/)(package\.json|bun\.lock|tsconfig[^/]*\.json|vitest\.config\.[^/]+|eslint\.config\.[^/]+|[^/]+\.test\.tsx?)$'; then
 	run_deps=yes
 fi
 

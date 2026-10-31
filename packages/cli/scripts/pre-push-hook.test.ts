@@ -218,6 +218,20 @@ const PUSHES = [
     gates: [DEPS_CHECK, ...WEB_SIDE],
   },
   {
+    carries: "a test file in the CLI",
+    runs: "the dependency check and the CLI side",
+    pushTarget: true,
+    pushed: ["packages/cli/src/cli/lib/source-validator.test.ts"],
+    gates: [DEPS_CHECK, ...CLI_SIDE],
+  },
+  {
+    carries: "a component test in an app",
+    runs: "the dependency check and the web side",
+    pushTarget: true,
+    pushed: ["apps/editor/src/features/configure/components/skill-cell.test.tsx"],
+    gates: [DEPS_CHECK, ...WEB_SIDE],
+  },
+  {
     carries: "a change to docs and trackers alone",
     runs: "no gate",
     pushTarget: true,

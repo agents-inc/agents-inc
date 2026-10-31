@@ -38,8 +38,8 @@ if printf '%s\n' "$pushed" | grep -qE '^(package\.json|bun\.lock|turbo\.json|tsc
 	run_web=yes
 fi
 
-# These files feed the cross-workspace checks wherever they sit, so it is unanchored.
-if printf '%s\n' "$pushed" | grep -qE '(^|/)(package\.json|bun\.lock|tsconfig[^/]*\.json|vitest\.config\.[^/]+|eslint\.config\.[^/]+)$'; then
+# The cross-workspace checks read these files wherever they sit, so it is unanchored.
+if printf '%s\n' "$pushed" | grep -qE '(^|/)(package\.json|bun\.lock|tsconfig[^/]*\.json|vitest\.config\.[^/]+|eslint\.config\.[^/]+|[^/]+\.test\.tsx?)$'; then
 	run_deps=yes
 fi
 

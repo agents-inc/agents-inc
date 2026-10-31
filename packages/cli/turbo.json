@@ -36,6 +36,7 @@
         "../../README.md",
         "../../package.json",
         "../../docs/**",
+        "../../docs/briefing.md",
         "../../.husky/*",
         "../../.github/**",
         "../../apps/*/package.json",
@@ -45,7 +46,13 @@
         "../../packages/*/package.json",
         "../../packages/*/tsconfig*.json",
         "../../packages/*/vitest.config.*",
-        "../../packages/*/eslint.config.*"
+        "../../packages/*/eslint.config.*",
+        "../../apps/*/**/*.test.{ts,tsx}",
+        "../../packages/*/**/*.test.{ts,tsx}",
+        "../../packages/vitest-config/**",
+        "../../apps/server/wrangler.jsonc",
+        "../../apps/server/migrations/**",
+        "../../packages/ui/.storybook/**"
       ]
     }
   }
