@@ -26,7 +26,7 @@ Skills are grouped by **domain** and within a domain by **category**. An exclusi
 
 There's no accordion and nothing collapses: every skill in a category is on screen. The strip names every domain the catalogue has, whatever the search or the `selected` filter is showing.
 
-**A cell that's dimmed is ruled out by something you already picked.** Hover it and the reason reads `Conflicts with <name>`, `Needs <a> and <b>`, or `Needs one of <a>, <b>`. Clicking does nothing. Incompatibility carries through the chain — picking React rules out Nuxt because Nuxt needs Vue — so the reason names the nearest cause rather than the whole path.
+**A cell that's dimmed is ruled out by something you already picked.** Hover it and the reason reads `Conflicts with <name>`, `Needs <a> and <b>`, or `Needs one of <a>, <b>`. Clicking does nothing, and its `•••` and both badge pairs are disabled. Incompatibility carries through the chain — picking React rules out Nuxt because Nuxt needs Vue — so the reason names the nearest cause rather than the whole path.
 
 ## Exclusive categories
 

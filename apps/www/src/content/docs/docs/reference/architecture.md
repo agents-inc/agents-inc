@@ -70,7 +70,8 @@ e2e/                     # End-to-end tests (commands, interactive, lifecycle, i
 
 2. Command loads skills matrix
    -> loadSkillsMatrixFromSource() first calls resolveSource(), which picks the marketplace
-      (`init`'s --marketplace flag > CC_MARKETPLACE for `init` > project config > global config > default)
+      (`init`: --marketplace flag > CC_MARKETPLACE > default;
+       every other command: project config > global config > default)
    -> fetches categories, rules, skills
    -> Returns SourceLoadResult (merged matrix + resolved source config)
 
@@ -94,7 +95,7 @@ e2e/                     # End-to-end tests (commands, interactive, lifecycle, i
 
 - **Init hook**: Runs before every command. When no command is given and an installation exists — the project's, or else the global one — it shows a dashboard. Each command resolves its own marketplace when it loads skills.
 
-- **Marketplace resolution precedence**: `--marketplace` flag > `CC_MARKETPLACE` env var > the project's `config.ts` > the global `config.ts` > the default marketplace. The first two rungs are install-time only: `init` declares the flag and is the only caller `CC_MARKETPLACE` is read for, so every later command starts at the project config.
+- **Marketplace resolution precedence**: `--marketplace` flag > `CC_MARKETPLACE` env var > the project's `config.ts` > the global `config.ts` > the default marketplace. The first two rungs are install-time only: `init` declares the flag and is the only caller `CC_MARKETPLACE` is read for, so every later command starts at the project config. `init` reads neither config, since a shared id naming no marketplace names the public one.
 
 - **Install modes**: Skills can be installed as **plugins** (managed by the provider's plugin system) or **ejected** (copied as local files). Config is at `.agents-inc/<provider>/config.ts`. [Claude or Codex](/docs/configuration/providers) has where each provider puts them, and the one placement Codex does not offer.
 

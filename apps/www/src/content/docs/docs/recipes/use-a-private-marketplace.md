@@ -50,8 +50,8 @@ The first rung that names one wins:
 | `--marketplace/-m`                                             | `init --from` alone                |
 | the ref a shared configuration carries                         | `init --from` alone                |
 | `CC_MARKETPLACE`                                               | `init --from` alone                |
-| `marketplace` in this project's `.agents-inc/claude/config.ts` | every command                      |
-| `marketplace` in `~/.agents-inc/claude/config.ts`              | every command                      |
+| `marketplace` in this project's `.agents-inc/claude/config.ts` | every command but `init --from`    |
+| `marketplace` in `~/.agents-inc/claude/config.ts`              | every command but `init --from`    |
 | `github:agents-inc/skills`                                     | the default when nothing names one |
 
 Naming one on the command line outranks the ref a `--from` id carries: the flag is an instruction about this install, while the payload's ref is a record of where the sharer's came from. A value passed to `--marketplace` beside `--from` that can't be a marketplace stops the run — somebody named it, so falling through would install from a place they didn't name. A bad `CC_MARKETPLACE` warns and falls through to the next rung instead, because it was already in the environment rather than typed at this command.

@@ -71,7 +71,7 @@ You have two ways forward, and only the second actually uninstalls anything:
 A global-scoped sub-agent only carries global-scoped skills. Since `config.ts` is hand-editable, you can write the pair it forbids, and `compile` won't silently honor it — the reference is dropped and each offending pair is named:
 
 ```
-Sub-agent 'web-developer' cannot carry project-scoped skill 'web-testing-vitest' — global-scoped sub-agents only carry global-scoped skills.
+Sub-agent 'web-developer' cannot carry project-scoped skill 'Vitest' — global-scoped sub-agents only carry global-scoped skills.
 ```
 
 Nothing in `config.ts` is rewritten, so the row survives and the warning repeats until you fix it. Move the skill to global scope, or move the sub-agent to project scope.

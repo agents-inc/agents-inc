@@ -44,7 +44,7 @@ The reason is visibility rather than policy. A global sub-agent's file is writte
 `compile` drops the pair, compiles the sub-agent without it, and says so on every run. It doesn't rewrite your config, so the warning repeats until you fix it:
 
 ```
-Sub-agent 'web-developer' cannot carry project-scoped skill 'web-testing-vitest' — global-scoped sub-agents only carry global-scoped skills.
+Sub-agent 'web-developer' cannot carry project-scoped skill 'Vitest' — global-scoped sub-agents only carry global-scoped skills.
 ```
 
 Two ways out: move the skill to global scope, or pin the sub-agent to the project. The editor marks the offending row and blocks Install and Share until you pick one, so this is a warning you can only hit from a hand edit or a shared configuration.

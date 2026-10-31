@@ -173,9 +173,9 @@ Two fields sound alike and do different things:
 | `marketplace`     | a **reference** — a path or a URL               | `github:agents-inc/skills`, `/home/me/skills` |
 | `marketplaceName` | a **name** — what that marketplace calls itself | `agents-inc`                                  |
 
-They can't be folded together: the name is only knowable once the marketplace has been fetched and its manifest read, so it's recorded separately after the fact. `marketplaceName` is what the plugin registry key is built from — `<skill-id>@<marketplace-name>` — which is why an install that never fetched a manifest doesn't have one.
+They can't be folded together: the name is only knowable once the marketplace has been fetched and its manifest read, so it's recorded separately after the fact. `marketplaceName` is what the plugin registry key is built from — `<skill-id>@<marketplace-name>`.
 
-**`marketplace` is resolved by precedence, not by this field alone**: `init --from` reads the `--marketplace` flag, then the marketplace the configuration names, then the `CC_MARKETPLACE` environment variable; every command then falls to the project config, the global config, and `github:agents-inc/skills`. A flag naming something that can't be a marketplace fails the run; a bad environment variable warns and falls through to the next rung.
+**`marketplace` is resolved by precedence, not by this field alone**: `init --from` reads the `--marketplace` flag, then the marketplace the configuration names, then the `CC_MARKETPLACE` environment variable, then `github:agents-inc/skills`; every other command reads the project config, the global config, then `github:agents-inc/skills`, passing over a project config that declares nothing and names no marketplace as it would a missing one. A flag naming something that can't be a marketplace fails the run; a bad environment variable warns and falls through to the next rung.
 
 **Accepted forms**: `github:`, `gh:`, `gitlab:`, `bitbucket:` and `sourcehut:` prefixes, `https://` and `http://` URLs, or a local directory path. Values are capped at 512 characters, and `..` traversal, private or reserved IP addresses, and URLs carrying a username or password are refused.
 

@@ -73,7 +73,7 @@ The key a skill sits under is the category the catalogue puts it in. The id is w
 A global-scoped sub-agent never carries a project-scoped skill. `compile` drops the pair, compiles the agent without it, and says so on every run — it doesn't rewrite `config.ts` to remove the line:
 
 ```
-Sub-agent 'web-developer' cannot carry project-scoped skill 'web-testing-vitest' — global-scoped sub-agents only carry global-scoped skills.
+Sub-agent 'web-developer' cannot carry project-scoped skill 'Vitest' — global-scoped sub-agents only carry global-scoped skills.
 ```
 
 Fix it by moving the skill to global scope, or by pinning the sub-agent to the project. [Global-first setup](/docs/guides/global-first-setup) covers which to reach for.
