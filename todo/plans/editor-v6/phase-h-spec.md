@@ -25,7 +25,7 @@ Path shorthands: `CF/` = `apps/editor/src/features/configure/`, `ST/` = `apps/ed
 
 ## Rules for every lane
 
-- Read the root `CLAUDE.md`, `packages/ui/CLAUDE.md` and `packages/cli/.ai-docs/standards/briefing.md`
+- Read the root `CLAUDE.md`, `packages/ui/CLAUDE.md` and `docs/briefing.md`
   first. Git is read-only (`status`/`log`/`show`/`diff`/`blame`). Every write command belongs to the
   user. Never edit `todo/`.
 - Work in this order: write the tests and watch them go red, implement, apply the

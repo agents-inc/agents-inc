@@ -13,13 +13,13 @@ started. See the root `CLAUDE.md`.
 
 ---
 
-## Queued — the owner's board answers of 2026-10-26
+## Running — the owner's board answers of 2026-10-26
 
-On hold (owner, 2026-10-27): no new agents start until the owner says; then built tester-first, at most 5 agents at once. CLI: CLI-971 (a line per command), CLI-979,
-CLI-982, CLI-991, CLI-945, CLI-885, CLI-887, CLI-918, CLI-992, CLI-993, CLI-994, CLI-845 (the note), CLI-875 (rule a), CLI-319
-(research only); the 11 backlog bugs CLI-901, CLI-911, CLI-912, CLI-916, CLI-917, CLI-921, EDITOR-58, EDITOR-62, EDITOR-74,
-EDITOR-93, EDITOR-96. Editor: EDITOR-61, EDITOR-90 (remove the focus-state check). Site: WWW-01. Server: SERVER-13. The other
-28 backlog rows are parked; 30 rows retired (archive.md, 2026-10-26).
+Beside the lint-rules work (owner, 29 Oct: "use other lanes to continue on the cli monorepo"; 10 agents in total). The first run (`wf_8b89978a-f02`, 29 Oct 20:41) landed SERVER-13, EDITOR-58, EDITOR-61, EDITOR-62, EDITOR-74, EDITOR-90, EDITOR-93, EDITOR-96, CLI-991, CLI-979, CLI-875 and CLI-845's note (`archive.md`, 2026-10-30). The continuation (`wf_6e75c79d-e84`, 30 Oct 02:00) landed CLI-971/CLI-901, CLI-918, CLI-885/CLI-887, CLI-994, CLI-992/CLI-945, CLI-982, CLI-993, CLI-921/CLI-916, CLI-911/CLI-912 and EDITOR-58's page-object moves (`archive.md`, 2026-10-30); it ended 30 Oct 16:35 with CLI-845's rest stopped on one spec defect, now running in `wf_159c81ae-3c3` (30 Oct 17:19, beside the fifteenth lint run, two agents at once): CLI-845's rest (tester repair, then review), then CLI-CROSS-APPLY (the lanes' reported changes to shared files), with CLI-995 and CLI-997 beside them; and a side run `wf_2b802e22-d5c` (17:27): EDITOR-116 (button-group tab order) and research on CLI-998/CLI-999 (what `edit --from` says across marketplaces). The owner's answers (30 Oct ~17:55) ran in `wf_f1e1f649-f7f` (18:03, finished 31 Oct 00:57): CLI-1000 (a config declaring nothing picks the global's marketplace), CLI-1001 (init --from after a refused save), CLI-1002 (update on Codex keeps a plugin off), EDITOR-118 (delete the editor's focus-outline tests), WWW-01's search exclusion, REPO-49 (split the slow CI suites in two) and research on the owner's CLI-916/CLI-917 questions. The side run landed EDITOR-116 and the CLI-998/CLI-999 research (30 Oct 18:47); its follow-ups (`wf_f218cf88-b97`) landed EDITOR-117, EDITOR-119 and CLI-1004 (30 Oct 22:57). CLI-917 and EDITOR-120 landed (`wf_472ebdfa-d5a`, 31 Oct 01:03). CLI-998 and CLI-999 are deferred under CLI-1006. CLI-319 is parked until the owner says. Running since 31 Oct 02:05 (owner, 30 Oct 23:28: "once these existing workflows are done then continue with the rest"): CLI-1002, CLI-1003, CLI-1007 and the 30-31 Oct follow-ups landed 31 Oct 04:10 (wf_e1c42e97-580); quick fixes CLI-1009 and CLI-1010 landed 31 Oct 06:05 (wf_a00c3ad9-642), EDITOR-121 (the owner kept the editor's own copy, 31 Oct); EDITOR-122 and EDITOR-123 landed 31 Oct 06:27 (wf_ba140086-5b1); CLI-1011 and EDITOR-124 landed 31 Oct 07:10 (wf_aadc44b4-c20); CLI-1013 landed 09:11 (wf_a0f36aa2-113), REPO-52 and CLI-FOLLOWUPS-2 landed 09:35 (wf_59d7faf8-7b9); REPO-53 (a spec for the pre-commit hook) landed 10:06 (wf_61eafd28-18a); CLI-FOLLOWUPS-3 (CLI-1008's roster rows) landed 11:52 (wf_492e3105-6e9); CLI-1014 (the CLI unit suite red on a Mac) landed by 12:40 (review 1 approve); CLI-1017 (e2e under a long temp path, review 1 approve) and REPO-54 (CI unit step under a symlinked temp folder, quick) landed 13:20 (wf_4dad6852-5d6); paused at the owner's word (12:41): nothing new starts; CLI-1018 (the temp-folder leftovers) waits; cards CLI-1015 and CLI-1016 open; the owner's 31 Oct answers CLI-1001's last line and CLI-1008 landed 10:49 (wf_437c8c42-422; two new cards, CLI-1015 and CLI-1016); CLI-1012 landed 31 Oct 06:39; lint-rules: the round-2 ruleset answers, test-file extensions and thrown `using` landed 31 Oct 04:20 (eighteenth run); the two lint cards were answered 31 Oct. The lint follow-ups landed 31 Oct 05:07 (nineteenth run). REPO-51 (b) (the briefing move) landed 31 Oct 06:08. lint-rules slice 2 landed 17:24 (twentieth run wf_49d24e69-90a ended red at 16:19; the finishing lane S2-FINISH, wf_fceb0a2e-f90, approved at review 1, gates green): 36 more rules run in oxlint, every shipped rule has a proof on each linter that runs it (four KNOWN GAPs), unicorn/prefer-modern-dom-apis back in ESLint until its card is answered. Left, paused: the lint follow-ups (rule-data's missing `@eslint/compat` devDependency, the twice-kept compat prefix list, test premises and one doc comment slice 2 made false) and the post-slice-2 docs lane; then own-lint Z last. Last: REPO-50 (comment trim) and own-lint Z. The other 28 backlog rows are parked; 30 rows retired (archive.md, 2026-10-26). CLI-996 (owner, 30 Oct 14:10: one line for skipped unregistered skills) landed beside it (`wf_b1c25628-64b`, `archive.md`).
+
+## First — the next push proves REPO-49
+
+REPO-49 landed 30 Oct (`archive.md`): each slow suite runs as two halves on two machines, and docs/architecture.md matches. No half has run on GitHub yet; watch the next push's `e2e-editor` and `e2e-cli` times against the 40-minute limit.
 
 ## Next — REPO-44: tech debt and lint rules
 
@@ -27,10 +27,14 @@ Steps 1 (lint-rules measurement) and 2 (CLI-923) landed 2026-10-15, step 8's fir
 steps 4-8 landed 2026-10-21 (step 3, the CLAUDE.md and .ai-docs slim, is the owner's later call; step 5's measured rules wait for the lint-rules package run);
 the whole-repo expressive-ts rounds landed (lint-rules 2026-10-21; CLI rounds 1–2 in 0.171.0, round 3 2026-10-22).
 The wizard removal's loose ends were ruled on the decision cards and shipped in 0.172.0; what was still short shipped
-in 0.173.0 (committed and pushed 2026-10-23; npm publish is the owner's). Now (2026-10-24): the owner's board answers
-of 2026-10-23/24, built row by row with tester-first specialist agents (cli.md, editor.md), and in lint-rules the accepted
-suggestions, the own-lint clean-up and the 58 accepted candidate rules (specs first); `plans/REPO-44-next.md`.
+in 0.173.0 (committed and pushed 2026-10-23; npm publish is the owner's). The owner's board answers of 2026-10-23/24 shipped
+in 0.174.0 and 0.175.0 (2026-10-28). Now (2026-10-30 21:10): the seventeenth lint run builds the 30 Oct answers one lane at a time, with the ruleset
+critique's revision beside it; four CLI runs build the owner's CLI answers (CLI-917 since 21:08), with CLI-1002 on a card; the multi-marketplace work (CLI-1006) and its bugs wait until last (below); what is left, in order: `plans/REPO-44-next.md`.
 Order: `plans/REPO-44-tech-debt-and-lint.md`. Open and queued, both repositories: [`outstanding.md`](./outstanding.md).
+
+## Last — CLI-1006: several marketplaces in one configuration
+
+Owner, 2026-10-30: "it will be done after everything else". Until then, bugs from mixing marketplaces (logged or newly found, skills dropped or skipped among them) are filed under CLI-1006 and not fixed: CLI-998, CLI-1005 and the sweep's eight new bugs ([`plans/CLI-1006-several-marketplaces.md`](./plans/CLI-1006-several-marketplaces.md)).
 
 ## 2026-10-04: the post-CLI-902 audit, rounds 1–6 landed
 
@@ -46,7 +50,7 @@ fix it, and repeat. Six rounds have landed (0.166.0).
   2026-10-04 (`.claude-src/` support dropped); CLI-908, CLI-909 and CLI-915 in 0.172.0.
 - **CLI, deferred by owner:** CLI-914 (`CLAUDE_CONFIG_DIR`).
 - **CLI, parked with Codex:** CLI-920.
-- **Ruled 2026-10-26:** CLI-918 queued (also update installed plugins); CLI-919 retired (keep the full list).
+- **Ruled 2026-10-26:** CLI-919 retired (keep the full list); CLI-918 landed 2026-10-30.
 - **Editor, logged but not fixed by owner ruling:** EDITOR-80 to EDITOR-89, plus EDITOR-91 and EDITOR-92.
 - **Editor, ruled 2026-10-26:** EDITOR-90 queued (remove the focus-state check).
 
@@ -81,9 +85,7 @@ no skills, three fixes the gate work found, reshaped without it, and HEAD's type
 it was (removed 2026-10-21 on lint-rules answer #9). The account is in [archive.md](./archive.md).
 
 **Waiting on the owner:** his Codex hand-check run-through (CLI-891), and doc round 3 of his full review,
-which he put on hold (CLI-890). **Next Codex fix:** CLI-901. The revert's hand-run found that a global Codex `uninstall`
-from HOME leaves the ejected skills in `$CODEX_HOME/skills`. The cause predates the revert, so it is documented
-and not patched. **The tree is uncommitted** — read `git status`, not this line.
+which he put on hold (CLI-890). **The tree is uncommitted** — read `git status`, not this line.
 
 ---
 
@@ -463,7 +465,7 @@ lenses and continue until one turns up nothing; the verifier is never the fixer.
 | The two summoners, the template and the four standards | —                | **landed 2026-09-03** — see `archive.md`; final gates all green |
 | Migrate the other sixteen agents to the same voice     | CLI-871          | landed (retired 2026-10-26)                                     |
 | Follow-ups the programme raised                        | CLI-872, CLI-873 | ready, not started                                              |
-| Decisions returned to the owner                        | CLI-875          | `Investigate` — needs a ruling before it is work                |
+| Decisions returned to the owner                        | CLI-875          | answered 2026-10-26 ("Add (a) only"); queued                    |
 
 ## In flight — the editor v6 design programme (started 2026-08-26)
 

@@ -199,7 +199,7 @@ The tree builds after every lane.
 
 **Every lane:**
 
-- Read root `CLAUDE.md`, `packages/cli/CLAUDE.md`, `.ai-docs/standards/briefing.md`.
+- Read root `CLAUDE.md`, `packages/cli/CLAUDE.md`, `docs/briefing.md`.
 - Read-only git; every writing command is the user's. Do not edit `todo/`.
 - Need a change in another lane's file? Report the exact change; don't make it.
 - Order: tests → code → `meta-design-expressive-typescript` only → hand-run.

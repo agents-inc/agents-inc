@@ -22,7 +22,6 @@ are.
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ------- | ---------- |
 | SERVER-01 (was editor-todo item 3)                    | **Re-read against SERVER-04 before starting: the owner ruled 2026-08-28 that sign-in keeps the GitHub access token, and the unauthenticated 10 req/min ceiling this row exists for is exactly what a token removes.** v1 LANDED 2026-08-08 (index over 3 popular repos + dialog swap). Remaining: registry adapters (skills.sh etc.) — deferred; each lands only with hand-verification against the live registry (owner ruling) | Deferred                     | feature | complex    |
 | SERVER-03 (was cli-integration "Phase 3 attribution") | Count `GET /configs/:id` split by caller; the CLI already sends its user-agent, the route is not written. Owner 2026-08-09: nice idea, DO IT — in a separate session.                                                                                                                                                                                                                                                            | Ready for Dev — next session | feature | easy       |
-| SERVER-13 | (owner 2026-10-26, card q-server-11-cookie-renewal: "Renew it on every action") The 90-day sign-in (SERVER-11) is renewed on every authenticated action — saving or listing stacks and using the composer — not only on opening the editor. api-tester then api-developer then reviewer. | Ready for Dev — queued | feature | small |
 
 ---
 
@@ -66,10 +65,10 @@ A self-contained encoded string was rejected: the information floor for a realis
 base64 characters, over the ~50-character usability bar. **No encoded-blob fallback will be
 maintained.**
 
-The payload contract is `SeedPayload` in `packages/matrix/src/seed.ts`. **`SEED_VERSION` is 5 as of
-`aebec49a` (2026-08-18) — this paragraph said v3 until 2026-08-20 and was two bumps stale.** The
-schema accepts `v: SEED_VERSION` and nothing else — pre-release policy is discard-don't-migrate, so an id minted against v1 or v2
-fails to decode loudly rather than being guessed at.
+The payload contract is `SeedPayload` in `packages/matrix/src/seed.ts` (`grep -n SEED_VERSION` there for the
+current version). The schema accepts `v: SEED_VERSION` and nothing else — pre-release policy is
+discard-don't-migrate. An older id today reaches the user as "HTTP 500 … Stored config is unreadable"; CLI-1005
+makes it a refusal saying to share it again.
 
 ---
 

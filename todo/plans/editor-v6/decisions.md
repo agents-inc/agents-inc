@@ -86,11 +86,7 @@ needs — liquidjs browser build at 31 KB gz, the template set at 9 KB gz, the a
 
 These came out of the compile-path lane and none of them is fixed by sharing the renderer:
 
-1. **Two reachable writer variants, not three** — corrected 2026-08-26 by the Phase B spec lane.
-   Three branches exist, but the import-from-global one has **no production caller**:
-   `grep -rn "isProjectConfig" --include='*.ts' src | grep -v __tests__` returns a single line, in
-   `writeProjectConfigPair` (`propagate.ts`), which always passes `globalConfig` alongside
-   `isProjectConfig: true` and therefore always routes to the inlining branch. The two live shapes
+1. **Two writer variants** — the import-from-global one was deleted 2026-10-31 (CLI-1010). The two shapes
    still differ materially — the inlined form orders its `export default` differently from the
    canonical order — so a preview must still select per root, but it selects between two.
 2. **The absolute machine-specific path is not the live one** — corrected 2026-08-26, and the

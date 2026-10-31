@@ -23,7 +23,6 @@ blocks a commit. What blocks a _deploy_ is in [`repo.md`](./repo.md), not here.
 
 | ID                               | Task                                                                                        | Status           | Type    | Complexity |
 | -------------------------------- | ------------------------------------------------------------------------------------------- | ---------------- | ------- | ---------- |
-| WWW-01 (was editor-todo item 8)  | (owner 2026-10-26, card q-gap-releases-section: "Add a Releases section") Docs site: reference is per-group not per-command, and there is no Releases section | Ready for Dev — queued | feature | medium     |
 | WWW-12 (new, 2026-08-27)         | (owner 2026-10-26, card q-gap-backlog: "Queue the 11 bugs, park the rest") `check-cli-claims.ts` reads one page, and CLI claims now live on several | Parked | test    | medium     |
 | WWW-13 (new, 2026-08-27)         | (owner 2026-10-26, card q-gap-backlog: "Queue the 11 bugs, park the rest") Nothing gates the search modal's styling, and it is the one surface a browser must open | Parked | test    | medium     |
 | WWW-03 (was editor-todo item 10) | Apex path split — **the repository half has landed; what is left is the dashboard cutover** | Needs Assistance | feature | complex    |
@@ -51,10 +50,6 @@ reference, and the compiled-sub-agent page. One was withdrawn. What is written b
   `packages/cli/src/cli/commands/**`. **Anything that splits that page must keep the two literal
   markers `## Command matrix` and `**This table is the roster, and it is checked.**` intact**, or the
   site's own gate stops judging the roster.
-- **There is no Releases section**, and the sidebar is nine groups rather than ten because of it.
-  What stands in for it is a single external link labelled "Changelog" in Resources, pointing at the
-  repository's GitHub releases page. Decide whether a real section is wanted before building one —
-  a page that restates a changelog is a second copy that rots.
 
 **WITHDRAWN — the voice bullet.** This row used to say the migrated guides "read as lifted from an
 older README — title-case headings, imperative bullets, no links back into the narrative", and
