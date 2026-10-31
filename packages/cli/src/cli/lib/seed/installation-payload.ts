@@ -11,6 +11,7 @@ import { EJECT_SOURCE } from "../../consts.js";
 import { withoutExcludedAssignments } from "../agents/agent-recompiler.js";
 import { loadConfigInPlay, loadProjectConfigFromDir } from "../configuration/project-config.js";
 import { activeAgentScopeMap, activeSkillScopeMap } from "../configuration/scope-predicates.js";
+import { namedByActiveEntries, type NamedBy } from "../configuration/scope-diff.js";
 import { getProjectConfigPath, resolveInstallPaths } from "../installation/install-base-dir.js";
 import { readForkedFromMetadata } from "../skills/skill-metadata.js";
 import { getErrorMessage } from "../../utils/errors.js";
@@ -25,8 +26,9 @@ import type { SeedPayload } from "@workspace/matrix/seed";
 
 /**
  * Counts come off the payload, not the config, so what is announced matches what is posted.
- * `leftBehind`: carried skills the payload's one marketplace does not serve. `inProject`: read from
- * a project's config rather than HOME's.
+ * `leftBehind`: carried skills the payload's one marketplace does not serve. `namedBy`: the entries
+ * the payload was drawn from, since a plugin's payload entry records no name. `inProject`: read
+ * from a project's config rather than HOME's.
  */
 export type InstallationPayload =
   | {
@@ -35,6 +37,7 @@ export type InstallationPayload =
       skills: number;
       agents: number;
       leftBehind: SkillId[];
+      namedBy: NamedBy;
       inProject: boolean;
     }
   | { ok: false; error: string };
@@ -71,8 +74,15 @@ export async function seedPayloadForInstallation(projectDir: string): Promise<In
   // A sub-agent is installable without skills, so only neither-skills-nor-agents is empty.
   if (skills === 0 && agents === 0) return { ok: false, error: ERROR_MESSAGES.NO_INSTALLATION };
 
-  const leftBehind = skillsItsMarketplaceLeavesBehind(roundTrip.config, payload);
-  return { ok: true, payload, skills, agents, leftBehind, inProject: installed.inProject };
+  return {
+    ok: true,
+    payload,
+    skills,
+    agents,
+    leftBehind: skillsItsMarketplaceLeavesBehind(roundTrip.config, payload),
+    namedBy: namedByActiveEntries(roundTrip.config.skills),
+    inProject: installed.inProject,
+  };
 }
 
 /**

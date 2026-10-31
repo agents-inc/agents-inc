@@ -99,7 +99,7 @@ describe("deleteLocalSkill on a Codex project", () => {
   it("deletes the copy from the directory Codex reads, and leaves a Claude-path folder alone", async () => {
     const codexSkillsDir = resolveInstallPaths(projectDir, "project").skillsDir;
     expect(
-      codexSkillsDir,
+      path.relative(projectDir, codexSkillsDir),
       "the project did not resolve onto Codex, so this case tests Claude again",
     ).not.toContain(CLAUDE_DIR);
     const codexCopy = await writeTestSkill(codexSkillsDir, SKILLS.react.id, { skipMetadata: true });

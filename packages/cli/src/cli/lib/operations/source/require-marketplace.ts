@@ -1,9 +1,16 @@
 import { ensureMarketplace } from "./ensure-marketplace.js";
+import type { PluginLeftSwitchedOn } from "../../hosts/codex-plugin-switch.js";
 import type { PluginHost } from "../../hosts/plugin-host.js";
 import type { SourceLoadResult } from "../../loading/source-loader.js";
 
 export type MarketplaceRequirement =
-  { ok: true; marketplace: string; registered: boolean } | { ok: false; error: string };
+  | {
+      ok: true;
+      marketplace: string;
+      registered: boolean;
+      leftOn: readonly PluginLeftSwitchedOn[];
+    }
+  | { ok: false; error: string };
 
 /** Callers must hard-error on `ok: false`, never fall back to eject, before touching disk. */
 export async function requireMarketplace(
@@ -20,5 +27,10 @@ export async function requireMarketplace(
         `Plugin install mode requires a marketplace — fix the marketplace or switch the affected skills to eject mode.`,
     };
   }
-  return { ok: true, marketplace: mpResult.marketplace, registered: mpResult.registered };
+  return {
+    ok: true,
+    marketplace: mpResult.marketplace,
+    registered: mpResult.registered,
+    leftOn: mpResult.leftOn,
+  };
 }

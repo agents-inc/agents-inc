@@ -58,6 +58,14 @@ export type PluginHost = {
     options?: HostCallOptions,
   ) => Promise<void>;
 
+  /** Moves an installed plugin to the version its marketplace offers; a plugin not held throws. */
+  updatePlugin: (
+    pluginRef: string,
+    scope: SkillScope,
+    projectDir: string,
+    options?: HostCallOptions,
+  ) => Promise<void>;
+
   /** Throws only for a real failure; a missing plugin is `absent`. */
   uninstallPlugin: (
     pluginRef: string,

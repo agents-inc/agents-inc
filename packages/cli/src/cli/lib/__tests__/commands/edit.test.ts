@@ -603,8 +603,7 @@ describe("edit command reports a selected skill the scope filter left unassigned
     await runEditFrom().catch(() => {});
 
     const stderr = stderrChunks.join("");
-    expect(stderr).toContain(ASSIGNED_TO_NO_AGENT_PHRASE);
-    expect(stderr).toContain("web-framework-react");
+    expect(stderr).toContain(`Skill 'React' ${ASSIGNED_TO_NO_AGENT_PHRASE}`);
   });
 });
 
@@ -1177,6 +1176,9 @@ describe("what edit --from does to plugins and saved copies", () => {
     buildSourceResult(FULLSTACK_PAIR_MATRIX, UNRESOLVABLE_SOURCE, { marketplace: MARKETPLACE });
   /** Nothing at `/test/source` names a marketplace, so resolving one fails. */
   const withoutMarketplace = () => buildSourceResult(FULLSTACK_PAIR_MATRIX, UNRESOLVABLE_SOURCE);
+  /** A project made from the acme marketplace, under a global installation made from MARKETPLACE. */
+  const withProjectMarketplace = () =>
+    buildSourceResult(FULLSTACK_PAIR_MATRIX, UNRESOLVABLE_SOURCE, { marketplace: "acme" });
 
   const refusedForWantOfAMarketplace = (purpose: string) =>
     `Cannot ${purpose}: marketplace could not be resolved from '${UNRESOLVABLE_SOURCE}'. Plugin install mode requires a marketplace — fix the marketplace or switch the affected skills to eject mode.`;
@@ -1285,6 +1287,19 @@ describe("what edit --from does to plugins and saved copies", () => {
       ).toStrictEqual([".agents-inc/claude/config.ts"]);
     });
 
+    it("uninstalls it here under the marketplace it came from, when the project was made from another", async () => {
+      installed(plugin(["web-framework-react"], "project"));
+
+      const error = await applying(
+        withProjectMarketplace(),
+        plugin(["web-framework-react"], "global"),
+      );
+
+      expect(error).toBeUndefined();
+      expect(uninstallSpy.mock.calls).toStrictEqual([[REACT_PLUGIN, "project", projectDir]]);
+      expect(installSpy.mock.calls).toStrictEqual([[REACT_PLUGIN, "global", projectDir]]);
+    });
+
     it("moves the one that moved when a saved copy that stays is listed first", async () => {
       installed([
         ...saved(["web-framework-react"], "project"),
@@ -1370,6 +1385,17 @@ describe("what edit --from does to plugins and saved copies", () => {
       expect(error).toBeUndefined();
       expect(installSpy.mock.calls).toStrictEqual([[REACT_PLUGIN, "project", projectDir]]);
       expect(uninstallSpy.mock.calls).toStrictEqual([]);
+    });
+
+    it("installs it here under the marketplace it came from, when the project was made from another", async () => {
+      installed(plugin(["web-framework-react"], "global"));
+
+      const error = await applying(withProjectMarketplace(), projectHalfOverGlobal);
+
+      expect(error).toBeUndefined();
+      expect(installSpy.mock.calls).toStrictEqual([[REACT_PLUGIN, "project", projectDir]]);
+      expect(uninstallSpy.mock.calls).toStrictEqual([]);
+      expect(stdoutChunks.join("")).not.toContain("Failed to migrate plugin scope");
     });
 
     it("names it when its install here failed, and still leaves the global registration", async () => {

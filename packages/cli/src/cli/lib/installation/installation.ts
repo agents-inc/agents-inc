@@ -1,13 +1,14 @@
 import os from "os";
 import { fileExists } from "../../utils/fs";
-import {
-  ConfigLoadError,
-  declaresNoContent,
-  loadProjectConfigFromDir,
-} from "../configuration/project-config";
+import { ConfigLoadError, loadProjectConfigFromDir } from "../configuration/project-config";
 import { EJECT_SOURCE, type Provider } from "../../consts";
 import { getProjectConfigPath } from "./install-base-dir";
-import { agentsDir, inheritedGlobalProvider, providerInUse } from "./install-layout";
+import {
+  agentsDir,
+  declaresNoContent,
+  inheritedGlobalProvider,
+  providerInUse,
+} from "./install-layout";
 import type { SkillConfig, SkillScope } from "../../types/config";
 import type { InstallMode } from "../../types/matrix";
 

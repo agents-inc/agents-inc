@@ -12,16 +12,26 @@ import {
 } from "../lib/installation/provider-flag.js";
 import { unofferablePlacementsFound } from "../lib/hosts/configured-placements.js";
 import type { PluginHost } from "../lib/hosts/plugin-host.js";
+import {
+  FailedLeavingPluginsSwitchedOnError,
+  PluginsLeftSwitchedOnError,
+  type PluginLeftSwitchedOn,
+} from "../lib/hosts/codex-plugin-switch.js";
+import { buildMarketplacePluginRef } from "../lib/plugins/plugin-ref.js";
 import { getErrorMessage } from "../utils/errors.js";
 import {
   ERROR_MESSAGES,
   INFO_MESSAGES,
+  codexPluginLeftSwitchedOn,
   hostCliNotFound,
   marketplaceRefreshFailed,
   marketplacesRefreshFailed,
-  marketplacesRefreshed,
+  pluginsLeftSwitchedOn,
 } from "../utils/messages.js";
-import type { SkillConfig } from "../types/index.js";
+import { plural } from "../utils/string.js";
+import type { SkillConfig, SkillScope } from "../types/index.js";
+
+type InstalledPlugin = { ref: string; scope: SkillScope };
 
 function isEjected(skill: SkillConfig): boolean {
   return skill.origin === EJECT_SOURCE;
@@ -32,8 +42,53 @@ function activeSkills(skills: SkillConfig[]): SkillConfig[] {
   return skills.filter((skill) => !skill.excluded);
 }
 
-function configuredMarketplaces(skills: SkillConfig[]): string[] {
-  return unique(skills.filter((skill) => !isEjected(skill)).map((skill) => skill.origin));
+function pluginSkills(skills: SkillConfig[]): SkillConfig[] {
+  return skills.filter((skill) => !isEjected(skill));
+}
+
+function marketplacesOf(plugins: SkillConfig[]): string[] {
+  return unique(plugins.map((skill) => skill.origin));
+}
+
+function installedPlugin(skill: SkillConfig): InstalledPlugin {
+  return { ref: buildMarketplacePluginRef(skill.id, skill.origin), scope: skill.scope };
+}
+
+function pluginUpdateFailed(pluginRef: string, reason: string): string {
+  return `Could not update plugin ${pluginRef}: ${reason}`;
+}
+
+function pluginsUpdateFailed(pluginRefs: string[]): string {
+  return `${plural(pluginRefs.length, "plugin")} could not be updated: ${pluginRefs.join(", ")}`;
+}
+
+type StepOutcome = { readonly leftOn: readonly PluginLeftSwitchedOn[] } & (
+  { readonly kind: "done" } | { readonly kind: "failed"; readonly reason: string }
+);
+
+type PluginUpdates = { failed: string[]; leftOn: PluginLeftSwitchedOn[] };
+
+/** A step whose only shortfall is a switch Codex turned back on still did its work. */
+async function outcomeOf(step: () => Promise<void>): Promise<StepOutcome> {
+  try {
+    await step();
+    return { kind: "done", leftOn: [] };
+  } catch (error) {
+    if (error instanceof PluginsLeftSwitchedOnError) return { kind: "done", leftOn: error.leftOn };
+    if (error instanceof FailedLeavingPluginsSwitchedOnError) {
+      return { kind: "failed", reason: getErrorMessage(error.failure), leftOn: error.leftOn };
+    }
+    return { kind: "failed", reason: getErrorMessage(error), leftOn: [] };
+  }
+}
+
+function switchedOnAgain(leftOn: readonly PluginLeftSwitchedOn[]): string[] {
+  if (leftOn.length === 0) return [];
+  return [pluginsLeftSwitchedOn(leftOn.map(({ pluginKey }) => pluginKey))];
+}
+
+function refreshedAndUpdated(marketplaceCount: number, pluginCount: number): string {
+  return `Refreshed ${plural(marketplaceCount, "marketplace listing")} and updated ${plural(pluginCount, "installed plugin")}.`;
 }
 
 export default class Update extends BaseCommand {
@@ -66,7 +121,8 @@ export default class Update extends BaseCommand {
     const skills = activeSkills(installed.config.skills);
     this.reportEjectedSkills(skills);
 
-    const marketplaces = configuredMarketplaces(skills);
+    const plugins = pluginSkills(skills);
+    const marketplaces = marketplacesOf(plugins);
     if (marketplaces.length === 0) {
       this.log(INFO_MESSAGES.NO_PLUGIN_MARKETPLACES);
       return;
@@ -75,7 +131,11 @@ export default class Update extends BaseCommand {
     // The read installation's tool, not the cwd's: a leftover folder there would name another.
     const host = hostFor(installed.provider);
     await this.requireHost(host);
-    await this.refreshMarketplaces(marketplaces, host);
+    // Every listing first: a plugin updated against a stale listing stays where it is.
+    const leftOnByRefresh = await this.refreshMarketplaces(marketplaces, host);
+    const updated = await this.updatePlugins(plugins.map(installedPlugin), host);
+    this.failUnlessEveryPluginLanded(updated.failed, [...leftOnByRefresh, ...updated.leftOn]);
+    this.logSuccess(refreshedAndUpdated(marketplaces.length, plugins.length));
   }
 
   private async refuseUnofferablePlacements(projectDir: string): Promise<void> {
@@ -102,25 +162,73 @@ export default class Update extends BaseCommand {
     this.error(hostCliNotFound(host.provider), { exit: EXIT_CODES.ERROR });
   }
 
-  /** Sequential, as they share one registry; failures are collected so one cannot hide the rest. */
-  private async refreshMarketplaces(marketplaces: string[], host: PluginHost): Promise<void> {
+  /**
+   * Sequential, as they share one registry; failures are collected so one cannot hide the rest.
+   * Answers the plugins a refresh left switched on, which do not stop the updates.
+   */
+  private async refreshMarketplaces(
+    marketplaces: string[],
+    host: PluginHost,
+  ): Promise<PluginLeftSwitchedOn[]> {
     const failed: string[] = [];
+    const leftOn: PluginLeftSwitchedOn[] = [];
 
     for (const marketplace of marketplaces) {
       this.log(`Refreshing marketplace ${marketplace}...`);
-      try {
-        await host.refreshMarketplace(marketplace);
-        this.log(`  Updated marketplace ${marketplace}`);
-      } catch (error) {
+      const outcome = await outcomeOf(() => host.refreshMarketplace(marketplace));
+      if (outcome.kind === "failed") {
         failed.push(marketplace);
-        this.warn(marketplaceRefreshFailed(marketplace, getErrorMessage(error)));
+        this.warn(marketplaceRefreshFailed(marketplace, outcome.reason));
+      } else {
+        this.log(`  Updated marketplace ${marketplace}`);
       }
+      this.warnOfSwitchesLeftOn(outcome.leftOn);
+      leftOn.push(...outcome.leftOn);
     }
 
     if (failed.length > 0) {
-      this.error(marketplacesRefreshFailed(failed), { exit: EXIT_CODES.ERROR });
+      this.error([marketplacesRefreshFailed(failed), ...switchedOnAgain(leftOn)].join("\n"), {
+        exit: EXIT_CODES.ERROR,
+      });
+    }
+    return leftOn;
+  }
+
+  /** Sequential and collecting, for the same reasons as the refresh. */
+  private async updatePlugins(
+    plugins: InstalledPlugin[],
+    host: PluginHost,
+  ): Promise<PluginUpdates> {
+    const failed: string[] = [];
+    const leftOn: PluginLeftSwitchedOn[] = [];
+
+    for (const { ref, scope } of plugins) {
+      this.log(`Updating plugin ${ref}...`);
+      const outcome = await outcomeOf(() => host.updatePlugin(ref, scope, process.cwd()));
+      if (outcome.kind === "failed") {
+        failed.push(ref);
+        this.warn(pluginUpdateFailed(ref, outcome.reason));
+      } else {
+        this.log(`  Updated plugin ${ref}`);
+      }
+      this.warnOfSwitchesLeftOn(outcome.leftOn);
+      leftOn.push(...outcome.leftOn);
     }
 
-    this.logSuccess(marketplacesRefreshed(marketplaces.length));
+    return { failed, leftOn };
+  }
+
+  private warnOfSwitchesLeftOn(leftOn: readonly PluginLeftSwitchedOn[]): void {
+    for (const { pluginKey, configFile, reason } of leftOn) {
+      this.warn(codexPluginLeftSwitchedOn(pluginKey, configFile, reason));
+    }
+  }
+
+  private failUnlessEveryPluginLanded(failed: string[], leftOn: PluginLeftSwitchedOn[]): void {
+    const shortfalls = [
+      ...(failed.length > 0 ? [pluginsUpdateFailed(failed)] : []),
+      ...switchedOnAgain(leftOn),
+    ];
+    if (shortfalls.length > 0) this.error(shortfalls.join("\n"), { exit: EXIT_CODES.ERROR });
   }
 }

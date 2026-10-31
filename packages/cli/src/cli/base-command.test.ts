@@ -2,6 +2,7 @@ import os from "os";
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { captureOutput } from "@oclif/test";
+import { seatCatalog, seatedCatalog } from "@workspace/compile";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { BaseCommand } from "./base-command";
@@ -12,7 +13,7 @@ import { setupIsolatedHome } from "./lib/__tests__/helpers/isolated-home";
 import { writeRawTestConfig, writeTestTsConfig } from "./lib/__tests__/helpers/config-io";
 import { createMockPluginHost } from "./lib/__tests__/helpers/mock-plugin-host";
 import { buildSkillConfig } from "./lib/__tests__/helpers/index";
-import { flattenCliOutput } from "./lib/__tests__/helpers/flatten-cli-output";
+import { compactCliOutput, flattenCliOutput } from "./lib/__tests__/helpers/flatten-cli-output";
 import {
   buildAgentConfigs,
   buildInstallSelection,
@@ -22,14 +23,18 @@ import {
 import { buildGateReport } from "./lib/__tests__/factories/gate-report-factories";
 import { renderUnparseableConfigTs } from "./lib/__tests__/factories/unloadable-config-factories";
 import { renderMetadataYaml, renderSkillMd } from "./lib/__tests__/content-generators";
+import { SKILLS } from "./lib/__tests__/test-fixtures";
+import { initializeMatrix, matrix } from "./lib/matrix/matrix-provider";
 import {
   CATEGORY_EXCLUSIVITY_MATRIX,
+  FULLSTACK_PAIR_MATRIX,
   SINGLE_REACT_MATRIX,
 } from "./lib/__tests__/mock-data/mock-matrices";
 import { delay } from "./lib/__tests__/test-constants";
 import { CLAUDE_DIR, STANDARD_DIRS, STANDARD_FILES } from "./consts";
 import type { GateReport } from "./lib/config-gate/index.js";
 import type { PluginHost } from "./lib/hosts/plugin-host.js";
+import { PluginsLeftSwitchedOnError } from "./lib/hosts/codex-plugin-switch.js";
 import type { PluginInstallResult } from "./lib/operations/skills/install-plugin-skills.js";
 import type { InstallSelection } from "@workspace/compile/seed-to-config";
 import type { MergedSkillsMatrix, ProjectConfig, SelectionValidation, SkillConfig } from "./types";
@@ -339,8 +344,10 @@ describe("BaseCommand", () => {
         );
       });
 
-      expect(flattenCliOutput(stderr)).toBe(
-        `Warning: Skipped ${at("unreadable")}: its config.ts can't be read. Warning: one agent could not be written`,
+      expect(compactCliOutput(stderr)).toBe(
+        compactCliOutput(
+          `Warning: Skipped ${at("unreadable")}: its config.ts can't be read. Warning: one agent could not be written`,
+        ),
       );
       expect(stdout).toBe("Registered projects: 3 recompiled (1 failed)\n");
     });
@@ -361,8 +368,10 @@ describe("BaseCommand", () => {
         );
       });
 
-      expect(flattenCliOutput(stderr)).toBe(
-        `Warning: Skipped ${at("gone")}: nothing is installed there any more. Warning: Skipped ${at("codex-one")}: it is another provider's installation.`,
+      expect(compactCliOutput(stderr)).toBe(
+        compactCliOutput(
+          `Warning: Skipped ${at("gone")}: nothing is installed there any more. Warning: Skipped ${at("codex-one")}: it is another provider's installation.`,
+        ),
       );
     });
   });
@@ -413,7 +422,7 @@ describe("BaseCommand", () => {
       });
 
       expect(flattenCliOutput(stderr)).toBe(
-        "Warning: Skill 'web-framework-react' is assigned to no sub-agent — nothing will load it. Warning: Sub-agent 'web-developer' cannot carry project-scoped skill 'web-framework-react' — global-scoped sub-agents only carry global-scoped skills.",
+        "Warning: Skill 'React' is assigned to no sub-agent — nothing will load it. Warning: Sub-agent 'web-developer' cannot carry project-scoped skill 'React' — global-scoped sub-agents only carry global-scoped skills.",
       );
     });
 
@@ -429,7 +438,7 @@ describe("BaseCommand", () => {
       });
 
       expect(flattenCliOutput(stderr)).toBe(
-        "Warning: Skill 'web-framework-react' is assigned to no sub-agent — nothing will load it.",
+        "Warning: Skill 'React' is assigned to no sub-agent — nothing will load it.",
       );
     });
 
@@ -452,7 +461,7 @@ describe("BaseCommand", () => {
       });
 
       expect(flattenCliOutput(stderr)).toBe(
-        "Warning: Skill 'api-framework-hono' is assigned to no sub-agent — nothing will load it.",
+        "Warning: Skill 'Hono' is assigned to no sub-agent — nothing will load it.",
       );
     });
 
@@ -495,7 +504,7 @@ describe("BaseCommand", () => {
       });
 
       expect(flattenCliOutput(stderr)).toBe(
-        "Warning: Skill 'web-framework-react' is assigned to no sub-agent — nothing will load it. Warning: Sub-agents 'web-developer', 'api-developer' cannot carry project-scoped skill 'web-framework-react' — global-scoped sub-agents only carry global-scoped skills.",
+        "Warning: Skill 'React' is assigned to no sub-agent — nothing will load it. Warning: Sub-agents 'web-developer', 'api-developer' cannot carry project-scoped skill 'React' — global-scoped sub-agents only carry global-scoped skills.",
       );
     });
   });
@@ -586,7 +595,7 @@ describe("BaseCommand", () => {
       expect(error?.message).toBe(
         [
           "This configuration cannot be installed here: the home directory is the global scope, and a global installation holds only global-scoped content — so these project-scoped entries have nowhere to be written:",
-          "  skill web-framework-react (scope: project)",
+          "  skill React (scope: project)",
           "  sub-agent web-developer (scope: project)",
           "Run this from inside a project directory, or re-share it with each entry above at global scope.",
         ].join("\n"),
@@ -626,7 +635,7 @@ describe("BaseCommand", () => {
 
       const { error } = await runProbe((probe) => probe.projectScopedAtHome(selection, fakeHome));
 
-      expect(error?.message).toContain("  skill web-framework-react (scope: project)");
+      expect(error?.message).toContain("  skill React (scope: project)");
     });
 
     it("lets a selection of global-scoped content through", async () => {
@@ -645,6 +654,72 @@ describe("BaseCommand", () => {
       const { error } = await runProbe((probe) => probe.projectScopedAtHome(selection, projectDir));
 
       expect(error).toBeUndefined();
+    });
+  });
+
+  describe("naming each skill it warns of or refuses: the name its entry recorded, else the catalogue's, else its id", () => {
+    const RECORDED_NAME = "Acme React";
+    /** In no catalogue seated here, so only its id can name it. */
+    const UNSEATED = SKILLS.vitest.id;
+    let callersCatalogue: MergedSkillsMatrix;
+    let compilesCatalogue: ReturnType<typeof seatedCatalog>;
+
+    beforeEach(() => {
+      callersCatalogue = matrix;
+      compilesCatalogue = seatedCatalog();
+      initializeMatrix(FULLSTACK_PAIR_MATRIX);
+    });
+
+    afterEach(() => {
+      initializeMatrix(callersCatalogue);
+      seatCatalog(compilesCatalogue);
+    });
+
+    const projectSkills = () => [
+      buildSkillConfig("web-framework-react", { scope: "project", displayName: RECORDED_NAME }),
+      buildSkillConfig("api-framework-hono", { scope: "project" }),
+      buildSkillConfig(UNSEATED, { scope: "project" }),
+    ];
+
+    it("names each skill no sub-agent loads, and each a global sub-agent cannot carry", async () => {
+      const skills = projectSkills();
+      const config = buildProjectConfig({
+        skills,
+        agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+      });
+
+      const { stderr } = await runProbe((probe) => {
+        probe.unassigned(config, skills);
+      });
+
+      expect(flattenCliOutput(stderr)).toBe(
+        [
+          `Warning: Skill '${RECORDED_NAME}' is assigned to no sub-agent — nothing will load it.`,
+          `Warning: Sub-agent 'web-developer' cannot carry project-scoped skill '${RECORDED_NAME}' — global-scoped sub-agents only carry global-scoped skills.`,
+          "Warning: Skill 'Hono' is assigned to no sub-agent — nothing will load it.",
+          "Warning: Sub-agent 'web-developer' cannot carry project-scoped skill 'Hono' — global-scoped sub-agents only carry global-scoped skills.",
+          `Warning: Skill '${UNSEATED}' is assigned to no sub-agent — nothing will load it.`,
+          `Warning: Sub-agent 'web-developer' cannot carry project-scoped skill '${UNSEATED}' — global-scoped sub-agents only carry global-scoped skills.`,
+        ].join(" "),
+      );
+    });
+
+    it("names each project-scoped skill home cannot hold", async () => {
+      const selection = buildInstallSelection(projectSkills(), {
+        agentConfigs: buildAgentConfigs(["api-developer"], { scope: "global" }),
+      });
+
+      const { error } = await runProbe((probe) => probe.projectScopedAtHome(selection, fakeHome));
+
+      expect(error?.message).toBe(
+        [
+          "This configuration cannot be installed here: the home directory is the global scope, and a global installation holds only global-scoped content — so these project-scoped entries have nowhere to be written:",
+          `  skill ${RECORDED_NAME} (scope: project)`,
+          "  skill Hono (scope: project)",
+          `  skill ${UNSEATED} (scope: project)`,
+          "Run this from inside a project directory, or re-share it with each entry above at global scope.",
+        ].join("\n"),
+      );
     });
   });
 
@@ -854,6 +929,69 @@ describe("BaseCommand", () => {
 
       expect(stdout).toBe("");
       expect(error).toBeUndefined();
+    });
+
+    describe("after a marketplace refresh switched on again a plugin the user had switched off", () => {
+      const SWITCHED_OFF_PLUGIN = "web-framework-react@acme";
+
+      const refreshLeavingItOn = (): PluginHost =>
+        createMockPluginHost({
+          refreshMarketplace: () =>
+            Promise.reject(
+              new PluginsLeftSwitchedOnError([
+                {
+                  pluginKey: SWITCHED_OFF_PLUGIN,
+                  configFile: path.join(fakeHome, ".codex", "config.toml"),
+                  reason: "EACCES: permission denied",
+                },
+              ]),
+            ),
+        });
+
+      const refreshed = (probe: Probe): Promise<string> =>
+        probe.marketplaceOrExit(
+          buildSourceResult(SINGLE_REACT_MATRIX, projectDir, { marketplace: "acme" }),
+          refreshLeavingItOn(),
+          () => undefined,
+        );
+
+      it("finishes, then fails naming the plugin", async () => {
+        let answered = "";
+
+        const { error } = await runProbe(async (probe) => {
+          answered = await refreshed(probe);
+          probe.endOfRun();
+        });
+
+        expect(answered, "the refresh still answers the marketplace to install from").toBe("acme");
+        expect(error?.message).toBe(
+          `1 plugin you had switched off is switched on again: ${SWITCHED_OFF_PLUGIN}`,
+        );
+        expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      });
+
+      it("still lists the work owed, then fails naming the plugin", async () => {
+        const { stdout, error } = await runProbe(async (probe) => {
+          await refreshed(probe);
+          probe.recorded("Could not compile web-developer", "Run compile again");
+          probe.endOfRun();
+        });
+
+        expect(stdout).toBe(
+          [
+            "",
+            "Completed with 1 failure(s) — the changes above landed, these did not:",
+            "  Could not compile web-developer",
+            "    Run compile again",
+            "",
+            "",
+          ].join("\n"),
+        );
+        expect(error?.message).toBe(
+          `1 plugin you had switched off is switched on again: ${SWITCHED_OFF_PLUGIN}`,
+        );
+        expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      });
     });
   });
 });

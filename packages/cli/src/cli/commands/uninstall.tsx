@@ -36,14 +36,11 @@ import {
 } from "../lib/config-gate/index.js";
 import { loadSkillsMatrixFromSource } from "../lib/loading";
 import { loadAgentDefs } from "../lib/operations";
-import {
-  ConfigLoadError,
-  declaresNoContent,
-  loadProjectConfigAt,
-} from "../lib/configuration/project-config";
+import { ConfigLoadError, loadProjectConfigAt } from "../lib/configuration/project-config";
 import type { Provider } from "../consts";
 import { CLAUDE_DIR, DEFAULT_BRANDING, EJECT_SOURCE, STANDARD_FILES } from "../consts";
 import {
+  declaresNoContent,
   providerInUse,
   agentCodec,
   type AgentCodec,
@@ -317,7 +314,7 @@ export default class Uninstall extends BaseCommand {
     });
     const plan = buildRemovalPlan(target);
     if (!hasAnythingToRemove(plan)) {
-      this.reportNothingToUninstall();
+      await this.reportNothingToUninstall();
       return;
     }
 
@@ -334,7 +331,9 @@ export default class Uninstall extends BaseCommand {
     this.log("");
   }
 
-  private reportNothingToUninstall(): void {
+  /** Says the line only here: a config declaring nothing can sit beside this CLI's copies. */
+  private async reportNothingToUninstall(): Promise<void> {
+    await this.sayWhenTheProjectsConfigDeclaresNothing(INFO_MESSAGES.DECLARES_NOTHING_TO_UNINSTALL);
     this.warn("Nothing to uninstall.");
     this.log("");
     this.log(notInstalledHere(this.brandingName));
@@ -752,7 +751,9 @@ async function detectUninstallTarget(
   handlers: DetectionFailureHandlers,
 ): Promise<UninstallTarget> {
   const pluginsDir = getProjectPluginsDir(projectDir);
-  const { skillsDir, agentsDir } = resolveInstallPaths(projectDir);
+  // At HOME the installation is the global one, whose copies a host may keep apart ($CODEX_HOME).
+  const scope = isHomeDirectory(projectDir) ? "global" : "project";
+  const { skillsDir, agentsDir } = resolveInstallPaths(projectDir, scope);
   const claudeDir = path.join(projectDir, CLAUDE_DIR);
   const provider = providerInUse(projectDir);
   const codec = agentCodec(provider);
@@ -774,7 +775,7 @@ async function detectUninstallTarget(
   const cliPluginNames = await pluginsThisRunRemoves(projectDir, activeConfig);
 
   return {
-    scope: isHomeDirectory(projectDir) ? "global" : "project",
+    scope,
     provider,
     hasPlugins: cliPluginNames.length > 0,
     cliPluginNames,

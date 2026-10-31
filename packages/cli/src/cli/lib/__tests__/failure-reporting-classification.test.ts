@@ -8,7 +8,11 @@ import { unique } from "remeda";
 
 import { INCOMPLETE_WORK_RECOVERY } from "../../utils/messages.js";
 import { typedKeys } from "../../utils/typed-object.js";
-import { callSiteLines, constantMembersNamed } from "./helpers/source-call-sites.js";
+import {
+  callSiteLines,
+  callSiteOwners,
+  constantMembersNamed,
+} from "./helpers/source-call-sites.js";
 
 const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
@@ -131,11 +135,11 @@ const BASE_COMMAND_ADVISORY_WARNS = [
     why: "`reportPropagatedRecompile` — recompile failures in OTHER registered projects. Genuinely the same class as `edit`'s and `init`'s own compile failures, and still left alone: the method is shared by four commands, and `compile` and `uninstall` do not answer for a recorded failure at all — so recording here would file work into a list those two never read, which is a worse silence than the one it replaces.",
   },
   {
-    line: "this.warn(skillAssignedToNoAgent(skillId));",
+    line: "this.warn(skillAssignedToNoAgent(skillId, namedBy));",
     why: "`reportUnassignedSkills`. The rule being reported is CORRECT and the install is complete — the skill is on disk and in the config, and nothing loads it.",
   },
   {
-    line: "this.warn(scopeBlockedStackAssignment(blockedBy, skillId));",
+    line: "this.warn(scopeBlockedStackAssignment(blockedBy, skillId, namedBy));",
     why: "The reason behind the line above, and advisory for the same reason.",
   },
   {
@@ -193,8 +197,13 @@ const WARN_ROSTERS = [
 ] as const;
 
 /** Only answering moves the exit code; recording without answering files failures nobody reads. */
-const RECORDING_CALLS = ["this.reportIncompleteWork(", "this.recordIncompleteWork("];
+const RECORDING_CALLS = [
+  "this.reportIncompleteWork(",
+  "this.recordIncompleteWork(",
+  "this.requireMarketplaceOrExit(",
+];
 const ANSWERING_CALL = "this.exitIfWorkIncomplete()";
+const RECORDED_LISTS = ["this.incompleteWork.push(", "this.switchesLeftOn.push("];
 
 /** Derived from the directory, so a new command cannot sit outside the gate. */
 const EVERY_COMMAND = "src/cli/commands/**/*.{ts,tsx}";
@@ -272,5 +281,26 @@ describe("a failure a command reports must say whether it changes the exit code"
       `a command that records incomplete work and never calls '${ANSWERING_CALL}' files its ` +
         `failures into a list nothing reads, and still exits 0`,
     ).toStrictEqual([]);
+  });
+
+  /** Equal sets mean the roster is closed: a method calling a recorder is a recorder too. */
+  it(`rosters every ${BASE_COMMAND} method that records, or calls one that does`, async () => {
+    const source = await sourceOf(BASE_COMMAND);
+    const sites = [...RECORDED_LISTS, ...RECORDING_CALLS].map((call) => ({
+      call,
+      ...callSiteOwners(source, call),
+    }));
+
+    expect(
+      sites.filter(({ unattributed }) => unattributed > 0).map(({ call }) => call),
+      "a recording site outside any member is one this gate cannot attribute",
+    ).toStrictEqual([]);
+    expect(
+      unique(sites.flatMap(({ owners }) => owners))
+        .map((owner) => `this.${owner}(`)
+        .sort(),
+      "a recording method missing from RECORDING_CALLS lets a command record without the scan " +
+        "above seeing it; an entry nothing records through is a roster that has gone stale",
+    ).toStrictEqual([...RECORDING_CALLS].sort());
   });
 });

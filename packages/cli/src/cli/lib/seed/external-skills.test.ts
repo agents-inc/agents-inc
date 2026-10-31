@@ -50,6 +50,12 @@ const EXTERNAL_ID = "external-web-framework-brainstorming" as SkillId;
 const SECOND_EXTERNAL_ID = "external-web-framework-worktrees" as SkillId;
 const WEB_DEV = "web-developer";
 
+/** Another marketplace's namespace: no catalogue this install loads or ships owns it. */
+const HAND_NAMED_ID = "acme-web-framework-house-style";
+/** A bare `startsWith("external")` would let this through. */
+const PREFIX_NEAR_MISS_ID = "externals-web-framework-brainstorming";
+const LACKS_EXTERNAL_PREFIX = "under ids that do not start with 'external-'";
+
 /** Payload keys a hostile link can carry: one climbs out of the skills folder, one nests in it. */
 const PARENT_ESCAPING_ID = "../victim";
 const NESTED_ID = "house/react";
@@ -196,7 +202,7 @@ describe("registerExternalSkills", () => {
     });
   });
 
-  it("refuses a carried skill claiming an id the catalogue already owns, naming every one", () => {
+  it("refuses carried skills under a catalogue's own ids for their names, naming every one", () => {
     const catalogue = createMockMatrix(SKILLS.react, SKILLS.vue, {
       categories: buildCategoryMap({ "web-framework": TEST_CATEGORIES.framework }),
     });
@@ -213,7 +219,9 @@ describe("registerExternalSkills", () => {
     });
 
     expect(() => registerExternalSkills(payload, catalogue, projectDir)).toThrow(
-      new RegExp(`${matchedAsWritten(SKILLS.react.id)}[\\s\\S]*${matchedAsWritten(SKILLS.vue.id)}`),
+      new RegExp(
+        `${matchedAsWritten(LACKS_EXTERNAL_PREFIX)}[\\s\\S]*${matchedAsWritten(SKILLS.react.id)}[\\s\\S]*${matchedAsWritten(SKILLS.vue.id)}`,
+      ),
     );
     // Both incumbents survive, so the guard ran before anything was seated.
     expect([catalogue.skills[SKILLS.react.id], catalogue.skills[SKILLS.vue.id]]).toStrictEqual([
@@ -222,8 +230,7 @@ describe("registerExternalSkills", () => {
     ]);
   });
 
-  it("refuses a carried skill claiming a shipped catalogue id the loaded matrix does not carry", () => {
-    // The payload chooses which catalogue loads, so the shipped one is checked too.
+  it("refuses a shipped catalogue's id under a marketplace the payload chose, for its name", () => {
     const otherMarketplace = createMockMatrix(SKILLS.vue, {
       categories: buildCategoryMap({ "web-framework": TEST_CATEGORIES.framework }),
     });
@@ -233,15 +240,64 @@ describe("registerExternalSkills", () => {
       external: { [SKILLS.react.id]: buildSeedExternalSkill() },
     });
 
-    // Not seated here, or the refusal would be the loaded-matrix arm's.
     expect(
       otherMarketplace.skills[SKILLS.react.id],
       "the matrix the payload steered must not carry the impersonated id",
     ).toBeUndefined();
     expect(() => registerExternalSkills(payload, otherMarketplace, projectDir)).toThrow(
-      SKILLS.react.id,
+      new RegExp(
+        `${matchedAsWritten(LACKS_EXTERNAL_PREFIX)}[\\s\\S]*${matchedAsWritten(SKILLS.react.id)}`,
+      ),
     );
     expect(otherMarketplace.skills[SKILLS.react.id]).toBeUndefined();
+  });
+
+  it("refuses a carried skill whose id no catalogue here owns but lacks the external- prefix, before seating any", () => {
+    const payload = buildSeedPayload({
+      skills: { [EXTERNAL_ID]: buildSeedSkill(), [HAND_NAMED_ID]: buildSeedSkill() },
+      external: {
+        [EXTERNAL_ID]: buildSeedExternalSkill(),
+        [HAND_NAMED_ID]: buildSeedExternalSkill(),
+      },
+    });
+
+    expect(() => registerExternalSkills(payload, matrix, projectDir)).toThrow(
+      new RegExp(
+        `${matchedAsWritten(LACKS_EXTERNAL_PREFIX)}[\\s\\S]*${matchedAsWritten(HAND_NAMED_ID)}`,
+      ),
+    );
+    // The well-named one is refused with it, so nothing reaches the decode.
+    expect(matrix.skills[EXTERNAL_ID]).toBeUndefined();
+    expect(matrix.skills).not.toHaveProperty([HAND_NAMED_ID]);
+  });
+
+  it("refuses an id that starts with external but not with external-, naming it", () => {
+    const payload = buildSeedPayload({
+      skills: { [PREFIX_NEAR_MISS_ID]: buildSeedSkill() },
+      external: { [PREFIX_NEAR_MISS_ID]: buildSeedExternalSkill() },
+    });
+
+    expect(() => registerExternalSkills(payload, matrix, projectDir)).toThrow(
+      new RegExp(
+        `${matchedAsWritten(LACKS_EXTERNAL_PREFIX)}[\\s\\S]*${matchedAsWritten(PREFIX_NEAR_MISS_ID)}`,
+      ),
+    );
+    expect(matrix.skills).not.toHaveProperty([PREFIX_NEAR_MISS_ID]);
+  });
+
+  it("control: seats every carried skill whose id starts with external-", () => {
+    const payload = buildSeedPayload({
+      skills: { [EXTERNAL_ID]: buildSeedSkill(), [SECOND_EXTERNAL_ID]: buildSeedSkill() },
+      external: {
+        [EXTERNAL_ID]: buildSeedExternalSkill(),
+        [SECOND_EXTERNAL_ID]: buildSeedExternalSkill(),
+      },
+    });
+
+    expect(registerExternalSkills(payload, matrix, projectDir).map(({ id }) => id)) //
+      .toStrictEqual([EXTERNAL_ID, SECOND_EXTERNAL_ID]);
+    expect(matrix.skills).toHaveProperty([EXTERNAL_ID]);
+    expect(matrix.skills).toHaveProperty([SECOND_EXTERNAL_ID]);
   });
 
   it("seats a carried skill over this installation's own copy, so re-applying is not a collision", () => {
@@ -889,6 +945,23 @@ describe("carried skills — refusals, seats and reads", () => {
           "This configuration cannot be installed: these skills travel inside it under ids that are not a single directory name:",
           '  "../victim"',
           "A skill id is the directory the skill is written into, so an id holding a path separator, or naming '.' or '..', would be written somewhere other than a directory of its own, and one holding a control character would hand it to the terminal wherever that directory is named. Re-share it with each skill above added again, which mints an id — 'external-<category>-<name>' — that names one directory.",
+        ].join("\n"),
+      ),
+    );
+  });
+
+  it("refuses an id without the external- prefix in these words", () => {
+    const payload = buildSeedPayload({
+      skills: { [HAND_NAMED_ID]: buildSeedSkill() },
+      external: { [HAND_NAMED_ID]: buildSeedExternalSkill() },
+    });
+
+    expect(() => registerExternalSkills(payload, matrix, projectDir)).toThrow(
+      new Error(
+        [
+          "This configuration cannot be installed: these skills travel inside it under ids that do not start with 'external-':",
+          `  ${HAND_NAMED_ID}`,
+          "A skill id is the directory the skill installs into, and no marketplace may publish under the name 'external', so an id starting 'external-' is the only kind that can never take the place of a marketplace's skill. Re-share it with each skill above added again, which mints such an id — 'external-<category>-<name>'.",
         ].join("\n"),
       ),
     );

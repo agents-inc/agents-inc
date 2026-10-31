@@ -1,44 +1,89 @@
 import path from "path";
-import { rm } from "fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import { storedConfigHandlerFor } from "@workspace/api-mocks";
+import { configMockServer } from "@workspace/api-mocks/node";
 
 import { runCliCommand } from "../helpers/cli-runner.js";
 import { useMockWorker } from "../helpers/mock-worker.js";
+import { useClaudeStub } from "../helpers/claude-stub.js";
 import { compactCliOutput } from "../helpers/flatten-cli-output.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { writeTestTsConfig } from "../helpers/config-io.js";
 import { readInstallTree } from "../helpers/golden-tree.js";
-import { fileExists } from "../test-fs-utils.js";
+import { directoryExists, fileExists } from "../test-fs-utils.js";
 import { buildSkillConfig } from "../helpers/index.js";
 import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
 import { sa } from "../factories/skill-factories.js";
+import { buildSeedPayload, buildSeedSkill } from "../factories/seed-factories.js";
+import {
+  cleanupTestSource,
+  createTestSource,
+  inTestMarketplace,
+  testMarketplaceSkillId,
+  type TestDirs,
+} from "../fixtures/create-test-source";
+import { DEFAULT_TEST_SKILLS } from "../mock-data/mock-skills";
+import { renderAgentMd } from "../content-generators.js";
+import { stampProvenanceMarker } from "../../agents/agent-provenance.js";
 import { DEFAULT_PUBLIC_SOURCE_NAME } from "../../../consts";
 import type { ProjectConfig } from "../../../types";
 
 /**
- * CLI-971, owner 2026-10-24 (card q-cli-empty-config-counts, "Never count it, and say so"): a
- * project folder whose `config.ts` declares no skill and no sub-agent is treated exactly like a
- * project with no config at all. A command run there works on the global installation, or, where
- * HOME holds both providers' installations, refuses naming both; and it first prints one line saying
- * so. The leftover config is the user's: no command removes it.
+ * Owner 2026-10-24 ("Never count it, and say so"): a project folder whose `config.ts` declares no
+ * skill and no sub-agent is treated exactly like a project with no config at all. A command run
+ * there works on the global installation, or, where HOME holds both providers' installations,
+ * refuses naming both; and it first prints one line saying so. The leftover config is the user's:
+ * no command removes it.
  *
  * Each spec runs the command from the project with no config first, then writes a config that
  * declares nothing and runs it again: the second run prints what the first printed, after the line.
  * A warm-up run comes first, so a command that writes leaves the same state for both runs to see.
  * The line is pinned on stderr, where the old-`.claude-src/` line sits, so piped output is unchanged.
  *
- * Not pinned here: whether `uninstall` and `eject` print the line. From a project, `uninstall`
- * never acts on the global installation and `eject` writes into the project, so the line's own
- * words are not true of them; that waits on the owner. Their behaviour is pinned.
+ * Owner 2026-10-26 ("A line worded for each"): that line is not true of every command, so
+ * `uninstall`, `eject`, `init` and `search`, and a run where HOME holds no installation it could
+ * work on, each print a line of their own in its place, true for that command; `uninstall`'s says
+ * there is nothing to remove, so it is printed only where the run finds nothing. Owner, the same
+ * day ("Keep removing it"): an `uninstall` run at HOME still removes HOME's config however empty,
+ * since there it is the global installation.
  */
 
 /** Rendered text, word for word as the owner chose it, so a literal. */
 const SAYS_SO =
   "This project's config declares nothing, so this works on your global installation.\n";
 
+/** Where HOME holds no installation the run could work on. */
+const SAYS_THERE_IS_NO_GLOBAL =
+  "This project's config declares nothing, and there is no global installation for this to work on.\n";
+
+/** The owner's own example for `uninstall`. */
+const UNINSTALL_SAYS =
+  "This project's config declares nothing, so there is nothing to uninstall in this project.\n";
+
+const EJECT_SAYS =
+  "This project's config declares nothing; eject works on this project, not on a global installation.\n";
+
+const INIT_SAYS =
+  "This project's config declares nothing, so init treats this project as holding no installation.\n";
+
+const SEARCH_SAYS =
+  "This project's config declares nothing; search reads the marketplace it names, else the global installation's, else the default one.\n";
+
+/** Every one of the lines opens so, which no other stderr line does. */
+const ANY_OF_THE_LINES = "This project's config declares nothing";
+
 /** Literals: a test reading the folders off the product would move with them. */
 const CLAUDE_FOLDER = ".agents-inc/claude";
 const CODEX_FOLDER = ".agents-inc/codex";
+const CLAUDE_SKILLS = ".claude/skills";
+const CLAUDE_AGENTS = ".claude/agents";
+
+/** The skills the fixture marketplace publishes, as the folders an eject leaves. */
+const MARKETPLACE_SKILL_IDS = inTestMarketplace(DEFAULT_TEST_SKILLS)
+  .map((skill) => skill.id)
+  .sort();
 
 /** HOME's link to the shared marketplace checkout, which no run writes through. */
 const NOT_HOMES_OWN = { skip: [".cache"] };
@@ -71,6 +116,8 @@ const WITH_A_PLUGIN_SKILL = buildProjectConfig({
 });
 
 const DECLARES_NOTHING = buildProjectConfig({ name: "project", skills: [], agents: [] });
+
+const SEED_ID = "Seed1";
 
 /** The clause of doctor's Config Valid row that says which installation it checked. */
 const CHECKS_THE_GLOBAL =
@@ -130,9 +177,13 @@ describe("a project whose config declares nothing", () => {
     return { without, declaringNothing };
   }
 
-  function expectTheSameRunAfterTheLine(without: Run, declaringNothing: Run): void {
+  function expectTheSameRunAfterTheLine(
+    without: Run,
+    declaringNothing: Run,
+    line: string = SAYS_SO,
+  ): void {
     expect(without.stderr, "a project with no config is told nothing about one").not.toContain(
-      SAYS_SO,
+      ANY_OF_THE_LINES,
     );
     expect(
       [declaringNothing.error?.message, declaringNothing.error?.oclif?.exit],
@@ -142,7 +193,7 @@ describe("a project whose config declares nothing", () => {
     expect(
       declaringNothing.stderr,
       "stderr opens with the one line saying so, then is what it is with no config",
-    ).toBe(`${SAYS_SO}${without.stderr}`);
+    ).toBe(`${line}${without.stderr}`);
   }
 
   describe("under a HOME holding one installation", () => {
@@ -163,7 +214,7 @@ describe("a project whose config declares nothing", () => {
       },
     );
 
-    it("uninstall removes nothing, in the project or at HOME, as from a project with no config", async () => {
+    it("uninstall removes nothing, in the project or at HOME, as from a project with no config, after its own line saying there is nothing to uninstall here", async () => {
       await installAtHome(WITH_A_SUB_AGENT);
       const without = await runCliCommand(["uninstall", "--yes"]);
       const configPath = await declaresNothing();
@@ -180,15 +231,66 @@ describe("a project whose config declares nothing", () => {
         await readInstallTree(fakeHome, NOT_HOMES_OWN),
         "the global installation is left as it was",
       ).toStrictEqual(homeBefore);
-      expect(
-        [declaringNothing.error?.message, declaringNothing.error?.oclif?.exit],
-        "it ends as the run from a project with no config ends",
-      ).toStrictEqual([without.error?.message, without.error?.oclif?.exit]);
-      expect(declaringNothing.stdout, "it says what it says with no config").toBe(without.stdout);
+      expectTheSameRunAfterTheLine(without, declaringNothing, UNINSTALL_SAYS);
       expect(
         await readInstallTree(projectDir),
         `the config that declares nothing is the user's, and stays at ${configPath}`,
       ).toStrictEqual(projectBefore);
+    });
+
+    it("eject writes into this project, keeping its config as it is and HOME as it was, after its own line", async () => {
+      await installAtHome(WITH_A_SUB_AGENT);
+      const configPath = await declaresNothing();
+      const configBefore = await readFile(configPath, "utf-8");
+      const homeBefore = await readInstallTree(fakeHome, NOT_HOMES_OWN);
+
+      const { stdout, stderr, error } = await runCliCommand(["eject", "agent-partials"]);
+
+      expect(error).toBeUndefined();
+      expect(stdout, "the partials land in this project").toContain(
+        `✓ Agent partials ejected to ${path.join(projectDir, CLAUDE_FOLDER, "agents")}\n`,
+      );
+      expect(stderr, "stderr is the one line saying what eject works on").toBe(EJECT_SAYS);
+      expect(
+        await readFile(configPath, "utf-8"),
+        "the config that declares nothing is the user's",
+      ).toBe(configBefore);
+      expect(
+        await readInstallTree(fakeHome, NOT_HOMES_OWN),
+        "the global installation is left as it was",
+      ).toStrictEqual(homeBefore);
+    });
+
+    /** The control beside the one above: the line is about a config, so no config, no line. */
+    it("eject from a project with no config is told nothing about one", async () => {
+      await installAtHome(WITH_A_SUB_AGENT);
+
+      const { stdout, stderr, error } = await runCliCommand(["eject", "agent-partials"]);
+
+      expect(error).toBeUndefined();
+      expect(stdout, "subject guard: eject wrote this project its config").toContain(
+        `✓ Created ${CLAUDE_FOLDER}/config.ts\n`,
+      );
+      expect(stderr).not.toContain(ANY_OF_THE_LINES);
+    });
+
+    it("init shows what it shows from a project with no config, after its own line", async () => {
+      await installAtHome(WITH_A_SUB_AGENT);
+
+      const { without, declaringNothing } = await withoutThenDeclaringNothing(["init"]);
+
+      expectTheSameRunAfterTheLine(without, declaringNothing, INIT_SAYS);
+    });
+
+    it("search, where neither config names a marketplace, reads the default one as from a project with no config, after its own line", async () => {
+      await installAtHome(WITH_A_SUB_AGENT);
+
+      const { without, declaringNothing } = await withoutThenDeclaringNothing(["search", "react"]);
+
+      expect(without.stdout, "subject guard: search found what it searched for").toContain(
+        'matching "react"\n',
+      );
+      expectTheSameRunAfterTheLine(without, declaringNothing, SEARCH_SAYS);
     });
 
     /** The permitted case beside the one above, so a guard that left every project config shows. */
@@ -300,6 +402,108 @@ describe("a project whose config declares nothing", () => {
     });
   });
 
+  describe("under a HOME holding no installation the run could work on", () => {
+    it.each([["list"], ["compile"], ["share"], ["update"], ["edit"]])(
+      "%s ends as from a project with no config, after one line saying there is no global installation for it",
+      async (...argv) => {
+        const { without, declaringNothing } = await withoutThenDeclaringNothing(argv);
+
+        expectTheSameRunAfterTheLine(without, declaringNothing, SAYS_THERE_IS_NO_GLOBAL);
+      },
+    );
+
+    it("doctor checks the project's config, after one line saying there is no global installation for it", async () => {
+      const { without, declaringNothing } = await withoutThenDeclaringNothing(["doctor"]);
+
+      expect(
+        declaringNothing.stdout,
+        "subject guard: doctor read the project's config that declares nothing",
+      ).toContain("This project: .agents-inc/claude/config.ts is valid but declares no skills");
+      expect(without.stderr, "a project with no config is told nothing about one").not.toContain(
+        ANY_OF_THE_LINES,
+      );
+      expect(
+        declaringNothing.stderr,
+        "stderr opens with the one line saying so, then is what it is with no config",
+      ).toBe(`${SAYS_THERE_IS_NO_GLOBAL}${without.stderr}`);
+    });
+
+    it.each([
+      { argv: ["uninstall", "--yes"], line: UNINSTALL_SAYS },
+      { argv: ["init"], line: INIT_SAYS },
+      { argv: ["search", "react"], line: SEARCH_SAYS },
+    ])(
+      "$argv ends as from a project with no config, after its own line",
+      async ({ argv, line }) => {
+        const { without, declaringNothing } = await withoutThenDeclaringNothing(argv);
+
+        expectTheSameRunAfterTheLine(without, declaringNothing, line);
+      },
+    );
+
+    it("eject writes into this project, keeping its config as it is, after its own line", async () => {
+      const configPath = await declaresNothing();
+      const configBefore = await readFile(configPath, "utf-8");
+
+      const { stdout, stderr, error } = await runCliCommand(["eject", "agent-partials"]);
+
+      expect(error).toBeUndefined();
+      expect(stdout, "the partials land in this project").toContain(
+        `✓ Agent partials ejected to ${path.join(projectDir, CLAUDE_FOLDER, "agents")}\n`,
+      );
+      expect(stderr, "stderr is the one line saying what eject works on").toBe(EJECT_SAYS);
+      expect(
+        await readFile(configPath, "utf-8"),
+        "the config that declares nothing is the user's",
+      ).toBe(configBefore);
+    });
+
+    /** HOME's one installation is Claude's, so a run naming Codex has none to work on. */
+    it("list naming a provider HOME holds no installation of ends as from a project with no config, after one line saying there is no global installation for it", async () => {
+      await installAtHome(WITH_A_SUB_AGENT);
+
+      const { without, declaringNothing } = await withoutThenDeclaringNothing([
+        "list",
+        "--provider",
+        "codex",
+      ]);
+
+      expectTheSameRunAfterTheLine(without, declaringNothing, SAYS_THERE_IS_NO_GLOBAL);
+    });
+  });
+
+  /** `eject` run at HOME leaves HOME so. */
+  describe("under a HOME holding only a config that declares nothing", () => {
+    beforeEach(async () => {
+      await installAtHome(buildProjectConfig({ name: "placeholder", skills: [], agents: [] }));
+    });
+
+    it.each([["list"], ["compile"], ["share"], ["update"], ["edit"]])(
+      "%s ends as from a project with no config, after one line saying there is no global installation for it",
+      async (...argv) => {
+        const { without, declaringNothing } = await withoutThenDeclaringNothing(argv);
+
+        expectTheSameRunAfterTheLine(without, declaringNothing, SAYS_THERE_IS_NO_GLOBAL);
+      },
+    );
+
+    it("doctor checks the project's config, after one line saying there is no global installation for it", async () => {
+      const { without, declaringNothing } = await withoutThenDeclaringNothing(["doctor"]);
+
+      expect(
+        declaringNothing.stdout,
+        "subject guard: doctor read the project's config that declares nothing",
+      ).toContain("This project: .agents-inc/claude/config.ts is valid but declares no skills");
+      expect(without.stderr, "a project with no config is told nothing about one").not.toContain(
+        ANY_OF_THE_LINES,
+      );
+      expect(
+        declaringNothing.stderr,
+        "stderr opens with the one line saying so, then is what it is with no config",
+      ).toBe(`${SAYS_THERE_IS_NO_GLOBAL}${without.stderr}`);
+    });
+  });
+
   describe("under a HOME holding a Claude and a Codex installation", () => {
     beforeEach(async () => {
       await installAtHome(WITH_A_SUB_AGENT, CLAUDE_FOLDER);
@@ -379,6 +583,137 @@ describe("a project whose config declares nothing", () => {
         ).toStrictEqual(projectBefore);
       },
     );
+  });
+
+  /** `eject` leaves a project so: copies stamped as this CLI's, beside a config declaring nothing. */
+  describe("holding what this CLI copied or compiled into it", () => {
+    let dirs: TestDirs;
+
+    beforeEach(async () => {
+      dirs = await createTestSource({ skills: inTestMarketplace(DEFAULT_TEST_SKILLS) });
+    });
+
+    afterEach(async () => {
+      await cleanupTestSource(dirs);
+    });
+
+    it("uninstall removes the skill copies eject made, keeping the config, and does not say there is nothing to uninstall", async () => {
+      const configPath = await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({ ...DECLARES_NOTHING, marketplace: dirs.sourceDir }),
+        CLAUDE_FOLDER,
+      );
+      const skillsDir = path.join(projectDir, CLAUDE_SKILLS);
+      await runCliCommand(["eject", "skills"]);
+      expect(
+        [...(await readdir(skillsDir))].sort(),
+        "subject guard: eject copied the marketplace's skills into this project",
+      ).toStrictEqual(MARKETPLACE_SKILL_IDS);
+      const configBefore = await readFile(configPath, "utf-8");
+
+      const { stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+      expect(error).toBeUndefined();
+      expect(await directoryExists(skillsDir), "every copy eject made is removed").toBe(false);
+      expect(
+        await readFile(configPath, "utf-8"),
+        "the config that declares nothing is the user's",
+      ).toBe(configBefore);
+      expect(stderr, "the run removed copies, so no line says it had nothing to").not.toContain(
+        UNINSTALL_SAYS,
+      );
+    });
+
+    it("uninstall removes a sub-agent file carrying this CLI's marker, keeping the config, and does not say there is nothing to uninstall", async () => {
+      const configPath = await declaresNothing();
+      const agentPath = path.join(projectDir, CLAUDE_AGENTS, "web-developer.md");
+      await mkdir(path.dirname(agentPath), { recursive: true });
+      await writeFile(agentPath, stampProvenanceMarker(renderAgentMd("web-developer")));
+      const configBefore = await readFile(configPath, "utf-8");
+
+      const { stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+      expect(error).toBeUndefined();
+      expect(await fileExists(agentPath), "the file this CLI compiled is removed").toBe(false);
+      expect(
+        await readFile(configPath, "utf-8"),
+        "the config that declares nothing is the user's",
+      ).toBe(configBefore);
+      expect(stderr, "the run removed a file, so no line says it had nothing to").not.toContain(
+        UNINSTALL_SAYS,
+      );
+    });
+  });
+
+  describe("init --from", () => {
+    useClaudeStub();
+    let dirs: TestDirs;
+
+    beforeEach(async () => {
+      dirs = await createTestSource({ skills: inTestMarketplace(DEFAULT_TEST_SKILLS) });
+      configMockServer.use(
+        storedConfigHandlerFor(
+          SEED_ID,
+          buildSeedPayload({
+            skills: {
+              [testMarketplaceSkillId("web-framework-react")]: buildSeedSkill({
+                install: "eject",
+                scope: "project",
+                assignments: { "web-developer": "lazy" },
+              }),
+            },
+            agents: { "web-developer": { scope: "project" } },
+          }),
+        ),
+      );
+      await installAtHome(WITH_A_SUB_AGENT);
+    });
+
+    afterEach(async () => {
+      await cleanupTestSource(dirs);
+    });
+
+    function initFrom(): Promise<Run> {
+      return runCliCommand(["init", "--from", SEED_ID, "--marketplace", dirs.sourceDir]);
+    }
+
+    it("installs into this project, adding to its config, after its own line", async () => {
+      const configPath = await declaresNothing();
+
+      const { stdout, stderr, error } = await initFrom();
+
+      expect(error).toBeUndefined();
+      expect(stdout, "the install added to the project's own config").toContain(
+        `Merged with existing config at ${configPath}\n`,
+      );
+      expect(stderr, "stderr is the one line saying how init treats this project").toBe(INIT_SAYS);
+    });
+
+    /** The control beside the one above: the line is about a config, so no config, no line. */
+    it("from a project with no config is told nothing about one", async () => {
+      const { stderr, error } = await initFrom();
+
+      expect(error).toBeUndefined();
+      expect(stderr).not.toContain(ANY_OF_THE_LINES);
+    });
+  });
+
+  /**
+   * The permitted twin of the spec below: at HOME the config is the global installation however
+   * empty, so an uninstall run there removes it, as the owner kept, and says no line of a project's.
+   */
+  it("uninstall run at HOME removes HOME's config that declares nothing, with no line", async () => {
+    const configPath = await writeTestTsConfig(
+      fakeHome,
+      buildProjectConfig({ name: "placeholder", skills: [], agents: [] }),
+    );
+    process.chdir(fakeHome);
+
+    const { stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+    expect(error).toBeUndefined();
+    expect(await fileExists(configPath), "HOME's config, however empty, is removed").toBe(false);
+    expect(stderr).not.toContain(ANY_OF_THE_LINES);
   });
 
   it("uninstall leaves a global config that declares nothing too, a placeholder, where it is", async () => {

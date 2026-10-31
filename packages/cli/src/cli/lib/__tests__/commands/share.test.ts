@@ -3,6 +3,7 @@ import { Socket } from "node:net";
 import { mkdir } from "fs/promises";
 import { STORED_ID, storeRefusedHandler } from "@workspace/api-mocks";
 import { configMockServer } from "@workspace/api-mocks/node";
+import { seatCatalog, seatedCatalog } from "@workspace/compile";
 import { MATRIX_VERSION } from "@workspace/matrix";
 import { SEED_VERSION } from "@workspace/matrix/seed";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
@@ -14,9 +15,12 @@ import { createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { buildSkillConfig } from "../helpers/index.js";
 import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
 import { sa } from "../factories/skill-factories.js";
+import { SKILLS } from "../test-fixtures.js";
+import { FULLSTACK_PAIR_MATRIX } from "../mock-data/mock-matrices.js";
+import { initializeMatrix, matrix } from "../../matrix/matrix-provider.js";
 import { DEFAULT_PUBLIC_SOURCE_NAME, EDITOR_URL, EJECT_SOURCE } from "../../../consts";
 import { EXIT_CODES } from "../../exit-codes";
-import type { ProjectConfig } from "../../../types";
+import type { MergedSkillsMatrix, ProjectConfig } from "../../../types";
 import { writeTestTsConfig } from "../helpers/config-io.js";
 import { buildSeedPayload, buildSeedSkill } from "../factories/seed-factories.js";
 import { standAtTerminal } from "../helpers/terminal-input.js";
@@ -33,6 +37,7 @@ const REACT_ID = "web-framework-react";
 const HONO_ID = "api-framework-hono";
 const REACT_CATEGORY = "web-framework";
 const PRIVATE_MARKETPLACE = "acme-internal";
+const RECORDED_NAME = "Acme React";
 
 /**
  * Standard input on a pipe: not a terminal, and ended once the body is read. `setRawMode` only
@@ -222,7 +227,7 @@ describe("share command", () => {
       expect(error?.message).toBe(
         [
           "This installation holds ejected skills, and ejected skills cannot be shared:",
-          `  ${REACT_ID}`,
+          "  React",
           "Only plugins can be shared.",
         ].join("\n"),
       );
@@ -253,7 +258,7 @@ describe("share command", () => {
           `  Warning: This id names the marketplace folder ${marketplaceFolder}, so it installs only where that folder exists.`,
         ],
         [
-          `  Warning: A shared id names one marketplace, and these skill(s) come from another, so they will not install elsewhere: ${HONO_ID}`,
+          "  Warning: A shared id names one marketplace, and these skill(s) come from another, so they will not install elsewhere: Hono",
         ],
       ]);
     });
@@ -265,6 +270,86 @@ describe("share command", () => {
       await runShare();
 
       expect(warned).not.toHaveBeenCalled();
+    });
+
+    describe("naming each skill it lists: the name its install recorded, else the catalogue's, else its id", () => {
+      /** In no catalogue seated here, so only its id can name it. */
+      const UNSEATED = SKILLS.vitest.id;
+      let callersCatalogue: MergedSkillsMatrix;
+      let compilesCatalogue: ReturnType<typeof seatedCatalog>;
+
+      beforeEach(() => {
+        callersCatalogue = matrix;
+        compilesCatalogue = seatedCatalog();
+        initializeMatrix(FULLSTACK_PAIR_MATRIX);
+      });
+
+      afterEach(() => {
+        initializeMatrix(callersCatalogue);
+        seatCatalog(compilesCatalogue);
+      });
+
+      it("names each ejected skill by the name its install recorded, else the catalogue's, else its id", async () => {
+        await installConfig(
+          installedOverrides({
+            skills: [
+              buildSkillConfig(REACT_ID, {
+                scope: "global",
+                origin: EJECT_SOURCE,
+                displayName: RECORDED_NAME,
+              }),
+              buildSkillConfig(HONO_ID, { scope: "global", origin: EJECT_SOURCE }),
+              buildSkillConfig(UNSEATED, { scope: "global", origin: EJECT_SOURCE }),
+            ],
+          }),
+        );
+
+        const error = await runShare();
+
+        expect(error?.message).toBe(
+          [
+            "This installation holds ejected skills, and ejected skills cannot be shared:",
+            `  ${RECORDED_NAME}`,
+            "  Hono",
+            `  ${UNSEATED}`,
+            "Only plugins can be shared.",
+          ].join("\n"),
+        );
+        expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+        expect(worker.requests).toStrictEqual([]);
+      });
+
+      it("names each skill its id leaves behind by the name its install recorded, else the catalogue's, else its id", async () => {
+        await installConfig(
+          installedOverrides({
+            marketplace: "github:acme/skills",
+            marketplaceName: PRIVATE_MARKETPLACE,
+            skills: [
+              buildSkillConfig(SKILLS.zustand.id, { scope: "global", origin: PRIVATE_MARKETPLACE }),
+              buildSkillConfig(REACT_ID, {
+                scope: "global",
+                origin: DEFAULT_PUBLIC_SOURCE_NAME,
+                displayName: RECORDED_NAME,
+              }),
+              buildSkillConfig(HONO_ID, { scope: "global", origin: DEFAULT_PUBLIC_SOURCE_NAME }),
+              buildSkillConfig(UNSEATED, {
+                scope: "global",
+                origin: DEFAULT_PUBLIC_SOURCE_NAME,
+              }),
+            ],
+          }),
+        );
+        const warned = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+        const error = await runShare();
+
+        expect(error).toBeUndefined();
+        expect(warned.mock.calls).toStrictEqual([
+          [
+            `  Warning: A shared id names one marketplace, and these skill(s) come from another, so they will not install elsewhere: ${RECORDED_NAME}, Hono, ${UNSEATED}`,
+          ],
+        ]);
+      });
     });
   });
 

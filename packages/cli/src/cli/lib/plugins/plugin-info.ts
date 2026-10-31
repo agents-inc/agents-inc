@@ -3,7 +3,7 @@ import type { Dirent } from "fs";
 
 import { DEFAULT_PLUGIN_NAME, type Provider } from "../../consts";
 import { loadProjectConfig } from "../configuration";
-import { declaresNoContent, loadProjectConfigFromDir } from "../configuration/project-config";
+import { loadProjectConfigFromDir } from "../configuration/project-config";
 import {
   deriveInstallMode,
   detectInstallation,
@@ -15,7 +15,12 @@ import {
   type InstallMode,
 } from "../installation";
 import type { DetectedInstallation } from "../installation/detect-installations";
-import { agentCodec, agentsDir, providerAtScope } from "../installation/install-layout";
+import {
+  agentCodec,
+  agentsDir,
+  declaresNoContent,
+  providerAtScope,
+} from "../installation/install-layout";
 import type { ProjectConfig, SkillScope } from "../../types/config";
 
 export type InstallationInfo = {

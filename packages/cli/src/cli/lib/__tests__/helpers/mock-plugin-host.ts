@@ -19,6 +19,7 @@ export function createMockPluginHost(overrides: Partial<PluginHost> = {}): Plugi
     refreshMarketplace: vi.fn<PluginHost["refreshMarketplace"]>().mockResolvedValue(undefined),
     installPlugin: vi.fn<PluginHost["installPlugin"]>().mockResolvedValue(undefined),
     uninstallPlugin: vi.fn<PluginHost["uninstallPlugin"]>().mockResolvedValue("removed"),
+    updatePlugin: vi.fn<PluginHost["updatePlugin"]>().mockResolvedValue(undefined),
     listPlugins: vi.fn<PluginHost["listPlugins"]>().mockResolvedValue([]),
     ...overrides,
   };

@@ -102,15 +102,15 @@ describe("compile command", () => {
       });
       process.chdir(localDirs.projectDir);
 
-      const { stdout, error } = await runCliCommand(["compile"]);
+      const { stdout, stderr, error } = await runCliCommand(["compile"]);
 
-      const output = stdout + (error?.message || "");
-      expect(output).not.toContain("missing metadata.yaml");
+      const output = stdout + stderr + (error?.message || "");
+      expect(output).not.toContain("registered with the CLI (no metadata.yaml)");
       expect(output).toContain("Discovered 1 local skill");
       expect(output).not.toContain("Discovered 1 local skills");
     });
 
-    it("should skip a skill with SKILL.md but no metadata.yaml and emit a warning", async () => {
+    it("says one line for the folder it skipped for having no metadata.yaml, without naming it", async () => {
       localDirs = await createTestSource({
         skills: [],
         agents: [],
@@ -123,12 +123,15 @@ describe("compile command", () => {
       const { stderr, stdout, error } = await runCliCommand(["compile"]);
 
       const allOutput = stdout + stderr + (error?.message || "");
-      expect(allOutput).toContain("web-tooling-incomplete");
-      expect(allOutput).toContain("metadata.yaml");
-      expect(allOutput).toContain("skipped");
+      expect(allOutput).toContain(
+        "Warning: Skipped 1 skill in '.claude/skills/' that isn't registered with the CLI (no metadata.yaml).\n",
+      );
+      expect(allOutput, "the folder is named only under --verbose").not.toContain(
+        "web-tooling-incomplete",
+      );
     });
 
-    it("should include the skill directory path in the warning message", async () => {
+    it("names the skipped folder under --verbose, beside the same one line", async () => {
       localDirs = await createTestSource({
         skills: [],
         agents: [],
@@ -138,11 +141,13 @@ describe("compile command", () => {
       });
       process.chdir(localDirs.projectDir);
 
-      const { stderr, stdout, error } = await runCliCommand(["compile"]);
+      const { stderr, stdout, error } = await runCliCommand(["compile", "--verbose"]);
 
       const allOutput = stdout + stderr + (error?.message || "");
+      expect(allOutput).toContain(
+        "Warning: Skipped 1 skill in '.claude/skills/' that isn't registered with the CLI (no metadata.yaml).\n",
+      );
       expect(allOutput).toContain("web-tooling-custom");
-      expect(allOutput).toContain(".claude/skills/");
     });
   });
 

@@ -13,6 +13,7 @@ import {
   installationConfigsUnreadable,
   type IncompleteWork,
   pluginsInstalled,
+  pluginsLeftSwitchedOn,
   propagatedRecompileSummary,
   registeredProjectConfigUnreadable,
   registeredProjectGone,
@@ -33,10 +34,14 @@ import {
 } from "./utils/terminal.js";
 import { EXIT_CODES } from "./lib/exit-codes.js";
 import { isActiveAt } from "./lib/configuration/scope-predicates.js";
+import { namedByActiveEntries } from "./lib/configuration/scope-diff.js";
 import { resolveBranding } from "./lib/configuration/config.js";
 import { isHomeDirectory, refuseUnofferedStack } from "./lib/installation/index.js";
 import { providerInUse } from "./lib/installation/install-layout.js";
-import { globalInstallationStandsIn } from "./lib/installation/provider-flag.js";
+import {
+  holdsOnlyAConfigDeclaringNothing,
+  homeHoldsAnInstallationFor,
+} from "./lib/installation/provider-flag.js";
 import { providerToNameAt } from "./lib/installation/provider-to-name.js";
 import type { InstallSelection } from "@workspace/compile/seed-to-config";
 import { getStackSkillIds, loadStackById } from "./lib/stacks/index.js";
@@ -51,6 +56,7 @@ import type {
 import { findConfigLoadFailures } from "./lib/configuration/project-config.js";
 import { findUnusableSavedSkillMetadata } from "./lib/skills/index.js";
 import type { PluginHost } from "./lib/hosts/plugin-host.js";
+import type { PluginLeftSwitchedOn } from "./lib/hosts/codex-plugin-switch.js";
 import { hostAt } from "./lib/hosts/host-for.js";
 import { refuseUnofferedPlacements } from "./lib/hosts/offered-placements.js";
 import {
@@ -80,6 +86,11 @@ const terminalColumns = (): number => process.stdout.columns ?? MIN_TERMINAL_SIZ
 
 // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- @types/node declares this as `number`; it is undefined whenever stdout is not a TTY
 const terminalRows = (): number => process.stdout.rows ?? MIN_TERMINAL_SIZE.ROWS;
+
+/** On stderr, as the init hook's old-folder lines are, so piped output is unchanged. */
+function sayFirst(line: string): void {
+  process.stderr.write(`${line}\n`);
+}
 
 function isTerminalBigEnough(): boolean {
   return isTerminalLargeEnough(terminalColumns(), terminalRows());
@@ -135,6 +146,9 @@ export abstract class BaseCommand extends Command {
   /** Non-empty decides the exit code; see {@link exitIfWorkIncomplete}. */
   private readonly incompleteWork: IncompleteWork[] = [];
 
+  /** Warned of by the refresh that left them; non-empty fails the run, as in `update`. */
+  private readonly switchesLeftOn: PluginLeftSwitchedOn[] = [];
+
   async init(): Promise<void> {
     await super.init();
     await this.ensureTerminalSize();
@@ -142,13 +156,22 @@ export abstract class BaseCommand extends Command {
 
   /**
    * Called first where a command starts work on the installation in play, which for a project whose
-   * config declares nothing is the global one. On stderr, as the init hook's old-folder lines are,
-   * so piped output is unchanged.
+   * config declares nothing is the global one, or none where HOME holds none the run could work on.
    */
   protected async sayWhenTheGlobalInstallationStandsIn(named: Provider | undefined): Promise<void> {
-    if (!(await globalInstallationStandsIn(process.cwd(), named))) return;
+    if (!(await holdsOnlyAConfigDeclaringNothing(process.cwd()))) return;
 
-    process.stderr.write(`${INFO_MESSAGES.GLOBAL_INSTALLATION_STANDS_IN}\n`);
+    const standsIn = await homeHoldsAnInstallationFor(process.cwd(), named);
+    sayFirst(
+      standsIn
+        ? INFO_MESSAGES.GLOBAL_INSTALLATION_STANDS_IN
+        : INFO_MESSAGES.NO_GLOBAL_INSTALLATION_STANDS_IN,
+    );
+  }
+
+  /** For a command that never works on the global installation: `line` says what it does instead. */
+  protected async sayWhenTheProjectsConfigDeclaresNothing(line: string): Promise<void> {
+    if (await holdsOnlyAConfigDeclaringNothing(process.cwd())) sayFirst(line);
   }
 
   protected async ensureTerminalSize(): Promise<void> {
@@ -194,6 +217,7 @@ export abstract class BaseCommand extends Command {
     if (!required.ok) {
       this.error(required.error, { exit: EXIT_CODES.ERROR });
     }
+    this.switchesLeftOn.push(...required.leftOn);
     if (required.registered) {
       onRegistered?.(required.marketplace);
     }
@@ -271,10 +295,11 @@ export abstract class BaseCommand extends Command {
   }
 
   protected reportUnassignedSkills(config: ProjectConfig, selected: readonly SkillConfig[]): void {
+    const namedBy = namedByActiveEntries(selected);
     for (const { skillId, blockedBy } of findUnassignedSkills(config, selected)) {
-      this.warn(skillAssignedToNoAgent(skillId));
+      this.warn(skillAssignedToNoAgent(skillId, namedBy));
       if (blockedBy.length > 0) {
-        this.warn(scopeBlockedStackAssignment(blockedBy, skillId));
+        this.warn(scopeBlockedStackAssignment(blockedBy, skillId, namedBy));
       }
     }
   }
@@ -333,9 +358,11 @@ export abstract class BaseCommand extends Command {
 
     const { skillIds, agentNames } = projectScopedContent(result);
     const provider = providerToNameAt(projectDir, providerInUse(projectDir));
-    this.error(sharedConfigProjectScopeAtHome(skillIds, agentNames, installedHere, provider), {
-      exit: EXIT_CODES.ERROR,
-    });
+    const namedBy = namedByActiveEntries(result.skills);
+    this.error(
+      sharedConfigProjectScopeAtHome(skillIds, agentNames, installedHere, provider, namedBy),
+      { exit: EXIT_CODES.ERROR },
+    );
   }
 
   /** `unloadedSkillIds`: skills the marketplace ships and could not load, never unknown ones. */
@@ -412,9 +439,21 @@ export abstract class BaseCommand extends Command {
 
   /** Every command that records must call this; `this.exit` skips the `Error:` framing. */
   protected exitIfWorkIncomplete(): void {
+    this.listIncompleteWork();
+    this.failIfPluginsLeftSwitchedOn();
+    if (this.hasIncompleteWork) this.exit(EXIT_CODES.COMPLETED_WITH_FAILURES);
+  }
+
+  private listIncompleteWork(): void {
     if (!this.hasIncompleteWork) return;
 
     this.log(`\n${chalk.hex(CLI_COLORS.WARNING)(completedWithFailures(this.incompleteWork))}\n`);
-    this.exit(EXIT_CODES.COMPLETED_WITH_FAILURES);
+  }
+
+  private failIfPluginsLeftSwitchedOn(): void {
+    if (this.switchesLeftOn.length === 0) return;
+
+    const pluginKeys = this.switchesLeftOn.map(({ pluginKey }) => pluginKey);
+    this.error(pluginsLeftSwitchedOn(pluginKeys), { exit: EXIT_CODES.ERROR });
   }
 }

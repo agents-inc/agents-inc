@@ -73,6 +73,7 @@ describe("useClaudeStub", () => {
     await execCommand("claude", ["plugin", "marketplace", "list", "--json"]);
     await host.refreshMarketplace("test-fixture");
     await host.installPlugin("hono@test-fixture", "global", os.tmpdir());
+    await host.updatePlugin("hono@test-fixture", "global", os.tmpdir());
     await host.uninstallPlugin("react@test-fixture", "project", os.tmpdir());
     await claudePluginMarketplaceRemove("test-fixture");
 
@@ -80,6 +81,7 @@ describe("useClaudeStub", () => {
       `plugin marketplace add ${marketplaceDir}`,
       "plugin marketplace update test-fixture",
       "plugin install hono@test-fixture --scope user",
+      "plugin update hono@test-fixture --scope user",
       "plugin uninstall react@test-fixture --scope project",
       "plugin marketplace remove test-fixture",
     ]);

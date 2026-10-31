@@ -81,6 +81,25 @@ export async function claudePluginInstall(
   }
 }
 
+/**
+ * Never passes `-y`: it would accept a command the marketplace declares without anyone seeing it.
+ * A plugin Claude does not hold at this scope is a failure, unlike in an uninstall.
+ */
+async function claudePluginUpdate(
+  pluginRef: string,
+  scope: ClaudePluginScope,
+  projectDir: string,
+  options?: ClaudeConfigOptions,
+): Promise<void> {
+  validatePluginName(pluginRef);
+
+  const cwd = resolvePluginCwd(scope, projectDir);
+  const args = ["plugin", "update", pluginRef, "--scope", scope];
+  const result = await execCommand("claude", args, { cwd, ...configDirEnv(options) });
+
+  if (result.exitCode !== 0) throw new Error(whyClaudeFailed(result));
+}
+
 export async function isClaudeCLIAvailable(options?: ClaudeConfigOptions): Promise<boolean> {
   try {
     const result = await execCommand("claude", ["--version"], configDirEnv(options));
@@ -277,6 +296,8 @@ export function claudeHost(): PluginHost {
     refreshMarketplace: claudePluginMarketplaceUpdate,
     installPlugin: (pluginRef, scope, projectDir, options) =>
       claudePluginInstall(pluginRef, toClaudePluginScope(scope), projectDir, options),
+    updatePlugin: (pluginRef, scope, projectDir, options) =>
+      claudePluginUpdate(pluginRef, toClaudePluginScope(scope), projectDir, options),
     uninstallPlugin: (pluginRef, scope, projectDir, options) =>
       claudePluginUninstall(pluginRef, toClaudePluginScope(scope), projectDir, options),
     listPlugins: claudeListPlugins,

@@ -114,6 +114,11 @@ import { Confirm } from "../components/common/confirm.js";
 import { promptConfirm } from "../components/common/prompt-confirm.js";
 import { summaryPanelBlock, type SummaryPanelProps } from "../components/common/summary-panel.js";
 import { hostAt } from "../lib/hosts/host-for.js";
+import type { PluginHost } from "../lib/hosts/plugin-host.js";
+import {
+  pluginRefsOf,
+  removeUnderFirstNameHeld,
+} from "../lib/operations/skills/uninstall-plugin-skills.js";
 import { hostCompileNotices } from "../lib/hosts/host-compile-notices.js";
 import { unofferablePlacementsFound } from "../lib/hosts/configured-placements.js";
 import { chooseProviderForThisRun, providerInUse } from "../lib/installation/install-layout.js";
@@ -139,6 +144,7 @@ import {
   authoredHereKept,
   carriedSkillsWritten,
   editorSkillMetadataUnusableError,
+  idNamesAnotherMarketplace,
   keptAsInstalledGlobally,
   keptUnassigned,
   localSkillsCopied,
@@ -153,6 +159,7 @@ import {
 import {
   agentChangesAmong,
   formatScopeTag,
+  namedByActiveEntries,
   type AgentChange,
   type NamedBy,
 } from "../lib/configuration/scope-diff.js";
@@ -677,6 +684,7 @@ export default class Edit extends BaseCommand {
   private async applySharedConfig(id: string, namedProvider: Provider | undefined): Promise<void> {
     const payload = await this.fetchSharedConfigOrFail(id, namedProvider);
     const context = await this.loadContextUnderSpinner();
+    this.sayWhenItNamesAnotherMarketplace(payload, context.sourceResult);
     const editRoot = resolveEditRoot(context.installation);
 
     // A skill whose metadata.yaml no longer describes it would be dropped from config.ts.
@@ -830,6 +838,15 @@ export default class Edit extends BaseCommand {
     return fetched.payload;
   }
 
+  /** An apply always reads the installation's own marketplace; one an id names is never fetched. */
+  private sayWhenItNamesAnotherMarketplace(
+    { marketplace: named }: SeedPayload,
+    { sourceConfig: { source: used } }: SourceLoadResult,
+  ): void {
+    if (named === undefined || named === used) return;
+    this.log(idNamesAnotherMarketplace(named, used));
+  }
+
   private decodeSeedOrFail(payload: SeedPayload, sourceMatrix: MergedSkillsMatrix): SeedMapping {
     try {
       return seedToInstallSelection(payload, sourceMatrix);
@@ -854,7 +871,13 @@ export default class Edit extends BaseCommand {
     if (carried.length === 0) return;
 
     await writeExternalSkills(carried);
-    this.log(carriedSkillsWritten(carried.map((skill) => skill.id)));
+    const recorded = carried.map(({ id, skill }) => ({ id, displayName: skill.displayName }));
+    this.log(
+      carriedSkillsWritten(
+        carried.map(({ id }) => id),
+        namedByActiveEntries(recorded),
+      ),
+    );
   }
 
   /**
@@ -945,7 +968,7 @@ export default class Edit extends BaseCommand {
     if (outcome === "confirmed") return;
 
     this.log("\nEdit cancelled");
-    this.error("Cancelled", { exit: EXIT_CODES.CANCELLED });
+    this.exit(EXIT_CODES.CANCELLED);
   }
 
   /** `edit` rewrites the file, so it must not let a user curate a roster no command acts on. */
@@ -1820,18 +1843,28 @@ async function migratePluginSkillScopes(
   const failed: PluginScopeMigrationResult["failed"] = [];
 
   for (const move of pluginMoves) {
-    const pluginRef = buildMarketplacePluginRef(move.id, marketplace);
-
     try {
-      // global→project keeps the global registration, which other projects still use.
-      if (move.oldScope === "project") {
-        await host.uninstallPlugin(pluginRef, "project", projectDir);
-      }
-      await host.installPlugin(pluginRef, move.newScope, projectDir);
+      await movePluginScope(host, move, marketplace, projectDir);
     } catch (error) {
       failed.push({ id: move.id, error: getErrorMessage(error) });
     }
   }
 
   return { failed };
+}
+
+/** A plugin can come from another marketplace than the installation's; its entry names which. */
+async function movePluginScope(
+  host: PluginHost,
+  move: SkillMigration,
+  marketplace: string,
+  projectDir: string,
+): Promise<void> {
+  // global→project keeps the global registration, which other projects still use.
+  if (move.oldScope === "project") {
+    const oldRefs = pluginRefsOf(move.id, move.oldSource, marketplace);
+    await removeUnderFirstNameHeld(host, oldRefs, "project", projectDir);
+  }
+  const newRef = buildMarketplacePluginRef(move.id, move.newSource);
+  await host.installPlugin(newRef, move.newScope, projectDir);
 }

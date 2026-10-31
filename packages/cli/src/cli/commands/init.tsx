@@ -1,7 +1,7 @@
 import os from "os";
 import React from "react";
 
-import { Flags, type Interfaces } from "@oclif/core";
+import { Errors, Flags, type Interfaces } from "@oclif/core";
 import { Box, Text, useApp } from "ink";
 import { partition } from "remeda";
 import { render } from "../components/render.js";
@@ -23,6 +23,10 @@ import {
   type SkillCopyResult,
   discoverInstalledSkills,
 } from "../lib/operations/index.js";
+import {
+  removeSkillFoldersCreatedSince,
+  skillFoldersAt,
+} from "../lib/operations/skills/copy-local-skills.js";
 import { movedGlobalAgentInputs, type GateReport } from "../lib/config-gate/index.js";
 import { fetchSeedConfig } from "../lib/seed/fetch-seed.js";
 import {
@@ -41,13 +45,18 @@ import {
   type HeldGlobal,
   type InstalledGlobal,
 } from "../lib/seed/seed-apply.js";
-import { agentChangesAmong, type AgentChange } from "../lib/configuration/scope-diff.js";
+import {
+  agentChangesAmong,
+  namedByActiveEntries,
+  type AgentChange,
+} from "../lib/configuration/scope-diff.js";
 import { isActiveAt } from "../lib/configuration/scope-predicates.js";
 import { summaryPanelBlock, type SummaryPanelProps } from "../components/common/summary-panel.js";
 import {
   getInstallationsByProvider,
   type ProviderInstallation,
 } from "../lib/plugins/plugin-info.js";
+import { buildMarketplacePluginRef } from "../lib/plugins/plugin-ref.js";
 import {
   assertNamedSourceUsable,
   isLocalSource,
@@ -108,16 +117,19 @@ import type {
   SkillId,
   SkillScope,
 } from "../types/index.js";
-import { type StartupMessage } from "../utils/logger.js";
+import { type StartupMessage, verbose } from "../utils/logger.js";
 import {
   ERROR_MESSAGES,
   INCOMPLETE_WORK_RECOVERY,
+  INFO_MESSAGES,
   SHARED_CONFIG_ARRIVALS,
   STATUS_MESSAGES,
   addMarketplaceInTheEditor,
   agentsNotCompiled,
   applySharedConfigHere,
+  carriedSkillsRemovedAfterRefusedSave,
   carriedSkillsWritten,
+  copiedSkillsRemovedAfterRefusedSave,
   globalScopedAgentsHint,
   initSucceeded,
   keptAsInstalledGlobally,
@@ -271,6 +283,9 @@ type Selection = {
   sourceFlags: SourceFlags;
   /** A global install's own skills, recorded as they are and never installed over. */
   installedAlready: ReadonlySet<SkillId>;
+  /** The skill folders at both scopes before this run wrote one. */
+  skillFoldersBefore: ReadonlySet<string>;
+  carriedSkillDirs: ReadonlySet<string>;
 };
 
 /** The payload names the marketplace because a skill id never says where its repository lives. */
@@ -355,6 +370,7 @@ export default class Init extends BaseCommand {
 
     // First, so a refused `--provider` leaves the filesystem untouched at both scopes.
     this.settleTheProviderForThisRun(flags);
+    await this.sayWhenTheProjectsConfigDeclaresNothing(INFO_MESSAGES.DECLARES_NOTHING_TO_INIT_OVER);
 
     // Before `ensureConfigReadable`: a broken config must not block the editor route.
     if (opensTheEditor(flags)) {
@@ -471,6 +487,7 @@ export default class Init extends BaseCommand {
     }
 
     // After the question, so a refusal or a no leaves nothing written.
+    const skillFoldersBefore = await skillFoldersAt(projectDir);
     await this.writeCarriedSkills(arrivingCarried);
     this.announceArrivingSkills(held, result.selectedAgents.length);
 
@@ -479,6 +496,8 @@ export default class Init extends BaseCommand {
       sourceResult,
       sourceFlags,
       installedAlready: new Set(held.installed.skillIds),
+      skillFoldersBefore,
+      carriedSkillDirs: new Set(arrivingCarried.map(({ skillDir }) => skillDir)),
     };
   }
 
@@ -573,7 +592,13 @@ export default class Init extends BaseCommand {
     if (carried.length === 0) return;
 
     await writeExternalSkills(carried);
-    this.log(carriedSkillsWritten(carried.map((skill) => skill.id)));
+    const recorded = carried.map(({ id, skill }) => ({ id, displayName: skill.displayName }));
+    this.log(
+      carriedSkillsWritten(
+        carried.map(({ id }) => id),
+        namedByActiveEntries(recorded),
+      ),
+    );
   }
 
   private async loadSourceOrFail(
@@ -599,7 +624,14 @@ export default class Init extends BaseCommand {
   }
 
   private async handleInstallation(
-    { result, sourceResult, sourceFlags, installedAlready }: Selection,
+    {
+      result,
+      sourceResult,
+      sourceFlags,
+      installedAlready,
+      skillFoldersBefore,
+      carriedSkillDirs,
+    }: Selection,
     projectDir: string,
   ): Promise<void> {
     const plan = planInstall(result, installedAlready);
@@ -613,23 +645,22 @@ export default class Init extends BaseCommand {
     );
 
     const copyResult = await this.copyEjectedSkills(plan, projectDir, sourceResult);
+    const pluginsNewlyInstalled = await this.installPluginSkillsNotingWhatWasHeld(
+      plan.pluginSkills,
+      resolvedMarketplace,
+      projectDir,
+      sourceResult.matrix,
+    );
 
-    if (resolvedMarketplace !== null) {
-      await this.installPluginSkillsReported(
-        plan.pluginSkills,
-        resolvedMarketplace,
-        projectDir,
-        sourceResult.matrix,
-      );
-    }
-
+    const configResult = await this.writeConfigReported(
+      result,
+      sourceResult,
+      sourceFlags,
+      projectDir,
+      { skillFoldersBefore, carriedSkillDirs, copyResult, pluginsNewlyInstalled },
+    );
     try {
-      const written = await this.writeConfigAndCompile(
-        result,
-        sourceResult,
-        sourceFlags,
-        projectDir,
-      );
+      const written = await this.compileWrittenConfig(configResult, projectDir);
       this.reportSuccess(written, copyResult, projectDir);
 
       await this.showPermissionNotice(projectDir);
@@ -681,13 +712,26 @@ export default class Init extends BaseCommand {
     return copyResult;
   }
 
-  private async writeConfigAndCompile(
-    result: InstallSelection,
-    sourceResult: SourceLoadResult,
-    flags: SourceFlags,
+  /** Each plugin this run installed that the host did not already hold, at the scope it went to. */
+  private async installPluginSkillsNotingWhatWasHeld(
+    pluginSkills: SkillConfig[],
+    marketplace: string | null,
+    projectDir: string,
+    matrix: MergedSkillsMatrix,
+  ): Promise<InstalledPlugin[]> {
+    if (marketplace === null) return [];
+
+    const heldBefore = await pluginRefsHeldAt(projectDir);
+    await this.installPluginSkillsReported(pluginSkills, marketplace, projectDir, matrix);
+    return pluginSkills
+      .map(({ id, scope }) => ({ ref: buildMarketplacePluginRef(id, marketplace), scope }))
+      .filter(({ ref }) => !heldBefore(ref));
+  }
+
+  private async compileWrittenConfig(
+    configResult: ConfigWriteResult,
     projectDir: string,
   ): Promise<WrittenInstall> {
-    const configResult = await this.writeConfigReported(result, sourceResult, flags, projectDir);
     const agentScopeMap = buildAgentScopeMap(configResult.config);
     const compileResult = await this.compileInstalledAgents(
       configResult.propagation,
@@ -707,14 +751,17 @@ export default class Init extends BaseCommand {
     sourceResult: SourceLoadResult,
     flags: SourceFlags,
     projectDir: string,
+    putDown: PutDown,
   ): Promise<ConfigWriteResult> {
     this.log("Generating configuration...");
-    const configResult = await writeProjectConfig({
-      selection: result,
-      sourceResult,
-      projectDir,
-      ...(flags.marketplace !== undefined && { sourceFlag: flags.marketplace }),
-    });
+    const configResult = await this.takingBackOnFailure(putDown, projectDir, () =>
+      writeProjectConfig({
+        selection: result,
+        sourceResult,
+        projectDir,
+        ...(flags.marketplace !== undefined && { sourceFlag: flags.marketplace }),
+      }),
+    );
 
     if (configResult.wasMerged) {
       this.log(`Merged with existing config at ${configResult.existingConfigPath}`);
@@ -723,6 +770,34 @@ export default class Init extends BaseCommand {
     this.log(`Configuration saved (${plural(configResult.config.agents.length, "agent")})\n`);
     this.reportUnassignedSkills(configResult.config, result.skills);
     return configResult;
+  }
+
+  /** Fails with the write's own cause once nothing this run put down is left with no config. */
+  private async takingBackOnFailure<T>(
+    putDown: PutDown,
+    projectDir: string,
+    write: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await write();
+    } catch (error) {
+      const foldersRemoved = await removeNewSkillFolders(putDown.skillFoldersBefore, projectDir);
+      await uninstallEach(putDown.pluginsNewlyInstalled, projectDir);
+      this.failSayingWhatWasRemoved(error, skillsRemoved(putDown, foldersRemoved));
+    }
+  }
+
+  /** oclif prints a thrown error last, so this one is printed here and thrown already printed. */
+  private failSayingWhatWasRemoved(error: unknown, removed: SkillsRemoved): never {
+    const lines = linesSayingWhatWasRemoved(removed);
+    if (lines.length === 0) this.handleError(error);
+
+    const message = getErrorMessage(error);
+    this.error(message, { exit: false });
+    for (const line of lines) this.log(line);
+    throw Object.assign(new Errors.CLIError(message, { exit: EXIT_CODES.ERROR }), {
+      skipOclifErrorHandling: true,
+    });
   }
 
   private async compileInstalledAgents(
@@ -948,6 +1023,74 @@ type WrittenInstall = {
   compileResult: CompilationResult;
   agentScopeMap: Map<AgentName, SkillScope>;
 };
+
+type InstalledPlugin = { ref: string; scope: SkillScope };
+
+/** What this run put down before the save, for a refused save to take back. */
+type PutDown = {
+  skillFoldersBefore: ReadonlySet<string>;
+  carriedSkillDirs: ReadonlySet<string>;
+  copyResult: SkillCopyResult | null;
+  pluginsNewlyInstalled: InstalledPlugin[];
+};
+
+/** Unreadable, every plugin counts as held: a take-back must never touch one that was there. */
+async function pluginRefsHeldAt(projectDir: string): Promise<(ref: string) => boolean> {
+  try {
+    const held = await hostAt(projectDir).listPlugins(projectDir);
+    const refs = new Set(held.map(({ pluginKey }) => pluginKey));
+    return (ref) => refs.has(ref);
+  } catch (error) {
+    verbose(`Could not read the plugins installed before this run: ${getErrorMessage(error)}`);
+    return () => true;
+  }
+}
+
+async function removeNewSkillFolders(
+  before: ReadonlySet<string>,
+  projectDir: string,
+): Promise<ReadonlySet<string>> {
+  try {
+    return await removeSkillFoldersCreatedSince(before, projectDir);
+  } catch (error) {
+    verbose(`Could not remove a skill folder this run made: ${getErrorMessage(error)}`);
+    return new Set();
+  }
+}
+
+/** In install order; a failure is diagnostic only, since the save's own error is what is reported. */
+async function uninstallEach(plugins: InstalledPlugin[], projectDir: string): Promise<void> {
+  const host = hostAt(projectDir);
+  for (const { ref, scope } of plugins) {
+    await host.uninstallPlugin(ref, scope, projectDir).catch((error: unknown) => {
+      verbose(`Could not uninstall ${ref}, which this run installed: ${getErrorMessage(error)}`);
+    });
+  }
+}
+
+type SkillsRemoved = { copied: number; carried: number };
+
+/** A carried skill is recorded among the copies in place, so it is counted as carried only. */
+function skillsRemoved(
+  { copyResult, carriedSkillDirs }: PutDown,
+  folders: ReadonlySet<string>,
+): SkillsRemoved {
+  const countRemoved = (dirs: string[]) => dirs.filter((dir) => folders.has(dir)).length;
+  const copies = copyDestinations(copyResult).filter((dir) => !carriedSkillDirs.has(dir));
+  return { copied: countRemoved(copies), carried: countRemoved([...carriedSkillDirs]) };
+}
+
+function copyDestinations(copyResult: SkillCopyResult | null): string[] {
+  if (copyResult === null) return [];
+  return [...copyResult.projectCopied, ...copyResult.globalCopied].map(({ destPath }) => destPath);
+}
+
+function linesSayingWhatWasRemoved({ copied, carried }: SkillsRemoved): string[] {
+  return [
+    ...(copied > 0 ? [copiedSkillsRemovedAfterRefusedSave(copied)] : []),
+    ...(carried > 0 ? [carriedSkillsRemovedAfterRefusedSave(carried)] : []),
+  ];
+}
 
 /**
  * From a project, global sub-agents recompile only when the write changed their inputs;

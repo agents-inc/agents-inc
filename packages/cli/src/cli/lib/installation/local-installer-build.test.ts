@@ -3,6 +3,7 @@
  * records, what it refuses, and the verbose trail it leaves.
  */
 
+import path from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildAndMergeConfig, buildCompileAgents, refuseUnofferedStack } from "./local-installer";
@@ -12,20 +13,28 @@ import {
   buildAgentConfigs,
   buildInstallSelection,
   buildProjectConfig,
+  buildSourceConfig,
   buildSourceResult,
 } from "../__tests__/factories/config-factories";
 import { createMockAgent } from "../__tests__/factories/agent-factories";
 import { sa } from "../__tests__/factories/skill-factories";
-import { cleanupTestSource, createTestSource } from "../__tests__/fixtures/create-test-source";
+import { renderConfigTs } from "../__tests__/content-generators";
+import {
+  cleanupTestSource,
+  createTestSource,
+  writeTestFile,
+} from "../__tests__/fixtures/create-test-source";
 import { buildSkillConfig, buildSkillConfigs } from "../__tests__/helpers/skill-config-builders";
 import { writeTestTsConfig } from "../__tests__/helpers/config-io";
 import { silenceConsole } from "../__tests__/helpers/silence-console";
 import { useFakeHome } from "../__tests__/helpers/isolated-home";
 import { FULLSTACK_PAIR_MATRIX, FULLSTACK_TRIO_MATRIX } from "../__tests__/mock-data/mock-matrices";
 import { CUSTOM_TEST_STACKS } from "../__tests__/mock-data/mock-stacks";
-import { firstElement } from "../__tests__/helpers/element-at";
+import { elementAt, firstElement } from "../__tests__/helpers/element-at";
 import { setVerbose } from "../../utils/logger";
+import { SOURCE_ROOT_DIR } from "../../consts";
 import { DEFAULT_SOURCE } from "../configuration";
+import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 import type { AgentDefinition, AgentName, SkillId, StackAgentConfig } from "../../types";
 
 const REACT: SkillId = "web-framework-react";
@@ -37,6 +46,7 @@ const BUILT_IN_STACK_ID = "nextjs-fullstack";
 const UNOFFERED_STACK_ID = "no-such-stack";
 const SHARED_DESCRIPTION = "A configuration a teammate shared";
 const PLUGIN_MARKETPLACE = "acme";
+const DECLARED_STACKS_FILE = "data/stacks.ts";
 
 const ASSIGNED_STACK: Partial<Record<AgentName, StackAgentConfig>> = {
   [WEB_DEVELOPER]: { "web-framework": [{ id: REACT, preloaded: false }] },
@@ -239,6 +249,48 @@ describe("refuseUnofferedStack", () => {
       `Stack '${UNOFFERED_STACK_ID}' is not a stack the source '${tempDir}' offers.`,
     );
     await expect(refuseUnofferedStack(BUILT_IN_STACK_ID, publicCatalogue)).resolves.toBeUndefined();
+  });
+
+  it("lets through a stack from the stacks file the marketplace declares, and refuses one it does not ship", async () => {
+    const offered = firstElement(CUSTOM_TEST_STACKS);
+    await writeTestTsConfig(
+      tempDir,
+      buildSourceConfig({ stacksFile: DECLARED_STACKS_FILE }),
+      SOURCE_ROOT_DIR,
+    );
+    await writeTestFile(
+      path.join(tempDir, DECLARED_STACKS_FILE),
+      renderConfigTs({ stacks: CUSTOM_TEST_STACKS }),
+    );
+    const custom = buildSourceResult(FULLSTACK_PAIR_MATRIX, tempDir);
+
+    await expect(refuseUnofferedStack(offered.id, custom)).resolves.toBeUndefined();
+    await expect(refuseUnofferedStack(UNOFFERED_STACK_ID, custom)).rejects.toThrow(
+      `Stack '${UNOFFERED_STACK_ID}' is not a stack the source '${tempDir}' offers.`,
+    );
+  });
+
+  it("says a marketplace that ships no stacks ships none", async () => {
+    const custom = buildSourceResult(FULLSTACK_PAIR_MATRIX, tempDir);
+
+    await expect(refuseUnofferedStack(UNOFFERED_STACK_ID, custom)).rejects.toHaveProperty(
+      "message",
+      `Stack '${UNOFFERED_STACK_ID}' is not a stack the source '${tempDir}' offers. A marketplace ships its own stacks; the CLI's built-in ones belong to the default public marketplace alone. It ships no stacks.`,
+    );
+  });
+
+  it("names the built-in stacks for the public catalogue, which offers them in place of its own", async () => {
+    const builtInStackIds = BUILT_IN_MATRIX.suggestedStacks.map((stack) => stack.id);
+    const publicCatalogue = buildSourceResult(
+      { ...FULLSTACK_PAIR_MATRIX, suggestedStacks: [...BUILT_IN_MATRIX.suggestedStacks] },
+      tempDir,
+      { sourceConfig: { source: DEFAULT_SOURCE, sourceOrigin: "default" } },
+    );
+
+    await expect(refuseUnofferedStack(UNOFFERED_STACK_ID, publicCatalogue)).rejects.toHaveProperty(
+      "message",
+      `Stack '${UNOFFERED_STACK_ID}' is not a stack the source '${DEFAULT_SOURCE}' offers. A marketplace ships its own stacks; the CLI's built-in ones belong to the default public marketplace alone. It ships: ${builtInStackIds.slice(0, -1).join(", ")} and ${elementAt(builtInStackIds, builtInStackIds.length - 1)}.`,
+    );
   });
 });
 

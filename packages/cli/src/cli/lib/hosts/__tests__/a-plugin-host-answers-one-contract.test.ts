@@ -17,6 +17,7 @@ const PLUGIN_HOST_MEMBERS = [
   "provider",
   "refreshMarketplace",
   "uninstallPlugin",
+  "updatePlugin",
 ] as const satisfies readonly (keyof PluginHost)[];
 
 const CELL_SEPARATOR = "+";
@@ -43,6 +44,7 @@ const EXPECTED_MEMBER_KINDS: Record<(typeof PLUGIN_HOST_MEMBERS)[number], string
   provider: "string",
   refreshMarketplace: "function",
   uninstallPlugin: "function",
+  updatePlugin: "function",
 };
 
 const A_PLUGIN: HostPlugin = {
@@ -78,6 +80,7 @@ function fakePluginHost(): PluginHost {
     },
     uninstallPlugin: (pluginRef: string): Promise<PluginRemovalOutcome> =>
       Promise.resolve(installed.delete(pluginRef) ? "removed" : "absent"),
+    updatePlugin: () => Promise.resolve(),
     listPlugins: () => Promise.resolve([...installed.values()]),
   };
 }
@@ -98,6 +101,7 @@ function globalOnlyPluginHost(): PluginHost {
 const HOSTS: readonly { name: string; host: PluginHost }[] = [
   { name: "a fake host", host: fakePluginHost() },
   { name: "the Claude host", host: hostFor("claude") },
+  { name: "the Codex host", host: hostFor("codex") },
 ];
 
 describe("every plugin host answers the same roster", () => {

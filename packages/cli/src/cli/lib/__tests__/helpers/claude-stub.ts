@@ -15,6 +15,7 @@ const CLAUDE_COMMAND = "claude";
 const SETUP_CHANGES = [
   "plugin install ",
   "plugin uninstall ",
+  "plugin update ",
   "plugin marketplace add ",
   "plugin marketplace remove ",
   "plugin marketplace update ",

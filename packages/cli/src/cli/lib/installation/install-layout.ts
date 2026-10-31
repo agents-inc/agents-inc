@@ -82,6 +82,17 @@ export function forgetTheProviderChosenForThisRun(): void {
 }
 
 /**
+ * A project config declaring no skill and no sub-agent is not an installation (owner, 2026-10-24).
+ * The one definition: the roster, the listing, `doctor` and the marketplace read all ask it.
+ */
+export function declaresNoContent(config: {
+  skills: readonly unknown[];
+  agents: readonly unknown[];
+}): boolean {
+  return config.skills.length === 0 && config.agents.length === 0;
+}
+
+/**
  * Whether each project `config.ts` declared nothing when the roster last read it, against the
  * file's stamp. Process state because {@link providerOnDisk} is synchronous and cannot load one.
  */
@@ -124,16 +135,14 @@ export function providerInUse(root: string | undefined): Provider {
 
 /**
  * The provider of the global installation `projectDir` inherits: `own`, where the project holds an
- * installation of it and so does the home; the home's own read otherwise. A home holding both
- * would otherwise answer by roster order, whatever the project is on.
+ * installation of it, whether or not the home holds one too, since another provider's global never
+ * reaches it; the home's own read where the project holds none.
  */
 export function inheritedGlobalProvider(
   projectDir: string,
   own: Provider = providerInUse(projectDir),
 ): Provider {
-  const home = os.homedir();
-  const inheritsItsOwn = holdsAnInstallation(projectDir, own) && holdsAnInstallation(home, own);
-  return inheritsItsOwn ? own : providerInUse(home);
+  return holdsAnInstallation(projectDir, own) ? own : providerInUse(os.homedir());
 }
 
 /** The provider `projectDir` reads at `scope`: at global, that of the installation it inherits. */
@@ -189,7 +198,7 @@ export const CODEX_HOME_VAR = "CODEX_HOME";
 /** Committed to the repository, which is why it is not under `.codex/`. */
 const CODEX_PROJECT_SKILLS_PATH = ".agents/skills";
 
-const CODEX_CONFIG_FILE = "config.toml";
+export const CODEX_CONFIG_FILE = "config.toml";
 
 /** Claude Code's own state file; only ever read by this CLI. */
 const CLAUDE_STATE_FILE = ".claude.json";

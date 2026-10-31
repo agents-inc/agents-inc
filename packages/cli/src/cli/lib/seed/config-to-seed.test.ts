@@ -16,6 +16,7 @@ import { SKILLS } from "../__tests__/test-fixtures.js";
 import { matchedAsWritten } from "../__tests__/helpers/matched-as-written.js";
 
 import type { ContentReading } from "./external-skills";
+import type { SkillId } from "../../types/index.js";
 
 const WEB_DEV = "web-developer";
 const API_DEV = "api-developer";
@@ -23,8 +24,8 @@ const REACT_CATEGORY = "web-framework";
 const HONO_CATEGORY = "api-api";
 const PRIVATE_MARKETPLACE = "acme-internal";
 const OTHER_MARKETPLACE = "beta-internal";
-/** Outside every catalogue, by construction. */
-const CARRIED_ID = "external-web-framework-brainstorming";
+/** Outside every catalogue, by construction; boundary cast, as no generated union holds it. */
+const CARRIED_ID = "external-web-framework-brainstorming" as SkillId;
 const SHARED_DESCRIPTION = "Minimal stack for E2E testing";
 const PINNED_CODEX_MODEL = "gpt-5.6-terra";
 
@@ -208,20 +209,19 @@ describe("configToSeedPayload", () => {
 
     it("carries the content it was handed, keyed by the same id the skill row names", () => {
       const carried = buildSeedExternalSkill();
-      // A catalogue id, so no fabricated id is cast into a union it is not in.
       const config = buildProjectConfig({
-        skills: [buildSkillConfig(SKILLS.react.id, { scope: "global", origin: EJECT_SOURCE })],
+        skills: [buildSkillConfig(CARRIED_ID, { scope: "global", origin: EJECT_SOURCE })],
         agents: buildAgentConfigs([WEB_DEV], { scope: "global" }),
       });
 
       const payload = configToSeedPayload(config, {
-        external: { [SKILLS.react.id]: carried },
+        external: { [CARRIED_ID]: carried },
         uncarryable: [],
       });
 
       // `skills` selects; `external` only holds bytes for ids no catalogue resolves.
-      expect(payload.external).toStrictEqual({ [SKILLS.react.id]: carried });
-      expect(Object.keys(payload.skills)).toStrictEqual([SKILLS.react.id]);
+      expect(payload.external).toStrictEqual({ [CARRIED_ID]: carried });
+      expect(Object.keys(payload.skills)).toStrictEqual([CARRIED_ID]);
     });
 
     it("names no marketplace when nothing installed here came from one", () => {

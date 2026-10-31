@@ -1,9 +1,10 @@
 import os from "os";
 
-import { indexBy, isDeepEqual, omit, partition, pick } from "remeda";
+import { isDeepEqual, omit, partition, pick } from "remeda";
 
 import { loadProjectConfigFromDir } from "../configuration/project-config.js";
 import { isActiveAt } from "../configuration/scope-predicates.js";
+import { namedByActiveEntries } from "../configuration/scope-diff.js";
 import { providerInUse } from "../installation/install-layout.js";
 import { getCategoryDomain, matrix } from "../matrix/matrix-provider.js";
 import { orderDomains } from "@workspace/compile";
@@ -506,8 +507,7 @@ function entriesActiveAt(
  * global install's for one held, the installed one for one kept, the configuration's for the rest.
  */
 export function panelRowEntries(held: HeldGlobal): NamedBy {
-  const active = held.result.skills.filter((skill) => !skill.excluded);
-  return indexBy(active, (skill) => skill.id);
+  return namedByActiveEntries(held.result.skills);
 }
 
 export function joinedStatement(held: HeldGlobal): string[] {

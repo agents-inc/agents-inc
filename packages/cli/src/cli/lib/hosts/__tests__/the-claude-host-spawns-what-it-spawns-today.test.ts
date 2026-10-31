@@ -195,6 +195,47 @@ describe("the Claude host's invocations", () => {
     });
   });
 
+  // `plugin update` routes by `--scope` and the cwd, as `plugin install` does.
+  describe("updating a plugin", () => {
+    it("asks for the user scope from the home directory when the skill is global", async () => {
+      await hostFor("claude").updatePlugin(PLUGIN_REF, "global", PROJECT);
+
+      expect(
+        onlyInvocation(),
+        "Claude answers 'not installed at scope project' for a plugin installed for the user, so the update never happens",
+      ).toStrictEqual({
+        command: "claude",
+        args: ["plugin", "update", PLUGIN_REF, "--scope", "user"],
+        cwd: HOME,
+        configDir: process.env["CLAUDE_CONFIG_DIR"],
+      });
+    });
+
+    it("asks for the project scope from the project directory when the skill is not global", async () => {
+      await hostFor("claude").updatePlugin(PLUGIN_REF, "project", PROJECT);
+
+      expect(
+        onlyInvocation(),
+        "Claude records a project-scoped plugin against the directory it was installed from, so an update asked from elsewhere finds another project's copy or none",
+      ).toStrictEqual({
+        command: "claude",
+        args: ["plugin", "update", PLUGIN_REF, "--scope", "project"],
+        cwd: PROJECT,
+        configDir: process.env["CLAUDE_CONFIG_DIR"],
+      });
+    });
+
+    it("reports a plugin Claude does not hold as a failure, in Claude's own words", async () => {
+      const notHeld = `✘ Failed to update plugin "${PLUGIN_REF}": Plugin "web-framework-react" is not installed at scope user`;
+      replies = [{ exitCode: 1, stderr: notHeld }];
+
+      await expect(
+        hostFor("claude").updatePlugin(PLUGIN_REF, "global", PROJECT),
+        "unlike a removal, an update of a plugin the config names and Claude lacks is not a no-op: the skill the config promises is not there",
+      ).rejects.toThrow(notHeld);
+    });
+  });
+
   describe("the marketplace verbs", () => {
     it("lists marketplaces as JSON and finds one by name", async () => {
       replies = [{ stdout: JSON.stringify([{ name: MARKETPLACE, source: MARKETPLACE_SOURCE }]) }];

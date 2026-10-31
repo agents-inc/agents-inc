@@ -12,7 +12,7 @@ import { CONFIRM_INPUT_DELAY_MS, delay, KEY_N, KEY_Y } from "../test-constants";
 import { useMockWorker } from "../helpers/mock-worker.js";
 import { useClaudeStub } from "../helpers/claude-stub.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
-import { readTestTsConfig, writeTestTsConfig } from "../helpers/config-io.js";
+import { readTestTsConfig, writeRawTestConfig, writeTestTsConfig } from "../helpers/config-io.js";
 import { readInstallTree } from "../helpers/golden-tree.js";
 import { compactCliOutput, flattenCliOutput } from "../helpers/flatten-cli-output.js";
 import {
@@ -40,6 +40,8 @@ import { sa } from "../factories/skill-factories.js";
 import { CLAUDE_DIR, STANDARD_DIRS, STANDARD_FILES } from "../../../consts";
 import { EXIT_CODES } from "../../exit-codes";
 import { loadInstalledConfig } from "../../configuration/index.js";
+import { generateBlankGlobalConfigSource } from "../../configuration/config-writer";
+import { generateBlankGlobalConfigTypesSource } from "../../configuration/config-types-writer";
 import type { ProjectConfig } from "../../../types";
 
 const SEED_ID = "Seed1";
@@ -49,12 +51,18 @@ const PANEL_COLUMNS = 160;
 const REACT = testMarketplaceSkillId("web-framework-react");
 const HONO = testMarketplaceSkillId("api-framework-hono");
 const VITEST = testMarketplaceSkillId("web-testing-vitest");
+const CARRIED = "external-web-testing-brainstorming";
+
+const READ_ONLY_FILE = 0o444;
+const READ_WRITE_FILE = 0o644;
 
 // Every run here goes through `dist/`, which no module mock reaches; the host spawns by name.
 const claude = useClaudeStub();
 
 const configFileAt = (root: string) =>
   path.join(root, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS);
+const typesFileAt = (root: string) =>
+  path.join(root, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TYPES_TS);
 const skillsDirAt = (root: string) => path.join(root, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
 const agentsDirAt = (root: string) => path.join(root, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
 
@@ -131,6 +139,23 @@ describe("what init --from says", () => {
   function initFrom(...extra: string[]) {
     return runCliCommand(["init", "--from", SEED_ID, "--marketplace", dirs.sourceDir, ...extra]);
   }
+
+  const reactAndACarriedSkill = () =>
+    buildSeedPayload({
+      skills: {
+        [REACT]: ejected("project", "web-developer"),
+        [CARRIED]: ejected("project", "web-developer"),
+      },
+      external: { [CARRIED]: buildSeedExternalSkill({ categoryId: "web-testing" }) },
+      agents: { "web-developer": { scope: "project" } },
+    });
+
+  const aCarriedSkillAlone = () =>
+    buildSeedPayload({
+      skills: { [CARRIED]: ejected("project", "web-developer") },
+      external: { [CARRIED]: buildSeedExternalSkill({ categoryId: "web-testing" }) },
+      agents: { "web-developer": { scope: "project" } },
+    });
 
   const projectConfigPath = () =>
     path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS);
@@ -1259,7 +1284,7 @@ describe("what init --from says", () => {
 
     expect(error).toBeUndefined();
     expect(flattenCliOutput(stderr)).toContain(
-      `Warning: Skill '${REACT}' is assigned to no sub-agent — nothing will load it.`,
+      "Warning: Skill 'React' is assigned to no sub-agent — nothing will load it.",
     );
     expect(
       stdout.endsWith(
@@ -1381,31 +1406,21 @@ describe("what init --from says", () => {
   });
 
   it("writes the skills the configuration carries, and names them", async () => {
-    const carried = "external-web-testing-brainstorming";
-    serve(
-      buildSeedPayload({
-        skills: {
-          [REACT]: ejected("project", "web-developer"),
-          [carried]: ejected("project", "web-developer"),
-        },
-        external: { [carried]: buildSeedExternalSkill({ categoryId: "web-testing" }) },
-        agents: { "web-developer": { scope: "project" } },
-      }),
-    );
+    serve(reactAndACarriedSkill());
 
     const { stdout, error } = await initFrom();
 
     expect(error).toBeUndefined();
     expect(stdout).toContain(
-      `\nWrote 1 skill(s) this configuration carries: ${carried}\nInstalling 2 skill(s) across 1 sub-agent(s)\n`,
+      "\nWrote 1 skill(s) this configuration carries: Brainstorming\nInstalling 2 skill(s) across 1 sub-agent(s)\n",
     );
     expect(
       await installedAt(projectDir),
       "the carried skill is installed beside React, each a local copy",
     ).toStrictEqual({
-      skills: [copyEntry(REACT, "React"), copyEntry(carried, "Brainstorming")],
+      skills: [copyEntry(REACT, "React"), copyEntry(CARRIED, "Brainstorming")],
       agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
-      copies: [carried, REACT],
+      copies: [CARRIED, REACT],
       compiled: ["web-developer.md"],
     });
   });
@@ -1467,37 +1482,247 @@ describe("what init --from says", () => {
       }
     });
 
-    /**
-     * KNOWN GAP: the copy is made and the home's config registers the project before the project's
-     * config is written, so a refused write leaves both behind with no `config.ts` to name them.
-     * `init.tsx` copies after resolving the marketplace so that a refusal there cannot do this.
-     */
-    it("leaves the copy it made, and the project registered at home, when the configuration cannot be written", async () => {
-      const sourceFolder = path.join(projectDir, ".agents-inc", "claude");
-      await mkdir(sourceFolder, { recursive: true });
+    it("at home, leaves its config as it was and no copy when the types half cannot be written after the config half", async () => {
+      await grantPermissionsIn(fakeHome);
+      await writeRawTestConfig(fakeHome, generateBlankGlobalConfigSource());
+      await writeFile(typesFileAt(fakeHome), generateBlankGlobalConfigTypesSource());
+      const pairAt = async (root: string) => ({
+        config: await readFile(configFileAt(root), "utf-8"),
+        types: await readFile(typesFileAt(root), "utf-8"),
+      });
+      const pairBefore = await pairAt(fakeHome);
       const { chmod } = await import("fs/promises");
-      await chmod(sourceFolder, 0o555);
+      await chmod(typesFileAt(fakeHome), READ_ONLY_FILE);
+      process.chdir(fakeHome);
       serve(
         buildSeedPayload({
-          skills: { [REACT]: ejected("project", "web-developer") },
-          agents: { "web-developer": { scope: "project" } },
+          skills: { [HONO]: ejected("global", "api-developer") },
+          agents: { "api-developer": { scope: "global" } },
         }),
       );
       try {
-        expect((await initFrom()).error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+        const { error } = await initFrom();
 
-        const leftWithNoProjectConfig = {
-          copies: [REACT],
-          registered: [await realpath(projectDir)],
-        };
-        expect({
-          copies: await entriesIn(skillsDirAt(projectDir)),
-          registered: (await readTestTsConfig<FixtureProjectConfig>(configFileAt(fakeHome)))
-            .projects,
-        }).toStrictEqual(leftWithNoProjectConfig);
+        expect(error?.message).toContain("EACCES");
+        expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
       } finally {
-        await chmod(sourceFolder, 0o755);
+        await chmod(typesFileAt(fakeHome), READ_WRITE_FILE);
       }
+      expect(
+        { pair: await pairAt(fakeHome), copies: await entriesIn(skillsDirAt(fakeHome)) },
+        "a refused types half puts the config half back, so no config names a copy taken back",
+      ).toStrictEqual({ pair: pairBefore, copies: [] });
+    });
+
+    describe("beside a global install", () => {
+      const sourceFolder = () => path.join(projectDir, ".agents-inc", "claude");
+
+      beforeEach(async () => {
+        await writeTestTsConfig(
+          fakeHome,
+          buildProjectConfig({
+            name: "global",
+            skills: buildSkillConfigs([HONO], { scope: "global", origin: "eject" }),
+            agents: buildAgentConfigs(["api-developer"], { scope: "global" }),
+            stack: { "api-developer": { "api-api": [sa(HONO)] } },
+          }),
+        );
+        await mkdir(sourceFolder(), { recursive: true });
+      });
+
+      async function globalInstallAt(home: string) {
+        const { projects } = await readTestTsConfig<FixtureProjectConfig>(configFileAt(home));
+        return { ...(await installedAt(home)), registered: projects };
+      }
+
+      async function initFromUnwritable(payload: SeedPayload) {
+        const { chmod } = await import("fs/promises");
+        await chmod(sourceFolder(), 0o555);
+        serve(payload);
+        try {
+          return await initFrom();
+        } finally {
+          await chmod(sourceFolder(), 0o755);
+        }
+      }
+
+      const projectReact = () =>
+        buildSeedPayload({
+          skills: { [REACT]: ejected("project", "web-developer") },
+          agents: { "web-developer": { scope: "project" } },
+        });
+
+      const projectReactAndGlobalVitest = () =>
+        buildSeedPayload({
+          skills: {
+            [REACT]: ejected("project", "web-developer"),
+            [VITEST]: ejected("global", "api-developer"),
+          },
+          agents: { "web-developer": { scope: "project" }, "api-developer": { scope: "global" } },
+        });
+
+      it("leaves no copy here, and the global install as it was, saying why, when the configuration cannot be written", async () => {
+        const homeBefore = await globalInstallAt(fakeHome);
+
+        const { error } = await initFromUnwritable(projectReact());
+
+        expect(error?.message).toContain("EACCES");
+        expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+        expect(
+          {
+            copies: await entriesIn(skillsDirAt(projectDir)),
+            home: await globalInstallAt(fakeHome),
+          },
+          "a refused save leaves no copy here and the global install as it was",
+        ).toStrictEqual({ copies: [], home: homeBefore });
+      });
+
+      it("leaves no copy at home either, and adds nothing to the global install, when the configuration cannot be written", async () => {
+        const homeBefore = await globalInstallAt(fakeHome);
+
+        const { error } = await initFromUnwritable(projectReactAndGlobalVitest());
+
+        expect(error?.message).toContain("EACCES");
+        expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+        expect(
+          {
+            copies: await entriesIn(skillsDirAt(projectDir)),
+            home: await globalInstallAt(fakeHome),
+          },
+          "a refused save leaves no copy at either root and the global install as it was",
+        ).toStrictEqual({ copies: [], home: homeBefore });
+      });
+
+      it("leaves no copy of a skill the configuration carries when the configuration cannot be written", async () => {
+        const homeBefore = await globalInstallAt(fakeHome);
+
+        const { error } = await initFromUnwritable(reactAndACarriedSkill());
+
+        expect(error?.message).toContain("EACCES");
+        expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+        expect(
+          {
+            copies: await entriesIn(skillsDirAt(projectDir)),
+            home: await globalInstallAt(fakeHome),
+          },
+          "a refused save leaves neither the carried skill nor React here",
+        ).toStrictEqual({ copies: [], home: homeBefore });
+      });
+
+      it("says, after the error, that it removed the skill the configuration carried, and nothing of copies, when it copied none", async () => {
+        const homeBefore = await globalInstallAt(fakeHome);
+
+        const { stdout, error } = await initFromUnwritable(aCarriedSkillAlone());
+
+        expect(error?.message).toContain("EACCES");
+        expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+        const ending =
+          "Generating configuration...\n" +
+          "Removed the 1 skill this configuration carried, since the configuration could not be saved\n";
+        expect(stdout.slice(-ending.length), stdout).toBe(ending);
+        expect(
+          {
+            projectConfig: await entriesIn(sourceFolder()),
+            copies: await entriesIn(skillsDirAt(projectDir)),
+            home: await globalInstallAt(fakeHome),
+          },
+          "the line is true: the carried skill is gone and nothing was saved",
+        ).toStrictEqual({ projectConfig: [], copies: [], home: homeBefore });
+      });
+
+      it("says, after the error, that it removed the skill it copied and then the skill the configuration carried", async () => {
+        const homeBefore = await globalInstallAt(fakeHome);
+
+        const { stdout, error } = await initFromUnwritable(reactAndACarriedSkill());
+
+        expect(error?.message).toContain("EACCES");
+        expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+        const ending =
+          "Generating configuration...\n" +
+          "Removed the 1 skill it copied, since the configuration could not be saved\n" +
+          "Removed the 1 skill this configuration carried, since the configuration could not be saved\n";
+        expect(stdout.slice(-ending.length), stdout).toBe(ending);
+        expect(
+          {
+            projectConfig: await entriesIn(sourceFolder()),
+            copies: await entriesIn(skillsDirAt(projectDir)),
+            home: await globalInstallAt(fakeHome),
+          },
+          "both lines are true: React and the carried skill are gone and nothing was saved",
+        ).toStrictEqual({ projectConfig: [], copies: [], home: homeBefore });
+      });
+
+      it("leaves no project config and no copy, and the global install as it was, when the global configuration cannot be written", async () => {
+        const homeBefore = await globalInstallAt(fakeHome);
+        const { chmod } = await import("fs/promises");
+        await chmod(configFileAt(fakeHome), READ_ONLY_FILE);
+        serve(projectReactAndGlobalVitest());
+        try {
+          const { error } = await initFrom();
+
+          expect(error?.message).toContain("EACCES");
+          expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+        } finally {
+          await chmod(configFileAt(fakeHome), READ_WRITE_FILE);
+        }
+        expect(
+          {
+            projectConfig: await entriesIn(sourceFolder()),
+            copies: await entriesIn(skillsDirAt(projectDir)),
+            home: await globalInstallAt(fakeHome),
+          },
+          "the project's config pair, written before the global one, is taken back with the copies",
+        ).toStrictEqual({ projectConfig: [], copies: [], home: homeBefore });
+      });
+
+      it("leaves no project config and no copy, and the global install as it was, when the global types cannot be written after the global config", async () => {
+        await writeFile(typesFileAt(fakeHome), generateBlankGlobalConfigTypesSource());
+        const homeBefore = await globalInstallAt(fakeHome);
+        const { chmod } = await import("fs/promises");
+        await chmod(typesFileAt(fakeHome), READ_ONLY_FILE);
+        serve(projectReactAndGlobalVitest());
+        try {
+          const { error } = await initFrom();
+
+          expect(error?.message).toContain("EACCES");
+          expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+        } finally {
+          await chmod(typesFileAt(fakeHome), READ_WRITE_FILE);
+        }
+        expect(
+          {
+            projectConfig: await entriesIn(sourceFolder()),
+            copies: await entriesIn(skillsDirAt(projectDir)),
+            home: await globalInstallAt(fakeHome),
+          },
+          "a refused types half puts the global config half back, so home names no copy taken back",
+        ).toStrictEqual({ projectConfig: [], copies: [], home: homeBefore });
+      });
+
+      it("keeps each copy it made, and registers the project at home, when the configuration is written", async () => {
+        const homeBefore = await globalInstallAt(fakeHome);
+        serve(projectReactAndGlobalVitest());
+
+        const { error } = await initFrom();
+
+        expect(error).toBeUndefined();
+        expect(
+          {
+            copies: await entriesIn(skillsDirAt(projectDir)),
+            home: await globalInstallAt(fakeHome),
+          },
+          "a written save keeps both copies, and home gains Vitest, the sub-agent it joins and the project",
+        ).toStrictEqual({
+          copies: [REACT],
+          home: {
+            ...homeBefore,
+            skills: [...homeBefore.skills, copyEntry(VITEST, "Vitest", "global")],
+            copies: [VITEST],
+            compiled: ["api-developer.md"],
+            registered: [await realpath(projectDir)],
+          },
+        });
+      });
     });
   });
 });

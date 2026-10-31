@@ -8,6 +8,7 @@ import os from "os";
 import { Flags } from "@oclif/core";
 
 import { PROVIDERS, EDITOR_URL, CLI_INVOKE_COMMAND, type Provider } from "../../consts.js";
+import { ConfigLoadError, configDeclaresNothing } from "../configuration/project-config.js";
 import {
   detectInstallations,
   holdsAConfigDeclaringNothing,
@@ -116,21 +117,38 @@ export async function refuseAnAmbiguousInstallation(
 }
 
 /**
- * Whether a run here works on a global installation because the project's own config declares
- * nothing, which such a run says first. Not where HOME holds none the run could work on.
+ * A project config declaring nothing, with no installation of the project's own beside it: a run
+ * here has no project installation to work on, which it says first.
  */
-export async function globalInstallationStandsIn(
+export async function holdsOnlyAConfigDeclaringNothing(cwd: string): Promise<boolean> {
+  if (!(await holdsAConfigDeclaringNothing(cwd))) return false;
+
+  return atScope(await detectInstallations(cwd), "project").length === 0;
+}
+
+/**
+ * Whether HOME holds an installation a run could work on: the one `named`, else any. A config there
+ * declaring nothing is none, as the commands' own read holds, though the roster counts it.
+ */
+export async function homeHoldsAnInstallationFor(
   cwd: string,
   named: Provider | undefined,
 ): Promise<boolean> {
-  if (!(await holdsAConfigDeclaringNothing(cwd))) return false;
-
-  const { scopeRoot, providers } = await installationsInPlay(cwd);
-  const theProjectHoldsNone = scopeRoot !== cwd;
-  const homeHoldsOneToWorkOn = providers.some(
+  const atHome = providersOf(atScope(await detectInstallations(cwd), "global")).filter(
     (provider) => named === undefined || provider === named,
   );
-  return theProjectHoldsNone && homeHoldsOneToWorkOn;
+  const declaringContent = await Promise.all(atHome.map(homeConfigDeclaresContent));
+  return declaringContent.includes(true);
+}
+
+/** Degrades: a config that cannot be loaded counts, and the command's own read reports it. */
+async function homeConfigDeclaresContent(provider: Provider): Promise<boolean> {
+  try {
+    return !(await configDeclaresNothing(os.homedir(), provider));
+  } catch (error) {
+    if (error instanceof ConfigLoadError) return true;
+    throw error;
+  }
 }
 
 /** The non-refusing read the remedies hand a command out from, so they and the refusal agree. */

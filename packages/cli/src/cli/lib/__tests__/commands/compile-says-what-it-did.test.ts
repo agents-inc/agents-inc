@@ -225,10 +225,10 @@ describe("what compile says", () => {
     const { stderr } = await runCliCommand(["compile"]);
 
     expect(flattenCliOutput(stderr)).toContain(
-      "Warning: Sub-agent 'web-developer' cannot carry project-scoped skill 'web-tooling-valid' — global-scoped sub-agents only carry global-scoped skills.",
+      "Warning: Sub-agent 'web-developer' cannot carry project-scoped skill 'Valid' — global-scoped sub-agents only carry global-scoped skills.",
     );
     expect(flattenCliOutput(stderr)).toContain(
-      "Warning: Sub-agent 'api-developer' cannot carry project-scoped skill 'web-testing-vitest' — global-scoped sub-agents only carry global-scoped skills.",
+      "Warning: Sub-agent 'api-developer' cannot carry project-scoped skill 'Vitest' — global-scoped sub-agents only carry global-scoped skills.",
     );
     expect(await compiledAt(installedAt)).toStrictEqual([
       "api-developer.md",
@@ -246,6 +246,27 @@ describe("what compile says", () => {
       preloadedRefs: [],
       dynamicEntries: [{ id: VALID_LOCAL_SKILL.id, invokeRef: VALID_LOCAL_SKILL.id }],
     });
+  });
+
+  it("names the project-scoped skill a global sub-agent cannot carry by the name its entry recorded", async () => {
+    const recordedName = "House Tooling";
+    await installProject(
+      buildProjectConfig({
+        skills: [
+          buildSkillConfig(VALID_LOCAL_SKILL.id, { scope: "project", displayName: recordedName }),
+        ],
+        agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+        stack: {
+          "web-developer": { "web-tooling": [{ id: VALID_LOCAL_SKILL.id, preloaded: false }] },
+        },
+      }),
+    );
+
+    const { stderr } = await runCliCommand(["compile"]);
+
+    expect(flattenCliOutput(stderr)).toBe(
+      `Warning: Sub-agent 'web-developer' cannot carry project-scoped skill '${recordedName}' — global-scoped sub-agents only carry global-scoped skills.`,
+    );
   });
 
   it("says nothing of scope for a project-scoped sub-agent carrying a project-scoped skill", async () => {
@@ -289,9 +310,9 @@ describe("what compile says", () => {
     const { stderr } = await runCliCommand(["compile"]);
 
     expect(flattenCliOutput(stderr)).toContain(
-      "Warning: Sub-agent 'web-developer' cannot carry project-scoped skill 'web-tooling-valid' — global-scoped sub-agents only carry global-scoped skills.",
+      "Warning: Sub-agent 'web-developer' cannot carry project-scoped skill 'Valid' — global-scoped sub-agents only carry global-scoped skills.",
     );
-    expect(flattenCliOutput(stderr)).not.toContain("project-scoped skill 'web-testing-vitest'");
+    expect(flattenCliOutput(stderr)).not.toContain("project-scoped skill 'Vitest'");
     expect(await compiledAt(installedAt)).toStrictEqual(["web-developer.md"]);
     expect(
       await skillsCarriedBy(installedAt, "web-developer"),

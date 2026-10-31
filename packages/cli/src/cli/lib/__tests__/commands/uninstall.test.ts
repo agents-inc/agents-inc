@@ -40,7 +40,7 @@ import {
   CLAUDE_DIR,
   PROVIDERS,
 } from "../../../consts";
-import { sourceFolderInUse } from "../../installation/install-layout.js";
+import { CODEX_HOME_VAR, sourceFolderInUse } from "../../installation/install-layout.js";
 import { loadProjectConfigFromDir } from "../../configuration/project-config.js";
 import type { AgentScopeConfig, BrandingConfig, SkillId } from "../../../types";
 import { hostAt } from "../../hosts/host-for.js";
@@ -942,8 +942,114 @@ describe("uninstall command", () => {
         "a global run owns every plugin and none is held, so nothing in Claude's setup changes",
       ).toStrictEqual([]);
     });
+
+    /**
+     * Each host keeps a global installation's copies where it reads them: Claude in home's
+     * `.claude/`, Codex under `$CODEX_HOME` (else `~/.codex`), which a project's `.agents/skills`
+     * and `.codex/agents` are not. Claude is the control: both of its answers are home's `.claude/`.
+     */
+    describe("removes the copy and the compiled sub-agent from where the host keeps them", () => {
+      const GLOBAL_EJECTED = {
+        name: "global",
+        skills: buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          origin: EJECT_SOURCE,
+        }),
+        agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+      };
+
+      afterEach(() => {
+        vi.unstubAllEnvs();
+      });
+
+      async function installAtHome(
+        provider: (typeof PROVIDERS)[number],
+        hostRoot: string,
+        roleFile: string,
+      ): Promise<{ configPath: string; skillsDir: string; rolePath: string }> {
+        const configPath = await writeTestTsConfig(
+          fakeHome,
+          buildProjectConfig(GLOBAL_EJECTED),
+          sourceFolderInUse(fakeHome, provider).relName,
+        );
+        const skillsDir = path.join(hostRoot, STANDARD_DIRS.SKILLS);
+        await mkdir(skillsDir, { recursive: true });
+        await createCLISkill(skillsDir, "web-framework-react");
+        await createUserSkill(skillsDir, "web-state-zustand");
+        const agentsDir = path.join(hostRoot, STANDARD_DIRS.AGENTS);
+        await mkdir(agentsDir, { recursive: true });
+        const rolePath = path.join(agentsDir, roleFile);
+        await writeFile(rolePath, stampProvenanceMarker(renderAgentMd("web-developer")));
+        return { configPath, skillsDir, rolePath };
+      }
+
+      async function uninstallAtHome() {
+        process.chdir(fakeHome);
+        return runCliCommand(["uninstall", "--yes"]);
+      }
+
+      it("on Claude, from home's .claude", async () => {
+        const { configPath, skillsDir, rolePath } = await installAtHome(
+          "claude",
+          path.join(fakeHome, CLAUDE_DIR),
+          "web-developer.md",
+        );
+
+        const { error } = await uninstallAtHome();
+
+        expect(error).toBeUndefined();
+        expect(await listInstalledEntries(skillsDir)).toStrictEqual(["web-state-zustand"]);
+        expect(await fileExists(rolePath)).toBe(false);
+        expect(await fileExists(configPath)).toBe(false);
+      });
+
+      it("on Codex, from ~/.codex where $CODEX_HOME is unset", async () => {
+        vi.stubEnv(CODEX_HOME_VAR, undefined);
+        const { configPath, skillsDir, rolePath } = await installAtHome(
+          "codex",
+          path.join(fakeHome, ".codex"),
+          "web-developer.toml",
+        );
+
+        const { error } = await uninstallAtHome();
+
+        expect(error).toBeUndefined();
+        expect(
+          await listInstalledEntries(skillsDir),
+          "the copy this CLI wrote is removed, and the user's own skill beside it is kept",
+        ).toStrictEqual(["web-state-zustand"]);
+        expect(await fileExists(rolePath)).toBe(false);
+        expect(await fileExists(configPath)).toBe(false);
+      });
+
+      it("on Codex, from the folder $CODEX_HOME names", async () => {
+        const codexHome = path.join(fakeHome, "relocated-codex-home");
+        vi.stubEnv(CODEX_HOME_VAR, codexHome);
+        const { configPath, skillsDir, rolePath } = await installAtHome(
+          "codex",
+          codexHome,
+          "web-developer.toml",
+        );
+
+        const { error } = await uninstallAtHome();
+
+        expect(error).toBeUndefined();
+        expect(
+          await listInstalledEntries(skillsDir),
+          "the copy this CLI wrote is removed, and the user's own skill beside it is kept",
+        ).toStrictEqual(["web-state-zustand"]);
+        expect(await fileExists(rolePath), "the role file this CLI compiled is removed").toBe(
+          false,
+        );
+        expect(await fileExists(configPath)).toBe(false);
+      });
+    });
   });
 });
+
+async function listInstalledEntries(dir: string): Promise<string[]> {
+  return (await directoryExists(dir)) ? (await fs.promises.readdir(dir)).sort() : [];
+}
 
 /** What a person reads from uninstall, word for word, and what the run left behind. */
 describe("what uninstall says", () => {
@@ -1117,7 +1223,8 @@ describe("what uninstall says", () => {
 
     const { stdout } = await runCliCommand(["uninstall", "--yes"]);
 
-    expect(stdout).not.toContain(".claude/");
+    // The project's own absolute path, which uninstall prints, may sit under a .claude/ folder.
+    expect(stdout.replaceAll(projectDir, "<project>")).not.toContain(".claude/");
   });
 
   it("keeps the source folder that holds a file of the user's, saying it removed only the config", async () => {

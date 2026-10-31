@@ -71,8 +71,9 @@ function askedForAsPlugin(externals: SelectedExternal[]): SkillId[] {
 }
 
 /**
- * A carried skill on a catalogue id would overwrite that catalogue's copy. Checks the loaded matrix
- * and the shipped catalogue, since the payload chooses which marketplace gets loaded.
+ * A carried skill on a catalogue id would overwrite that catalogue's copy. The prefix cannot rule
+ * that out: only `build marketplace` holds a marketplace to its namespace, and it exempts the
+ * public catalogue. Checks the shipped catalogue too, since the payload chooses which one loads.
  */
 function claimingACatalogueId(
   externals: SelectedExternal[],
@@ -194,6 +195,26 @@ function tooLongForADirectoryError(ids: string[]): string {
   ].join("\n");
 }
 
+/** `external` is a reserved marketplace name, so this prefix is no marketplace's namespace. */
+const CARRIED_ID_PREFIX = "external-";
+
+function externalIdsLackingThePrefix(payload: SeedPayload): string[] {
+  return Object.keys(payload.external ?? {}).filter((id) => !id.startsWith(CARRIED_ID_PREFIX));
+}
+
+/** Unquoted: the directory-name check has already refused every id holding a control character. */
+function lacksThePrefixError(ids: string[]): string {
+  return [
+    "This configuration cannot be installed: these skills travel inside it under ids that do " +
+      "not start with 'external-':",
+    ...ids.map((id) => `  ${id}`),
+    "A skill id is the directory the skill installs into, and no marketplace may publish under " +
+      "the name 'external', so an id starting 'external-' is the only kind that can never take " +
+      "the place of a marketplace's skill. Re-share it with each skill above added again, which " +
+      "mints such an id — 'external-<category>-<name>'.",
+  ].join("\n");
+}
+
 /**
  * Writes carried skills into `matrix` in place so the decode can resolve them. Every refusal runs
  * before anything is seated, so a refused run leaves the matrix untouched. The id is checked first:
@@ -209,6 +230,9 @@ export function registerExternalSkills(
 
   const tooLong = externalIdsTooLongForADirectory(payload);
   if (tooLong.length > 0) throw new Error(tooLongForADirectoryError(tooLong));
+
+  const unprefixed = externalIdsLackingThePrefix(payload);
+  if (unprefixed.length > 0) throw new Error(lacksThePrefixError(unprefixed));
 
   const externals = selectedExternals(payload);
   const asPlugin = askedForAsPlugin(externals);

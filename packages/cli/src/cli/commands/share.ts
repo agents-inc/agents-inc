@@ -4,7 +4,10 @@ import { BaseCommand } from "../base-command.js";
 import { isLocalSource } from "../lib/configuration/config.js";
 import { EXIT_CODES } from "../lib/exit-codes.js";
 import { unofferablePlacementsFound } from "../lib/hosts/configured-placements.js";
-import { seedPayloadForInstallation } from "../lib/seed/installation-payload.js";
+import {
+  seedPayloadForInstallation,
+  type InstallationPayload,
+} from "../lib/seed/installation-payload.js";
 import { publishSeedConfig } from "../lib/seed/publish-seed.js";
 import {
   readPipedPayload,
@@ -26,16 +29,21 @@ import {
 } from "../utils/messages.js";
 import { typedEntries } from "../utils/typed-object.js";
 import type { SkillId } from "../types/index.js";
-import type { SeedPayload } from "@workspace/matrix/seed";
+import type { SeedPayload, SeedSkill } from "@workspace/matrix/seed";
 
 type ShareablePayload = { payload: SeedPayload; caveats: string[] };
 
+type PreparedPayload = Pick<
+  Extract<InstallationPayload, { ok: true }>,
+  "payload" | "leftBehind" | "namedBy"
+>;
+
 /** What the id will not do everywhere — warned after the id rather than refused. */
-function caveatsAbout(payload: SeedPayload, leftBehind: readonly SkillId[]): string[] {
+function caveatsAbout({ payload, leftBehind, namedBy }: PreparedPayload): string[] {
   const { marketplace } = payload;
   return [
     ...(isAFolder(marketplace) ? [sharedIdNamesAFolder(marketplace)] : []),
-    ...(leftBehind.length > 0 ? [sharedSkillsLeftBehind(leftBehind)] : []),
+    ...(leftBehind.length > 0 ? [sharedSkillsLeftBehind(leftBehind, namedBy)] : []),
   ];
 }
 
@@ -43,8 +51,9 @@ function isAFolder(marketplace: string | undefined): marketplace is string {
   return marketplace !== undefined && isLocalSource(marketplace);
 }
 
-function ejectedSkillsIn(payload: SeedPayload): string[] {
-  return typedEntries(payload.skills)
+function ejectedSkillsIn(payload: SeedPayload): SkillId[] {
+  // Keys are the config's own skill ids: this payload was drawn from the installation's entries.
+  return typedEntries<SkillId, SeedSkill>(payload.skills)
     .filter(([, skill]) => skill.install === "eject")
     .map(([id]) => id);
 }
@@ -110,20 +119,17 @@ export default class Share extends BaseCommand {
       this.error(prepared.error, { exit: EXIT_CODES.ERROR });
     }
 
-    this.refuseEjectedSkills(prepared.payload);
+    this.refuseEjectedSkills(prepared);
     this.log(`Sharing ${prepared.skills} skill(s) across ${prepared.agents} sub-agent(s)...`);
 
-    return {
-      payload: prepared.payload,
-      caveats: caveatsAbout(prepared.payload, prepared.leftBehind),
-    };
+    return { payload: prepared.payload, caveats: caveatsAbout(prepared) };
   }
 
   /** A share carries plugins only: an ejected skill is a local copy the user may have edited. */
-  private refuseEjectedSkills(payload: SeedPayload): void {
+  private refuseEjectedSkills({ payload, namedBy }: PreparedPayload): void {
     const ejected = ejectedSkillsIn(payload);
     if (ejected.length > 0) {
-      this.error(shareRefusesEjectedSkills(ejected), { exit: EXIT_CODES.ERROR });
+      this.error(shareRefusesEjectedSkills(ejected, namedBy), { exit: EXIT_CODES.ERROR });
     }
   }
 

@@ -155,7 +155,10 @@ async function loadSelectedStack(
   verbose(
     `buildInstallConfig: loadedStack=${loadedStack ? `found (id='${loadedStack.id}')` : "NOT FOUND"}`,
   );
-  if (!loadedStack) throw new Error(stackNotOfferedMessage(stackId, source));
+  if (!loadedStack) {
+    const shippedStackIds = sourceResult.matrix.suggestedStacks.map((stack) => stack.id);
+    throw new Error(stackNotOfferedMessage(stackId, source, shippedStackIds));
+  }
 
   return loadedStack;
 }

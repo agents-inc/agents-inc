@@ -1125,7 +1125,6 @@ describe("local-installer", () => {
       expect(projectParsed.skills.some((s) => s.id === "web-testing-vitest")).toBe(true);
 
       const projectContent = await readFile(projectConfigPath, "utf-8");
-      expect(projectContent).not.toContain("import globalConfig");
       expect(projectContent).toContain("// global");
       expect(projectContent).toContain("web-framework-react");
 

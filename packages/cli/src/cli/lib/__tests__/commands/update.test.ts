@@ -15,14 +15,23 @@ import type { PluginHost } from "../../hosts/plugin-host.js";
 import type { ProjectConfig } from "../../../types";
 
 /**
- * The seam is `refreshMarketplace` on the `PluginHost`; everything above it is real. Imported
- * directly because `runCliCommand` resolves out of `dist/`, where a module mock can't reach.
+ * The seams are `refreshMarketplace` and `updatePlugin` on the `PluginHost`; everything above them
+ * is real. Imported directly because `runCliCommand` resolves out of `dist/`, where a module mock
+ * can't reach.
  */
 
-const { mockMarketplaceUpdate, mockHostAvailable, mockRefreshedThrough } = vi.hoisted(() => ({
+const {
+  mockMarketplaceUpdate,
+  mockPluginUpdate,
+  mockHostAvailable,
+  mockRefreshedThrough,
+  mockUpdatedThrough,
+} = vi.hoisted(() => ({
   mockMarketplaceUpdate: vi.fn<PluginHost["refreshMarketplace"]>(),
+  mockPluginUpdate: vi.fn<PluginHost["updatePlugin"]>(),
   mockHostAvailable: vi.fn<PluginHost["isAvailable"]>(),
   mockRefreshedThrough: vi.fn<(provider: Provider) => void>(),
+  mockUpdatedThrough: vi.fn<(provider: Provider) => void>(),
 }));
 
 /** One host per provider, and `hostAt` reads the provider off the disk as the real one does. */
@@ -36,6 +45,10 @@ vi.mock("../../hosts/host-for.js", async () => {
         mockRefreshedThrough(provider);
         return mockMarketplaceUpdate(...args);
       },
+      updatePlugin: (...args) => {
+        mockUpdatedThrough(provider);
+        return mockPluginUpdate(...args);
+      },
       isAvailable: mockHostAvailable,
     });
   return { hostAt: (root: string) => hostFor(providerInUse(root)), hostFor };
@@ -46,16 +59,27 @@ const { default: Update } = await import("../../../commands/update.js");
 const MARKETPLACE = "agents-inc";
 const OTHER_MARKETPLACE = "acme-skills";
 const MARKETPLACE_FAILURE = "Failed to update marketplace: network unreachable";
+const PLUGIN_FAILURE = 'Failed to update plugin "web-framework-react": Plugin not found';
+
+/** Written out: a test building the reference with the product's own helper would move with it. */
+const REACT_PLUGIN = "web-framework-react@agents-inc";
+const VITEST_PLUGIN = "web-testing-vitest@agents-inc";
+const HONO_PLUGIN = "api-framework-hono@acme-skills";
 
 /** A literal: a test reading the folder off the product would move with it. */
 const CODEX_FOLDER = ".agents-inc/codex";
 
-/** `claude plugin marketplace update` leaves installed plugins alone, so "complete" is false. */
-const FALSE_COMPLETION_CLAIM = "Update complete!";
-const PLUGINS_UNCHANGED = "Installed plugins were not changed";
-
 function updatedMarketplaces(): string[] {
   return mockMarketplaceUpdate.mock.calls.map(([name]) => name);
+}
+
+/** Named fields, so a fourth `options` argument passed as `undefined` does not count as a change. */
+function updatedPlugins(): { ref: string; scope: string; projectDir: string }[] {
+  return mockPluginUpdate.mock.calls.map(([ref, scope, projectDir]) => ({
+    ref,
+    scope,
+    projectDir,
+  }));
 }
 
 async function runUpdate(): Promise<(Error & { oclif?: { exit?: number } }) | undefined> {
@@ -81,6 +105,7 @@ describe("update command", () => {
 
     mockHostAvailable.mockResolvedValue(true);
     mockMarketplaceUpdate.mockResolvedValue(undefined);
+    mockPluginUpdate.mockResolvedValue(undefined);
   });
 
   afterEach(async () => {
@@ -140,23 +165,19 @@ describe("update command", () => {
       expect(updatedMarketplaces()).toStrictEqual([MARKETPLACE]);
     });
 
-    it("says the listings were refreshed and the installed plugins were not changed", async () => {
+    it("updates the installed plugin", async () => {
       await installConfig({
         skills: [buildSkillConfig("web-framework-react", { origin: MARKETPLACE })],
       });
 
-      const { stdout, error } = await captureOutput(() => Update.run([], { root: CLI_ROOT }));
+      const { error } = await captureOutput(() => Update.run([], { root: CLI_ROOT }));
 
       expect(error).toBeUndefined();
       expect(updatedMarketplaces()).toStrictEqual([MARKETPLACE]);
-      expect(
-        stdout,
-        "a marketplace refresh leaves every installed plugin at its version, so nothing is complete",
-      ).not.toContain(FALSE_COMPLETION_CLAIM);
-      expect(stdout).toContain(PLUGINS_UNCHANGED);
+      expect(updatedPlugins().map(({ ref }) => ref)).toStrictEqual([REACT_PLUGIN]);
     });
 
-    it("exits non-zero when a marketplace refresh fails", async () => {
+    it("exits non-zero when a marketplace refresh fails, and updates no plugin", async () => {
       await installConfig({
         skills: [buildSkillConfig("web-framework-react", { origin: MARKETPLACE })],
       });
@@ -166,6 +187,95 @@ describe("update command", () => {
 
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
       expect(error?.message).toContain(MARKETPLACE);
+      expect(
+        mockPluginUpdate,
+        "a plugin updated from a listing that could not be refreshed is updated to nothing newer, and the run already failed",
+      ).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("plugin update", () => {
+    it("updates each plugin the config's active skills name, at the scope each was installed at", async () => {
+      await installConfig({
+        skills: [
+          buildSkillConfig("web-framework-react", { origin: MARKETPLACE, scope: "project" }),
+          buildSkillConfig("api-framework-hono", { origin: OTHER_MARKETPLACE, scope: "global" }),
+        ],
+      });
+
+      const error = await runUpdate();
+
+      expect(error).toBeUndefined();
+      expect(
+        updatedPlugins(),
+        "each skill carries its own scope; one scope for all updates the other scope's copy, or nothing",
+      ).toStrictEqual([
+        { ref: REACT_PLUGIN, scope: "project", projectDir: process.cwd() },
+        { ref: HONO_PLUGIN, scope: "global", projectDir: process.cwd() },
+      ]);
+    });
+
+    it("refreshes every marketplace listing before it updates any plugin", async () => {
+      await installConfig({
+        skills: [
+          buildSkillConfig("web-framework-react", { origin: MARKETPLACE }),
+          buildSkillConfig("api-framework-hono", { origin: OTHER_MARKETPLACE }),
+        ],
+      });
+
+      await runUpdate();
+
+      // Without this the order below compares against Math.min() of nothing, which is Infinity.
+      expect(updatedPlugins().map(({ ref }) => ref)).toStrictEqual([REACT_PLUGIN, HONO_PLUGIN]);
+      expect(
+        Math.max(...mockMarketplaceUpdate.mock.invocationCallOrder),
+        "a plugin updated before its listing is refreshed is updated to the version it already has",
+      ).toBeLessThan(Math.min(...mockPluginUpdate.mock.invocationCallOrder));
+    });
+
+    it("never asks the host to update an ejected skill, which is the user's own copy", async () => {
+      await installConfig({
+        skills: [
+          buildSkillConfig("web-framework-react", { origin: EJECT_SOURCE }),
+          buildSkillConfig("web-testing-vitest", { origin: MARKETPLACE }),
+        ],
+      });
+
+      await runUpdate();
+
+      expect(updatedPlugins().map(({ ref }) => ref)).toStrictEqual([VITEST_PLUGIN]);
+    });
+
+    it("never asks the host to update an excluded entry, which is not installed", async () => {
+      await installConfig({
+        skills: [
+          buildSkillConfig("web-framework-react", { origin: MARKETPLACE }),
+          buildSkillConfig("api-framework-hono", { origin: OTHER_MARKETPLACE, excluded: true }),
+        ],
+      });
+
+      await runUpdate();
+
+      expect(updatedPlugins().map(({ ref }) => ref)).toStrictEqual([REACT_PLUGIN]);
+    });
+
+    it("goes on updating the rest when one plugin fails, then exits non-zero naming it", async () => {
+      await installConfig({
+        skills: [
+          buildSkillConfig("web-framework-react", { origin: MARKETPLACE }),
+          buildSkillConfig("api-framework-hono", { origin: OTHER_MARKETPLACE }),
+        ],
+      });
+      mockPluginUpdate.mockRejectedValueOnce(new Error(PLUGIN_FAILURE));
+
+      const error = await runUpdate();
+
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(error?.message).toContain(REACT_PLUGIN);
+      expect(
+        updatedPlugins().map(({ ref }) => ref),
+        "one failure must not hide whether the plugins after it could be updated",
+      ).toStrictEqual([REACT_PLUGIN, HONO_PLUGIN]);
     });
   });
 
@@ -183,6 +293,7 @@ describe("update command", () => {
         "nothing needs the Claude CLI, so its absence must not be able to fail the run",
       ).toBeUndefined();
       expect(mockMarketplaceUpdate).not.toHaveBeenCalled();
+      expect(mockPluginUpdate).not.toHaveBeenCalled();
     });
 
     it("succeeds without an installation", async () => {
@@ -190,6 +301,7 @@ describe("update command", () => {
 
       expect(error).toBeUndefined();
       expect(mockMarketplaceUpdate).not.toHaveBeenCalled();
+      expect(mockPluginUpdate).not.toHaveBeenCalled();
     });
   });
 
@@ -202,7 +314,11 @@ describe("update command", () => {
       return [`Refreshing marketplace ${marketplace}...`, `  Updated marketplace ${marketplace}`];
     }
 
-    it("names each marketplace as it refreshes it, then counts the listings", async () => {
+    function pluginLines(pluginRef: string): string[] {
+      return [`Updating plugin ${pluginRef}...`, `  Updated plugin ${pluginRef}`];
+    }
+
+    it("names each marketplace as it refreshes it, then each plugin as it updates it, then counts both", async () => {
       await installConfig({
         skills: [
           buildSkillConfig("web-framework-react", { origin: MARKETPLACE }),
@@ -217,7 +333,9 @@ describe("update command", () => {
         [
           ...refreshLines(MARKETPLACE),
           ...refreshLines(OTHER_MARKETPLACE),
-          "✓ Refreshed 2 marketplace listings. Installed plugins were not changed.",
+          ...pluginLines(REACT_PLUGIN),
+          ...pluginLines(HONO_PLUGIN),
+          "✓ Refreshed 2 marketplace listings and updated 2 installed plugins.",
           "",
         ].join("\n"),
       );
@@ -237,7 +355,8 @@ describe("update command", () => {
         [
           EJECTED_SKILLS_LINE,
           ...refreshLines(MARKETPLACE),
-          "✓ Refreshed 1 marketplace listing. Installed plugins were not changed.",
+          ...pluginLines(VITEST_PLUGIN),
+          "✓ Refreshed 1 marketplace listing and updated 1 installed plugin.",
           "",
         ].join("\n"),
       );
@@ -301,6 +420,34 @@ describe("update command", () => {
       );
       expect(error?.message).toBe(`1 marketplace could not be updated: ${MARKETPLACE}`);
     });
+
+    it("warns for the plugin that failed and still updates the rest", async () => {
+      await installConfig({
+        skills: [
+          buildSkillConfig("web-framework-react", { origin: MARKETPLACE }),
+          buildSkillConfig("api-framework-hono", { origin: OTHER_MARKETPLACE }),
+        ],
+      });
+      mockPluginUpdate.mockRejectedValueOnce(new Error(PLUGIN_FAILURE));
+
+      const { stdout, stderr, error } = await captureOutput(() =>
+        Update.run([], { root: CLI_ROOT }),
+      );
+
+      expect(stdout).toBe(
+        [
+          ...refreshLines(MARKETPLACE),
+          ...refreshLines(OTHER_MARKETPLACE),
+          `Updating plugin ${REACT_PLUGIN}...`,
+          ...pluginLines(HONO_PLUGIN),
+          "",
+        ].join("\n"),
+      );
+      expect(flattenCliOutput(stderr)).toBe(
+        `Warning: Could not update plugin ${REACT_PLUGIN}: ${PLUGIN_FAILURE}`,
+      );
+      expect(error?.message).toBe(`1 plugin could not be updated: ${REACT_PLUGIN}`);
+    });
   });
 
   describe("the tool a refresh runs through", () => {
@@ -317,6 +464,10 @@ describe("update command", () => {
 
       expect(error).toBeUndefined();
       expect(mockRefreshedThrough.mock.calls).toStrictEqual([["codex"]]);
+      expect(
+        mockUpdatedThrough.mock.calls,
+        "a Codex installation's plugins updated through Claude are updated in a tool that does not hold them",
+      ).toStrictEqual([["codex"]]);
     });
 
     it("is the global installation's tool where the project's config is another tool's and declares nothing", async () => {
@@ -380,6 +531,7 @@ describe("update command", () => {
         mockMarketplaceUpdate,
         "the availability check gates the refresh, so nothing may be attempted after it fails",
       ).not.toHaveBeenCalled();
+      expect(mockPluginUpdate).not.toHaveBeenCalled();
     });
   });
 });

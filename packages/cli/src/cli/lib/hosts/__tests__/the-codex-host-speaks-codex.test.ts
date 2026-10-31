@@ -314,6 +314,48 @@ describe("the Codex host's invocations", () => {
     });
   });
 
+  // Codex has no `plugin update`; adding an installed plugin again installs the newest version.
+  describe("updating a plugin", () => {
+    it("adds it again from the home directory, Codex having no update verb of its own", async () => {
+      // Answers a listing too, should the host look before it adds; `plugin add` ignores stdout.
+      replies = [{ stdout: ONE_ENABLED_PLUGIN }];
+
+      await hostFor("codex").updatePlugin(PLUGIN_REF, "global", PROJECT, {
+        configDir: CODEX_STATE,
+      });
+
+      expect(
+        invocations,
+        "`codex plugin add` over an installed plugin is the one call that moves it to the version its marketplace offers",
+      ).toContainEqual({
+        command: "codex",
+        args: ["plugin", "add", PLUGIN_REF, "--json"],
+        cwd: HOME,
+        codexHome: CODEX_STATE,
+      });
+      expect(
+        everyArgv().flat(),
+        "an update that removes the plugin first leaves the machine without it when the add then fails",
+      ).not.toContain("remove");
+    });
+
+    it("refuses a plugin Codex has not installed, and adds nothing", async () => {
+      replies = [{ stdout: NOTHING_INSTALLED }];
+
+      const refused = hostFor("codex").updatePlugin(PLUGIN_REF, "global", PROJECT, {
+        configDir: CODEX_STATE,
+      });
+
+      await expect(refused).rejects.toThrow(
+        new Error(`Failed to update ${PLUGIN_REF}: codex has not installed it`),
+      );
+      expect(
+        everyArgv().flat(),
+        "`plugin add` for a plugin Codex does not hold installs it, so an update would install something new",
+      ).not.toContain("add");
+    });
+  });
+
   // `plugin remove` answers identically for a no-op, so the outcome comes from the listings.
   describe("removing a plugin", () => {
     it("answers `removed` for a plugin the listing held beforehand", async () => {

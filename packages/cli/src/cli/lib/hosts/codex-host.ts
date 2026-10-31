@@ -19,7 +19,12 @@ import {
 } from "../../utils/exec.js";
 import { verbose, warnOnce } from "../../utils/logger.js";
 import { ensureDir } from "../../utils/fs.js";
-import { pluginsDir, userConfigRoot } from "../installation/install-layout.js";
+import { CODEX_CONFIG_FILE, pluginsDir, userConfigRoot } from "../installation/install-layout.js";
+import {
+  FailedLeavingPluginsSwitchedOnError,
+  PluginsLeftSwitchedOnError,
+  switchCodexPluginsOff,
+} from "./codex-plugin-switch.js";
 import type {
   HostCallOptions,
   HostPlugin,
@@ -289,16 +294,54 @@ async function upgradeGitMarketplace(
   );
 }
 
+/** Every plugin of the marketplace, named in the project's config or not. */
 async function reinstallEachPluginOf(
   name: string,
   options: CodexConfigOptions | undefined,
 ): Promise<void> {
-  const installed = await codexPluginListing(options, codexPluginCwd());
+  const ofTheMarketplace = (await codexPluginListing(options, codexPluginCwd())).filter(
+    (plugin) => plugin.marketplaceName === name,
+  );
 
   // Sequential: every add writes the same `config.toml` and cache.
-  for (const plugin of installed.filter((entry) => entry.marketplaceName === name)) {
-    await installCodexPlugin(plugin.pluginId, options);
+  for (const [at, plugin] of ofTheMarketplace.entries()) {
+    try {
+      await installCodexPlugin(plugin.pluginId, options);
+    } catch (refusal) {
+      await switchBackOffThenRethrow(refusal, ofTheMarketplace.slice(0, at), options);
+    }
   }
+  await switchBackOff(ofTheMarketplace, options);
+}
+
+/** A refusal partway still leaves the plugins added before it switched on. */
+async function switchBackOffThenRethrow(
+  refusal: unknown,
+  added: readonly CodexInstalledPlugin[],
+  options: CodexConfigOptions | undefined,
+): Promise<never> {
+  try {
+    await switchBackOff(added, options);
+  } catch (error) {
+    if (!(error instanceof PluginsLeftSwitchedOnError)) throw error;
+    throw new FailedLeavingPluginsSwitchedOnError(refusal, error.leftOn);
+  }
+  throw refusal;
+}
+
+/** `plugin add` switches on whatever it adds, so the ones held switched off before go back off. */
+async function switchBackOff(
+  heldBefore: readonly CodexInstalledPlugin[],
+  options: CodexConfigOptions | undefined,
+): Promise<void> {
+  await switchCodexPluginsOff(
+    codexConfigFile(options),
+    heldBefore.filter((plugin) => !plugin.enabled).map((plugin) => plugin.pluginId),
+  );
+}
+
+function codexConfigFile(options: CodexConfigOptions | undefined): string {
+  return path.join(codexStateRoot(options, codexPluginCwd()), CODEX_CONFIG_FILE);
 }
 
 /** Scope and project are unused: Codex takes no scope, and `hostFor` refuses plugin + project. */
@@ -314,14 +357,33 @@ async function codexInstallPlugin(
 async function installCodexPlugin(
   pluginRef: string,
   options: CodexConfigOptions | undefined,
+  attempt = "install",
 ): Promise<void> {
   validatePluginPath(pluginRef);
   await runCodexOrThrow(
     ["plugin", "add", pluginRef, "--json"],
     options,
-    `install ${pluginRef}`,
+    `${attempt} ${pluginRef}`,
     codexPluginCwd(),
   );
+}
+
+/**
+ * Codex has no update verb; adding an installed plugin again installs the version its marketplace
+ * offers. One Codex does not hold is refused, as Claude refuses it, so an update installs nothing.
+ */
+async function codexUpdatePlugin(
+  pluginRef: string,
+  _scope: SkillScope,
+  _projectDir: string,
+  options?: CodexConfigOptions,
+): Promise<void> {
+  const held = await heldPlugin(pluginRef, options);
+  if (held === undefined) {
+    throw new Error(`Failed to update ${pluginRef}: codex has not installed it`);
+  }
+  await installCodexPlugin(pluginRef, options, "update");
+  await switchBackOff([held], options);
 }
 
 /**
@@ -358,8 +420,15 @@ async function isListed(
   pluginRef: string,
   options: CodexConfigOptions | undefined,
 ): Promise<boolean> {
+  return (await heldPlugin(pluginRef, options)) !== undefined;
+}
+
+async function heldPlugin(
+  pluginRef: string,
+  options: CodexConfigOptions | undefined,
+): Promise<CodexInstalledPlugin | undefined> {
   const installed = await codexPluginListing(options, codexPluginCwd());
-  return installed.some((plugin) => plugin.pluginId === pluginRef);
+  return installed.find((plugin) => plugin.pluginId === pluginRef);
 }
 
 async function codexPluginListing(
@@ -432,6 +501,7 @@ export function codexHost(): PluginHost {
     addMarketplace: codexMarketplaceAdd,
     refreshMarketplace: refreshCodexMarketplace,
     installPlugin: codexInstallPlugin,
+    updatePlugin: codexUpdatePlugin,
     uninstallPlugin: codexUninstallPlugin,
     listPlugins: codexListPlugins,
   };

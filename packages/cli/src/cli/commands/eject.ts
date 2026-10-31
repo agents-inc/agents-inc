@@ -120,6 +120,9 @@ export default class Eject extends BaseCommand {
       providerNamedBy(flags.provider),
       (message) => this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
     );
+    await this.sayWhenTheProjectsConfigDeclaresNothing(
+      INFO_MESSAGES.DECLARES_NOTHING_TO_EJECT_FROM,
+    );
 
     // Before anything is copied, so a refusal never follows files already written.
     await this.ensureConfigReadable(projectDir);

@@ -2,6 +2,7 @@ import path from "path";
 import { chmod, mkdir, readFile, stat, writeFile } from "fs/promises";
 import { STORED_ID, storedConfigHandlerFor } from "@workspace/api-mocks";
 import { configMockServer } from "@workspace/api-mocks/node";
+import { Errors } from "@oclif/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { SeedPayload } from "@workspace/matrix/seed";
 
@@ -267,9 +268,59 @@ describe("what edit --from says", () => {
     const { stdout, error } = await answered(["edit", "--from", "Next"], KEY_N);
 
     expect(stdout.endsWith("\nEdit cancelled\n")).toBe(true);
-    expect(error?.message).toBe("Cancelled");
+    expect(
+      error,
+      "oclif prints every error but an exit, which would say the cancel a second time",
+    ).toBeInstanceOf(Errors.ExitError);
     expect(error?.oclif?.exit).toBe(EXIT_CODES.CANCELLED);
     expect(await readFile(configPath(), "utf-8")).toBe(before);
+  });
+
+  describe("an id naming a marketplace", () => {
+    const ANOTHER_MARKETPLACE = "github:a-teammate/their-skills";
+
+    function serveHonoNaming(marketplace: string): void {
+      serve(
+        "Next",
+        buildSeedPayload({
+          marketplace,
+          skills: ejected(HONO),
+          agents: { "web-developer": { scope: "project" } },
+        }),
+      );
+    }
+
+    const comesFromThisInstallation = () =>
+      `This id names the marketplace ${ANOTHER_MARKETPLACE}; its skills come from this installation's marketplace, ${dirs.sourceDir}.`;
+
+    it("says, before asking, that the skills of an id naming another marketplace come from this installation's, and copies them from there", async () => {
+      await installReact();
+      serveHonoNaming(ANOTHER_MARKETPLACE);
+
+      const { stdout, error } = await answered(["edit", "--from", "Next"], KEY_Y);
+
+      expect(error).toBeUndefined();
+      expect(stdout).toContain(`\n${comesFromThisInstallation()}\n`);
+      expect(stdout.indexOf(comesFromThisInstallation())).toBeLessThan(
+        stdout.indexOf("Apply this configuration?"),
+      );
+      expect(
+        await fileExists(
+          path.join(projectDir, CLAUDE_DIR, "skills", HONO, STANDARD_FILES.SKILL_MD),
+        ),
+      ).toBe(true);
+    });
+
+    it("says nothing of a marketplace for an id naming this installation's own, and otherwise the same", async () => {
+      await installReact();
+      serveHonoNaming(ANOTHER_MARKETPLACE);
+      const another = await answered(["edit", "--from", "Next"], KEY_N);
+      serveHonoNaming(dirs.sourceDir);
+
+      const own = await answered(["edit", "--from", "Next"], KEY_N);
+
+      expect(own.stdout).toBe(another.stdout.replace(`${comesFromThisInstallation()}\n`, ""));
+    });
   });
 
   it("warns which sub-agents the catalogue does not know", async () => {
@@ -1244,7 +1295,7 @@ describe("what edit --from says", () => {
     expect(stdout).toContain("┘\n\nApply this configuration?\n");
     expect(stdout).toContain(
       [
-        `Wrote 1 skill(s) this configuration carries: ${carried}`,
+        "Wrote 1 skill(s) this configuration carries: Brainstorming",
         "",
         "Changes:",
         "  ~ Brainstorming (skill: files rewritten)",
@@ -1634,7 +1685,7 @@ describe("what edit --from says", () => {
       expect(error?.message).toBe(
         [
           "This configuration cannot be installed here: the home directory is the global scope, and a global installation holds only global-scoped content — so these project-scoped entries have nowhere to be written:",
-          `  skill ${REACT} (scope: project)`,
+          "  skill React (scope: project)",
           "  sub-agent web-developer (scope: project)",
           "Run this from inside a project directory, or change the global install from here: run 'npx agents-inc edit', make the change in the editor, then apply the id it gives you with 'npx agents-inc edit --from <id>'.",
         ].join("\n"),

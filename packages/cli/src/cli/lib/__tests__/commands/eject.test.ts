@@ -868,6 +868,8 @@ describe("what eject says", () => {
   const ENDING = ["", "✓ Eject complete!", "", ""];
   const PARTIALS_CUSTOMIZABLE =
     "Each sub-agent directory there holds identity.md, playbook.md, critical-requirements.md, critical-reminders.md, output.md — edit those to customize that sub-agent.";
+  const CONFIG_DECLARES_NOTHING =
+    "This project's config declares nothing; eject works on this project, not on a global installation.";
 
   function agentsDirOf(root: string): string {
     return path.join(sourceFolderInUse(root, "claude").dir, STANDARD_DIRS.AGENTS);
@@ -919,7 +921,7 @@ describe("what eject says", () => {
     expect(stdout).toBe([...HEADER, ...ENDING].join("\n"));
     expect(compactCliOutput(stderr)).toBe(
       compactCliOutput(
-        `Warning: Agent partials already exist at ${agentsDirOf(projectDir)}. Use --force to overwrite.`,
+        `${CONFIG_DECLARES_NOTHING}\nWarning: Agent partials already exist at ${agentsDirOf(projectDir)}. Use --force to overwrite.`,
       ),
     );
     expect(await readFile(template, "utf-8")).toBe("the user's own template");
@@ -973,7 +975,7 @@ describe("what eject says", () => {
 
     const { stderr } = await runCliCommand(["eject", "agent-partials", "--force"]);
 
-    expect(stderr).toBe("");
+    expect(stderr).toBe(`${CONFIG_DECLARES_NOTHING}\n`);
     expect(await readFile(template, "utf-8")).not.toBe("the user's own template");
   });
 
@@ -995,7 +997,7 @@ describe("what eject says", () => {
     expect(second.stdout).toBe([...HEADER, ...ENDING].join("\n"));
     expect(compactCliOutput(second.stderr)).toBe(
       compactCliOutput(
-        `Warning: Agent templates already exist at ${templatesDir}. Use --force to overwrite.`,
+        `${CONFIG_DECLARES_NOTHING}\nWarning: Agent templates already exist at ${templatesDir}. Use --force to overwrite.`,
       ),
     );
   });
@@ -1199,7 +1201,7 @@ describe("what eject says", () => {
 
       expect(error).toBeUndefined();
       expect(flattenCliOutput(stderr)).toBe(
-        "Warning: No skills found in the marketplace to eject.",
+        `${CONFIG_DECLARES_NOTHING} Warning: No skills found in the marketplace to eject.`,
       );
     });
 
@@ -1233,7 +1235,7 @@ describe("what eject says", () => {
         expect(stdout).toBe([...HEADER, ...ENDING].join("\n"));
         expect(compactCliOutput(stderr)).toBe(
           compactCliOutput(
-            `Warning: Skills already exist at ${skillsDir}. Use --force to overwrite.`,
+            `${CONFIG_DECLARES_NOTHING}\nWarning: Skills already exist at ${skillsDir}. Use --force to overwrite.`,
           ),
         );
         expect(await readFile(editedSkillMd, "utf-8")).toBe(edited);
@@ -1244,7 +1246,7 @@ describe("what eject says", () => {
         const { stdout, stderr, error } = await runCliCommand(["eject", "skills", "--force"]);
 
         expect(error).toBeUndefined();
-        expect(stderr).toBe("");
+        expect(stderr).toBe(`${CONFIG_DECLARES_NOTHING}\n`);
         expect(stdout).toBe(
           [
             ...HEADER,
@@ -1278,7 +1280,7 @@ describe("what eject says", () => {
       );
       expect(compactCliOutput(second.stderr)).toBe(
         compactCliOutput(
-          `Warning: Skills already exist at ${skillsDir}. Use --force to overwrite.`,
+          `${CONFIG_DECLARES_NOTHING}\nWarning: Skills already exist at ${skillsDir}. Use --force to overwrite.`,
         ),
       );
     });
@@ -1287,7 +1289,7 @@ describe("what eject says", () => {
       const { stderr, error } = await runCliCommand(["eject", "skills"]);
 
       expect(error).toBeUndefined();
-      expect(stderr).toBe("");
+      expect(stderr).toBe(`${CONFIG_DECLARES_NOTHING}\n`);
     });
 
     it("ejects every skill into an --output folder that exists and holds nothing", async () => {
@@ -1326,7 +1328,7 @@ describe("what eject says", () => {
       expect(error).toBeUndefined();
       expect(compactCliOutput(stderr)).toBe(
         compactCliOutput(
-          `Warning: Skills already exist at ${outputDir} — skipped 3 skills. Use --force to overwrite them.`,
+          `${CONFIG_DECLARES_NOTHING}\nWarning: Skills already exist at ${outputDir} — skipped 3 skills. Use --force to overwrite them.`,
         ),
       );
       expect(stdout).toBe(
@@ -1352,7 +1354,7 @@ describe("what eject says", () => {
       expect(error).toBeUndefined();
       expect(compactCliOutput(stderr)).toBe(
         compactCliOutput(
-          `Warning: Skills already exist at ${skillsDir} — skipped 3 skills. Use --force to overwrite them.`,
+          `${CONFIG_DECLARES_NOTHING}\nWarning: Skills already exist at ${skillsDir} — skipped 3 skills. Use --force to overwrite them.`,
         ),
       );
       expect(stdout).toBe(
@@ -1385,7 +1387,7 @@ describe("what eject says", () => {
       expect(error).toBeUndefined();
       expect(compactCliOutput(stderr)).toBe(
         compactCliOutput(
-          `Warning: Skills already exist at ${outputDir} — skipped 1 skill. Use --force to overwrite them.`,
+          `${CONFIG_DECLARES_NOTHING}\nWarning: Skills already exist at ${outputDir} — skipped 1 skill. Use --force to overwrite them.`,
         ),
       );
       expect(stdout).toBe(
@@ -1455,6 +1457,7 @@ describe("what eject says", () => {
       expect(compactCliOutput(stderr)).toBe(
         compactCliOutput(
           [
+            CONFIG_DECLARES_NOTHING,
             `Warning: Agent partials already exist at ${agentsDirOf(dirs.projectDir)}. Use --force to overwrite.`,
             `Warning: Skills already exist at ${skillsDir}. Use --force to overwrite.`,
           ].join("\n"),
@@ -1482,7 +1485,7 @@ describe("what eject says", () => {
       const { stdout, stderr, error } = await runCliCommand(["eject", "all", "--force"]);
 
       expect(error).toBeUndefined();
-      expect(stderr).toBe("");
+      expect(stderr).toBe(`${CONFIG_DECLARES_NOTHING}\n`);
       expect(stdout).toContain(
         [
           `✓ 4 skills ejected to ${skillsDir} from ${dirs.sourceDir}`,
@@ -1639,7 +1642,7 @@ describe("what eject says", () => {
       const { stdout, stderr, error } = await runCliCommand(["eject", "templates"]);
 
       expect(error).toBeUndefined();
-      expect(stderr).toBe("");
+      expect(stderr).toBe(`${CONFIG_DECLARES_NOTHING}\n`);
       expect(stdout).toBe(
         [
           ...HEADER,
@@ -1658,7 +1661,7 @@ describe("what eject says", () => {
       const { stdout, stderr, error } = await runCliCommand(["eject", "agent-partials"]);
 
       expect(error).toBeUndefined();
-      expect(stderr).toBe("");
+      expect(stderr).toBe(`${CONFIG_DECLARES_NOTHING}\n`);
       expect(stdout).toBe(
         [
           ...HEADER,

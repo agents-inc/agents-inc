@@ -4,6 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ensureMarketplace } from "./ensure-marketplace.js";
 import { requireMarketplace } from "./require-marketplace.js";
+import {
+  FailedLeavingPluginsSwitchedOnError,
+  PluginsLeftSwitchedOnError,
+  type PluginLeftSwitchedOn,
+} from "../../hosts/codex-plugin-switch.js";
 import type { SourceLoadResult } from "../../loading/source-loader.js";
 import { buildSourceResult } from "../../__tests__/factories/config-factories.js";
 import {
@@ -18,6 +23,10 @@ import { EMPTY_MATRIX } from "../../__tests__/mock-data/mock-matrices.js";
 
 const RECORDED_MARKETPLACE = "agents-inc";
 const GITHUB_SOURCE = "github:test/source";
+const SWITCHED_OFF_PLUGIN = "web-framework-react@agents-inc";
+const CONFIG_LOCKED = "EACCES: permission denied";
+const KEPT_CACHED_WARNING =
+  "  Warning: Could not update marketplace — continuing with cached version";
 
 /** The host is the seam to the coding agent's CLI; the marketplace is resolved from disk. */
 describe("ensureMarketplace", () => {
@@ -59,7 +68,11 @@ describe("ensureMarketplace", () => {
 
     expect(host.refreshMarketplace).toHaveBeenCalledExactlyOnceWith(RECORDED_MARKETPLACE);
     expect(host.addMarketplace).not.toHaveBeenCalled();
-    expect(result).toStrictEqual({ marketplace: RECORDED_MARKETPLACE, registered: false });
+    expect(result).toStrictEqual({
+      marketplace: RECORDED_MARKETPLACE,
+      registered: false,
+      leftOn: [],
+    });
   });
 
   it("registers a marketplace the host lacks, by its source without the github: prefix", async () => {
@@ -71,7 +84,11 @@ describe("ensureMarketplace", () => {
     );
 
     expect(host.addMarketplace).toHaveBeenCalledWith("test/source");
-    expect(result).toStrictEqual({ marketplace: RECORDED_MARKETPLACE, registered: true });
+    expect(result).toStrictEqual({
+      marketplace: RECORDED_MARKETPLACE,
+      registered: true,
+      leftOn: [],
+    });
   });
 
   it("names a marketplace no one recorded from the source's own manifest, then registers it", async () => {
@@ -82,7 +99,11 @@ describe("ensureMarketplace", () => {
 
     expect(sourceResult.marketplace).toBe(TEST_MARKETPLACE_NAME);
     expect(host.addMarketplace).toHaveBeenCalledExactlyOnceWith(dirs.sourceDir);
-    expect(result).toStrictEqual({ marketplace: TEST_MARKETPLACE_NAME, registered: true });
+    expect(result).toStrictEqual({
+      marketplace: TEST_MARKETPLACE_NAME,
+      registered: true,
+      leftOn: [],
+    });
   });
 
   it("resolves no marketplace, and registers or refreshes nothing, for a source that has none", async () => {
@@ -92,7 +113,7 @@ describe("ensureMarketplace", () => {
 
     expect(host.addMarketplace).not.toHaveBeenCalled();
     expect(host.refreshMarketplace).not.toHaveBeenCalled();
-    expect(result).toStrictEqual({ marketplace: null, registered: false });
+    expect(result).toStrictEqual({ marketplace: null, registered: false, leftOn: [] });
   });
 
   it("names the cause when the marketplace cannot be resolved", async () => {
@@ -120,10 +141,72 @@ describe("ensureMarketplace", () => {
       host,
     );
 
-    expect(said).toHaveBeenCalledExactlyOnceWith(
-      "  Warning: Could not update marketplace — continuing with cached version",
-    );
-    expect(result).toStrictEqual({ marketplace: RECORDED_MARKETPLACE, registered: false });
+    expect(said).toHaveBeenCalledExactlyOnceWith(KEPT_CACHED_WARNING);
+    expect(result).toStrictEqual({
+      marketplace: RECORDED_MARKETPLACE,
+      registered: false,
+      leftOn: [],
+    });
+  });
+
+  describe("a refresh that switched on again a plugin the user had switched off", () => {
+    let switchedOn: PluginLeftSwitchedOn;
+
+    beforeEach(() => {
+      vi.mocked(host.marketplaceExists).mockResolvedValue(true);
+      switchedOn = {
+        pluginKey: SWITCHED_OFF_PLUGIN,
+        configFile: path.join(dirs.tempDir, "config.toml"),
+        reason: CONFIG_LOCKED,
+      };
+    });
+
+    const leftOnWarning = (configFile: string) =>
+      `  Warning: Codex switched plugin ${SWITCHED_OFF_PLUGIN} back on when it was updated, and it could not be switched off again in ${configFile}: ${CONFIG_LOCKED}. To switch it off, set enabled = false in that file, in the table it already has for ${SWITCHED_OFF_PLUGIN}.`;
+
+    it("warns naming the plugin and the line to set, says nothing of a cached version, and answers the plugin", async () => {
+      const said = vi.spyOn(console, "warn").mockImplementation(() => {});
+      vi.mocked(host.refreshMarketplace).mockRejectedValue(
+        new PluginsLeftSwitchedOnError([switchedOn]),
+      );
+
+      const result = await ensureMarketplace(
+        sourceResultFor(GITHUB_SOURCE, RECORDED_MARKETPLACE),
+        host,
+      );
+
+      expect(
+        said,
+        "the listing was refreshed, so the only thing to warn of is the switch",
+      ).toHaveBeenCalledExactlyOnceWith(leftOnWarning(switchedOn.configFile));
+      expect(result).toStrictEqual({
+        marketplace: RECORDED_MARKETPLACE,
+        registered: false,
+        leftOn: [switchedOn],
+      });
+    });
+
+    it("keeps the cached-version warning, then warns of the plugin, when the refresh also failed", async () => {
+      const said = vi.spyOn(console, "warn").mockImplementation(() => {});
+      vi.mocked(host.refreshMarketplace).mockRejectedValue(
+        new FailedLeavingPluginsSwitchedOnError(new Error("Update failed"), [switchedOn]),
+      );
+
+      const result = await ensureMarketplace(
+        sourceResultFor(GITHUB_SOURCE, RECORDED_MARKETPLACE),
+        host,
+      );
+
+      expect(said.mock.calls).toStrictEqual([
+        [KEPT_CACHED_WARNING],
+        [leftOnWarning(switchedOn.configFile)],
+      ]);
+      expect(result).toStrictEqual({
+        marketplace: RECORDED_MARKETPLACE,
+        registered: false,
+        leftOn: [switchedOn],
+      });
+    });
   });
 
   it("registers a source that only mentions github: as written, stripping it only from its front", async () => {
@@ -156,7 +239,38 @@ describe("ensureMarketplace", () => {
 
       expect(
         await requireMarketplace(sourceResultFor(dirs.sourceDir), "install plugins", host),
-      ).toStrictEqual({ ok: true, marketplace: TEST_MARKETPLACE_NAME, registered: true });
+      ).toStrictEqual({
+        ok: true,
+        marketplace: TEST_MARKETPLACE_NAME,
+        registered: true,
+        leftOn: [],
+      });
+    });
+
+    it("answers the plugins the refresh left switched on", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      vi.mocked(host.marketplaceExists).mockResolvedValue(true);
+      const switchedOn = {
+        pluginKey: SWITCHED_OFF_PLUGIN,
+        configFile: path.join(dirs.tempDir, "config.toml"),
+        reason: CONFIG_LOCKED,
+      };
+      vi.mocked(host.refreshMarketplace).mockRejectedValue(
+        new PluginsLeftSwitchedOnError([switchedOn]),
+      );
+
+      expect(
+        await requireMarketplace(
+          sourceResultFor(GITHUB_SOURCE, RECORDED_MARKETPLACE),
+          "install plugins",
+          host,
+        ),
+      ).toStrictEqual({
+        ok: true,
+        marketplace: RECORDED_MARKETPLACE,
+        registered: false,
+        leftOn: [switchedOn],
+      });
     });
   });
 });
