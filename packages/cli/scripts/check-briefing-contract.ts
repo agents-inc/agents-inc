@@ -10,7 +10,7 @@ const REPOSITORY_ROOT = path.resolve(import.meta.dirname, "../../..");
 /** The two files every agent working in this repository is instructed to read. */
 export const BINDING_DOCUMENTS = ["CLAUDE.md", "packages/cli/CLAUDE.md"];
 
-export const BRIEFING_CONTRACT = "packages/cli/.ai-docs/standards/briefing.md";
+export const BRIEFING_CONTRACT = "docs/briefing.md";
 
 export const NO_BINDING_DOCUMENT = "names a binding document that does not exist";
 

@@ -1,5 +1,5 @@
 /** Drives the check against fixture trees, then asserts this repository is clean. */
-import { mkdirSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -22,9 +22,15 @@ const PACKAGE_CLAUDE_MD = "packages/cli/CLAUDE.md";
 
 const A_PATH_NOTHING_HOLDS = "todo/plans/a-programme-that-never-ran.md";
 
+const REPOSITORY_ROOT = path.resolve(import.meta.dirname, "../../..");
+
+function linkFrom(document: string, target: string): string {
+  return path.posix.relative(path.posix.dirname(document), target);
+}
+
 const BINDS_THE_CONTRACT: Record<string, string> = {
   [ROOT_CLAUDE_MD]: `See [briefing](./${BRIEFING_CONTRACT}).\n`,
-  [PACKAGE_CLAUDE_MD]: `See [briefing](./.ai-docs/standards/briefing.md).\n`,
+  [PACKAGE_CLAUDE_MD]: `See [briefing](${linkFrom(PACKAGE_CLAUDE_MD, BRIEFING_CONTRACT)}).\n`,
 };
 
 const roots: string[] = [];
@@ -120,7 +126,7 @@ describe("a binding document", () => {
 describe("the briefing contract", () => {
   it("has the links it writes read, not only the ones written to it", async () => {
     const root = await writeFixtureTree({
-      [BRIEFING_CONTRACT]: `# The briefing contract\n\nThe tally lives in [the progress file](../../../../${A_PATH_NOTHING_HOLDS}).\n`,
+      [BRIEFING_CONTRACT]: `# The briefing contract\n\nThe tally lives in [the progress file](${linkFrom(BRIEFING_CONTRACT, A_PATH_NOTHING_HOLDS)}).\n`,
     });
 
     expect(
@@ -152,6 +158,20 @@ describe("this repository", () => {
 
   it("reads some links, since a reader that matched nothing reports what a reachable tree does", () => {
     expect(repository.examined).toBeGreaterThan(0);
+  });
+
+  it("keeps the contract below no CLAUDE.md but the root's, so reading it loads no other", () => {
+    const directories = path.posix
+      .dirname(BRIEFING_CONTRACT)
+      .split("/")
+      .map((_, depth, parts) => parts.slice(0, depth + 1).join("/"));
+
+    expect(
+      directories.filter((directory) =>
+        existsSync(path.join(REPOSITORY_ROOT, directory, "CLAUDE.md")),
+      ),
+      "every lane reads the contract, and reading a file loads each CLAUDE.md above it, so one inside a workspace hands that workspace's guide to lanes working elsewhere",
+    ).toStrictEqual([]);
   });
 
   it("has both CLAUDE.md files binding the briefing contract", () => {

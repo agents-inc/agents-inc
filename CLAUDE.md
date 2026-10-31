@@ -76,10 +76,18 @@ publishes to npm.
 - **`packages/cli` formats itself** — 100 columns, semicolons, double quotes — while everything else
   uses the root config. Prettier picks the nearest config walking up, so this happens on its own; the
   reasoning is in the `//` notes in [`package.json`](./package.json).
+- **Comments are few and short** (owner, 2026-10-30, after finding too many again). Write one only
+  where the code cannot say it: a non-obvious why, a workaround, a constraint from outside the code.
+  One line where one will do. Never narrate what the code does, restate a name or type, tell the
+  code's history or the change ("now", "no longer", "previously", lane, ticket or card ids), or
+  answer a reviewer. Tests too: a test's name says its behaviour. Directive comments
+  (`eslint-disable` and `@ts-expect-error` with their reason, `// KNOWN GAP:`) stay. When you touch
+  a file, trim its comments that fail this.
 
 ## How work gets implemented
 
-Agreed process. It applies to every item in `todo/`, and the order is the point.
+Agreed process. It applies to every item in `todo/` except a quick fix (below), and the order is
+the point.
 
 1. **Write the tests first — end-to-end plus whatever else fits — and watch them fail.** A test
    that has never failed has not been shown to test anything.
@@ -101,6 +109,14 @@ Agreed process. It applies to every item in `todo/`, and the order is the point.
 No jumping to step 2, and steps 5 and 6 are not a tidy-up phase to batch at the end — they are how
 the work is finished.
 
+**A quick fix skips the chain** (owner, 2026-10-03 and 2026-10-30). It qualifies when the cause and
+the fix are both clear, the change is a few lines in one place, no owner choice is involved, and
+nothing else changes behaviour — a wrong string, a stale doc line, a one-line guard, a data entry an
+owner ruling already decided. One developer does it: a failing test first only when behaviour
+changes, the fix, the touched package's gates, a hand-run when a user sees the change, then steps 5
+and 6. No separate tester, no reviewer, no expressive-typescript pass, no fix rounds. If it proves
+bigger, it goes back to the full process.
+
 **Sub-agents do not edit `todo/`.** The orchestrator does, as each agent lands. The trackers carry
 curated git staging and several agents land at once, so briefs should say so explicitly.
 
@@ -108,7 +124,7 @@ curated git staging and several agents land at once, so briefs should say so exp
 
 A **brief** is the prompt one agent hands another — a dispatch to a sub-agent, an instruction
 carried between sessions, a hand-off written from a tracker row. The contract is
-[`packages/cli/.ai-docs/standards/briefing.md`](./packages/cli/.ai-docs/standards/briefing.md) and
+[`docs/briefing.md`](./docs/briefing.md) and
 it binds both ends: read it before dispatching work, and before executing a dispatch.
 
 **It is a discipline rather than a gate, because a brief is not a tracked file and no checker can

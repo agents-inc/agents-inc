@@ -46,13 +46,13 @@ covers the repository.
 Use [bun](https://bun.sh) and [Turborepo](https://turborepo.com). One `bun install` covers every
 workspace. The root scripts fan out through turbo:
 
-| Script                                         | What it does                                                                                   |
-| ---------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `bun run build` / `dev` / `lint` / `typecheck` | per workspace, in dependency order                                                             |
-| `bun run test` / `test:e2e`                    | unit suites / end-to-end suites                                                                |
-| `bun run deploy`                               | rebuilds, checks the editor bundle, deploys the Cloudflare workspaces                          |
-| `bun run format`                               | Prettier, once from the root (it reads `.prettierignore` only from its working directory)      |
-| `bun run deps:check`                           | cross-workspace checks: version mismatches, and configs that stopped extending the shared ones |
+| Script                                         | What it does                                                                                                                         |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `bun run build` / `dev` / `lint` / `typecheck` | per workspace, in dependency order                                                                                                   |
+| `bun run test` / `test:e2e`                    | unit suites / end-to-end suites                                                                                                      |
+| `bun run deploy`                               | rebuilds, checks the editor bundle, deploys the Cloudflare workspaces                                                                |
+| `bun run format`                               | Prettier, once from the root (it reads `.prettierignore` only from its working directory)                                            |
+| `bun run deps:check`                           | cross-workspace checks: version mismatches, configs that stopped extending the shared ones, and test files no Vitest config collects |
 
 - **Worker:** copy `apps/server/.dev.vars.example` to `.dev.vars`. `bun run dev` applies the local
   D1 migrations and builds a local skill index if it is missing or stale, then starts
