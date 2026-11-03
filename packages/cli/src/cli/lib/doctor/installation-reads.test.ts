@@ -6,9 +6,9 @@ import {
   hostsOf,
   hostsOnDisk,
   installedPluginSkillIds,
+  placementsOffered,
   providersInPlay,
   resolveConfigState,
-  unofferablePlacements,
   type CheckedInstallation,
 } from "./installation-reads.js";
 import { hostFor } from "../hosts/host-for.js";
@@ -199,7 +199,7 @@ describe("installation-reads", () => {
       await writeFile(manifestPath, JSON.stringify({ name }));
     }
 
-    it("keeps the enabled plugins whose manifest is on disk, as listed by the named provider's host", async () => {
+    it("keeps the enabled plugins whose manifest is on disk and names the switched-off ones, as listed by the named provider's host", async () => {
       await plantManifest("react");
       await plantManifest("zustand");
       vi.mocked(hostFor).mockImplementationOnce(() =>
@@ -224,9 +224,10 @@ describe("installation-reads", () => {
         }),
       );
 
-      expect(await installedPluginSkillIds(projectDir, "codex")).toStrictEqual(
-        new Set(["web-framework-react"]),
-      );
+      expect(await installedPluginSkillIds(projectDir, "codex")).toStrictEqual({
+        enabled: new Set(["web-framework-react"]),
+        switchedOff: new Set(["web-state-zustand"]),
+      });
       expect(hostFor).toHaveBeenLastCalledWith("codex");
     });
 
@@ -239,11 +240,14 @@ describe("installation-reads", () => {
         }),
       );
 
-      expect(await installedPluginSkillIds(projectDir, "claude")).toStrictEqual(new Set());
+      expect(await installedPluginSkillIds(projectDir, "claude")).toStrictEqual({
+        enabled: new Set(),
+        switchedOff: new Set(),
+      });
     });
   });
 
-  describe("unofferablePlacements", () => {
+  describe("placementsOffered", () => {
     const projectPluginSkill = (id: "web-framework-react" | "web-state-zustand") =>
       buildProjectConfig({
         skills: buildSkillConfigs([id], { origin: PLUGIN_MODE_ORIGIN }),
@@ -261,25 +265,39 @@ describe("installation-reads", () => {
       );
       await writeTestTsConfig(home.dir, projectPluginSkill("web-state-zustand"), folderOf("codex"));
 
-      expect(await unofferablePlacements(on("codex"))).toStrictEqual([
-        refusedByCodex("web-framework-react"),
-        refusedByCodex("web-state-zustand"),
-      ]);
+      expect(await placementsOffered(on("codex"))).toStrictEqual({
+        configuresASkill: true,
+        findings: [refusedByCodex("web-framework-react"), refusedByCodex("web-state-zustand")],
+      });
     });
 
     it("names nothing where the named host offers every placement asked for", async () => {
       await writeTestTsConfig(projectDir, projectPluginSkill("web-framework-react"));
 
-      expect(await unofferablePlacements(on("claude"))).toStrictEqual([]);
+      expect(await placementsOffered(on("claude"))).toStrictEqual({
+        configuresASkill: true,
+        findings: [],
+      });
+    });
+
+    it("says no skill is configured where neither scope's config names one", async () => {
+      await writeTestTsConfig(projectDir, buildProjectConfig({ skills: [] }));
+      await writeTestTsConfig(home.dir, buildProjectConfig({ skills: [] }));
+
+      expect(await placementsOffered(on("claude"))).toStrictEqual({
+        configuresASkill: false,
+        findings: [],
+      });
     });
 
     it("passes over a config that will not load, which the Config Valid row names", async () => {
       await writeRawTestConfig(projectDir, renderUnparseableConfigTs(), folderOf("codex"));
       await writeTestTsConfig(home.dir, projectPluginSkill("web-state-zustand"), folderOf("codex"));
 
-      expect(await unofferablePlacements(on("codex"))).toStrictEqual([
-        refusedByCodex("web-state-zustand"),
-      ]);
+      expect(await placementsOffered(on("codex"))).toStrictEqual({
+        configuresASkill: true,
+        findings: [refusedByCodex("web-state-zustand")],
+      });
     });
   });
 });

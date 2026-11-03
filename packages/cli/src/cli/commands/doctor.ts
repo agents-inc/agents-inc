@@ -9,6 +9,7 @@ import {
   MarketplaceRefusedError,
   validateProjectConfig,
   SOURCE_ENV_VAR,
+  type ConfigLoadError,
   type ResolvedConfig,
 } from "../lib/configuration";
 import { loadSkillsMatrixFromSource, type SourceLoadResult } from "../lib/loading";
@@ -19,7 +20,7 @@ import {
 import { matrix } from "../lib/matrix/matrix-provider";
 import { getStackSkillIds } from "../lib/stacks";
 import { filterExcludedEntries } from "../lib/agents";
-import { isHomeDirectory, installBaseDir } from "../lib/installation";
+import { isHomeDirectory, installBaseDir, scopeAt } from "../lib/installation";
 import {
   agentCodec,
   agentsDir,
@@ -29,18 +30,15 @@ import {
   skillsPathPrefix,
 } from "../lib/installation/install-layout";
 import { ambiguityFinding } from "../lib/installation/provider-flag";
-import {
-  sourceScopesInPlay,
-  type ScopeKind,
-  type SourceScope,
-} from "../lib/installation/source-scopes";
+import { providerToNameAt } from "../lib/installation/provider-to-name";
+import { sourceScopesInPlay, type SourceScope } from "../lib/installation/source-scopes";
 import {
   hostsOf,
   hostsOnDisk,
   installedPluginSkillIds,
+  placementsOffered,
   providersInPlay,
   resolveConfigState,
-  unofferablePlacements,
   type CheckedInstallation,
   type ConfigState,
 } from "../lib/doctor/installation-reads";
@@ -73,6 +71,7 @@ import type {
   SkillScope,
 } from "../types";
 import { fileExists } from "../utils/fs";
+import { mapInTurn } from "../utils/in-turn";
 import { plural } from "../utils/string";
 import {
   CLI_INVOKE_COMMAND,
@@ -82,7 +81,7 @@ import {
   UI_SYMBOLS,
   type Provider,
 } from "../consts";
-import { countBy, unique } from "remeda";
+import { countBy, partition, unique } from "remeda";
 
 type CheckKind =
   | "config"
@@ -96,6 +95,9 @@ type CheckKind =
   | "orphans"
   | "orphans-unowned"
   | "installed"
+  | "installed-at-home"
+  | "installed-take-out"
+  | "installed-take-out-at-home"
   | "plugins"
   | "source"
   | "content-config"
@@ -111,6 +113,10 @@ type CheckResult = {
   details?: string[];
   /** The installation a block's row is about, where the scope holds two. */
   provider?: Provider;
+  /** The installation a tip run in the home folder names, where the home folder holds two. */
+  providerAtHome?: Provider | undefined;
+  /** Where the kind alone cannot pick the tips: skills missing from two places take one each. */
+  tipKinds?: CheckKind[];
 };
 
 type ConfigCheckOutput = {
@@ -135,14 +141,12 @@ function checkConfigValid(
         config: null,
       };
     case "unreadable":
+      return { result: unloadableConfigResult(state.failure, theConfig), config: null };
+    case "global-unreadable":
+      // The row names the file it cannot load; the project's own still serves the rows below.
       return {
-        result: {
-          kind: "config",
-          status: "fail",
-          message: theConfig("exists but could not be loaded"),
-          details: [state.failure.reason],
-        },
-        config: null,
+        result: unloadableConfigResult(state.failure, theConfig),
+        config: checkLoadedConfig(state.config, theConfig).config,
       };
     case "declares-nothing":
       // Valid but empty: handed on so the rows below don't report "config invalid".
@@ -161,6 +165,18 @@ function checkConfigValid(
       return _exhaustive;
     }
   }
+}
+
+function unloadableConfigResult(
+  failure: ConfigLoadError,
+  theConfig: (verdict: string) => string,
+): CheckResult {
+  return {
+    kind: "config",
+    status: "fail",
+    message: theConfig("exists but could not be loaded"),
+    details: [failure.reason],
+  };
 }
 
 /** Loading accepts configs `validateProjectConfig` refuses, such as one with an empty name. */
@@ -212,7 +228,7 @@ function configRowMessage(
 ): string {
   if (state.kind === "loaded" && state.inherited)
     return `${theInheritedConfig(projectDir, state.declaringNothingIn, hosts.global)}, which ${verdict}`;
-  if (state.kind === "unreadable") {
+  if (state.kind === "unreadable" || state.kind === "global-unreadable") {
     const { scopeRoot, scope } = state.failure;
     return `${theConfigAt(scopeRoot, hosts[scope])} ${verdict}`;
   }
@@ -220,7 +236,7 @@ function configRowMessage(
 }
 
 function theConfigAt(root: string, provider: Provider): string {
-  return `${scopeLabel(scopeOf(root))}: ${configNamedFrom(root, provider)}`;
+  return `${scopeLabel(scopeAt(root))}: ${configNamedFrom(root, provider)}`;
 }
 
 /** What the project holds in place of an installation, then the global config standing in. */
@@ -234,10 +250,6 @@ function theInheritedConfig(
       ? `no ${STANDARD_FILES.CONFIG_TS}`
       : `${relativeConfigPath(projectDir, declaringNothingIn)} declares nothing`;
   return `${scopeLabel("project")}: ${projectHolds}, using ${scopeNoun("global")}'s (${configNamedFrom(os.homedir(), provider)})`;
-}
-
-function scopeOf(dir: string): ScopeKind {
-  return isHomeDirectory(dir) ? "global" : "project";
 }
 
 function configNamedFrom(root: string, provider: Provider): string {
@@ -367,11 +379,12 @@ function ownershipResult(
   state: ConfigState,
   { unowned, orphanedAgentFiles }: Ownership,
 ): CheckResult {
-  if (unowned.skills.length > 0 || unowned.agents.length > 0) {
+  const unownedCount = unowned.skills.length + unowned.agents.length;
+  if (unownedCount > 0) {
     return {
       kind: "orphans-unowned",
       status: "fail",
-      message: `${countedArtifacts(unowned.skills, unowned.agents)} installed here, and no configuration declares them`,
+      message: `${countedArtifacts(unowned.skills, unowned.agents)} installed here, and no configuration declares ${unownedCount === 1 ? "it" : "them"}`,
       details: [...unowned.skills, ...unowned.agents, ...orphanLines(orphanedAgentFiles)].map(
         (line) => `- ${line}`,
       ),
@@ -419,6 +432,7 @@ function nonZeroCounts(...counts: Count[]): string {
 async function checkSkillsInstalled(
   config: ProjectConfig,
   installation: CheckedInstallation,
+  published: ReadonlySet<SkillId> | null,
 ): Promise<CheckResult> {
   const ejectSkills = config.skills.filter((s) => s.origin === EJECT_SOURCE);
 
@@ -441,6 +455,8 @@ async function checkSkillsInstalled(
       status: "warn",
       message: `${plural(missingSkills.length, "skill")} missing from disk`,
       details: missingSkills.map((s) => `- ${s.id} (not found in ${s.lookedIn}/)`),
+      tipKinds: await missingSkillsTips(missingSkills, installation, published),
+      providerAtHome: providerToNameAt(os.homedir(), installation.hosts.global),
     };
   }
 
@@ -451,7 +467,72 @@ async function checkSkillsInstalled(
   };
 }
 
-type EjectedSkillCheck = { id: SkillId; installed: boolean; lookedIn: string };
+/** One tip per place a missing skill is reached from, since no one folder reaches both scopes. */
+function missingSkillsTips(
+  missingSkills: EjectedSkillCheck[],
+  installation: CheckedInstallation,
+  published: ReadonlySet<SkillId> | null,
+): Promise<CheckKind[]> {
+  const scopes = unique(missingSkills.map((check) => check.scope));
+  return Promise.all(
+    scopes.map((scope) =>
+      missingFromOnePlaceTip(
+        scope,
+        missingSkills.filter((check) => check.scope === scope),
+        installation,
+        published,
+      ),
+    ),
+  );
+}
+
+/** A global skill seen from a project is reached from the home folder. */
+async function missingFromOnePlaceTip(
+  scope: SkillScope,
+  missingSkills: EjectedSkillCheck[],
+  installation: CheckedInstallation,
+  published: ReadonlySet<SkillId> | null,
+): Promise<CheckKind> {
+  const atHome = scope !== scopeAt(installation.projectDir);
+  if (await ejectRestoresEvery(missingSkills, installation, published)) {
+    return atHome ? "installed-at-home" : "installed";
+  }
+  return atHome ? "installed-take-out-at-home" : "installed-take-out";
+}
+
+/** No marketplace may publish under it: `CARRIED_ID_PREFIX` in lib/seed/external-skills.ts. */
+const EDITOR_ADDED_SKILL_ID_PREFIX = "external-";
+
+/** `eject skills` copies only published skills, and skips one the global installation holds. */
+async function ejectRestoresEvery(
+  missingSkills: EjectedSkillCheck[],
+  { projectDir, hosts }: CheckedInstallation,
+  published: ReadonlySet<SkillId> | null,
+): Promise<boolean> {
+  const unrestorable = missingSkills.some(
+    (check) =>
+      check.id.startsWith(EDITOR_ADDED_SKILL_ID_PREFIX) || noLongerPublished(check, published),
+  );
+  if (unrestorable) return false;
+
+  const globalSkillsDir = skillsDir(hosts.global, "global", projectDir);
+  const heldGlobally = await Promise.all(
+    missingSkills.map((check) =>
+      fileExists(path.join(globalSkillsDir, check.id, STANDARD_FILES.SKILL_MD)),
+    ),
+  );
+  return !heldGlobally.includes(true);
+}
+
+/** The marketplace's own list, not the loaded one, which also holds every copy on disk. */
+function noLongerPublished(
+  check: EjectedSkillCheck,
+  published: ReadonlySet<SkillId> | null,
+): boolean {
+  return published !== null && !published.has(check.id);
+}
+
+type EjectedSkillCheck = { id: SkillId; scope: SkillScope; installed: boolean; lookedIn: string };
 
 async function ejectedSkillCheck(
   skill: SkillConfig,
@@ -463,6 +544,7 @@ async function ejectedSkillCheck(
 
   return {
     id: skill.id,
+    scope: skill.scope,
     installed,
     lookedIn: skillsPathPrefix(provider, skill.scope, projectDir),
   };
@@ -493,8 +575,8 @@ async function checkPluginSkillsInstalled(
     return {
       kind: "plugins",
       status: "warn",
-      message: `${plural(missingSkills.length, "skill")} not installed as plugins`,
-      details: missingSkills.map((s) => `- ${s} (no enabled plugin found)`),
+      message: missingPluginsHeadline(missingSkills),
+      details: missingSkills.map(missingPluginLine),
     };
   }
 
@@ -505,19 +587,40 @@ async function checkPluginSkillsInstalled(
   };
 }
 
+/** A switched-off plugin is installed, so it is not counted among those that are not. */
+type MissingPluginSkill = { id: SkillId; switchedOff: boolean };
+
+/** `1 skill not installed as a plugin and 1 plugin switched off`: a zero is left out. */
+function missingPluginsHeadline(missing: MissingPluginSkill[]): string {
+  const [switchedOff, notInstalled] = partition(missing, (skill) => skill.switchedOff);
+  return [
+    ...(notInstalled.length > 0 ? [notInstalledAsPlugins(notInstalled.length)] : []),
+    ...(switchedOff.length > 0 ? [pluginsSwitchedOff(switchedOff.length)] : []),
+  ].join(" and ");
+}
+
+function notInstalledAsPlugins(count: number): string {
+  return `${plural(count, "skill")} not installed as ${count === 1 ? "a plugin" : "plugins"}`;
+}
+
+function pluginsSwitchedOff(count: number): string {
+  return `${plural(count, "plugin")} switched off`;
+}
+
+function missingPluginLine({ id, switchedOff }: MissingPluginSkill): string {
+  return `- ${id} ${switchedOff ? "(plugin switched off)" : "(no enabled plugin found)"}`;
+}
+
 async function pluginSkillsMissingAt(
   scope: SkillScope,
   pluginSkills: SkillConfig[],
   { projectDir, hosts }: CheckedInstallation,
-): Promise<SkillId[]> {
-  const installedIds = await installedPluginSkillIds(
-    installBaseDir(projectDir, scope),
-    hosts[scope],
-  );
+): Promise<MissingPluginSkill[]> {
+  const installed = await installedPluginSkillIds(installBaseDir(projectDir, scope), hosts[scope]);
   return pluginSkills
     .filter((skill) => skill.scope === scope)
-    .filter((skill) => !installedIds.has(skill.id))
-    .map((skill) => skill.id);
+    .filter((skill) => !installed.enabled.has(skill.id))
+    .map((skill) => ({ id: skill.id, switchedOff: installed.switchedOff.has(skill.id) }));
 }
 
 const MARKETPLACE_CHOSEN_BY = {
@@ -555,20 +658,23 @@ function savedCopyLines(source: string, differingCopiesReplaced: ReadonlySet<str
   return differingCopiesReplaced.has(source) ? [INFO_MESSAGES.SAVED_COPY_REPLACED] : [];
 }
 
+type MarketplaceCheck = { result: CheckResult; published: ReadonlySet<SkillId> | null };
+
 /** Downloads the marketplace on every run, so no saved copy is ever read in its place. */
 async function checkSourceReachable({
   projectDir,
   hosts,
-}: CheckedInstallation): Promise<CheckResult> {
+}: CheckedInstallation): Promise<MarketplaceCheck> {
   try {
-    return await askingEachMarketplaceItself(async (differingCopiesReplaced) =>
-      reachedMarketplace(
-        await loadSkillsMatrixFromSource({ projectDir, provider: hosts.project }),
-        differingCopiesReplaced,
-      ),
-    );
+    return await askingEachMarketplaceItself(async (differingCopiesReplaced) => {
+      const loaded = await loadSkillsMatrixFromSource({ projectDir, provider: hosts.project });
+      return {
+        result: reachedMarketplace(loaded, differingCopiesReplaced),
+        published: loaded.marketplaceSkillIds,
+      };
+    });
   } catch (error) {
-    return marketplaceNotLoaded(error);
+    return { result: marketplaceNotLoaded(error), published: null };
   }
 }
 
@@ -758,15 +864,18 @@ function formatSummary(results: CheckResult[]): string {
 type Tip = {
   kind: CheckKind;
   status: CheckResult["status"];
-  /** Handed the installation the finding is about, which a command acting on it must be told. */
-  line: (provider: Provider | undefined) => string;
+  /**
+   * Handed the installations a command acting on the finding must be told, here and in the home
+   * folder, and the scope of the folder doctor runs in.
+   */
+  line: (names: Pick<CheckResult, "provider" | "providerAtHome">, scope: SkillScope) => string;
 };
 
 const TIPS: Tip[] = [
   {
     kind: "agents",
     status: "warn",
-    line: (provider) =>
+    line: ({ provider }) =>
       `  Tip: Run '${commandActingOn(provider, "compile")}' to generate missing agent files`,
   },
   {
@@ -783,7 +892,7 @@ const TIPS: Tip[] = [
   {
     kind: "orphans-unowned",
     status: "fail",
-    line: (provider) =>
+    line: ({ provider }) =>
       `  Tip: Nothing declares the files above — '${commandActingOn(provider, "init --from <id>")}' writes a configuration that can own them again, or '${commandActingOn(provider, "uninstall")}' removes them, the compiled agents included: each file listed carries this CLI's own provenance, which is what that command reads when there is no configuration left`,
   },
   {
@@ -794,8 +903,23 @@ const TIPS: Tip[] = [
   {
     kind: "installed",
     status: "warn",
-    // No command named: `eject skills --force` copies every skill, and only at project scope.
-    line: () => "  Tip: Re-eject the missing skills from the marketplace to restore their files",
+    line: ({ provider }, scope) => bothWaysOut(provider, scopeNoun(scope)),
+  },
+  {
+    kind: "installed-take-out",
+    status: "warn",
+    line: ({ provider }) => takeOut(provider),
+  },
+  {
+    kind: "installed-at-home",
+    status: "warn",
+    line: ({ providerAtHome }) =>
+      bothWaysOut(providerAtHome, scopeNoun("global"), IN_YOUR_HOME_FOLDER),
+  },
+  {
+    kind: "installed-take-out-at-home",
+    status: "warn",
+    line: ({ providerAtHome }) => takeOut(providerAtHome, IN_YOUR_HOME_FOLDER),
   },
 ];
 
@@ -803,19 +927,27 @@ function commandActingOn(provider: Provider | undefined, command: string): strin
   return `${CLI_INVOKE_COMMAND} ${command}${providerArgument(provider)}`;
 }
 
-/** Once per installation a finding names, and once only where the tip names none. */
-function formatTips(results: CheckResult[]): string[] {
-  return unique(TIPS.flatMap((tip) => linesOf(tip, results)));
+const IN_YOUR_HOME_FOLDER = " in your home folder";
+
+function takeOut(provider: Provider | undefined, where = ""): string {
+  return `  Tip: If you removed the missing skills on purpose, take them out with '${commandActingOn(provider, "edit")}'${where}`;
 }
 
-function linesOf(tip: Tip, results: CheckResult[]): string[] {
-  return results
-    .filter((result) => answers(tip, result))
-    .map((result) => tip.line(result.provider));
+function bothWaysOut(provider: Provider | undefined, installation: string, where = ""): string {
+  return `${takeOut(provider, where)}; to bring them back, run '${commandActingOn(provider, "eject skills")}'${where}, which also copies every other marketplace skill ${installation} lacks`;
+}
+
+/** Once per installation a finding names, and once only where the tip names none. */
+function formatTips(results: CheckResult[], scope: SkillScope): string[] {
+  return unique(TIPS.flatMap((tip) => linesOf(tip, results, scope)));
+}
+
+function linesOf(tip: Tip, results: CheckResult[], scope: SkillScope): string[] {
+  return results.filter((result) => answers(tip, result)).map((result) => tip.line(result, scope));
 }
 
 function answers(tip: Tip, result: CheckResult): boolean {
-  return result.kind === tip.kind && result.status === tip.status;
+  return (result.tipKinds ?? [result.kind]).includes(tip.kind) && result.status === tip.status;
 }
 
 /** `init` refuses an unreadable config, so the remedy is recreating it, once per such config. */
@@ -881,18 +1013,29 @@ const PLACEMENTS_ROW_NAME = "Placements Offered";
 
 /** Reports, as a row, the refusals other commands would stop on; never refuses itself. */
 async function checkOfferedPlacements(installation: CheckedInstallation): Promise<CheckResult> {
-  const findings = await unofferablePlacements(installation);
+  const { configuresASkill, findings } = await placementsOffered(installation);
 
-  if (findings.length === 0) {
-    return { kind: "placements", status: "pass", message: "Every configured skill is placeable" };
+  if (findings.length > 0) {
+    return {
+      kind: "placements",
+      status: "fail",
+      message: `${plural(findings.length, "finding")} would stop a command acting here`,
+      details: findings.map((finding) => `- ${finding}`),
+    };
   }
 
-  return {
-    kind: "placements",
-    status: "fail",
-    message: `${plural(findings.length, "finding")} would stop a command acting here`,
-    details: findings.map((finding) => `- ${finding}`),
-  };
+  const message = configuresASkill ? "Every configured skill is placeable" : "No skills configured";
+  return { kind: "placements", status: "pass", message };
+}
+
+/** A config on disk that Config Valid refused to hand on: unreadable, or invalid. */
+function configRejected(config: ProjectConfig | null, state: ConfigState): boolean {
+  return config === null && state.kind !== "absent";
+}
+
+/** The placements read the global config beside the project's, so either refused is one. */
+function placementsConfigRejected(config: ProjectConfig | null, state: ConfigState): boolean {
+  return configRejected(config, state) || state.kind === "global-unreadable";
 }
 
 function skippedResult(kind: CheckKind): CheckResult {
@@ -938,17 +1081,6 @@ async function runGatedContentCheck(
   return runContentCheck(check, projectDir);
 }
 
-/** One item after another, each step's results after the last's. */
-async function flatMapInTurn<Item, Result>(
-  items: readonly Item[],
-  step: (item: Item) => Promise<Result[]>,
-): Promise<Result[]> {
-  return items.reduce<Promise<Result[]>>(
-    async (earlier, item) => [...(await earlier), ...(await step(item))],
-    Promise.resolve([]),
-  );
-}
-
 /** A throw becomes that row's `fail`, so one broken check can't abort the run. */
 async function safeCheck<Result extends CheckResult | null>(
   kind: CheckKind,
@@ -992,7 +1124,11 @@ export default class Doctor extends BaseCommand {
     const operationalResults = await this.runOperationalChecks(projectDir, contentResults);
     const results = [...contentResults, ...operationalResults];
 
-    this.printResults(results, await recreateConfigTips(contentResults, projectDir));
+    this.printResults(
+      results,
+      scopeAt(projectDir),
+      await recreateConfigTips(contentResults, projectDir),
+    );
 
     if (results.some((r) => r.status === "fail")) {
       this.exit(EXIT_CODES.ERROR);
@@ -1086,10 +1222,10 @@ export default class Doctor extends BaseCommand {
     );
     this.logCheck(INSTALLATIONS_ROW_NAME, installations);
 
-    const blocks = await flatMapInTurn(providers, (provider) =>
+    const blocks = await mapInTurn(providers, (provider) =>
       this.checkOneOf(projectDir, provider, failedContent),
     );
-    return [installations, ...blocks];
+    return [installations, ...blocks.flat()];
   }
 
   private async checkOneOf(
@@ -1119,13 +1255,11 @@ export default class Doctor extends BaseCommand {
 
     const layoutResults = await this.reportLayout(installation);
 
-    const placementsResult = await safeCheck("placements", () =>
-      checkOfferedPlacements(installation),
-    );
+    const placementsResult = await this.resolvePlacementsCheck(config, configState, installation);
     this.logCheck(PLACEMENTS_ROW_NAME, placementsResult);
 
     // Populates the matrix that the skills check reads, so it runs first.
-    const sourceResult = await safeCheck("source", () => checkSourceReachable(installation));
+    const { result: sourceResult, published } = await checkSourceReachable(installation);
 
     const filteredConfig = config ? filterExcludedEntries(config) : null;
 
@@ -1138,7 +1272,11 @@ export default class Doctor extends BaseCommand {
     const orphansResult = await this.resolveOrphansCheck(config, configState, installation);
     this.logCheck("No Orphans", orphansResult);
 
-    const installedResult = await this.resolveInstalledCheck(filteredConfig, installation);
+    const installedResult = await this.resolveInstalledCheck(
+      filteredConfig,
+      installation,
+      skillsResult.status === "skip" ? null : published,
+    );
     this.logCheck("Skills Installed", installedResult);
 
     const pluginsResult = await this.resolvePluginsCheck(
@@ -1172,13 +1310,23 @@ export default class Doctor extends BaseCommand {
     return rows;
   }
 
+  /** Stands down over a rejected config; an absent one asks for no placement, which it says. */
+  private async resolvePlacementsCheck(
+    config: ProjectConfig | null,
+    configState: ConfigState,
+    installation: CheckedInstallation,
+  ): Promise<CheckResult> {
+    if (placementsConfigRejected(config, configState)) return skippedResult("placements");
+    return safeCheck("placements", () => checkOfferedPlacements(installation));
+  }
+
   /** Skips on a config the checks rejected: ownership can't be judged from a rejected file. */
   private async resolveOrphansCheck(
     config: ProjectConfig | null,
     configState: ConfigState,
     installation: CheckedInstallation,
   ): Promise<CheckResult> {
-    if (!config && configState.kind !== "absent") return skippedResult("orphans");
+    if (configRejected(config, configState)) return skippedResult("orphans");
     return safeCheck("orphans", () => checkNoOrphans(configState, config, installation));
   }
 
@@ -1204,12 +1352,14 @@ export default class Doctor extends BaseCommand {
     return safeCheck("agents", () => checkAgentsCompiled(config, installation));
   }
 
+  /** `published`: the marketplace's own skills, or null where Skills Resolved stood down. */
   private async resolveInstalledCheck(
     config: ProjectConfig | null,
     installation: CheckedInstallation,
+    published: ReadonlySet<SkillId> | null,
   ): Promise<CheckResult> {
     if (!config) return skippedResult("installed");
-    return safeCheck("installed", () => checkSkillsInstalled(config, installation));
+    return safeCheck("installed", () => checkSkillsInstalled(config, installation, published));
   }
 
   private async resolvePluginsCheck(
@@ -1231,11 +1381,11 @@ export default class Doctor extends BaseCommand {
     }
   }
 
-  private printResults(results: CheckResult[], recreateTips: string[]): void {
+  private printResults(results: CheckResult[], scope: SkillScope, recreateTips: string[]): void {
     this.log("");
     this.log(formatSummary(results));
 
-    const tips = [...formatTips(results), ...recreateTips];
+    const tips = [...formatTips(results, scope), ...recreateTips];
     if (tips.length > 0) {
       this.log("");
       for (const tip of tips) {

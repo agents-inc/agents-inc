@@ -20,13 +20,12 @@ import {
   inheritedGlobalProvider,
   providerInUse,
 } from "../installation/install-layout.js";
-import { hostFor } from "../hosts/host-for.js";
-import { refuseUnofferedPlacements } from "../hosts/offered-placements.js";
-import { getVerifiedPluginInstallPaths } from "../plugins/plugin-discovery.js";
+import { placementsAskedIn, refusalsAmong } from "../hosts/configured-placements.js";
+import { getPluginsBySwitch } from "../plugins/plugin-discovery.js";
 import { parseMarketplacePluginRef } from "../plugins/plugin-ref.js";
-import { getErrorMessage } from "../../utils/errors.js";
+import type { ResolvedPlugin } from "../plugins/plugin-settings.js";
 import type { Provider } from "../../consts.js";
-import type { ProjectConfig, SkillConfig, SkillScope } from "../../types/index.js";
+import type { ProjectConfig, SkillScope } from "../../types/index.js";
 
 /**
  * The provider each scope's paths are read with: off the disk, as a run naming no provider reads
@@ -39,9 +38,8 @@ export type Hosts = Record<SkillScope, Provider>;
 export type CheckedInstallation = { projectDir: string; hosts: Hosts };
 
 /**
- * The project's provider off its folder, and the global installation's it inherits. A project
- * holding no installation is checked as the global one it inherits, whose provider it takes: its
- * own folder would answer a new one's.
+ * A project holding no installation is checked as the global one it inherits, whose provider it
+ * takes: its own folder would answer a new one's.
  */
 export async function hostsOnDisk(projectDir: string): Promise<Hosts> {
   const found = await detectInstallations(projectDir);
@@ -70,10 +68,13 @@ export async function providersInPlay(projectDir: string): Promise<Provider[]> {
  * Unreadable only where a scope holds two installations: the content layer reads the configs in
  * use, so a broken one of those has already stood the operational layer down. An inherited config
  * carries the folder of the one the project holds declaring nothing, `null` where it holds none.
+ * `global-unreadable` carries the project's own config, which the rows not reading the global one
+ * still read.
  */
 export type ConfigState =
   | { kind: "absent" }
   | { kind: "unreadable"; failure: ConfigLoadError }
+  | { kind: "global-unreadable"; config: ProjectConfig; failure: ConfigLoadError }
   | { kind: "declares-nothing"; config: ProjectConfig }
   | { kind: "loaded"; config: ProjectConfig; inherited: false }
   | {
@@ -98,9 +99,7 @@ export async function resolveConfigState({
 
 async function readConfigState(projectDir: string, hosts: Hosts): Promise<ConfigState> {
   const own = await loadProjectConfigFromDir(projectDir, hosts.project);
-  if (own && !declaresNoContent(own.config)) {
-    return { kind: "loaded", config: own.config, inherited: false };
-  }
+  if (own && !declaresNoContent(own.config)) return ownConfigState(own.config, projectDir, hosts);
 
   const inherited = isHomeDirectory(projectDir)
     ? null
@@ -117,58 +116,70 @@ async function readConfigState(projectDir: string, hosts: Hosts): Promise<Config
   return own ? { kind: "declares-nothing", config: own.config } : { kind: "absent" };
 }
 
+/** The placements read the global config beside the project's own, so it must load too. */
+async function ownConfigState(
+  config: ProjectConfig,
+  projectDir: string,
+  hosts: Hosts,
+): Promise<ConfigState> {
+  const failure = isHomeDirectory(projectDir) ? null : await globalConfigLoadFailure(hosts);
+  return failure === null
+    ? { kind: "loaded", config, inherited: false }
+    : { kind: "global-unreadable", config, failure };
+}
+
+async function globalConfigLoadFailure(hosts: Hosts): Promise<ConfigLoadError | null> {
+  try {
+    await loadProjectConfigFromDir(os.homedir(), hosts.global);
+    return null;
+  } catch (error) {
+    if (error instanceof ConfigLoadError) return error;
+    throw error;
+  }
+}
+
 /** Any provider's: the project's leftover config need not be the inherited installation's. */
 async function providerDeclaringNothingIn(projectDir: string): Promise<Provider | null> {
   const [leftover] = await configsDeclaringNothing(projectDir);
   return leftover === undefined ? null : leftover.provider;
 }
 
-/**
- * The named host's enabled plugins whose manifest is still on disk, as skill ids; none at all from
- * a registry it cannot read.
- */
+/** A plugin's skill ids by its switch; none at all from a registry the host cannot read. */
+export type InstalledPluginSkillIds = {
+  /** Only those whose manifest is still on disk. */
+  enabled: ReadonlySet<string>;
+  switchedOff: ReadonlySet<string>;
+};
+
 export async function installedPluginSkillIds(
   baseDir: string,
   provider: Provider,
-): Promise<ReadonlySet<string>> {
-  const plugins = await getVerifiedPluginInstallPaths(baseDir, provider);
+): Promise<InstalledPluginSkillIds> {
+  const { enabled, switchedOff } = await getPluginsBySwitch(baseDir, provider);
+  return { enabled: skillIdsOf(enabled), switchedOff: skillIdsOf(switchedOff) };
+}
+
+function skillIdsOf(plugins: readonly ResolvedPlugin[]): ReadonlySet<string> {
   return new Set(plugins.map((plugin) => parseMarketplacePluginRef(plugin.pluginKey)));
 }
+
+/** What one installation's configs ask its hosts to place: whether any skill, and each refusal. */
+export type PlacementsOffered = { configuresASkill: boolean; findings: string[] };
 
 /**
  * `unofferablePlacementsFound` asked of each scope's named host: both scopes, each refused by its
  * own host, since the two can be on different providers. Project first, as that one walks them.
  */
-export async function unofferablePlacements({
+export async function placementsOffered({
   projectDir,
   hosts,
-}: CheckedInstallation): Promise<string[]> {
+}: CheckedInstallation): Promise<PlacementsOffered> {
   const projectFirst = [...scopeRootsInPlay(projectDir)].reverse();
-  const findings = await Promise.all(
-    projectFirst.map(({ kind, root }) => unofferablePlacementIn(root, hosts[kind])),
+  const asked = await Promise.all(
+    projectFirst.map(({ kind, root }) => placementsAskedIn({ dir: root, provider: hosts[kind] })),
   );
-  return findings.filter((finding): finding is string => finding !== null);
-}
-
-async function unofferablePlacementIn(root: string, provider: Provider): Promise<string | null> {
-  const skills = await configuredSkillsAt(root, provider);
-  if (skills === null) return null;
-
-  try {
-    refuseUnofferedPlacements(skills, hostFor(provider));
-    return null;
-  } catch (error) {
-    return getErrorMessage(error);
-  }
-}
-
-/** Degrades on `ConfigLoadError` only, which the Config Valid row reports by name. */
-async function configuredSkillsAt(root: string, provider: Provider): Promise<SkillConfig[] | null> {
-  try {
-    const loaded = await loadProjectConfigFromDir(root, provider);
-    return loaded?.config.skills ?? null;
-  } catch (error) {
-    if (error instanceof ConfigLoadError) return null;
-    throw error;
-  }
+  return {
+    configuresASkill: asked.some(({ skills }) => skills.length > 0),
+    findings: refusalsAmong(asked),
+  };
 }

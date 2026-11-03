@@ -71,6 +71,8 @@ import { matchedAsWritten } from "../helpers/matched-as-written.js";
 const INSTALLED_SKILLS_SUBDIR = path.join(CLAUDE_DIR, STANDARD_DIRS.SKILLS);
 const INSTALLED_AGENTS_SUBDIR = path.join(CLAUDE_DIR, "agents");
 
+const CODEX_FOLDER = ".agents-inc/codex";
+
 const CONTENT_SECTION = "Content checks";
 const OPERATIONAL_SECTION = "Operational checks";
 const SKIP_AFTER_CONTENT_ERRORS = "Skipped — fix the content errors above first";
@@ -233,6 +235,20 @@ async function writeValidInstalledSkill(
   };
 
   await writeFile(path.join(skillDir, STANDARD_FILES.METADATA_YAML), stringifyYaml(metadata));
+}
+
+/** A CLI-installed skill (per its metadata) missing SKILL.md, which stands Skills Resolved down. */
+async function installSkillMissingItsSkillMd(root: string): Promise<void> {
+  const skillDir = path.join(root, INSTALLED_SKILLS_SUBDIR, UNRELATED_INSTALLED_SKILL_ID);
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(
+    path.join(skillDir, STANDARD_FILES.METADATA_YAML),
+    stringifyYaml({
+      ...VALID_EMBEDDED_SKILL_METADATA_FILE,
+      domain: "web",
+      forkedFrom: CLI_PROVENANCE,
+    }),
+  );
 }
 
 async function writeValidInstalledAgent(
@@ -645,7 +661,6 @@ describe("doctor content checks", () => {
       await mkdir(manifestDir, { recursive: true });
       await writeFile(path.join(manifestDir, PLUGIN_MANIFEST_FILE), "{ not valid json !!!");
 
-      // Installed skill missing metadata.yaml → 1 error.
       const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
       const skillDir = path.join(globalSkillsDir, "web-framework-react");
       await mkdir(skillDir, { recursive: true });
@@ -1087,7 +1102,6 @@ describe("doctor content checks", () => {
 
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
       expect(stdout).toMatch(/2 skills: 2 errors/);
-      // The pass did not abort after the broken skill.
       expect(stdout).toContain("Missing SKILL.md");
     });
   });
@@ -1253,7 +1267,6 @@ describe("doctor content checks", () => {
       );
       await writeValidInstalledAgent(path.join(fakeHome, INSTALLED_AGENTS_SUBDIR), "web-developer");
 
-      // cwd === homedir().
       process.chdir(fakeHome);
       const { stdout, error } = await runCliCommand(["doctor"]);
 
@@ -1261,6 +1274,59 @@ describe("doctor content checks", () => {
       // Without the dedup both scopes resolve to one directory and count each file twice.
       expect(stdout).toContain("1 skill validated");
       expect(stdout).toContain("1 agent validated");
+    });
+  });
+
+  describe("content in both scopes", () => {
+    it("should count the skills and agents of both scopes together", async () => {
+      await setupValidatedProject(tempDir, projectDir);
+      await writeValidInstalledSkill(
+        path.join(fakeHome, INSTALLED_SKILLS_SUBDIR),
+        "web-framework-react",
+      );
+      await writeValidInstalledSkill(
+        path.join(projectDir, INSTALLED_SKILLS_SUBDIR),
+        "web-framework-vue",
+      );
+      await writeValidInstalledAgent(path.join(fakeHome, INSTALLED_AGENTS_SUBDIR), "api-developer");
+      await writeValidInstalledAgent(
+        path.join(projectDir, INSTALLED_AGENTS_SUBDIR),
+        CONFIGURED_AGENT_NAME,
+      );
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(
+        [
+          "    Skills                  ✓  2 skills validated",
+          "    Agents                  ✓  2 agents validated",
+          "",
+          "",
+        ].join("\n"),
+      );
+    });
+
+    it("should name a broken global skill and agent by their paths under ~", async () => {
+      await setupValidatedProject(tempDir, projectDir);
+      const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
+      await writeValidInstalledSkill(globalSkillsDir, "web-framework-react");
+      await rm(path.join(globalSkillsDir, "web-framework-react", STANDARD_FILES.SKILL_MD));
+      const globalAgentsDir = path.join(fakeHome, INSTALLED_AGENTS_SUBDIR);
+      await mkdir(globalAgentsDir, { recursive: true });
+      await writeFile(path.join(globalAgentsDir, "bad-agent.md"), AGENT_MD_WITHOUT_FRONTMATTER);
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(
+        [
+          "    Skills                  ✗  1 skill: 1 error, 0 warnings",
+          "                               - [ERROR] ~/.claude/skills/web-framework-react: Missing SKILL.md",
+          "    Agents                  ✗  1 agent: 1 error, 0 warnings",
+          "                               - [ERROR] ~/.claude/agents/bad-agent.md: Missing or invalid YAML frontmatter",
+          "",
+          "",
+        ].join("\n"),
+      );
     });
   });
 
@@ -1284,23 +1350,9 @@ describe("doctor content checks", () => {
       return sourceDir;
     }
 
-    /** A CLI-installed skill (per its metadata) missing SKILL.md: unrelated to every row below. */
-    async function installSkillMissingItsSkillMd(): Promise<void> {
-      const skillDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR, UNRELATED_INSTALLED_SKILL_ID);
-      await mkdir(skillDir, { recursive: true });
-      await writeFile(
-        path.join(skillDir, STANDARD_FILES.METADATA_YAML),
-        stringifyYaml({
-          ...VALID_EMBEDDED_SKILL_METADATA_FILE,
-          domain: "web",
-          forkedFrom: CLI_PROVENANCE,
-        }),
-      );
-    }
-
     it("names the orphaned agent file a broken skill directory has nothing to do with", async () => {
       await setupProjectWithOperationalFindings();
-      await installSkillMissingItsSkillMd();
+      await installSkillMissingItsSkillMd(fakeHome);
 
       const { stdout, error } = await runCliCommand(["doctor"]);
 
@@ -1317,7 +1369,7 @@ describe("doctor content checks", () => {
 
     it("reports config validity and marketplace reachability, which read no skill content", async () => {
       const sourceDir = await setupProjectWithOperationalFindings();
-      await installSkillMissingItsSkillMd();
+      await installSkillMissingItsSkillMd(fakeHome);
 
       const { stdout } = await runCliCommand(["doctor"]);
 
@@ -1333,7 +1385,7 @@ describe("doctor content checks", () => {
 
     it("reports the compiled agents and the eject-mode skill that never reached disk", async () => {
       await setupProjectWithOperationalFindings();
-      await installSkillMissingItsSkillMd();
+      await installSkillMissingItsSkillMd(fakeHome);
 
       const { stdout } = await runCliCommand(["doctor"]);
 
@@ -1349,7 +1401,7 @@ describe("doctor content checks", () => {
     /** Configured ids resolve through local discovery, which drops unreadable skills. */
     it("stands the skills row down and says which finding blocked it", async () => {
       await setupProjectWithOperationalFindings();
-      await installSkillMissingItsSkillMd();
+      await installSkillMissingItsSkillMd(fakeHome);
 
       const { stdout } = await runCliCommand(["doctor"]);
 
@@ -1368,7 +1420,7 @@ describe("doctor content checks", () => {
     /** The skipped row must be counted nowhere: a count is the claim, so it stays a count. */
     it("counts only the rows it actually ran", async () => {
       await setupProjectWithOperationalFindings();
-      await installSkillMissingItsSkillMd();
+      await installSkillMissingItsSkillMd(fakeHome);
 
       const { stdout } = await runCliCommand(["doctor"]);
 
@@ -1767,7 +1819,6 @@ describe("source validation (validateSource)", () => {
     const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
     await mkdir(skillsDir, { recursive: true });
 
-    // A malformed categories config makes Phase 3 fail.
     await writeValidSourceSkill(skillsDir, CONFIGURED_SKILL_ID, REACT_SOURCE_SKILL);
 
     const configDir = path.join(sourceDir, "config");
@@ -2052,7 +2103,7 @@ describe("the doctor report, line by line", () => {
         "  Operational checks",
         "    Config Valid            ✗  This project: .agents-inc/claude/config.ts not found",
         "                               Run 'npx agents-inc init' to create a configuration",
-        "    Placements Offered      ✓  Every configured skill is placeable",
+        "    Placements Offered      ✓  No skills configured",
         "    Skills Resolved         –  Skipped (config invalid)",
         "    Agents Compiled         –  Skipped (config invalid)",
         "    No Orphans              –  Skipped (config invalid)",
@@ -2099,7 +2150,7 @@ describe("the doctor report, line by line", () => {
         "    Config Valid            ✗  This project: .agents-inc/claude/config.ts has errors",
         "                               name is required and must be a string",
         "    Layout                  ✓  This project is on .agents-inc/claude/",
-        "    Placements Offered      ✓  Every configured skill is placeable",
+        "    Placements Offered      –  Skipped (config invalid)",
         "    Skills Resolved         –  Skipped (config invalid)",
         "    Agents Compiled         –  Skipped (config invalid)",
         "    No Orphans              –  Skipped (config invalid)",
@@ -2110,7 +2161,7 @@ describe("the doctor report, line by line", () => {
     );
     expect(stdout.slice(stdout.indexOf("  Summary:"))).toBe(
       [
-        "  Summary: 8 passed, 0 warnings, 1 error",
+        "  Summary: 7 passed, 0 warnings, 1 error",
         "",
         "  Tip: Run 'npx agents-inc init' to create or fix configuration",
         "",
@@ -2199,7 +2250,7 @@ describe("the doctor report, line by line", () => {
         "  Operational checks",
         "    Config Valid            ✓  This project: no config.ts, using the global installation's (~/.agents-inc/claude/config.ts), which is valid",
         "    Layout                  ✓  The global installation is on .agents-inc/claude/",
-        "    Placements Offered      ✓  Every configured skill is placeable",
+        "    Placements Offered      ✓  No skills configured",
         "    Skills Resolved         ✓  No skills configured",
         "    Agents Compiled         !  1 agent needs recompilation",
         "                               - web-developer (missing)",
@@ -2386,8 +2437,27 @@ describe("the doctor report, line by line", () => {
 
     expect(stdout).toContain(
       [
-        "    Plugins Installed       !  1 skill not installed as plugins",
+        "    Plugins Installed       !  1 skill not installed as a plugin",
         `                               - ${CONFIGURED_SKILL_ID} (no enabled plugin found)`,
+      ].join("\n"),
+    );
+  });
+
+  it("counts several plugin-mode skills no enabled plugin provides", async () => {
+    await setupValidatedProject(tempDir, projectDir, {
+      skills: buildSkillConfigs([CONFIGURED_SKILL_ID, "web-framework-react"], {
+        origin: PLUGIN_MODE_ORIGIN,
+      }),
+    });
+
+    const { stdout } = await runCliCommand(["doctor"]);
+
+    expect(stdout).toContain(
+      [
+        "    Plugins Installed       !  2 skills not installed as plugins",
+        `                               - ${CONFIGURED_SKILL_ID} (no enabled plugin found)`,
+        "                               - web-framework-react (no enabled plugin found)",
+        "    Marketplace Reachable",
       ].join("\n"),
     );
   });
@@ -2449,9 +2519,36 @@ describe("the doctor report, line by line", () => {
     );
   });
 
-  describe("a Codex installation", () => {
-    const CODEX_FOLDER = ".agents-inc/codex";
+  it("says every configured skill is placeable where only the global config configures one", async () => {
+    const sourceDir = await setupValidatedProject(tempDir, projectDir);
+    await writeTestTsConfig(
+      fakeHome,
+      buildProjectConfig({
+        name: "global-one",
+        skills: buildSkillConfigs([CONFIGURED_SKILL_ID], { scope: "global", origin: "eject" }),
+        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME], { scope: "global" }),
+        marketplace: sourceDir,
+      }),
+    );
 
+    const { stdout } = await runCliCommand(["doctor"]);
+
+    expect(stdout, "the project's own config is the one the rows read").toContain(
+      "    Config Valid            ✓  This project: .agents-inc/claude/config.ts is valid\n",
+    );
+    expect(
+      stdout,
+      "the global config's skill was checked, though the project's names none",
+    ).toContain(
+      [
+        "    Placements Offered      ✓  Every configured skill is placeable",
+        "    Skills Resolved         ✓  No skills configured",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  describe("a Codex installation", () => {
     async function installOnCodex(agentNames: AgentName[]): Promise<void> {
       const sourceDir = path.join(tempDir, "source");
       await buildValidSource(sourceDir);
@@ -2567,7 +2664,7 @@ describe("the doctor report, line by line", () => {
   describe("plugin-mode skills", () => {
     const PLUGIN_KEY = `${CONFIGURED_SKILL_ID}@${PLUGIN_MODE_ORIGIN}`;
 
-    async function installPluginForTheProject(): Promise<void> {
+    async function installPluginForTheProject({ switchedOn = true } = {}): Promise<void> {
       const installPath = path.join(
         fakeHome,
         CLAUDE_DIR,
@@ -2582,9 +2679,29 @@ describe("the doctor report, line by line", () => {
       await mkdir(path.join(projectDir, CLAUDE_DIR), { recursive: true });
       await writeFile(
         path.join(projectDir, CLAUDE_DIR, "settings.json"),
-        JSON.stringify({ enabledPlugins: { [PLUGIN_KEY]: true } }),
+        JSON.stringify({ enabledPlugins: { [PLUGIN_KEY]: switchedOn } }),
       );
     }
+
+    it("names a plugin set to false as not installed, which Claude cannot tell from never switched on", async () => {
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: buildSkillConfigs([CONFIGURED_SKILL_ID], {
+          origin: PLUGIN_MODE_ORIGIN,
+          scope: "project",
+        }),
+      });
+      await installPluginForTheProject({ switchedOn: false });
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(
+        [
+          "    Plugins Installed       !  1 skill not installed as a plugin",
+          `                               - ${CONFIGURED_SKILL_ID} (no enabled plugin found)`,
+          "    Marketplace Reachable",
+        ].join("\n"),
+      );
+    });
 
     it("counts a plugin skill its scope's registry enables as installed", async () => {
       await setupValidatedProject(tempDir, projectDir, {
@@ -2619,7 +2736,7 @@ describe("the doctor report, line by line", () => {
 
       expect(stdout).toContain(
         [
-          "    Plugins Installed       !  1 skill not installed as plugins",
+          "    Plugins Installed       !  1 skill not installed as a plugin",
           "                               - web-framework-react (no enabled plugin found)",
           "    Marketplace Reachable",
         ].join("\n"),
@@ -2879,7 +2996,7 @@ describe("the doctor report, line by line", () => {
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
       expect(stdout).toContain(
         [
-          "    No Orphans              ✗  1 agent installed here, and no configuration declares them",
+          "    No Orphans              ✗  1 agent installed here, and no configuration declares it",
           `                               - ${path.join(projectDir, INSTALLED_AGENTS_SUBDIR, `${ORPHANED_AGENT_NAME}.md`)}`,
           "    Skills Installed",
         ].join("\n"),
@@ -2946,9 +3063,469 @@ describe("the doctor report, line by line", () => {
     expect(stdout).toContain(`  ${SUMMARY_LINE}`);
   });
 
-  describe("a project holding a Claude and a Codex installation", () => {
-    const CODEX_FOLDER = ".agents-inc/codex";
+  describe("the tip for an ejected skill missing from disk", () => {
+    function bothWaysOut(installation: string): string {
+      return `  Tip: If you removed the missing skills on purpose, take them out with 'npx agents-inc edit'; to bring them back, run 'npx agents-inc eject skills', which also copies every other marketplace skill ${installation} lacks`;
+    }
 
+    const BOTH_WAYS_OUT_IN_THE_HOME_FOLDER =
+      "  Tip: If you removed the missing skills on purpose, take them out with 'npx agents-inc edit' in your home folder; to bring them back, run 'npx agents-inc eject skills' in your home folder, which also copies every other marketplace skill the global installation lacks";
+
+    const TAKE_OUT_ONLY =
+      "  Tip: If you removed the missing skills on purpose, take them out with 'npx agents-inc edit'";
+
+    /** `eject skills` copies only a marketplace's own skills, and no marketplace owns this one. */
+    const EDITOR_ADDED_SKILL_ID = "external-web-testing-brainstorming";
+
+    /** Neither editor-added nor held globally: only the marketplace no longer publishing it. */
+    const UNPUBLISHED_SKILL_ID = testMarketplaceSkillId("web-testing-vitest");
+
+    it("names both ways out of a skill missing from this project", async () => {
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: buildSkillConfigs([CONFIGURED_SKILL_ID], { scope: "project" }),
+      });
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(
+        `                               - ${CONFIGURED_SKILL_ID} (not found in .claude/skills/)\n`,
+      );
+      expect(stdout).toContain([bothWaysOut("this project"), "", ""].join("\n"));
+    });
+
+    it("names both ways out of a skill missing from the global installation, run at home", async () => {
+      await setupValidatedProject(tempDir, fakeHome, {
+        skills: buildSkillConfigs([CONFIGURED_SKILL_ID], { scope: "global" }),
+        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME], { scope: "global" }),
+      });
+      process.chdir(fakeHome);
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain("    Skills Installed        !  1 skill missing from disk\n");
+      expect(stdout).toContain([bothWaysOut("the global installation"), "", ""].join("\n"));
+    });
+
+    const globalSkills = buildSkillConfigs([CONFIGURED_SKILL_ID], { scope: "global" });
+
+    async function installGlobalSkillAtHome(): Promise<void> {
+      await setupValidatedProject(tempDir, fakeHome, {
+        skills: globalSkills,
+        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME], { scope: "global" }),
+      });
+    }
+
+    it("names both ways out, run in the home folder, of a global skill missing, seen from a project inheriting the global config", async () => {
+      await installGlobalSkillAtHome();
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain("    Skills Installed        !  1 skill missing from disk\n");
+      expect(stdout).toContain([BOTH_WAYS_OUT_IN_THE_HOME_FOLDER, "", ""].join("\n"));
+    });
+
+    it("names both ways out, run in the home folder, of a global skill missing, seen from a project with a config of its own", async () => {
+      await installGlobalSkillAtHome();
+      await setupValidatedProject(tempDir, projectDir, { skills: globalSkills });
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain("    Skills Installed        !  1 skill missing from disk\n");
+      expect(stdout).toContain([BOTH_WAYS_OUT_IN_THE_HOME_FOLDER, "", ""].join("\n"));
+    });
+
+    async function installCodexAtHomeToo(): Promise<void> {
+      await writeTestTsConfig(
+        fakeHome,
+        buildProjectConfig({
+          name: "codex-one",
+          marketplace: path.join(tempDir, "source"),
+          skills: [],
+          agents: buildAgentConfigs([CONFIGURED_AGENT_NAME], { scope: "global" }),
+        }),
+        CODEX_FOLDER,
+      );
+    }
+
+    const BOTH_WAYS_OUT_IN_THE_HOME_FOLDER_NAMING_CLAUDE =
+      "  Tip: If you removed the missing skills on purpose, take them out with 'npx agents-inc edit --provider claude' in your home folder; to bring them back, run 'npx agents-inc eject skills --provider claude' in your home folder, which also copies every other marketplace skill the global installation lacks";
+
+    it("names the Claude installation in the home folder's tip, and none in the project's, where the home folder holds a Claude and a Codex installation", async () => {
+      await installGlobalSkillAtHome();
+      await installCodexAtHomeToo();
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: [
+          ...globalSkills,
+          ...buildSkillConfigs([EDITOR_ADDED_SKILL_ID], { scope: "project" }),
+        ],
+      });
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain("    Skills Installed        !  2 skills missing from disk\n");
+      expect(stdout).toContain(
+        [TAKE_OUT_ONLY, BOTH_WAYS_OUT_IN_THE_HOME_FOLDER_NAMING_CLAUDE, "", ""].join("\n"),
+      );
+    });
+
+    it("names the Claude installation in the home folder's take-out tip where the home folder holds a Claude and a Codex installation", async () => {
+      const editorAddedGlobalSkills = buildSkillConfigs([EDITOR_ADDED_SKILL_ID], {
+        scope: "global",
+      });
+      await setupValidatedProject(tempDir, fakeHome, {
+        skills: editorAddedGlobalSkills,
+        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME], { scope: "global" }),
+      });
+      await installCodexAtHomeToo();
+      await setupValidatedProject(tempDir, projectDir, { skills: editorAddedGlobalSkills });
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain("    Skills Installed        !  1 skill missing from disk\n");
+      expect(stdout).toContain(
+        [
+          "  Tip: If you removed the missing skills on purpose, take them out with 'npx agents-inc edit --provider claude' in your home folder",
+          "",
+          "",
+        ].join("\n"),
+      );
+    });
+
+    it("names only the way to take out a project skill whose copy the global installation holds", async () => {
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: buildSkillConfigs([CONFIGURED_SKILL_ID], { scope: "project" }),
+      });
+      await writeValidInstalledSkill(
+        path.join(fakeHome, INSTALLED_SKILLS_SUBDIR),
+        CONFIGURED_SKILL_ID,
+      );
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain("    Skills Installed        !  1 skill missing from disk\n");
+      expect(stdout).toContain([TAKE_OUT_ONLY, "", ""].join("\n"));
+      expect(stdout).not.toContain("to bring them back");
+    });
+
+    it("names only the way to take out an editor-added skill missing from this project", async () => {
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: buildSkillConfigs([EDITOR_ADDED_SKILL_ID], { scope: "project" }),
+      });
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(
+        `                               - ${EDITOR_ADDED_SKILL_ID} (not found in .claude/skills/)\n`,
+      );
+      expect(stdout).toContain([TAKE_OUT_ONLY, "", ""].join("\n"));
+      expect(stdout).not.toContain("to bring them back");
+    });
+
+    it("names eject skills only where it brings back every missing skill", async () => {
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: buildSkillConfigs([CONFIGURED_SKILL_ID, EDITOR_ADDED_SKILL_ID], {
+          scope: "project",
+        }),
+      });
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain("    Skills Installed        !  2 skills missing from disk\n");
+      expect(stdout).toContain([TAKE_OUT_ONLY, "", ""].join("\n"));
+      expect(stdout).not.toContain("to bring them back");
+    });
+
+    it("names only the way to take out, run in the home folder, an editor-added global skill missing, seen from a project", async () => {
+      await setupValidatedProject(tempDir, fakeHome, {
+        skills: buildSkillConfigs([EDITOR_ADDED_SKILL_ID], { scope: "global" }),
+        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME], { scope: "global" }),
+      });
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain("    Skills Installed        !  1 skill missing from disk\n");
+      expect(stdout).toContain([`${TAKE_OUT_ONLY} in your home folder`, "", ""].join("\n"));
+      expect(stdout).not.toContain("to bring them back");
+    });
+
+    it("names the project's way out for its own skill and the home folder's for a global one, both missing", async () => {
+      const editorAddedGlobalSkills = buildSkillConfigs([EDITOR_ADDED_SKILL_ID], {
+        scope: "global",
+      });
+      await setupValidatedProject(tempDir, fakeHome, {
+        skills: editorAddedGlobalSkills,
+        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME], { scope: "global" }),
+      });
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: [
+          ...editorAddedGlobalSkills,
+          ...buildSkillConfigs([CONFIGURED_SKILL_ID], { scope: "project" }),
+        ],
+      });
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain("    Skills Installed        !  2 skills missing from disk\n");
+      expect(stdout).toContain(
+        [bothWaysOut("this project"), `${TAKE_OUT_ONLY} in your home folder`, "", ""].join("\n"),
+      );
+    });
+
+    it("puts the project's tip first when only the home folder's names eject skills", async () => {
+      await installGlobalSkillAtHome();
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: [
+          ...globalSkills,
+          ...buildSkillConfigs([EDITOR_ADDED_SKILL_ID], { scope: "project" }),
+        ],
+      });
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain("    Skills Installed        !  2 skills missing from disk\n");
+      expect(stdout).toContain(
+        [TAKE_OUT_ONLY, BOTH_WAYS_OUT_IN_THE_HOME_FOLDER, "", ""].join("\n"),
+      );
+    });
+
+    it("names only the way to take out a project skill the marketplace no longer publishes", async () => {
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: buildSkillConfigs([UNPUBLISHED_SKILL_ID], { scope: "project" }),
+      });
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(
+        [
+          "    Skills Resolved         ✗  0/1 skill found",
+          `                               - ${UNPUBLISHED_SKILL_ID} (not found)`,
+          "",
+        ].join("\n"),
+      );
+      expect(stdout).toContain("    Skills Installed        !  1 skill missing from disk\n");
+      expect(stdout).toContain([TAKE_OUT_ONLY, "", ""].join("\n"));
+      expect(stdout).not.toContain("to bring them back");
+    });
+
+    it("names only the way to take out the project's skills where one of them the marketplace no longer publishes", async () => {
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: buildSkillConfigs([CONFIGURED_SKILL_ID, UNPUBLISHED_SKILL_ID], {
+          scope: "project",
+        }),
+      });
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain("    Skills Installed        !  2 skills missing from disk\n");
+      expect(stdout).toContain([TAKE_OUT_ONLY, "", ""].join("\n"));
+      expect(stdout).not.toContain("to bring them back");
+    });
+
+    it("names only the project's way to take out a skill the marketplace no longer publishes, beside a global one missing", async () => {
+      await installGlobalSkillAtHome();
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: [
+          ...globalSkills,
+          ...buildSkillConfigs([UNPUBLISHED_SKILL_ID], { scope: "project" }),
+        ],
+      });
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(
+        [TAKE_OUT_ONLY, BOTH_WAYS_OUT_IN_THE_HOME_FOLDER, "", ""].join("\n"),
+      );
+    });
+
+    const unpublishedGlobalSkills = buildSkillConfigs([UNPUBLISHED_SKILL_ID], { scope: "global" });
+
+    async function installUnpublishedGlobalSkillAtHome(): Promise<void> {
+      await setupValidatedProject(tempDir, fakeHome, {
+        skills: unpublishedGlobalSkills,
+        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME], { scope: "global" }),
+      });
+    }
+
+    it("names only the way to take out a global skill the marketplace no longer publishes, run at home", async () => {
+      await installUnpublishedGlobalSkillAtHome();
+      process.chdir(fakeHome);
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(
+        [
+          "    Skills Resolved         ✗  0/1 skill found",
+          `                               - ${UNPUBLISHED_SKILL_ID} (not found)`,
+          "",
+        ].join("\n"),
+      );
+      expect(stdout).toContain("    Skills Installed        !  1 skill missing from disk\n");
+      expect(stdout).toContain([TAKE_OUT_ONLY, "", ""].join("\n"));
+      expect(stdout).not.toContain("to bring them back");
+    });
+
+    it("names only the way to take out, run in the home folder, a global skill the marketplace no longer publishes, seen from a project inheriting the global config", async () => {
+      await installUnpublishedGlobalSkillAtHome();
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain("    Skills Installed        !  1 skill missing from disk\n");
+      expect(stdout).toContain([`${TAKE_OUT_ONLY} in your home folder`, "", ""].join("\n"));
+      expect(stdout).not.toContain("to bring them back");
+    });
+
+    it("names only the way to take out, run in the home folder, a global skill the marketplace no longer publishes, seen from a project with a config of its own", async () => {
+      await installUnpublishedGlobalSkillAtHome();
+      await setupValidatedProject(tempDir, projectDir, { skills: unpublishedGlobalSkills });
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain("    Skills Installed        !  1 skill missing from disk\n");
+      expect(stdout).toContain([`${TAKE_OUT_ONLY} in your home folder`, "", ""].join("\n"));
+      expect(stdout).not.toContain("to bring them back");
+    });
+
+    it("names both ways out of the project's own skill and only the home folder's way to take out a global one the marketplace no longer publishes, both missing", async () => {
+      await installUnpublishedGlobalSkillAtHome();
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: [
+          ...unpublishedGlobalSkills,
+          ...buildSkillConfigs([CONFIGURED_SKILL_ID], { scope: "project" }),
+        ],
+      });
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain("    Skills Installed        !  2 skills missing from disk\n");
+      expect(stdout).toContain(
+        [bothWaysOut("this project"), `${TAKE_OUT_ONLY} in your home folder`, "", ""].join("\n"),
+      );
+    });
+
+    /** As `eject skills` leaves one: the loader reads a copy by its SKILL.md name. */
+    async function writeEjectedCopy(root: string, skillId: string): Promise<void> {
+      const skillsDir = path.join(root, INSTALLED_SKILLS_SUBDIR);
+      await writeValidInstalledSkill(skillsDir, skillId);
+      await writeFile(
+        path.join(skillsDir, skillId, STANDARD_FILES.SKILL_MD),
+        renderSkillMd(skillId, REACT_SOURCE_SKILL.description),
+      );
+    }
+
+    const FOUND_THROUGH_A_COPY = "    Skills Resolved         ✓  1/1 skill found\n";
+
+    it("names only the way to take out, run in the home folder, a global skill the marketplace no longer publishes, though a project with a config of its own holds a copy", async () => {
+      await installUnpublishedGlobalSkillAtHome();
+      await setupValidatedProject(tempDir, projectDir, { skills: unpublishedGlobalSkills });
+      await writeEjectedCopy(projectDir, UNPUBLISHED_SKILL_ID);
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(
+        stdout,
+        "the subject: the project's copy is in the list Skills Resolved reads",
+      ).toContain(FOUND_THROUGH_A_COPY);
+      expect(stdout).toContain("    Skills Installed        !  1 skill missing from disk\n");
+      expect(stdout).toContain([`${TAKE_OUT_ONLY} in your home folder`, "", ""].join("\n"));
+      expect(stdout).not.toContain("to bring them back");
+    });
+
+    it("names only the way to take out, run in the home folder, a global skill the marketplace no longer publishes, though a project inheriting the global config holds a copy", async () => {
+      await installUnpublishedGlobalSkillAtHome();
+      await writeEjectedCopy(projectDir, UNPUBLISHED_SKILL_ID);
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(
+        stdout,
+        "the subject: the project's copy is in the list Skills Resolved reads",
+      ).toContain(FOUND_THROUGH_A_COPY);
+      expect(stdout).toContain("    Skills Installed        !  1 skill missing from disk\n");
+      expect(stdout).toContain([`${TAKE_OUT_ONLY} in your home folder`, "", ""].join("\n"));
+      expect(stdout).not.toContain("to bring them back");
+    });
+
+    it("names both ways out, run in the home folder, of a global skill the marketplace still publishes, though the project holds a copy", async () => {
+      await installGlobalSkillAtHome();
+      await setupValidatedProject(tempDir, projectDir, { skills: globalSkills });
+      await writeEjectedCopy(projectDir, CONFIGURED_SKILL_ID);
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(FOUND_THROUGH_A_COPY);
+      expect(stdout).toContain("    Skills Installed        !  1 skill missing from disk\n");
+      expect(stdout).toContain([BOTH_WAYS_OUT_IN_THE_HOME_FOLDER, "", ""].join("\n"));
+    });
+
+    it("names only the way to take out a project skill the marketplace no longer publishes, though the global installation holds a copy", async () => {
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: buildSkillConfigs([UNPUBLISHED_SKILL_ID], { scope: "project" }),
+      });
+      await writeEjectedCopy(fakeHome, UNPUBLISHED_SKILL_ID);
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout, "the subject: the global copy is in the list Skills Resolved reads").toContain(
+        FOUND_THROUGH_A_COPY,
+      );
+      expect(stdout).toContain("    Skills Installed        !  1 skill missing from disk\n");
+      expect(stdout).toContain([TAKE_OUT_ONLY, "", ""].join("\n"));
+      expect(stdout).not.toContain("to bring them back");
+    });
+
+    it("names both ways out of the project's own skill and only the home folder's way to take out a global one the marketplace no longer publishes though the project holds a copy, both missing", async () => {
+      await installUnpublishedGlobalSkillAtHome();
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: [
+          ...unpublishedGlobalSkills,
+          ...buildSkillConfigs([CONFIGURED_SKILL_ID], { scope: "project" }),
+        ],
+      });
+      await writeEjectedCopy(projectDir, UNPUBLISHED_SKILL_ID);
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain("    Skills Resolved         ✓  2/2 skills found\n");
+      expect(stdout).toContain("    Skills Installed        !  2 skills missing from disk\n");
+      expect(stdout).toContain(
+        [bothWaysOut("this project"), `${TAKE_OUT_ONLY} in your home folder`, "", ""].join("\n"),
+      );
+    });
+
+    it("keeps both ways out of a project skill the marketplace no longer publishes where Skills Resolved could not reach the marketplace", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed")));
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: buildSkillConfigs([UNPUBLISHED_SKILL_ID], { scope: "project" }),
+        marketplace: TEST_SOURCE_URL,
+      });
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(
+        "    Skills Resolved         –  Skipped (marketplace unreachable)\n",
+      );
+      expect(stdout).toContain("    Skills Installed        !  1 skill missing from disk\n");
+      expect(stdout).toContain([bothWaysOut("this project"), "", ""].join("\n"));
+    });
+
+    it("keeps both ways out of a project skill the marketplace no longer publishes where Skills Resolved stood down over a skill it could not read", async () => {
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: buildSkillConfigs([UNPUBLISHED_SKILL_ID], { scope: "project" }),
+      });
+      await installSkillMissingItsSkillMd(fakeHome);
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toMatch(skippedRow(ROW_SKILLS_RESOLVED));
+      expect(stdout, "the marketplace was read, so only the stand-down keeps the tip").toContain(
+        "    Marketplace Reachable   ✓  Connected to local: ",
+      );
+      expect(stdout).toContain("    Skills Installed        !  1 skill missing from disk\n");
+      expect(stdout).toContain([bothWaysOut("this project"), "", ""].join("\n"));
+    });
+  });
+
+  describe("a project holding a Claude and a Codex installation", () => {
     /** Both read the same marketplace, so only each installation's own files differ. */
     async function installBoth(): Promise<string> {
       const installed = {
@@ -3013,7 +3590,7 @@ describe("the doctor report, line by line", () => {
           "  Summary: 22 passed, 2 warnings, 0 errors",
           "",
           "  Tip: Run 'npx agents-inc compile --provider codex' to generate missing agent files",
-          "  Tip: Re-eject the missing skills from the marketplace to restore their files",
+          "  Tip: If you removed the missing skills on purpose, take them out with 'npx agents-inc edit --provider codex'; to bring them back, run 'npx agents-inc eject skills --provider codex', which also copies every other marketplace skill this project lacks",
           "",
           "",
         ].join("\n"),
@@ -3042,6 +3619,81 @@ describe("the doctor report, line by line", () => {
       );
       expect(stdout).toMatch(
         /The codex installation[\s\S]*Agents Compiled\s+–\s+Skipped \(config invalid\)/,
+      );
+      expect(stdout).toContain(
+        [
+          "    Layout                  ✓  This project is on .agents-inc/codex/",
+          "    Placements Offered      –  Skipped (config invalid)",
+          "    Skills Resolved         –  Skipped (config invalid)",
+          "",
+        ].join("\n"),
+      );
+    });
+
+    it("fails the Codex block's Config Valid on a global Codex config it cannot load, and stands down the placements that read it", async () => {
+      await installBoth();
+      const homeCodexConfig = await writeRawTestConfig(
+        fakeHome,
+        renderUnparseableConfigTs(),
+        CODEX_FOLDER,
+      );
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+
+      expect(stdout, "the Claude block reads no Codex config, so it stands as it was").toContain(
+        [
+          "  The claude installation",
+          "    Config Valid            ✓  This project: .agents-inc/claude/config.ts is valid",
+          "    Layout                  ✓  This project is on .agents-inc/claude/",
+          "    Placements Offered      ✓  Every configured skill is placeable",
+          "",
+        ].join("\n"),
+      );
+      expect(stdout).toContain(
+        [
+          "  The codex installation",
+          "    Config Valid            ✗  The global installation: ~/.agents-inc/codex/config.ts exists but could not be loaded",
+          "",
+        ].join("\n"),
+      );
+      expect(stdout, "the reason names the file the loader could not read").toContain(
+        `Failed to load config from '${homeCodexConfig}'`,
+      );
+      expect(stdout).toContain(
+        [
+          "    Layout                  ✓  The global installation is on .agents-inc/codex/",
+          "    Layout                  ✓  This project is on .agents-inc/codex/",
+          "    Placements Offered      –  Skipped (config invalid)",
+          "",
+        ].join("\n"),
+      );
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+    });
+
+    it("passes the Codex block's Config Valid beside a global Codex config it can load, and reads that config's placements", async () => {
+      const sourceDir = await installBoth();
+      await writeTestTsConfig(
+        fakeHome,
+        buildProjectConfig({
+          name: "codex-global",
+          marketplace: sourceDir,
+          skills: [],
+          agents: buildAgentConfigs([CONFIGURED_AGENT_NAME], { scope: "global" }),
+        }),
+        CODEX_FOLDER,
+      );
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(
+        [
+          "  The codex installation",
+          "    Config Valid            ✓  This project: .agents-inc/codex/config.ts is valid",
+          "    Layout                  ✓  The global installation is on .agents-inc/codex/",
+          "    Layout                  ✓  This project is on .agents-inc/codex/",
+          "    Placements Offered      ✓  Every configured skill is placeable",
+          "",
+        ].join("\n"),
       );
     });
 
@@ -3104,7 +3756,7 @@ describe("the doctor report, line by line", () => {
       );
     });
 
-    it("names in each compile tip the installation whose block needs it, and a tip naming none once", async () => {
+    it("names in each tip the installation whose block needs it", async () => {
       await installBoth();
 
       const { stdout } = await runCliCommand(["doctor"]);
@@ -3113,7 +3765,38 @@ describe("the doctor report, line by line", () => {
         [
           "  Tip: Run 'npx agents-inc compile --provider claude' to generate missing agent files",
           "  Tip: Run 'npx agents-inc compile --provider codex' to generate missing agent files",
-          "  Tip: Re-eject the missing skills from the marketplace to restore their files",
+          "  Tip: If you removed the missing skills on purpose, take them out with 'npx agents-inc edit --provider claude'; to bring them back, run 'npx agents-inc eject skills --provider claude', which also copies every other marketplace skill this project lacks",
+          "  Tip: If you removed the missing skills on purpose, take them out with 'npx agents-inc edit --provider codex'; to bring them back, run 'npx agents-inc eject skills --provider codex', which also copies every other marketplace skill this project lacks",
+          "",
+          "",
+        ].join("\n"),
+      );
+    });
+
+    it("says a tip naming no installation once, though both blocks need it", async () => {
+      const installed = {
+        skills: [
+          ...buildSkillConfigs([CONFIGURED_SKILL_ID], { scope: "global" }),
+          ...buildSkillConfigs(["web-testing-vitest"], { scope: "project" }),
+        ],
+        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
+      };
+      const sourceDir = await setupValidatedProject(tempDir, projectDir, installed);
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({ name: "codex-one", marketplace: sourceDir, ...installed }),
+        CODEX_FOLDER,
+      );
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(
+        [
+          "  Tip: Run 'npx agents-inc compile --provider codex' to generate missing agent files",
+          "  Tip: Check skill IDs in config match available skills",
+          "  Tip: If you removed the missing skills on purpose, take them out with 'npx agents-inc edit --provider claude'",
+          "  Tip: If you removed the missing skills on purpose, take them out with 'npx agents-inc edit --provider codex'",
+          "  Tip: If you removed the missing skills on purpose, take them out with 'npx agents-inc edit' in your home folder; to bring them back, run 'npx agents-inc eject skills' in your home folder, which also copies every other marketplace skill the global installation lacks",
           "",
           "",
         ].join("\n"),

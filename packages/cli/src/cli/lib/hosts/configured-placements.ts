@@ -11,22 +11,33 @@ import {
   type ConfigInPlay,
 } from "../configuration/project-config.js";
 import { getErrorMessage } from "../../utils/errors.js";
+import type { Provider } from "../../consts.js";
 import type { SkillConfig } from "../../types/config.js";
 import { hostFor } from "./host-for.js";
 import { refuseUnofferedPlacements } from "./offered-placements.js";
 
 /** Both scopes, each asked of its OWN host: the two scopes can be on different providers. */
 export async function unofferablePlacementsFound(cwd: string): Promise<string[]> {
-  const findings = await Promise.all(configsInPlay(cwd).map(unofferablePlacementIn));
-  return findings.filter((finding): finding is string => finding !== null);
+  return refusalsAmong(await Promise.all(configsInPlay(cwd).map(placementsAskedIn)));
 }
 
-async function unofferablePlacementIn(config: ConfigInPlay): Promise<string | null> {
-  const skills = await configuredSkillsAt(config);
-  if (skills === null) return null;
+/** A config's skills and its host's refusal of them; neither from one absent or unloadable. */
+export type PlacementsAsked = { skills: SkillConfig[]; refusal: string | null };
 
+export async function placementsAskedIn(config: ConfigInPlay): Promise<PlacementsAsked> {
+  const skills = await configuredSkillsAt(config);
+  if (skills === null) return { skills: [], refusal: null };
+
+  return { skills, refusal: refusalOf(skills, config.provider) };
+}
+
+export function refusalsAmong(asked: readonly PlacementsAsked[]): string[] {
+  return asked.map(({ refusal }) => refusal).filter((refusal) => refusal !== null);
+}
+
+function refusalOf(skills: SkillConfig[], provider: Provider): string | null {
   try {
-    refuseUnofferedPlacements(skills, hostFor(config.provider));
+    refuseUnofferedPlacements(skills, hostFor(provider));
     return null;
   } catch (error) {
     return getErrorMessage(error);
