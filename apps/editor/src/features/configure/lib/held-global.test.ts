@@ -1,13 +1,14 @@
 import {
   cliMintedPayload,
   freshlyPickedSkill,
+  globalMintedPayload,
   projectMintedPayload,
   projectOwnSkill,
 } from "@workspace/api-mocks"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { setAnalyticsSink } from "@/lib/analytics/track"
-import { useConfigStore } from "@/stores/config-store"
+import { stackSelection, useConfigStore } from "@/stores/config-store"
 import { useHeldGlobalStore } from "@/stores/held-global-store"
 import {
   isAgentOn,
@@ -94,6 +95,15 @@ afterEach(() => {
 describe("what a link holds", () => {
   it("holds nothing for a link made anywhere but a project", () => {
     const payload = cliMintedPayload({ [REACT]: freshlyPickedSkill(REACT) })
+
+    expect(heldGlobalOf(payload, fromSeedPayload(payload))).toBeNull()
+  })
+
+  // Made where every entry can change, so the editor holds none of them.
+  it("holds nothing for a link the global installation made", () => {
+    const payload = globalMintedPayload({ [REACT]: freshlyPickedSkill(REACT) })
+    // Subject guard: unmarked, this is the case above.
+    expect(payload).toHaveProperty("fromGlobal", true)
 
     expect(heldGlobalOf(payload, fromSeedPayload(payload))).toBeNull()
   })
@@ -376,6 +386,25 @@ describe("a global sub-agent a project's link holds", () => {
       row: arrived.skills[REACT]?.assignments[WEB_DEV],
     })
   })
+
+  it("drops the row a held skill gained on it here once switched back to global", () => {
+    const arrived = open(linkHoldingApiDev())
+
+    store().setAgentOption(API_DEV, { scope: "project" })
+    store().cycleAssignment(REACT, API_DEV)
+    const gained = store().skills[REACT]?.assignments[API_DEV]
+    store().setAgentOption(API_DEV, { scope: "global" })
+
+    expect({
+      arrivedWithout: arrived.skills[REACT]?.assignments[API_DEV],
+      gained: gained !== undefined,
+      after: store().skills[REACT]?.assignments[API_DEV],
+    }).toStrictEqual({
+      arrivedWithout: undefined,
+      gained: true,
+      after: undefined,
+    })
+  })
 })
 
 // Start from scratch, a stack, a save: each replaces the whole selection.
@@ -383,6 +412,7 @@ describe("a whole new selection on a project's link", () => {
   // Has Svelte, and gives the held sub-agents rows of its own.
   const STACK_WITHOUT_REACT = "sveltekit-fullstack"
   const STACK_WITH_VUE = "vue-modern-fullstack"
+  const STACK_WITH_REACT = "nextjs-fullstack"
 
   const heldAgentsOf = (config: PersistedConfig) =>
     Object.fromEntries(
@@ -429,6 +459,24 @@ describe("a whole new selection on a project's link", () => {
       react: arrived.skills[REACT],
       agents: heldAgentsOf(arrived),
       heldRows: [],
+    })
+  })
+
+  it("sends the stack's own skills in its order, then the skills the link holds", () => {
+    open(projectLink())
+    const stackOrder = Object.keys(
+      stackSelection(STACK_WITH_REACT)?.skills ?? {}
+    )
+
+    store().applyStack(STACK_WITH_REACT)
+
+    expect({
+      // Before the stack's last, or keeping its place would look the same.
+      reactBeforeTheLast: stackOrder.slice(0, -1).includes(REACT),
+      sent: Object.keys(toSeedPayload(store()).skills),
+    }).toStrictEqual({
+      reactBeforeTheLast: true,
+      sent: [...stackOrder.filter((skillId) => skillId !== REACT), REACT],
     })
   })
 
@@ -479,29 +527,45 @@ describe("a whole new selection on a project's link", () => {
   })
 })
 
-describe("a link made anywhere but a project", () => {
-  // The same entries at the same scopes, so only the mark differs.
-  it("leaves its global skill free to switch off and change", () => {
-    open(cliMintedPayload({ [REACT]: freshlyPickedSkill(REACT) }))
+// The same entries at the same scopes, so only the mark differs. A run in the
+// global installation can change everything it holds.
+for (const [made, mint] of [
+  ["by share", cliMintedPayload],
+  ["in the global installation", globalMintedPayload],
+] as const) {
+  describe(`a link made ${made}`, () => {
+    it("leaves its global skill free to switch off and change", () => {
+      open(mint({ [REACT]: freshlyPickedSkill(REACT) }))
 
-    store().setSkillOption(REACT, { install: "eject" })
-    expect(store().skills[REACT]?.install).toBe("eject")
+      store().setSkillOption(REACT, { install: "eject" })
+      expect(store().skills[REACT]?.install).toBe("eject")
 
-    store().toggleSkill(REACT)
-    expect(REACT in store().skills).toBe(false)
+      store().toggleSkill(REACT)
+      expect(REACT in store().skills).toBe(false)
+    })
+
+    it("leaves its global sub-agent free to switch off", () => {
+      open(mint({ [REACT]: freshlyPickedSkill(REACT) }))
+
+      store().toggleAgentPin(WEB_DEV)
+
+      expect(isAgentOn(store(), WEB_DEV)).toBe(false)
+    })
+
+    // Only the CLI marks a link; the editor's own Share, Install and Save never do.
+    it("mints a link of its own that says nothing of where it was made", () => {
+      open(mint({ [REACT]: freshlyPickedSkill(REACT) }))
+
+      const minted = toSeedPayload(store())
+
+      expect(minted).not.toHaveProperty("fromGlobal")
+      expect(minted).not.toHaveProperty("fromProject")
+    })
   })
+}
 
-  it("leaves its global sub-agent free to switch off", () => {
-    open(cliMintedPayload({ [REACT]: freshlyPickedSkill(REACT) }))
-
-    store().toggleAgentPin(WEB_DEV)
-
-    expect(isAgentOn(store(), WEB_DEV)).toBe(false)
-  })
-})
-
-// Only a bare `edit` run in a project marks a link; the editor's own Share,
-// Install and Save never do.
+// Only a bare `edit` run in a project marks a link `fromProject`; the
+// editor's own Share, Install and Save never do.
 describe("the link a held configuration mints", () => {
   it("says nothing of a project", () => {
     open(projectLink())

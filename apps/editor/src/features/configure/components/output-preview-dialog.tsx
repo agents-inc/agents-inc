@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from "react"
 
 import { summarize } from "@/features/configure/lib/derive"
 import { toSeedPayload } from "@/features/configure/lib/seed"
+import { settleWhileAsked } from "@/lib/settle-while-asked"
 import { useCatalogStore } from "@/stores/catalog-store"
 import { useUiStore } from "@/stores/ui-store"
 
@@ -47,7 +48,6 @@ const ROW_SELECTOR = '[data-slot="preview-row"]'
 
 const IDLE_FALLBACK_MS = 200
 
-// The content pane's name while the preview loads or has failed.
 const PANE_NAME_WITHOUT_FILE = "No file selected"
 
 // The DOM types call this check unnecessary, but Safari before 18.4 lacks
@@ -106,16 +106,10 @@ function useOutputPreview(
   useEffect(() => {
     if (!live) return
 
-    const attempt = new AbortController()
-
-    void (async () => {
-      const state = await buildState(payload, provider)
-      if (!attempt.signal.aborted) setBuilt({ payload, provider, state })
-    })()
-
-    return () => {
-      attempt.abort()
-    }
+    return settleWhileAsked(
+      () => buildState(payload, provider),
+      (state) => setBuilt({ payload, provider, state })
+    )
   }, [payload, provider, live])
 
   return built?.payload === payload && built.provider === provider
@@ -397,18 +391,10 @@ function ContentPane({
   useEffect(() => {
     if (body === "" || known !== undefined) return
 
-    const attempt = new AbortController()
-
-    void (async () => {
-      const lines = await colouredLines(body, lang)
-      if (!attempt.signal.aborted) {
-        setColoured((read) => ({ ...read, [id]: lines }))
-      }
-    })()
-
-    return () => {
-      attempt.abort()
-    }
+    return settleWhileAsked(
+      () => colouredLines(body, lang),
+      (lines) => setColoured((read) => ({ ...read, [id]: lines }))
+    )
   }, [id, body, lang, known])
 
   const lines = known ?? uncoloured(body)

@@ -17,6 +17,7 @@ import {
   useApplyStackRequest,
   type StackSwitchCost,
 } from "@/features/configure/lib/use-apply-stack-request"
+import { counted } from "@/lib/counted"
 import { useAccountStore } from "@/stores/account-store"
 import { activeStacks } from "@/stores/catalog-store"
 import { useConfigStore } from "@/stores/config-store"
@@ -50,7 +51,7 @@ const targetNameOf = (request: StackRequest): string => {
 }
 
 const discarding = (skillCount: number) =>
-  `Switching replaces your current setup, discarding ${skillCount} selected ${skillCount === 1 ? "skill" : "skills"}, their options and their sub-agent assignments.`
+  `Switching replaces your current setup, discarding ${counted(skillCount, "selected skill")}, their options and their sub-agent assignments.`
 
 // True whatever the payload names: built on the marketplace on screen, the
 // stack replaces the setup that would otherwise stay saved.

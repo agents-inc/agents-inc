@@ -23,10 +23,7 @@ import {
   usePinned,
   usePinnedAttribute,
 } from "@/features/configure/lib/use-pinned"
-import {
-  useFocusInsideSkipsClearance,
-  useScrollClearance,
-} from "@/features/configure/lib/use-scroll-clearance"
+import { useScrollClearance } from "@/features/configure/lib/use-scroll-clearance"
 import type { ConfigureSearch } from "@/routes/search"
 import { useConfigStore } from "@/stores/config-store"
 import { useUiStore } from "@/stores/ui-store"
@@ -131,7 +128,6 @@ export function FilterBar({
   usePinnedAttribute(wrapRef)
 
   useScrollClearance(wrapRef, "top")
-  useFocusInsideSkipsClearance(wrapRef, "top")
 
   // The scroll position owns the current tab, a pick included.
   const activeDomain =

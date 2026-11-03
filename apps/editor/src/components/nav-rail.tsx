@@ -99,7 +99,7 @@ type Attempt = { action: AuthAction; refusal: AuthRefusal }
 const attemptOf = (action: AuthAction, result: AuthResult): Attempt | null =>
   result.ok ? null : { action, refusal: result.refusal }
 
-const REFUSAL_COPY: Record<AuthAction, Record<AuthRefusal, string>> = {
+const REFUSAL_COPY = {
   "sign-in": {
     "too-many": "Too many tries — wait a minute",
     refused: "Sign-in was refused",
@@ -110,7 +110,7 @@ const REFUSAL_COPY: Record<AuthAction, Record<AuthRefusal, string>> = {
     refused: "Sign-out was refused",
     unreachable: "Could not reach sign-out",
   },
-}
+} as const satisfies Record<AuthAction, Record<AuthRefusal, string>>
 
 function Marketplace() {
   const setDialog = useUiStore((state) => state.setDialog)
@@ -135,7 +135,10 @@ function Marketplace() {
         {marketplace && (
           <span
             data-slot="marketplace-name"
-            className={`${SECTION_TEXT_CLASS} ${TRUNCATED_TEXT_CLASS} text-ink`}
+            title={marketplace}
+            // No width of its own, so the label sizes the button and a long
+            // name is cut at the label's left edge.
+            className={`${SECTION_TEXT_CLASS} w-0 min-w-full truncate text-right text-ink`}
           >
             {marketplace}
           </span>

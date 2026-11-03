@@ -13,7 +13,9 @@ import { Input } from "@workspace/ui/components/input"
 import { LatticeRow, LatticeRows } from "@workspace/ui/components/lattice"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 
+import { matchesEveryWord } from "@/features/configure/lib/derive"
 import { track } from "@/lib/analytics/track"
+import { counted } from "@/lib/counted"
 import {
   carryLimitRefusal,
   fetchSkillContents,
@@ -25,6 +27,7 @@ import {
   type IndexFreshness,
   type SkillIndexResult,
 } from "@/lib/api/skill-index"
+import { settleWhileAsked } from "@/lib/settle-while-asked"
 import {
   activeCatalog,
   externalSkillId,
@@ -94,11 +97,6 @@ const skillCoordinate = (entry: SkillIndexEntry) =>
 
 const sameSkill = (a: SkillIndexEntry, b: SkillIndexEntry) =>
   skillCoordinate(a) === skillCoordinate(b)
-
-// An early refusal from the index's snapshot; `skill-contents.ts` stays the
-// authority.
-const isTooLargeToAdd = (entry: SkillIndexEntry) =>
-  isPastCarryLimit(entry.bytes)
 
 // Its id follows from entry and category, so it has none until placed.
 type StagedSkill = { entry: SkillIndexEntry; categoryId: string }
@@ -171,15 +169,10 @@ const resolveStaged = async (staged: StagedSkill[]): Promise<Resolution> => {
   return { ok: true, skills }
 }
 
-const matchesTerm = (entry: SkillIndexEntry, needle: string) =>
-  entry.name.toLowerCase().includes(needle) ||
-  entry.description.toLowerCase().includes(needle)
-
-const filterIndex = (skills: SkillIndexEntry[], term: string) => {
-  const needle = term.toLowerCase()
-  if (!needle) return skills
-  return skills.filter((entry) => matchesTerm(entry, needle))
-}
+const filterIndex = (skills: SkillIndexEntry[], term: string) =>
+  skills.filter((entry) =>
+    matchesEveryWord(term, [entry.name, entry.description])
+  )
 
 type IndexState =
   | { status: "loading" }
@@ -228,17 +221,10 @@ export function AddSkillDialog() {
   useEffect(() => {
     if (!open || settled) return
 
-    let live = true
-
-    void fetchSkillIndex().then((result) => {
-      if (!live) return
+    // Not aborted: finishing warms the cache for the next open.
+    return settleWhileAsked(fetchSkillIndex, (result) =>
       setIndex(toIndexState(result))
-    })
-
-    // Ignored, not aborted: finishing warms the cache for the next open.
-    return () => {
-      live = false
-    }
+    )
   }, [open, settled])
 
   const resultCount = results.length
@@ -379,7 +365,8 @@ export function AddSkillDialog() {
                 >
                   {results.map((entry) => {
                     const stagedHere = isStaged(entry)
-                    const tooLarge = isTooLargeToAdd(entry)
+                    // From the index's snapshot; `skill-contents.ts` stays the authority.
+                    const tooLarge = isPastCarryLimit(entry.bytes)
                     return (
                       <LatticeRow
                         key={skillCoordinate(entry)}
@@ -472,7 +459,7 @@ export function AddSkillDialog() {
             disabled={!ready || commit.status === "resolving"}
             onClick={() => void confirm()}
           >
-            Add {staged.length} skill{staged.length === 1 ? "" : "s"}
+            Add {counted(staged.length, "skill")}
           </Button>
         </DialogFooter>
       </DialogContent>

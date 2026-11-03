@@ -16,7 +16,7 @@ import {
   DialogRule,
 } from "@workspace/ui/components/dialog"
 
-import { Fragment, useEffect } from "react"
+import { Fragment, useEffect, type ReactNode } from "react"
 
 import {
   PUBLIC_MARKETPLACE,
@@ -30,10 +30,16 @@ import {
   agentsLeftOutOfCodexNotice,
   untrustedProjectNote,
 } from "@/features/configure/lib/provider"
-import { useInstallCommand } from "@/features/configure/lib/use-install-command"
+import {
+  COMMAND_NOTES,
+  useInstallCommand,
+} from "@/features/configure/lib/use-install-command"
 import { track } from "@/lib/analytics/track"
+import { counted } from "@/lib/counted"
 import type { ConfigSelection } from "@/features/configure/lib/derive"
+import type { MintedFrom } from "@/features/configure/lib/held-global"
 import { useCatalogStore } from "@/stores/catalog-store"
+import { useHeldGlobalStore } from "@/stores/held-global-store"
 import { SKILL_SCOPES } from "@/stores/persisted-schema"
 import { useUiStore } from "@/stores/ui-store"
 
@@ -64,8 +70,32 @@ const INSTALLED_PATHS = {
   },
 } as const satisfies Record<Provider, InstalledPaths>
 
-const counted = (count: number, noun: string) =>
-  `${count} ${noun}${count === 1 ? "" : "s"}`
+type FolderStep = { says: ReactNode; command: string }
+
+// `edit --from` applies a link to the installation of the folder it runs in,
+// and a fresh `init --from` installs into a project.
+const FOLDER_STEPS = {
+  project: {
+    says: (
+      <>
+        Go to your project root — the folder holding{" "}
+        <em className="font-mono text-10 text-ink not-italic">package.json</em>.
+        Project-scoped skills are written relative to it.
+      </>
+    ),
+    command: "cd ~/code/your-project",
+  },
+  global: {
+    says: "Go to your home folder — this link came from your global installation, and the command applies it there.",
+    command: "cd ~",
+  },
+} satisfies Record<MintedFrom, FolderStep>
+
+// In the project a link was minted in, a bare `init` meets its installation.
+const withoutAnId = (mintedFrom: MintedFrom | null) =>
+  mintedFrom === "project"
+    ? "Without an id, this command writes nothing and shows the installation's dashboard, whose first option opens the editor."
+    : "Without an id, this command writes nothing and opens the editor, or, where an installation already exists, shows its dashboard, whose first option opens the editor."
 
 type EjectedCopy = { count: number; folder: string }
 
@@ -80,6 +110,9 @@ const ejectedCopies = (
     folder: folders[scope],
   })).filter((copy) => copy.count > 0)
 
+const linksAPlugin = (inventory: InstallInventory) =>
+  [...inventory.project, ...inventory.global].some((skill) => !isEjected(skill))
+
 function EjectClause({ copies }: { copies: EjectedCopy[] }) {
   if (copies.length === 0) return "ejects no skills"
 
@@ -93,6 +126,38 @@ function EjectClause({ copies }: { copies: EjectedCopy[] }) {
           <em className="font-mono text-10 text-ink not-italic">{folder}</em>
         </Fragment>
       ))}
+    </>
+  )
+}
+
+function WhatItWrites({
+  inventory,
+  paths,
+}: {
+  inventory: InstallInventory
+  paths: InstalledPaths
+}) {
+  const ejects = (
+    <EjectClause copies={ejectedCopies(inventory, paths.ejectedSkills)} />
+  )
+
+  return (
+    <>
+      It writes{" "}
+      <em className="font-mono text-10 text-ink not-italic">
+        {paths.configTs}
+      </em>{" "}
+      and {paths.agentFiles},{" "}
+      {linksAPlugin(inventory) ? (
+        <>{ejects}, and links the rest as plugins</>
+      ) : (
+        <>and {ejects}</>
+      )}
+      . Global skills land in{" "}
+      <em className="font-mono text-10 text-ink not-italic">
+        {paths.globalRoot}
+      </em>
+      .
     </>
   )
 }
@@ -224,6 +289,16 @@ function MarkedId({ text, id }: { text: string; id: string }) {
   )
 }
 
+// A box per part, so a line breaks between parts, never inside one.
+function NoteParts({ parts }: { parts: string[] }) {
+  return parts.map((part, index) => (
+    <Fragment key={part}>
+      {index > 0 && " · "}
+      <span className="inline-block">{part}</span>
+    </Fragment>
+  ))
+}
+
 // No Install button: installing is a CLI action.
 export function InstallDialog({ config }: { config: ConfigSelection }) {
   const dialog = useUiStore((state) => state.dialog)
@@ -233,6 +308,7 @@ export function InstallDialog({ config }: { config: ConfigSelection }) {
   // dialog survives a swap underneath it.
   const marketplace = useCatalogStore((state) => state.marketplace)
   const provider = useUiStore((state) => state.provider)
+  const mintedFrom = useHeldGlobalStore((state) => state.mintedFrom)
   const paths = INSTALLED_PATHS[provider]
 
   const inventory = selectInstallInventory(config, provider)
@@ -247,7 +323,12 @@ export function InstallDialog({ config }: { config: ConfigSelection }) {
   // The furthest the funnel can observe.
   const open = dialog === "install"
 
-  const { command, copied, copy, note, text } = useInstallCommand(config, open)
+  const { appliesTo, command, copied, copy, note, text } = useInstallCommand(
+    config,
+    open
+  )
+  const folder = FOLDER_STEPS[appliesTo ?? "project"]
+
   useEffect(() => {
     if (!open) return
 
@@ -282,8 +363,7 @@ export function InstallDialog({ config }: { config: ConfigSelection }) {
           }
         />
 
-        {/* In a short window both lists scroll here as one, and they are
-            mostly text, so the row itself takes focus for the keyboard. */}
+        {/* The lists are mostly text, so the row holding both takes focus. */}
         <DialogPanes
           role="region"
           aria-label="Skills and agents"
@@ -323,13 +403,9 @@ export function InstallDialog({ config }: { config: ConfigSelection }) {
               </span>
               <div className="min-w-0 flex-1">
                 <p className="pb-1.5 text-11 leading-[1.5] text-ink-3">
-                  Go to your project root — the folder holding{" "}
-                  <em className="font-mono text-10 text-ink not-italic">
-                    package.json
-                  </em>
-                  . Project-scoped skills are written relative to it.
+                  {folder.says}
                 </p>
-                <CommandBlock>cd ~/code/your-project</CommandBlock>
+                <CommandBlock>{folder.command}</CommandBlock>
               </div>
             </div>
 
@@ -339,19 +415,12 @@ export function InstallDialog({ config }: { config: ConfigSelection }) {
               </span>
               <div className="min-w-0 flex-1">
                 <p className="pb-1.5 text-11 leading-[1.5] text-ink-3">
-                  Run the installer. It writes{" "}
-                  <em className="font-mono text-10 text-ink not-italic">
-                    {paths.configTs}
-                  </em>{" "}
-                  and {paths.agentFiles},{" "}
-                  <EjectClause
-                    copies={ejectedCopies(inventory, paths.ejectedSkills)}
-                  />
-                  , and links the rest as plugins. Global skills land in{" "}
-                  <em className="font-mono text-10 text-ink not-italic">
-                    {paths.globalRoot}
-                  </em>
-                  .
+                  Run the installer.{" "}
+                  {command.status === "ready" ? (
+                    <WhatItWrites inventory={inventory} paths={paths} />
+                  ) : (
+                    withoutAnId(mintedFrom)
+                  )}
                 </p>
                 <CommandBlock
                   copyable
@@ -365,13 +434,22 @@ export function InstallDialog({ config }: { config: ConfigSelection }) {
                     text
                   )}
                 </CommandBlock>
-                {/* Always rendered, so the block never shifts when clicked. */}
+                {/* Always drawn, with "copied" laid over the note, so a click moves nothing. */}
                 <p
-                  className={`pt-1.5 font-mono text-8 font-medium tracking-[.13em] uppercase ${
+                  className={`grid pt-1.5 font-mono text-8 font-medium tracking-[.13em] uppercase ${
                     copied ? "text-brand-ink" : "text-muted-foreground"
                   }`}
                 >
-                  {note}
+                  <span
+                    className={`col-start-1 row-start-1 ${copied ? "invisible" : ""}`}
+                  >
+                    <NoteParts parts={note} />
+                  </span>
+                  {copied && (
+                    <span className="col-start-1 row-start-1">
+                      {COMMAND_NOTES.copied}
+                    </span>
+                  )}
                 </p>
                 {/* An untrusted Codex project silently ignores sub-agents. */}
                 {provider === "codex" && (

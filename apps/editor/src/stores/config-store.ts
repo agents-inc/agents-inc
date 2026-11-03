@@ -29,18 +29,23 @@ import {
 } from "@/features/configure/lib/held-global"
 import { track } from "@/lib/analytics/track"
 import { reportIssue, reportableIssues } from "@/lib/observability/report"
+import { entriesWhere } from "@/lib/entries-where"
+import { mapValues } from "@/lib/map-values"
 import { sayInToasts } from "@/lib/toast"
+import { withoutKey } from "@/lib/without-key"
 import {
-  activeCatalog,
   activeExternalSkill,
   activeMarketplace,
   activeSkillById,
+  exclusiveCategoryOf,
   expandActiveStack,
+  isInCategory,
 } from "./catalog-store"
 import { activeHeldGlobal, useHeldGlobalStore } from "./held-global-store"
 import {
   DEFAULT_SKILL_OPTIONS,
   PERSIST_VERSION,
+  holdsLiveSkill,
   isAgentOn,
   isKnownSkill,
   isWorthRemembering,
@@ -104,11 +109,6 @@ const EMPTY: PersistedConfig = {
   description: undefined,
 }
 
-const withoutKey = <T>(record: Record<string, T>, key: string) => {
-  const { [key]: _removed, ...rest } = record
-  return rest
-}
-
 const partition = <T>(items: readonly T[], matches: (item: T) => boolean) => {
   const matched: T[] = []
   const rest: T[] = []
@@ -160,28 +160,19 @@ const lostKeys = (before: object, after: object) =>
 const lostStack = (before: string | null, after: string | null) =>
   before !== null && after === null ? [before] : []
 
-// The saved ids a prune could not place, for the visitor. `remembered` is left
-// out: nothing shows its loss.
+// A saved configuration, or a payload being adopted.
+type IdBearing = { stackId: string | null; skills: object; agents: object }
+
+// The ids a prune could not place, for the visitor. `remembered` is left out:
+// nothing shows its loss.
 export const unknownSavedIds = (
-  before: PersistedConfig,
-  after: PersistedConfig
+  before: IdBearing,
+  after: IdBearing
 ): string[] => [
   ...lostKeys(before.skills, after.skills),
   ...lostKeys(before.agents, after.agents),
   ...lostStack(before.stackId, after.stackId),
 ]
-
-const isInCategory = (skillId: string, categoryId: string) =>
-  activeSkillById(skillId)?.categoryId === categoryId
-
-const exclusiveCategoryOf = (skillId: string) => {
-  const categoryId = activeSkillById(skillId)?.categoryId
-  if (!categoryId) return undefined
-
-  return activeCatalog().categoriesById[categoryId]?.exclusive
-    ? categoryId
-    : undefined
-}
 
 const setAside = (
   remembered: SkillMap,
@@ -225,12 +216,7 @@ const atGlobalIfProjectPlugin = (entry: SkillEntry): SkillEntry =>
 const withProjectPluginsAtGlobal = (remembered: SkillMap): SkillMap => {
   if (!Object.values(remembered).some(isProjectPlugin)) return remembered
 
-  return Object.fromEntries(
-    Object.entries(remembered).map(([skillId, entry]) => [
-      skillId,
-      atGlobalIfProjectPlugin(entry),
-    ])
-  )
+  return mapValues(remembered, atGlobalIfProjectPlugin)
 }
 
 const deselect = (
@@ -297,11 +283,6 @@ const withOfferedInstall = (
   isEjectOnly(skillId) && patch.install === "plugin"
     ? { ...patch, install: "eject" }
     : patch
-
-const holdsLiveSkill = (config: PersistedConfig, agentId: string) =>
-  Object.values(config.skills).some(
-    (entry) => entry.assignments[agentId]?.enabled
-  )
 
 const lostItsLastSkill = (
   before: PersistedConfig,
@@ -559,9 +540,7 @@ const isPersistable = (skillId: string) =>
   isKnownSkill(skillId) && activeExternalSkill(skillId) === undefined
 
 const onlyPersistableSkills = (skills: SkillMap) =>
-  Object.fromEntries(
-    Object.entries(skills).filter(([skillId]) => isPersistable(skillId))
-  )
+  entriesWhere(skills, isPersistable)
 
 // Persist's own default, named so `withoutWrites` has something to wrap.
 // `undefined` where there is no localStorage.

@@ -711,6 +711,23 @@ describe("matchesSavedStack", () => {
 
     expect(matchesSavedStack(config(), elsewhere)).toBe(false)
   })
+
+  // A row to a sub-agent that is off installs nothing, as `init --from` reads it.
+  it("says yes to a save whose row reaches a sub-agent it switches off", () => {
+    const { [SKILL]: skill } = saved().skills
+    const withOffRow: SeedPayload = {
+      ...saved(),
+      skills: {
+        [SKILL]: {
+          ...skill!,
+          assignments: { ...skill!.assignments, [OTHER_AGENT]: "lazy" },
+        },
+      },
+      agents: { ...saved().agents, [OTHER_AGENT]: { on: false } },
+    }
+
+    expect(matchesSavedStack(config(), withOffRow)).toBe(true)
+  })
 })
 
 // The CLI mints with `stackId: null`, so the stack is recognised by contents.

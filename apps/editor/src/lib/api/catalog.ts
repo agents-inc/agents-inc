@@ -1,3 +1,5 @@
+// Subpaths: the barrel parses the whole vendored matrix at import.
+import { GITHUB_API_ORIGIN } from "@workspace/matrix/github-tree"
 import { matrixSchema, type Matrix } from "@workspace/matrix/matrix-schema"
 
 import { reportIssue, reportableIssues } from "@/lib/observability/report"
@@ -5,10 +7,6 @@ import { reportIssue, reportableIssues } from "@/lib/observability/report"
 // A marketplace's catalogue, fetched from GitHub directly so an org's catalogue
 // and token never pass through our worker. A failure carries a kind, because
 // each has a different fix.
-
-// The subpath: the barrel parses the whole vendored matrix at import.
-
-const GITHUB_API_ORIGIN = "https://api.github.com"
 
 // The CLI spells this in `consts.ts`; a test pins `catalogUrl` to it.
 const CATALOG_PATH = ".claude-plugin/catalog.json"
@@ -77,6 +75,13 @@ export type CatalogFailure = { kind: CatalogFailureKind; error: string }
 
 export type CatalogResult =
   { ok: true; matrix: Matrix } | ({ ok: false } & CatalogFailure)
+
+/**
+ * Whether a token might change the answer: an unreadable catalogue fails the
+ * same however it is authorized.
+ */
+export const tokenCouldFix = ({ kind }: CatalogFailure) =>
+  kind === "unauthorized"
 
 // The statuses a token can change.
 const TOKEN_MIGHT_FIX = new Set([401, 403, 404])

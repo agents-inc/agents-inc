@@ -2,6 +2,8 @@ import { Button } from "@workspace/ui/components/button"
 import { Glyph } from "@workspace/ui/components/glyph"
 import { useId } from "react"
 
+import { counted } from "@/lib/counted"
+
 // A reviewable changeset: nothing applies until `Apply` is pressed. A rendering
 // contract, not a wire one; `lib/compose-proposal.ts` maps the model onto it.
 
@@ -51,7 +53,7 @@ const totalOf = (groups: ProposalGroup[]) =>
 const totalLabel = (total: number) => {
   if (total === 0) return NO_CHANGES
 
-  return `${total} ${total === 1 ? "change" : "changes"}`
+  return counted(total, "change")
 }
 
 function Row({ row }: { row: ProposalRow }) {
@@ -113,8 +115,7 @@ export function ProposalBlock({
         )}
       </div>
 
-      {/* Its rows hold nothing to focus, so the list is what the keyboard
-          scrolls once the cap is reached. */}
+      {/* Its rows hold nothing to focus, so the list itself takes focus. */}
       {proposal.groups.length > 0 && (
         <div
           role="region"

@@ -8,6 +8,8 @@ import {
 } from "@workspace/matrix"
 import { z } from "zod"
 
+import { entriesWhere } from "@/lib/entries-where"
+import { mapValues } from "@/lib/map-values"
 import { reportIssue } from "@/lib/observability/report"
 import { activeCatalog, activeStacks } from "./catalog-store"
 
@@ -217,16 +219,20 @@ export const reachesAgent = (
 ) =>
   isScopePairCompatible(skillScope, resolveAgentOptions(agents, agentId).scope)
 
+export const holdsLiveSkill = (
+  config: Pick<PersistedConfig, "skills">,
+  agentId: string
+) =>
+  Object.values(config.skills).some(
+    (entry) => entry.assignments[agentId]?.enabled
+  )
+
 // An explicit pin wins; otherwise an agent is on when it holds an enabled
 // skill. Scope is not asked: `summarize` gates Install and Share instead.
 export const isAgentOn = (
   config: Pick<PersistedConfig, "skills" | "agents">,
   agentId: string
-) =>
-  config.agents[agentId]?.on ??
-  Object.values(config.skills).some(
-    (entry) => entry.assignments[agentId]?.enabled
-  )
+) => config.agents[agentId]?.on ?? holdsLiveSkill(config, agentId)
 
 // Only the empty entry is dropped: restoring it equals creating it fresh, and
 // a stack-applied one carries assignments.
@@ -260,9 +266,7 @@ const isKnownStack = (stackId: string | null) =>
   activeStacks().some((stack) => stack.id === stackId)
 
 const onlyKnownAgents = <T>(byAgent: Record<string, T>) =>
-  Object.fromEntries(
-    Object.entries(byAgent).filter(([agentId]) => isKnownAgent(agentId))
-  )
+  entriesWhere(byAgent, isKnownAgent)
 
 const pruneEntry = (entry: SkillEntry): SkillEntry => ({
   ...entry,
@@ -270,11 +274,7 @@ const pruneEntry = (entry: SkillEntry): SkillEntry => ({
 })
 
 const pruneSkillMap = (skills: PersistedConfig["skills"]) =>
-  Object.fromEntries(
-    Object.entries(skills)
-      .filter(([skillId]) => isKnownSkill(skillId))
-      .map(([skillId, entry]) => [skillId, pruneEntry(entry)])
-  )
+  mapValues(entriesWhere(skills, isKnownSkill), pruneEntry)
 
 // Spread first, so a field naming no id passes through untouched.
 export const pruneUnknownIds = (config: PersistedConfig): PersistedConfig => ({

@@ -23,6 +23,7 @@ import { useLocalSavesOnGrid } from "@/features/configure/lib/save-stack"
 import { matchesSavedStack } from "@/features/configure/lib/seed"
 import { useChooseStack } from "@/features/configure/lib/use-apply-stack-request"
 import { useLatticeColumns } from "@/features/configure/lib/use-lattice-columns"
+import { counted } from "@/lib/counted"
 import { expandActiveStack, useCatalogStore } from "@/stores/catalog-store"
 import { useConfigStore } from "@/stores/config-store"
 import { useHeldGlobalStore } from "@/stores/held-global-store"
@@ -72,9 +73,7 @@ const SCRATCH_AT_REST = {
 // what a project's link holds.
 const clearedScratchWords = (removedCount: number, keepsGlobal: boolean) => ({
   name: CLEARED_SCRATCH_NAME,
-  members: `removes ${removedCount} ${
-    removedCount === 1 ? "skill" : "skills"
-  } and every sub-agent${keepsGlobal ? " not installed globally" : ""}`,
+  members: `removes ${counted(removedCount, "skill")} and every sub-agent${keepsGlobal ? " not installed globally" : ""}`,
 })
 
 // The first cell is the reset, and once there is something to clear both its

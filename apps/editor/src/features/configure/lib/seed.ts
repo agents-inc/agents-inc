@@ -8,6 +8,8 @@ import {
   type SeedSkill,
 } from "@workspace/matrix"
 
+import { entriesWhere } from "@/lib/entries-where"
+import { mapValues } from "@/lib/map-values"
 import {
   activeExternalSkill,
   activeMarketplace,
@@ -16,7 +18,11 @@ import {
   useCatalogStore,
   type ExternalSkill,
 } from "@/stores/catalog-store"
-import { activeDescription, stackSelection } from "@/stores/config-store"
+import {
+  activeDescription,
+  stackSelection,
+  unknownSavedIds,
+} from "@/stores/config-store"
 import {
   isAgentOn,
   isKnownSkill,
@@ -28,11 +34,6 @@ import {
 } from "@/stores/persisted-schema"
 
 import type { ConfigSelection } from "./derive"
-
-const mapValues = <T, U>(record: Record<string, T>, to: (value: T) => U) =>
-  Object.fromEntries(
-    Object.entries(record).map(([key, value]) => [key, to(value)])
-  )
 
 // Presence on the wire means "installs". A row whose scopes cannot meet still
 // travels: it is an on-screen error, not a row to strip.
@@ -157,9 +158,7 @@ const assignedAgents = (skills: PersistedConfig["skills"]) => [
 
 const withKnownSkillsOnly = (config: PersistedConfig): PersistedConfig => ({
   ...config,
-  skills: Object.fromEntries(
-    Object.entries(config.skills).filter(([skillId]) => isKnownSkill(skillId))
-  ),
+  skills: entriesWhere(config.skills, isKnownSkill),
 })
 
 const pinnedOn = (agents: PersistedConfig["agents"], agentIds: string[]) => ({
@@ -253,9 +252,7 @@ const installedRows = (
 ) => ({
   install,
   scope,
-  assignments: Object.fromEntries(
-    Object.entries(assignments).filter(([agentId]) => isOn(agentId))
-  ),
+  assignments: entriesWhere(assignments, isOn),
 })
 
 const agentsNamedIn = (payload: SeedPayload) => [
@@ -292,17 +289,7 @@ const inKeyOrder = (value: unknown): unknown =>
 export const unknownPayloadIds = (
   payload: SeedPayload,
   adopted: PersistedConfig
-): string[] => [
-  ...lost(payload.skills, adopted.skills),
-  ...lost(payload.agents, adopted.agents),
-  ...lostStack(payload.stackId, adopted.stackId),
-]
-
-const lost = (before: object, after: object) =>
-  Object.keys(before).filter((id) => !(id in after))
-
-const lostStack = (before: string | null, after: string | null) =>
-  before !== null && after === null ? [before] : []
+): string[] => unknownSavedIds(payload, adopted)
 
 const externalFromPayload = (payload: SeedPayload): ExternalSkill[] =>
   Object.entries(payload.external ?? {}).map(([id, skill]) => ({

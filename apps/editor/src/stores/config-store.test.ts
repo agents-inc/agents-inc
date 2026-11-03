@@ -902,6 +902,25 @@ describe("picking a skill whose category takes one", () => {
   })
 })
 
+describe("picking a skill whose category takes several", () => {
+  const STYLING_SIBLING = "web-styling-cva"
+
+  afterEach(() => {
+    useConfigStore.getState().reset()
+  })
+
+  it("keeps the skill already picked in it", () => {
+    useConfigStore.getState().toggleSkill(OTHER_CATEGORY_SKILL)
+
+    useConfigStore.getState().toggleSkill(STYLING_SIBLING)
+
+    expect(Object.keys(held().skills)).toStrictEqual([
+      OTHER_CATEGORY_SKILL,
+      STYLING_SIBLING,
+    ])
+  })
+})
+
 describe("deselecting a skill", () => {
   afterEach(() => {
     useConfigStore.getState().reset()
@@ -2096,6 +2115,20 @@ describe("a sub-agent's stored choices", () => {
     useConfigStore.getState().toggleAgentPin(KNOWN_AGENT)
 
     expect(storedFor()).toStrictEqual({ model: otherModel, on: true })
+  })
+
+  it("keeps a pin while another skill still reaches the sub-agent", () => {
+    startingFrom({
+      skills: {
+        [KNOWN_SKILL]: skillCarriedBy([KNOWN_AGENT]),
+        [OTHER_CATEGORY_SKILL]: skillCarriedBy([KNOWN_AGENT]),
+      },
+      agents: { [KNOWN_AGENT]: { on: true } },
+    })
+
+    useConfigStore.getState().toggleSkill(OTHER_CATEGORY_SKILL)
+
+    expect(storedFor()).toStrictEqual({ on: true })
   })
 
   it.each([

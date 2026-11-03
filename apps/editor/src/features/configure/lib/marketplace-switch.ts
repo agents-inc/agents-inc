@@ -1,3 +1,4 @@
+import { counted } from "@/lib/counted"
 import type { PersistedConfig } from "@/stores/persisted-schema"
 import type { Matrix } from "@workspace/matrix/matrix-schema"
 
@@ -63,13 +64,11 @@ const isEmptySelection = ({ stackId, skills, agents }: Selection) =>
 const droppedBy = (target: Matrix, selectedIds: string[]) =>
   selectedIds.filter((skillId) => !(skillId in target.skills))
 
-const skillWord = (count: number) => (count === 1 ? "skill" : "skills")
-
 export const losesNothing = (marketplace: string) =>
   `Switching to ${marketplace} loses nothing — it carries every skill you have selected.`
 
 const dropsSkills = (marketplace: string, dropped: string[], total: number) =>
-  `Switching to ${marketplace} will drop ${dropped.length} of your ${total} ${skillWord(total)}: ${dropped.map(displayNameOf).join(", ")}.`
+  `Switching to ${marketplace} will drop ${dropped.length} of your ${counted(total, "skill")}: ${dropped.map(displayNameOf).join(", ")}.`
 
 const opensItsOwn = (marketplace: string) =>
   `Switching to ${marketplace} opens the configuration saved with it, or a new one.`

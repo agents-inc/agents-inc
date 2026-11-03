@@ -1,3 +1,7 @@
+import {
+  savedStackSchema,
+  type SavedStack,
+} from "@workspace/matrix/worker-responses"
 import { z } from "zod"
 
 import { reportIssue } from "@/lib/observability/report"
@@ -5,17 +9,8 @@ import { reportIssue } from "@/lib/observability/report"
 import { api } from "./client"
 
 // A saved stack is a name and a pointer to the KV id `POST /configs` minted.
-
 // Revalidated: the response types describe the worker this was built against.
-const savedStackSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  configId: z.string(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-})
-
-export type RemoteStack = z.infer<typeof savedStackSchema>
+export type RemoteStack = SavedStack
 
 /**
  * `signed-out` and `taken` name an action: sign in, or pick another name. The

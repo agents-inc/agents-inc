@@ -17,7 +17,7 @@ import {
   type RecoveryEndings,
   type Unseated,
 } from "./seat-catalog"
-import { heldGlobalOf } from "./held-global"
+import { heldGlobalOf, mintedFromOf } from "./held-global"
 import { adoptSeedPayload, recogniseStack, unknownPayloadIds } from "./seed"
 
 import type { SeedPayload } from "@workspace/matrix"
@@ -141,6 +141,7 @@ const applyShared = (payload: SeedPayload) => {
   const opened = recogniseStack(payload, adopted)
   useConfigStore.getState().importConfig(opened)
   useHeldGlobalStore.getState().hold(heldGlobalOf(payload, opened))
+  useHeldGlobalStore.getState().setMintedFrom(mintedFromOf(payload))
   say(
     sentences([
       SHARED_NOTICE,

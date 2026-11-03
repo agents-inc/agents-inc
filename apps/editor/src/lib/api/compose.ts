@@ -1,3 +1,7 @@
+import {
+  proposalSchema,
+  type Proposal,
+} from "@workspace/matrix/worker-responses"
 import { z } from "zod"
 
 import { reportIssue } from "@/lib/observability/report"
@@ -6,19 +10,12 @@ import { api } from "./client"
 
 // The worker owns the model, the key, the prompt and the rate limit; only skill
 // ids come back.
-const proposalSchema = z.object({
-  skillIds: z.array(z.string()),
-  reason: z.string(),
-})
-
-type ComposedProposal = z.infer<typeof proposalSchema>
 
 export type ComposeRefusal =
   "signed-out" | "too-many" | "too-long" | "refused" | "unreachable"
 
 export type ComposeResult =
-  | { ok: true; proposal: ComposedProposal }
-  | { ok: false; refusal: ComposeRefusal }
+  { ok: true; proposal: Proposal } | { ok: false; refusal: ComposeRefusal }
 
 const REFUSAL_BY_STATUS: Record<number, ComposeRefusal> = {
   401: "signed-out",

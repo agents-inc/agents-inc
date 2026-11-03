@@ -13,6 +13,7 @@ import {
   selectInstalledAgents,
   selectRosterGroups,
   selectUnofferedPlacements,
+  spokenAgentName,
   summarize,
   type ConfigSelection,
   type ConfigSummary,
@@ -29,6 +30,7 @@ import {
   unofferedPlacementLabel,
 } from "@/features/configure/lib/provider"
 import { useShareLink } from "@/features/configure/lib/use-share-link"
+import { counted } from "@/lib/counted"
 import { useConfigStore } from "@/stores/config-store"
 import { useHeldGlobalStore } from "@/stores/held-global-store"
 import { ROSTER_GROUP_BYS, type RosterGroupBy } from "@/stores/persisted-schema"
@@ -37,8 +39,7 @@ import { useUiStore } from "@/stores/ui-store"
 // The agent count is the provider's, not the configuration's: a Codex install
 // drops both summoners, so it is passed in from `selectInstalledAgents`.
 const installLabel = (agentCount: number, { skillCount }: ConfigSummary) =>
-  `${agentCount} ${agentCount === 1 ? "agent" : "agents"} · ` +
-  `${skillCount} ${skillCount === 1 ? "skill" : "skills"}`
+  `${counted(agentCount, "agent")} · ${counted(skillCount, "skill")}`
 
 // On the button rather than in a tooltip: a disabled button never opens one.
 const blockedLabel = (count: number) =>
@@ -87,9 +88,6 @@ type UseTip = {
   right: number
   top: number
 }
-
-const tipName = (agent: SubAgent) =>
-  `${DOMAIN_LABELS[agent.domainId].toLowerCase()} ${agent.label.toLowerCase()}`
 
 const toTipRows = (usedBy: SubAgent[], fromAgentId: string) =>
   usedBy.map((agent, index) => ({
@@ -146,7 +144,7 @@ function WhereUsedTip({ tip, usedBy }: { tip: UseTip; usedBy: SubAgent[] }) {
               here ? "text-brand-ink" : "text-matrix-ink"
             )}
           >
-            {tipName(agent)}
+            {spokenAgentName(agent)}
           </span>
         </div>
       ))}

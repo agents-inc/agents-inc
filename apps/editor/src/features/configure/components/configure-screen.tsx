@@ -79,77 +79,85 @@ export function ConfigureScreen() {
 
   return (
     <>
-      <main className="min-w-0 bg-column px-gutter pt-0">
-        {notice && (
-          <p
-            role="alert"
-            className="pt-4 font-mono text-11 text-muted-foreground italic"
-          >
-            {notice}
-          </p>
-        )}
+      <main className="flex min-h-svh min-w-0 flex-col bg-column px-gutter pt-0">
+        {/* One block: as flex items, the steps' margins would stop collapsing. */}
+        <div>
+          {notice && (
+            <p
+              role="alert"
+              className="pt-4 font-mono text-11 text-muted-foreground italic"
+            >
+              {notice}
+            </p>
+          )}
 
-        {/* No `aria-controls`: an unmounted step has no id to point at. */}
-        <Hinge
-          index="01"
-          label="choose your"
-          emphasis="provider"
-          expanded={!providerCollapsed}
-          onToggle={toggleProviderCollapsed}
-        />
-        {!providerCollapsed && <ProviderGrid />}
+          {/* No `aria-controls`: an unmounted step has no id to point at. */}
+          <Hinge
+            index="01"
+            label="choose your"
+            emphasis="provider"
+            expanded={!providerCollapsed}
+            onToggle={toggleProviderCollapsed}
+          />
+          {!providerCollapsed && <ProviderGrid />}
 
-        <Hinge
-          index="02"
-          label="then your"
-          emphasis="stack"
-          expanded={!stackCollapsed}
-          onToggle={toggleStackCollapsed}
-        />
-        {!stackCollapsed && <StackGrid />}
+          <Hinge
+            index="02"
+            label="then your"
+            emphasis="stack"
+            expanded={!stackCollapsed}
+            onToggle={toggleStackCollapsed}
+          />
+          {!stackCollapsed && <StackGrid />}
 
-        <Hinge
-          index="03"
-          label="then your"
-          emphasis="sub-agents"
-          expanded={!agentsCollapsed}
-          onToggle={toggleAgentsCollapsed}
-        />
-        {!agentsCollapsed && <SubAgentGrid config={config} />}
+          <Hinge
+            index="03"
+            label="then your"
+            emphasis="sub-agents"
+            expanded={!agentsCollapsed}
+            onToggle={toggleAgentsCollapsed}
+          />
+          {!agentsCollapsed && <SubAgentGrid config={config} />}
 
-        <Hinge
-          index="04"
-          label={stack ? "then customise" : "then"}
-          emphasis={stack ? stack.name.toLowerCase() : "pick your skills"}
-          expanded={!skillsCollapsed}
-          onToggle={toggleSkillsCollapsed}
-        />
-        {!skillsCollapsed && (
-          <>
-            <FilterBar
-              search={search}
-              tabs={domainTabs}
-              renderedDomains={renderedDomains}
-            />
+          <Hinge
+            index="04"
+            label={stack ? "then customise" : "then"}
+            emphasis={stack ? stack.name.toLowerCase() : "pick your skills"}
+            expanded={!skillsCollapsed}
+            onToggle={toggleSkillsCollapsed}
+          />
+          {!skillsCollapsed && (
+            <>
+              <FilterBar
+                search={search}
+                tabs={domainTabs}
+                renderedDomains={renderedDomains}
+              />
 
-            {domainViews.length === 0 ? (
-              <p className="pt-[1.875rem] font-mono text-11 text-muted-foreground">
-                No skills match this filter.
-              </p>
-            ) : (
-              domainViews.map((view, index) => (
-                <DomainSection key={view.id} view={view} first={index === 0} />
-              ))
-            )}
-          </>
-        )}
+              {domainViews.length === 0 ? (
+                <p className="pt-[1.875rem] font-mono text-11 text-muted-foreground">
+                  No skills match this filter.
+                </p>
+              ) : (
+                domainViews.map((view, index) => (
+                  <DomainSection
+                    key={view.id}
+                    view={view}
+                    first={index === 0}
+                  />
+                ))
+              )}
+            </>
+          )}
 
-        {/* Room for an options panel past the catalogue's end. */}
-        <div {...{ [PANEL_ROOM]: "" }} />
+          {/* Room for an options panel past the catalogue's end. */}
+          <div {...{ [PANEL_ROOM]: "" }} />
+        </div>
 
-        {/* Clicks beside the dock fall through to the cells. Nothing may pad
+        {/* `mt-auto` holds it on the window's foot when the column is short.
+            Clicks beside the dock fall through to the cells. Nothing may pad
             below it: a sticky box cannot leave its block. */}
-        <div className="pointer-events-none sticky bottom-0 z-60">
+        <div className="pointer-events-none sticky bottom-0 z-60 mt-auto">
           <Composer />
         </div>
       </main>

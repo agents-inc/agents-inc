@@ -31,7 +31,6 @@ const local = (name: string, payload: SeedPayload) => ({
   payload,
 })
 
-// A row the worker answered a save with: as sent, under an id it minted.
 const minted = (name: string, configId?: string) => {
   const row: Record<keyof RemoteStack, unknown> = {
     ...savedStack(name, configId),

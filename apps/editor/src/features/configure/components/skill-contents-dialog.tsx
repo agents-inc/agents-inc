@@ -68,8 +68,7 @@ function Contents({ contents }: { contents: SkillContents }) {
       {/* A floor, not a height (the flex basis wins), so Close stays put as
           files are picked. Each pane scrolls on its own. */}
       <DialogPanes className="min-h-[26rem] overflow-hidden">
-        {/* The text holds nothing to focus, so the pane is what the keyboard
-            scrolls, named by the path it shows. */}
+        {/* The text holds nothing to focus, so the pane itself takes focus. */}
         <DialogPane
           side="left"
           role="region"

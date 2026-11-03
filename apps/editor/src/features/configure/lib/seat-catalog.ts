@@ -21,18 +21,18 @@ export type MarketplaceRecovery = Unseated & RecoveryEndings
 // Both seats are idempotent: re-seating refetches and drops this session's
 // external skills.
 
-// Writes nothing to the stored slot: a link may change the tab, not the choice.
 // The token is keyed by marketplace, so a link cannot make this browser send
 // its PAT to a repository it was not issued for.
+export const fetchFiledCatalog = (marketplace: string) =>
+  fetchCatalog(marketplace, tokenFor(marketplace) || undefined)
+
+// Writes nothing to the stored slot: a link may change the tab, not the choice.
 const seatMarketplace = async (
   marketplace: string
 ): Promise<CatalogFailure | null> => {
   if (marketplace === activeMarketplace()) return null
 
-  const result = await fetchCatalog(
-    marketplace,
-    tokenFor(marketplace) || undefined
-  )
+  const result = await fetchFiledCatalog(marketplace)
   if (!result.ok) return result
 
   useCatalogStore.getState().load(result.matrix, marketplace)
@@ -69,7 +69,13 @@ export const seatCatalog = async (
   return failure ? { marketplace: named, failure } : null
 }
 
-const catalogueName = () => activeMarketplace() ?? "the public catalogue"
+const PUBLIC_CATALOGUE = "the public catalogue"
+
+/** A marketplace as the visitor reads it; `""` is the public catalogue. */
+export const catalogueNameOf = (marketplace: string) =>
+  marketplace || PUBLIC_CATALOGUE
+
+const seatedCatalogueName = () => activeMarketplace() ?? PUBLIC_CATALOGUE
 
 export const parkedNotice = (what: string, marketplace: string) =>
   `${what}'s skills come from ${marketplace}, which could not be loaded — nothing from it was applied. Load it from Marketplace to finish.`
@@ -77,4 +83,4 @@ export const parkedNotice = (what: string, marketplace: string) =>
 export const droppedNotice = (unknownIds: string[]) =>
   unknownIds.length === 0
     ? null
-    : `Not in ${catalogueName()}, so not applied: ${unknownIds.join(", ")}.`
+    : `Not in ${seatedCatalogueName()}, so not applied: ${unknownIds.join(", ")}.`

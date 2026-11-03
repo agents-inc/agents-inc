@@ -106,10 +106,10 @@ const PROJECT_BASE = "./"
 
 type PreviewBase = typeof GLOBAL_BASE | typeof PROJECT_BASE
 
-const SCOPE_OF: Record<PreviewBase, SkillScope> = {
+const SCOPE_OF = {
   [GLOBAL_BASE]: "global",
   [PROJECT_BASE]: "project",
-}
+} as const satisfies Record<PreviewBase, SkillScope>
 
 export async function buildOutputPreview(
   payload: SeedPayload,

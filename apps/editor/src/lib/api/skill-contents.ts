@@ -1,5 +1,11 @@
 import { MAX_EXTERNAL_SKILL_BYTES, type SeedSkillTree } from "@workspace/matrix"
-import { z } from "zod"
+import {
+  GITHUB_API_ORIGIN,
+  GITHUB_RAW_ORIGIN,
+  blobsUnder,
+  gitTreeSchema,
+  type TreeBlob,
+} from "@workspace/matrix/github-tree"
 
 import { reportIssue } from "@/lib/observability/report"
 
@@ -8,30 +14,12 @@ import { reportIssue } from "@/lib/observability/report"
 // 60/hour); the files come from raw.githubusercontent.com, which has no rate
 // limit.
 
-const GITHUB_API_ORIGIN = "https://api.github.com"
-const GITHUB_RAW_ORIGIN = "https://raw.githubusercontent.com"
-
 // The index carries no ref.
 const DEFAULT_REF = "HEAD"
 
 const SKILL_MANIFEST = "SKILL.md"
 
 const BYTES_PER_KB = 1024
-
-// Sizes come from the tree, so the cap is answered before downloading.
-const treeSchema = z.object({
-  // Only matters when the prefix then matches nothing.
-  truncated: z.boolean(),
-  tree: z.array(
-    z.object({
-      path: z.string(),
-      type: z.string(),
-      size: z.number().optional(),
-    })
-  ),
-})
-
-type Blob = { path: string; size: number }
 
 /** `not-text`: a non-UTF-8 file would be corrupted on someone's disk. */
 type SkillContentsFailureKind =
@@ -81,7 +69,7 @@ const notText = (where: string): SkillContentsResult => ({
 })
 
 type ListResult =
-  { ok: true; blobs: Blob[] } | { ok: false; failure: SkillContentsResult }
+  { ok: true; blobs: TreeBlob[] } | { ok: false; failure: SkillContentsResult }
 
 // `undefined` when the request never landed. Not reported: an offline browser
 // is not our fault.
@@ -92,14 +80,6 @@ const reach = async (url: string): Promise<Response | undefined> => {
     return undefined
   }
 }
-
-// With the separator, so `skills/docx` does not collect `skills/docx-legacy`.
-const blobsUnder = (tree: z.infer<typeof treeSchema>["tree"], path: string) =>
-  tree
-    .filter(
-      (entry) => entry.type === "blob" && entry.path.startsWith(`${path}/`)
-    )
-    .map((entry) => ({ path: entry.path, size: entry.size ?? 0 }))
 
 const listSkillTree = async (
   repo: string,
@@ -121,7 +101,7 @@ const listSkillTree = async (
     }
   }
 
-  const parsed = treeSchema.safeParse(await response.json())
+  const parsed = gitTreeSchema.safeParse(await response.json())
   if (!parsed.success) {
     reportIssue("Skill tree listing was unreadable")
     return {
@@ -157,7 +137,7 @@ type FileResult =
 
 const fetchFile = async (
   repo: string,
-  blob: Blob,
+  blob: TreeBlob,
   path: string
 ): Promise<FileResult> => {
   // Relative to the skill directory, which is what the CLI writes.
@@ -183,7 +163,8 @@ const fetchFile = async (
   }
 }
 
-const treeBytes = (blobs: Blob[]) =>
+// The tree's sizes, so the cap is answered before downloading.
+const treeBytes = (blobs: TreeBlob[]) =>
   blobs.reduce((total, blob) => total + blob.size, 0)
 
 type AssembledFiles =

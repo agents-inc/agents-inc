@@ -13,7 +13,7 @@ import {
   stackElsewhere,
   type Leaving,
 } from "./marketplace-switch"
-import { droppedNotice } from "./seat-catalog"
+import { catalogueNameOf, droppedNotice } from "./seat-catalog"
 import { useLeaveTheLink } from "./use-catalog-first"
 
 import type { MarketplaceRecovery } from "./seat-catalog"
@@ -29,8 +29,6 @@ export type LoadTarget = { marketplace: string; matrix: Matrix }
 
 type Selection = Pick<PersistedConfig, "stackId" | "skills" | "agents">
 
-const PUBLIC_NAME = "the public catalogue"
-
 // What a load or a stack can land on without reading a saved configuration: a
 // shared one's catalogue, or the marketplace whose saved one was read. `null`
 // until one was, as while the stored marketplace waits on a load, since writes
@@ -44,8 +42,6 @@ const marketplaceOnScreen = () =>
 export const opensItsOwnConfiguration = (marketplace: string) =>
   marketplace !== marketplaceOnScreen()
 
-const nameOf = (marketplace: string) => marketplace || PUBLIC_NAME
-
 // What becomes of the configuration on screen when another marketplace opens.
 // This browser's own belongs to the marketplace it chose, read yet or not.
 const leavingNow = (): Leaving => {
@@ -53,12 +49,12 @@ const leavingNow = (): Leaving => {
 
   const chosen = useMarketplaceStore.getState().current
   const kind = savedConfigurationOnScreen() === chosen ? "own" : "unread"
-  return { kind, name: nameOf(chosen) }
+  return { kind, name: catalogueNameOf(chosen) }
 }
 
 /** What applying a stack built on `marketplace` costs, said before it happens. */
 export const stackElsewhereCost = (marketplace: string) =>
-  stackElsewhere(nameOf(marketplace), leavingNow())
+  stackElsewhere(catalogueNameOf(marketplace), leavingNow())
 
 /**
  * Opens the seated marketplace's own saved configuration, leaving whatever was

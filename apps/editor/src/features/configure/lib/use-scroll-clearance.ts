@@ -14,6 +14,8 @@ const FOCUS_RING_WIDTH = 1
 // A scroll lands on a whole pixel, up to half a pixel nearer the edge.
 const SCROLL_LANDING_SLACK = 0.5
 
+const NO_CLEARANCE = "0px"
+
 // Rounded up, so a fractional box never parks the control under it.
 const clearanceOf = (element: HTMLElement, edge: Edge) => {
   const air = parseFloat(getComputedStyle(element)[FACING_MARGIN[edge]])
@@ -25,9 +27,61 @@ const paddingProperty = (edge: Edge) => `scroll-padding-${edge}`
 
 const clearanceVariable = (edge: Edge) => `--scroll-clearance-${edge}`
 
-// Keeps focused controls clear of pinned bars via `scroll-padding`; observed,
-// since the bars change height. Also published as `--scroll-clearance-<edge>`,
-// which the toasts sit clear of.
+// The element pins over the column, so the rail, the dialogs and its own
+// controls are never under it. With focus nowhere, whatever scrolls into view
+// next may be.
+const canHide = (element: HTMLElement, focused: EventTarget | null) => {
+  if (!(focused instanceof Node)) return true
+  if (element.contains(focused)) return false
+  return element.closest("main")?.contains(focused) ?? false
+}
+
+// Observed, since the bars change height.
+const publishClearance = (element: HTMLElement, edge: Edge) => {
+  const page = document.documentElement
+  const variable = clearanceVariable(edge)
+  const observer = new ResizeObserver(() =>
+    page.style.setProperty(variable, clearanceOf(element, edge))
+  )
+  observer.observe(element)
+
+  return () => {
+    observer.disconnect()
+    page.style.removeProperty(variable)
+  }
+}
+
+// A control the element cannot hide is already on screen, and with the
+// clearance the browser scrolls the page to reveal it on every focus and
+// keystroke. Both events run before that scroll; only `focusout` names a focus
+// that goes nowhere.
+const padForFocus = (element: HTMLElement, edge: Edge) => {
+  const page = document.documentElement
+  const padding = paddingProperty(edge)
+  const padFor = (focused: EventTarget | null) =>
+    page.style.setProperty(
+      padding,
+      canHide(element, focused)
+        ? `var(${clearanceVariable(edge)})`
+        : NO_CLEARANCE
+    )
+  const onFocusIn = (event: FocusEvent) => padFor(event.target)
+  const onFocusOut = (event: FocusEvent) => padFor(event.relatedTarget)
+
+  padFor(null)
+  document.addEventListener("focusin", onFocusIn, true)
+  document.addEventListener("focusout", onFocusOut, true)
+
+  return () => {
+    document.removeEventListener("focusin", onFocusIn, true)
+    document.removeEventListener("focusout", onFocusOut, true)
+    page.style.removeProperty(padding)
+  }
+}
+
+// Keeps focused controls clear of pinned bars via `scroll-padding`, and
+// publishes the clearance as `--scroll-clearance-<edge>` for the toasts to sit
+// clear of.
 export function useScrollClearance(
   ref: RefObject<HTMLElement | null>,
   edge: Edge
@@ -36,59 +90,12 @@ export function useScrollClearance(
     const element = ref.current
     if (!element) return
 
-    const page = document.documentElement
-    const properties = [paddingProperty(edge), clearanceVariable(edge)]
-    const observer = new ResizeObserver(() => {
-      const clearance = clearanceOf(element, edge)
-      for (const property of properties)
-        page.style.setProperty(property, clearance)
-    })
-    observer.observe(element)
+    const stopPublishing = publishClearance(element, edge)
+    const stopPadding = padForFocus(element, edge)
 
     return () => {
-      observer.disconnect()
-      for (const property of properties) page.style.removeProperty(property)
-    }
-  }, [ref, edge])
-}
-
-const landsInside = (element: HTMLElement, next: EventTarget | null) =>
-  next instanceof Node && element.contains(next)
-
-// The element's own controls sit inside its clearance, so focusing one would
-// scroll the page to reveal what is already on screen. The browser scrolls
-// after the `focusout` naming the control focus moves to, so the clearance is
-// lifted from there until the next frame. A focus with nothing to leave
-// fires no `focusout`, and keeps it.
-export function useFocusInsideSkipsClearance(
-  ref: RefObject<HTMLElement | null>,
-  edge: Edge
-) {
-  useEffect(() => {
-    const element = ref.current
-    if (!element) return
-
-    const page = document.documentElement
-    const padding = paddingProperty(edge)
-    const restoreClearance = () =>
-      page.style.setProperty(
-        padding,
-        page.style.getPropertyValue(clearanceVariable(edge))
-      )
-    let frame = 0
-
-    const liftForFocusInside = (event: FocusEvent) => {
-      if (!landsInside(element, event.relatedTarget)) return
-      page.style.setProperty(padding, "0px")
-      cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(restoreClearance)
-    }
-    document.addEventListener("focusout", liftForFocusInside, true)
-
-    return () => {
-      document.removeEventListener("focusout", liftForFocusInside, true)
-      cancelAnimationFrame(frame)
-      restoreClearance()
+      stopPadding()
+      stopPublishing()
     }
   }, [ref, edge])
 }

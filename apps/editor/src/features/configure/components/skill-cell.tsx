@@ -336,7 +336,7 @@ export function SkillCell({
   )
 }
 
-// Lit while the panel is open; a ruled-out ••• opens nothing, so takes no hover.
+// A ruled-out ••• opens nothing, so takes no hover.
 function dotsPaint(open: boolean, incompatible: boolean) {
   if (open) return "bg-brand-ink"
   if (incompatible) return "bg-faint"

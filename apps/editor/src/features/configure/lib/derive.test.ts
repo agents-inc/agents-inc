@@ -942,6 +942,30 @@ describe("selectDomainViews", () => {
     expect(ids).toContain(FIRST_SKILL)
   })
 
+  describe("a query of several words", () => {
+    // Named "Stack Detection", described "Detect a project's stack and propose
+    // a config".
+    const STACK_DETECT = "meta-config-stack-detect"
+    const idsFor = (q: string) =>
+      allCells(empty, { q }).map((cell) => cell.skill.id)
+
+    it("matches each word on its own, in any order", () => {
+      expect(idsFor("detection stack")).toContain(STACK_DETECT)
+    })
+
+    it("matches words that sit in different fields", () => {
+      expect(idsFor("detection propose")).toContain(STACK_DETECT)
+    })
+
+    it("needs every word to match", () => {
+      expect(idsFor("detection zzzznotaskill")).not.toContain(STACK_DETECT)
+    })
+
+    it("reads a query of only spaces as no query", () => {
+      expect(idsFor("   ")).toStrictEqual(idsFor(""))
+    })
+  })
+
   it("drops categories and domains that filter down to nothing", () => {
     const views = selectDomainViews(empty, search({ q: "zzzznotaskill" }))
     expect(views).toStrictEqual([])

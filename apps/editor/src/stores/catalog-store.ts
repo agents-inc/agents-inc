@@ -23,6 +23,8 @@ import {
 } from "@workspace/matrix"
 import { create } from "zustand"
 
+import { withoutKey } from "@/lib/without-key"
+
 // The one place the app reads a catalogue from. Everything derived from it
 // lives here so it all moves together on a swap.
 
@@ -157,11 +159,6 @@ const kebab = (value: string) =>
 export const externalSkillId = (categoryId: string, name: string) =>
   [EXTERNAL_NAMESPACE, kebab(categoryId), kebab(name)].join(SEPARATOR)
 
-const withoutKey = <T>(record: Record<string, T>, key: string) => {
-  const { [key]: _removed, ...rest } = record
-  return rest
-}
-
 export const useCatalogStore = create<CatalogState>()((set, get) => {
   // Outside the state: nothing renders it.
   let source: CatalogSource = PUBLIC_SOURCE
@@ -215,6 +212,18 @@ export const activeSkillById = (skillId: string) =>
 /** The provenance half: `undefined` for every skill the catalogue shipped. */
 export const activeExternalSkill = (skillId: string) =>
   useCatalogStore.getState().external[skillId]
+
+export const isInCategory = (skillId: string, categoryId: string) =>
+  activeSkillById(skillId)?.categoryId === categoryId
+
+export const exclusiveCategoryOf = (skillId: string) => {
+  const categoryId = activeSkillById(skillId)?.categoryId
+  if (!categoryId) return undefined
+
+  return activeCatalog().categoriesById[categoryId]?.exclusive
+    ? categoryId
+    : undefined
+}
 
 export const expandActiveStack = (stackId: string) =>
   useCatalogStore.getState().expandStack(stackId)

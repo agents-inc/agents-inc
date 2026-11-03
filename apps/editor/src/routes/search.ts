@@ -9,7 +9,9 @@ const MAX_FIELD_LENGTH = 64
 // field `.catch()`es its default.
 export const configureSearchSchema = z.object({
   domain: z.enum(DOMAINS).nullable().catch(null),
-  q: z.string().trim().max(MAX_FIELD_LENGTH).catch(""),
+  // Untrimmed: the field reads it back on every key, so a trim eats the space
+  // being typed.
+  q: z.string().max(MAX_FIELD_LENGTH).catch(""),
   sel: z.boolean().catch(false),
   // Read on every load, so a reload reopens the shared config. packages/cli
   // builds this URL too.

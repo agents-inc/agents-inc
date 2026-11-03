@@ -1,6 +1,7 @@
 import type { Provider } from "@workspace/compile"
 import type { AgentName } from "@workspace/matrix"
 
+import { inAnEnglishList } from "@/lib/in-an-english-list"
 import type { SkillOptions } from "@/stores/persisted-schema"
 
 // On the first-paint graph: a value import of `@workspace/compile` fails
@@ -39,16 +40,11 @@ export const patchForPress = (
     ? { ...patch, scope: "global" }
     : patch
 
-const inAnEnglishAlternative = (items: readonly string[]) =>
-  items.length < 2
-    ? items.join("")
-    : `${items.slice(0, -1).join(", ")} or ${items.at(-1)}`
-
 // Names the refused placement and all three offered ones, as the CLI's
 // `unbackedPluginInstallError` does.
 const unofferedPlacementReason = (): string =>
   `Codex installs plugins for the whole machine, so plugin+project is not offered. ` +
-  `It installs ${inAnEnglishAlternative(CODEX_OFFERS)}.`
+  `It installs ${inAnEnglishList(CODEX_OFFERS, "or")}.`
 
 export const placementRefusal = (
   provider: Provider,
@@ -98,11 +94,10 @@ export const agentRefusal = (
 ): string | undefined =>
   compilesAgent(provider, agentId) ? undefined : leftOutOfCodexReason()
 
-// At most the two `AGENTS_LEFT_OUT_OF_CODEX`, so a plain "and" joins them.
 export const agentsLeftOutOfCodexNotice = (
   agentNames: readonly string[]
 ): string =>
-  `${agentNames.join(" and ")} ${agentNames.length === 1 ? "is" : "are"} ` +
+  `${inAnEnglishList(agentNames)} ${agentNames.length === 1 ? "is" : "are"} ` +
   `not installed on Codex — left out for v1, because their roster mechanics there are not proven.`
 
 // An untrusted Codex project reads `.agents/skills` but silently ignores role

@@ -77,10 +77,13 @@ describe("what the install command's note says", () => {
     expect(COMMAND_NOTES.unreachable.toLowerCase()).not.toContain("reload")
   })
 
-  // A bare `init` opens the editor.
-  it("tells a reader with no id that the command starts over in the editor", () => {
-    expect(COMMAND_NOTES.refused).toContain("starts over in the editor")
-    expect(COMMAND_NOTES.unreachable).toContain("starts over in the editor")
+  it("tells a reader with no id that the command opens the editor or shows the installation's dashboard", () => {
+    expect(COMMAND_NOTES.refused).toBe(
+      "id unavailable — this command opens the editor or shows the installation's dashboard"
+    )
+    expect(COMMAND_NOTES.unreachable).toBe(
+      "offline — this command opens the editor or shows the installation's dashboard"
+    )
   })
 })
 

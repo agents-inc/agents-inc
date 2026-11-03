@@ -9,8 +9,9 @@ import {
 } from "@workspace/ui/components/dialog"
 import { MATRIX } from "@workspace/matrix"
 import { Input } from "@workspace/ui/components/input"
-import { useRef, useState, type RefObject } from "react"
+import { useRef, useState, type FormEvent, type RefObject } from "react"
 
+import { catalogueNameOf } from "@/features/configure/lib/seat-catalog"
 import {
   useMarketplaceLoad,
   type LoadTarget,
@@ -18,8 +19,8 @@ import {
 import {
   canonicalMarketplaceRef,
   fetchCatalog,
+  tokenCouldFix,
   type CatalogFailure,
-  type CatalogFailureKind,
 } from "@/lib/api/catalog"
 import { useCatalogStore } from "@/stores/catalog-store"
 import { useConfigStore } from "@/stores/config-store"
@@ -34,16 +35,9 @@ import type { MarketplaceRecovery } from "@/features/configure/lib/use-catalog-f
 // live in localStorage, never on our worker; each token is filed under the
 // marketplace it authorizes.
 
-// `invalid` is not offered a token: a catalogue that will not parse fails the
-// same however it is authorized.
-const OFFERS_TOKEN: CatalogFailureKind = "unauthorized"
-
 const PUBLIC_TARGET: LoadTarget = { marketplace: "", matrix: MATRIX }
 
 const isPublic = ({ marketplace }: LoadTarget) => marketplace === ""
-
-const catalogueName = (target: LoadTarget) =>
-  isPublic(target) ? "the public catalogue" : target.marketplace
 
 const PRESS_AGAIN = "Nothing has changed yet — press Load again to switch."
 
@@ -60,7 +54,7 @@ type LoadState =
 
 // Shown once an answer says a token might help, and kept while one is held.
 const offersToken = (state: LoadState, token: string) =>
-  (state.status === "failed" && state.kind === OFFERS_TOKEN) || token !== ""
+  (state.status === "failed" && tokenCouldFix(state)) || token !== ""
 
 // Cancelling a recovery leaves it parked; the form remounts fresh on each open.
 export function MarketplaceDialog({
@@ -172,7 +166,7 @@ function MarketplaceForm({
   const readCatalogue = (target: LoadTarget) => {
     const cost = costOf(
       target,
-      catalogueName(target),
+      catalogueNameOf(target.marketplace),
       useConfigStore.getState()
     )
     if (cost === null) {
@@ -215,8 +209,14 @@ function MarketplaceForm({
     void submit()
   }
 
+  // Enter in either field presses Load.
+  const pressFromForm = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    press()
+  }
+
   return (
-    <>
+    <form className="contents" onSubmit={pressFromForm}>
       <DialogBody>
         <Field label="Marketplace">
           <Input
@@ -269,14 +269,14 @@ function MarketplaceForm({
         {/* One Load for both presses; the line above says which happened.
             Focusable while it reads, so the caret is there for the second. */}
         <Button
+          type="submit"
           variant="primary"
           focusableWhenDisabled
           disabled={state.status === "loading"}
-          onClick={press}
         >
           Load
         </Button>
       </DialogFooter>
-    </>
+    </form>
   )
 }

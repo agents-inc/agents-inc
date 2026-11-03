@@ -12,10 +12,19 @@ describe("configureSearchSchema", () => {
     )
   })
 
-  it("keeps a query and a shared id, trimmed", () => {
-    expect(
-      configureSearchSchema.parse({ q: "  react  ", fromId: "  abc123  " })
-    ).toMatchObject({ q: "react", fromId: "abc123" })
+  it("keeps a query as typed, spaces included", () => {
+    expect(configureSearchSchema.parse({ q: "react " })).toMatchObject({
+      q: "react ",
+    })
+    expect(configureSearchSchema.parse({ q: " react query " })).toMatchObject({
+      q: " react query ",
+    })
+  })
+
+  it("keeps a shared id, trimmed", () => {
+    expect(configureSearchSchema.parse({ fromId: "  abc123  " })).toMatchObject(
+      { fromId: "abc123" }
+    )
   })
 
   it("keeps a query and an id exactly at the cap", () => {

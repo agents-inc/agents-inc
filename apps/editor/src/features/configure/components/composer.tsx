@@ -37,13 +37,13 @@ const isSubmitChord = (event: KeyboardEvent<HTMLTextAreaElement>) =>
 const FIELD_HEIGHT_CAP = "max-h-[calc(0.9375rem+7.125rem+var(--composer-tail))]"
 
 // `too-long` names no number: only the worker knows the cap.
-const REFUSAL_COPY: Record<ComposeRefusal, string> = {
+const REFUSAL_COPY = {
   "signed-out": "Your session ended. Sign in again — nothing changed.",
   "too-many": "Too many requests in a minute. Try again shortly.",
   "too-long": "That is too long to send. Shorten it and try again.",
   refused: "The model did not answer. Nothing changed.",
   unreachable: "Could not reach the composer. Nothing changed.",
-}
+} as const satisfies Record<ComposeRefusal, string>
 
 // Answered locally: the route is signed-in only.
 const SIGNED_OUT_REASON = "Sign in to use the composer — nothing was sent."

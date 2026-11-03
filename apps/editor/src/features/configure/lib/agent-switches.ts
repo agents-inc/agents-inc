@@ -1,23 +1,17 @@
 import type { Provider } from "@workspace/compile"
-import { DOMAIN_LABELS, type SubAgent } from "@workspace/matrix"
+import type { SubAgent } from "@workspace/matrix"
+
+import { inAnEnglishList } from "@/lib/in-an-english-list"
 
 import {
   displayNameOf,
   selectInstalledAgents,
+  spokenAgentName,
   type ConfigSelection,
 } from "./derive"
 
 // A notice names this many, then counts the rest.
 const NAMED_IN_FULL = 3
-
-// As the roster's where-used list names it: `web tester`.
-const spokenName = (agent: SubAgent) =>
-  `${DOMAIN_LABELS[agent.domainId].toLowerCase()} ${agent.label.toLowerCase()}`
-
-const inAnEnglishList = (items: readonly string[]) =>
-  items.length < 2
-    ? items.join("")
-    : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`
 
 const namedThenCounted = (names: readonly string[]) =>
   names.length > NAMED_IN_FULL
@@ -75,7 +69,7 @@ const noticeOf = (
   if (agents.length === 0) return undefined
 
   return (
-    `${namedThenCounted(agents.map(spokenName))} switched ${switched}: ` +
+    `${namedThenCounted(agents.map(spokenAgentName))} switched ${switched}: ` +
     `${namedThenCounted(skillIds.map(displayNameOf))} ${verb}`
   )
 }

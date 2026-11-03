@@ -10,16 +10,17 @@ import {
 import { useEffect, useState } from "react"
 
 import { losesNothing } from "@/features/configure/lib/marketplace-switch"
+import { fetchFiledCatalog } from "@/features/configure/lib/seat-catalog"
 import { useMarketplaceLoad } from "@/features/configure/lib/use-marketplace-load"
 import {
-  fetchCatalog,
+  tokenCouldFix,
   type CatalogFailure,
-  type CatalogFailureKind,
   type CatalogResult,
 } from "@/lib/api/catalog"
+import { settleWhileAsked } from "@/lib/settle-while-asked"
 import { useCatalogStore } from "@/stores/catalog-store"
 import { useConfigStore } from "@/stores/config-store"
-import { tokenFor, useMarketplaceStore } from "@/stores/marketplace-store"
+import { useMarketplaceStore } from "@/stores/marketplace-store"
 import { useUiStore } from "@/stores/ui-store"
 
 import type { MarketplaceRecovery } from "@/features/configure/lib/use-catalog-first"
@@ -35,10 +36,6 @@ type TargetState =
 
 const READING: TargetState = { status: "reading" }
 
-// The Marketplace dialog's `OFFERS_TOKEN`, mirrored: only a refusal a token
-// can change points at the field that takes one.
-const OFFERS_TOKEN: CatalogFailureKind = "unauthorized"
-
 const NOTHING_CHANGED = "Nothing has changed."
 const TRY_A_TOKEN =
   "Nothing has changed — load it from Marketplace to try a token."
@@ -53,25 +50,18 @@ const toTargetState = (result: CatalogResult): TargetState =>
     ? { status: "read", matrix: result.matrix }
     : { status: "refused", kind: result.kind, error: result.error }
 
-// No reset to "reading": the caller keys on the marketplace. The cleanup drops
-// a late answer about a marketplace no longer asked about.
+// No reset to "reading": the caller keys on the marketplace.
 const useTargetCatalog = (marketplace: string) => {
   const [state, setState] = useState<TargetState>(READING)
 
-  useEffect(() => {
-    let asked = true
-
-    void fetchCatalog(marketplace, tokenFor(marketplace) || undefined).then(
-      (result) => {
-        if (!asked) return
-        setState(toTargetState(result))
-      }
-    )
-
-    return () => {
-      asked = false
-    }
-  }, [marketplace])
+  useEffect(
+    () =>
+      settleWhileAsked(
+        () => fetchFiledCatalog(marketplace),
+        (result) => setState(toTargetState(result))
+      ),
+    [marketplace]
+  )
 
   return state
 }
@@ -185,5 +175,6 @@ const descriptionFor = (
 }
 
 // `fetchCatalog`'s sentence carries no full stop; it is closed before ours.
-const refusalDescription = ({ kind, error }: CatalogFailure): string =>
-  `${error}. ${kind === OFFERS_TOKEN ? TRY_A_TOKEN : NOTHING_CHANGED}`
+// Only a refusal a token can change points at the field that takes one.
+const refusalDescription = (failure: CatalogFailure): string =>
+  `${failure.error}. ${tokenCouldFix(failure) ? TRY_A_TOKEN : NOTHING_CHANGED}`

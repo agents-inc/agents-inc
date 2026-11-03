@@ -1,7 +1,10 @@
 import type { Provider } from "@workspace/compile"
 import type { SeedPayload } from "@workspace/matrix"
 
-import { activeCatalog, activeSkillById } from "@/stores/catalog-store"
+import { entriesWhere } from "@/lib/entries-where"
+import { mapValues } from "@/lib/map-values"
+import { withoutKey } from "@/lib/without-key"
+import { exclusiveCategoryOf, isInCategory } from "@/stores/catalog-store"
 import {
   isAgentOn,
   resolveAgentOptions,
@@ -69,6 +72,16 @@ export const heldGlobalOf = (
   return { skills: globalSkillsOf(arrived), agents: globalAgentsOf(arrived) }
 }
 
+/** The installation a bare `edit` minted a link from, which `edit --from` applies it back to. */
+export type MintedFrom = "project" | "global"
+
+// Project first, as `heldGlobalOf` reads a link carrying both marks.
+export const mintedFromOf = (payload: SeedPayload): MintedFrom | null => {
+  if (payload.fromProject === true) return "project"
+  if (payload.fromGlobal === true) return "global"
+  return null
+}
+
 const isInheritedSkill = (held: HeldGlobal | null, skillId: string) =>
   held !== null && Object.hasOwn(held.skills, skillId)
 
@@ -91,25 +104,20 @@ export const isHeldAgent = (
   isInheritedAgent(held, agentId) &&
   resolveAgentOptions(config.agents, agentId).scope === "global"
 
-const categoryOf = (skillId: string) => activeSkillById(skillId)?.categoryId
-
-const isOneOf = (categoryId: string) =>
-  activeCatalog().categoriesById[categoryId]?.exclusive === true
-
 // Picking a sibling in a one-of category would evict it.
 const heldRivalOf = (
   held: HeldGlobal | null,
   config: Selection,
   skillId: string
 ) => {
-  const categoryId = categoryOf(skillId)
-  if (categoryId === undefined || !isOneOf(categoryId)) return undefined
+  const categoryId = exclusiveCategoryOf(skillId)
+  if (categoryId === undefined) return undefined
 
   return Object.keys(config.skills).find(
     (selected) =>
       selected !== skillId &&
       isInheritedSkill(held, selected) &&
-      categoryOf(selected) === categoryId
+      isInCategory(selected, categoryId)
   )
 }
 
@@ -177,11 +185,6 @@ export const assignmentRefusal = (
     : CHANGE_REFUSED
 }
 
-const entriesWhere = <T>(
-  record: Readonly<Record<string, T>>,
-  keeps: (id: string) => boolean
-) => Object.fromEntries(Object.entries(record).filter(([id]) => keeps(id)))
-
 /** A skill picked or replaced in reaches no sub-agent the link holds. */
 export const offHeldAgents = (
   held: HeldGlobal | null,
@@ -211,17 +214,14 @@ const joiningSkillsOf = (
   current: Selection,
   { skills }: Selection
 ) =>
-  Object.fromEntries(
-    Object.entries(skills)
-      .filter(
-        ([skillId]) =>
-          !isInheritedSkill(held, skillId) &&
-          heldRivalOf(held, current, skillId) === undefined
-      )
-      .map(([skillId, entry]): [string, SkillEntry] => [
-        skillId,
-        offHeldAgents(held, current, entry),
-      ])
+  mapValues(
+    entriesWhere(
+      skills,
+      (skillId) =>
+        !isInheritedSkill(held, skillId) &&
+        heldRivalOf(held, current, skillId) === undefined
+    ),
+    (entry) => offHeldAgents(held, current, entry)
   )
 
 /**
@@ -323,7 +323,7 @@ const withArrivedRow = (
   arrived: SkillEntry,
   agentId: string
 ): SkillEntry => {
-  const { [agentId]: _current, ...others } = entry.assignments
+  const others = withoutKey(entry.assignments, agentId)
   const row = arrived.assignments[agentId]
 
   return {

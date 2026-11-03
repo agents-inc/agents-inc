@@ -3,22 +3,28 @@ import { useEffect, useMemo, useState } from "react"
 import { seedPayloadSchema } from "@workspace/matrix"
 
 import { createSharedConfig, isRateLimited } from "@/lib/api/configs"
+import { counted } from "@/lib/counted"
+import { settleWhileAsked } from "@/lib/settle-while-asked"
 import { useCatalogStore } from "@/stores/catalog-store"
+import { useHeldGlobalStore } from "@/stores/held-global-store"
 import { useUiStore } from "@/stores/ui-store"
 import { toSeedPayload } from "./seed"
 
 import type { Provider } from "@workspace/compile"
 import type { ConfigSelection } from "./derive"
+import type { MintedFrom } from "./held-global"
 import type { ShareRefusal, ShareResult } from "@/lib/api/configs"
 
 const COPIED_DECAY_MS = 2_000
 
 // The fallback when no id can be minted: still valid, just carries nothing.
-const BASE_COMMAND = "npx agents-inc init"
+const INIT_COMMAND = "npx agents-inc init"
+
+// `init --from` refuses over the installation a link was minted from.
+const EDIT_COMMAND = "npx agents-inc edit"
 
 const ID_FLAG = "--from"
 
-// Written only for a non-Claude provider, after the id.
 const PROVIDER_FLAG = "--provider"
 
 // `--provider` without `--from` exits non-zero, so the bare command says why.
@@ -40,17 +46,26 @@ export const COMMAND_NOTES = {
   ready: "click to copy",
   copied: "copied",
   "out-of-date": "out of date — reload the page for an id",
-  refused: "id unavailable — this command starts over in the editor",
-  unreachable: "offline — this command starts over in the editor",
+  refused:
+    "id unavailable — this command opens the editor or shows the installation's dashboard",
+  unreachable:
+    "offline — this command opens the editor or shows the installation's dashboard",
   unwritable: "a sub-agent needs project scope — close and fix the marked rows",
   // `limitReachedNote` appends the worker's window.
   limited: "rate limit reached — try again in",
 } as const satisfies Record<InstallNote, string>
 
-const SECONDS_PER_MINUTE = 60
+// In the project a link was minted in, a bare `init` meets its installation.
+const PROJECT_LINK_NOTES = {
+  ...COMMAND_NOTES,
+  refused: "id unavailable — this command shows the installation's dashboard",
+  unreachable: "offline — this command shows the installation's dashboard",
+} as const satisfies Record<InstallNote, string>
 
-const counted = (count: number, unit: string) =>
-  `${count} ${unit}${count === 1 ? "" : "s"}`
+const notesFor = (mintedFrom: MintedFrom | null) =>
+  mintedFrom === "project" ? PROJECT_LINK_NOTES : COMMAND_NOTES
+
+const SECONDS_PER_MINUTE = 60
 
 // Minutes round up, so nobody is sent back early.
 const waitOf = (seconds: number) =>
@@ -82,21 +97,19 @@ const toCommand = (minted: Minted | null, key: string): InstallCommand => {
 }
 
 const withoutAnId = (why: string, provider: Provider) =>
-  provider === "claude" ? why : `${why} · ${PROVIDER_NEEDS_AN_ID}`
+  provider === "claude" ? [why] : [why, PROVIDER_NEEDS_AN_ID]
 
 const noteFor = (
   command: InstallCommand,
-  copied: boolean,
-  provider: Provider
-): string => {
-  if (copied) return COMMAND_NOTES.copied
-
+  provider: Provider,
+  notes: Record<InstallNote, string>
+): string[] => {
   switch (command.status) {
     case "minting":
     case "ready":
-      return COMMAND_NOTES[command.status]
+      return [notes[command.status]]
     case "failed":
-      return withoutAnId(COMMAND_NOTES[command.refusal], provider)
+      return withoutAnId(notes[command.refusal], provider)
     case "limited":
       return withoutAnId(limitReachedNote(command.retryAfterSeconds), provider)
     default: {
@@ -106,11 +119,16 @@ const noteFor = (
   }
 }
 
-const commandText = (command: InstallCommand, provider: Provider): string => {
-  if (command.status !== "ready") return BASE_COMMAND
+const commandText = (
+  command: InstallCommand,
+  provider: Provider,
+  appliesTo: MintedFrom | null
+): string => {
+  if (command.status !== "ready") return INIT_COMMAND
 
+  const installer = appliesTo === null ? INIT_COMMAND : EDIT_COMMAND
   const providerArgs = provider === "claude" ? [] : [PROVIDER_FLAG, provider]
-  return [BASE_COMMAND, ID_FLAG, command.id, ...providerArgs].join(" ")
+  return [installer, ID_FLAG, command.id, ...providerArgs].join(" ")
 }
 
 // Mints on open, not on copy: the id has to be on screen to be read.
@@ -118,6 +136,7 @@ export const useInstallCommand = (config: ConfigSelection, open: boolean) => {
   // Not in `serialized`: the payload is identical on either provider, so a
   // switch must not re-mint.
   const provider = useUiStore((state) => state.provider)
+  const mintedFrom = useHeldGlobalStore((state) => state.mintedFrom)
   const marketplace = useCatalogStore((state) => state.marketplace)
   const version = useCatalogStore((state) => state.version)
 
@@ -137,19 +156,16 @@ export const useInstallCommand = (config: ConfigSelection, open: boolean) => {
 
   useEffect(() => {
     if (!open || reusable) return
-    let stale = false
 
     // Parsing the memo key keeps the sent payload and cache key the same bytes;
     // a throw here is a bug in this module, not a network condition.
-    void createSharedConfig(
-      seedPayloadSchema.parse(JSON.parse(serialized))
-    ).then((result) => {
-      if (stale) return
-      setMinted({ key: serialized, result })
-    })
+    const stopAsking = settleWhileAsked(
+      () => createSharedConfig(seedPayloadSchema.parse(JSON.parse(serialized))),
+      (result) => setMinted({ key: serialized, result })
+    )
 
     return () => {
-      stale = true
+      stopAsking()
       // A refusal answered that opening, so the next one is not shown it.
       setMinted((last) => (last?.result.ok ? last : null))
     }
@@ -165,7 +181,9 @@ export const useInstallCommand = (config: ConfigSelection, open: boolean) => {
   }, [copied])
 
   const command = toCommand(minted, serialized)
-  const text = commandText(command, provider)
+  // Only a command carrying the id applies the link to an installation.
+  const appliesTo = command.status === "ready" ? mintedFrom : null
+  const text = commandText(command, provider, appliesTo)
 
   const copy = async () => {
     try {
@@ -177,10 +195,11 @@ export const useInstallCommand = (config: ConfigSelection, open: boolean) => {
   }
 
   return {
+    appliesTo,
     command,
     copied,
     copy,
-    note: noteFor(command, copied, provider),
+    note: noteFor(command, provider, notesFor(mintedFrom)),
     text,
   }
 }

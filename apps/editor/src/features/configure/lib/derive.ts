@@ -2,6 +2,7 @@
 
 import type { Provider } from "@workspace/compile"
 import {
+  DOMAIN_LABELS,
   SUB_AGENT_GROUPS,
   type AssignmentTarget,
   type CatalogCategory,
@@ -28,6 +29,7 @@ import {
 } from "@/stores/catalog-store"
 import {
   DEFAULT_SKILL_OPTIONS,
+  holdsLiveSkill,
   isAgentOn,
   reachesAgent,
   resolveAgentOptions,
@@ -141,15 +143,17 @@ const toGridSkill = (skill: CatalogSkill): GridSkill => {
   }
 }
 
-const matchesQuery = (skill: GridSkill, query: string) => {
-  if (!query) return true
-  const needle = query.toLowerCase()
-  return (
-    skill.displayName.toLowerCase().includes(needle) ||
-    skill.slug.toLowerCase().includes(needle) ||
-    skill.description.toLowerCase().includes(needle)
-  )
+const queryWords = (query: string) =>
+  query.toLowerCase().split(/\s+/).filter(Boolean)
+
+// Joined on a newline, which no word holds, so no word spans two texts.
+export const matchesEveryWord = (query: string, texts: readonly string[]) => {
+  const haystack = texts.join("\n").toLowerCase()
+  return queryWords(query).every((word) => haystack.includes(word))
 }
+
+const matchesQuery = (skill: GridSkill, query: string) =>
+  matchesEveryWord(query, [skill.displayName, skill.slug, skill.description])
 
 export type Reachability = {
   // Selected, plus everything the selection implies.
@@ -168,6 +172,10 @@ export const selectReachability = (selectedIds: Set<string>): Reachability =>
 
 export const displayNameOf = (skillId: string) =>
   activeSkillById(skillId)?.displayName ?? skillId
+
+/** A sub-agent as a sentence names it: `web tester`. */
+export const spokenAgentName = (agent: SubAgent) =>
+  `${DOMAIN_LABELS[agent.domainId].toLowerCase()} ${agent.label.toLowerCase()}`
 
 const listNames = (skillIds: readonly string[], joiner: string) =>
   skillIds.map(displayNameOf).join(joiner)
@@ -599,16 +607,11 @@ const inScope =
   (scope: ScopedInventorySkill["scope"]) => (skill: ScopedInventorySkill) =>
     skill.scope === scope
 
-const holdsSkills = (config: ConfigSelection, agentId: string) =>
-  Object.values(config.skills).some(
-    (entry) => entry.assignments[agentId]?.enabled
-  )
-
 const toInventoryAgent =
   (config: ConfigSelection) =>
   (agent: SubAgent): InventoryAgent => ({
     agent,
-    baseOnly: !holdsSkills(config, agent.id),
+    baseOnly: !holdsLiveSkill(config, agent.id),
     scope: resolveAgentOptions(config.agents, agent.id).scope,
   })
 
