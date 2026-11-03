@@ -10,15 +10,14 @@ import {
   compileSkillPlugin,
   printCompilationSummary,
 } from "../../lib/skills";
-import { compileAllAgentPlugins, printAgentCompilationSummary } from "../../lib/agents";
 import { readPluginManifest } from "../../lib/plugins";
 import { plural } from "../../utils/string";
 
 export default class BuildPlugins extends BaseCommand {
-  static summary = "Build skills and agents into standalone plugins";
+  static summary = "Build skills into standalone plugins";
 
   static description =
-    "Build skills and agents into standalone plugins. By default, compiles all skills. Use --skill to compile a specific skill only. Use --agents-dir to also compile agents.";
+    "Build skills into standalone plugins. By default, compiles all skills. Use --skill to compile a specific skill only.";
 
   static examples = [
     {
@@ -34,20 +33,12 @@ export default class BuildPlugins extends BaseCommand {
       command: "<%= config.bin %> <%= command.id %> --output-dir ./plugins",
     },
     {
-      description: "Also compile agents from a directory",
-      command: "<%= config.bin %> <%= command.id %> --agents-dir ./agents",
-    },
-    {
       description: "Compile with verbose logging",
       command: "<%= config.bin %> <%= command.id %> --verbose",
     },
   ];
 
   static flags = {
-    "agents-dir": Flags.string({
-      char: "a",
-      description: "Agents source directory (builds one plugin per agent)",
-    }),
     "output-dir": Flags.string({
       char: "o",
       description: "Output directory",
@@ -76,12 +67,8 @@ export default class BuildPlugins extends BaseCommand {
     try {
       const expectedSkillPlugins = await this.compileSkills(flags.skill, skillsDir, outputDir);
 
-      if (flags["agents-dir"]) {
-        await this.compileAgents(projectRoot, flags["agents-dir"], outputDir);
-      }
-
       if (expectedSkillPlugins) {
-        await this.pruneStaleSkillPlugins(outputDir, expectedSkillPlugins);
+        await this.pruneStalePlugins(outputDir, expectedSkillPlugins);
       }
 
       this.log("");
@@ -142,7 +129,7 @@ export default class BuildPlugins extends BaseCommand {
 
     if (failed.length > 0) {
       this.warn(
-        `Skipping stale-plugin pruning: ${failed.length} skill(s) failed to compile ` +
+        `Skipping stale-plugin pruning: ${plural(failed.length, "skill")} failed to compile ` +
           `(${failed.join(", ")}). A failed skill is indistinguishable from a removed one.`,
       );
       return null;
@@ -151,28 +138,7 @@ export default class BuildPlugins extends BaseCommand {
     return new Set(compiled.map((result) => result.skillName));
   }
 
-  private async compileAgents(
-    projectRoot: string,
-    agentsDir: string,
-    outputDir: string,
-  ): Promise<void> {
-    const resolvedAgentsDir = path.resolve(projectRoot, agentsDir);
-
-    this.log("");
-    this.log("Compiling agent plugins");
-    this.log(`  Agents directory: ${resolvedAgentsDir}`);
-    this.log("");
-
-    this.log("Finding and compiling all agents...");
-
-    const agentResults = await compileAllAgentPlugins(resolvedAgentsDir, outputDir);
-
-    this.log(`Compiled ${plural(agentResults.length, "agent plugin")}`);
-    printAgentCompilationSummary(agentResults);
-  }
-
-  /** Prunes skill plugins only; agent plugins and non-plugin directories are left alone. */
-  private async pruneStaleSkillPlugins(
+  private async pruneStalePlugins(
     outputDir: string,
     expectedSkillPlugins: ReadonlySet<string>,
   ): Promise<void> {
@@ -184,7 +150,6 @@ export default class BuildPlugins extends BaseCommand {
       const pluginDir = path.join(outputDir, dirName);
       const manifest = await readPluginManifest(pluginDir);
       if (!manifest) continue;
-      if (manifest.agents !== undefined) continue;
 
       await remove(pluginDir);
       this.log(`  Pruned stale plugin: ${dirName}`);

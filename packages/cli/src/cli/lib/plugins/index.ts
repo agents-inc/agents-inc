@@ -1,13 +1,6 @@
-export {
-  agentPluginName,
-  generateSkillPluginManifest,
-  generateAgentPluginManifest,
-  writePluginManifest,
-} from "./plugin-manifest";
+export { generateSkillPluginManifest, writePluginManifest } from "./plugin-manifest";
 
 export { buildMarketplacePluginRef, parseMarketplacePluginRef } from "./plugin-ref";
-
-export { clearEarlierBuild, holdsContentNoBuildMade } from "./earlier-build";
 
 export {
   getUserPluginsDir,

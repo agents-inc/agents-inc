@@ -6,8 +6,6 @@ export {
   filterExcludedEntries,
 } from "./agent-recompiler";
 
-export { compileAllAgentPlugins, printAgentCompilationSummary } from "./agent-plugin-compiler";
-
 export {
   listAgentFilesOf,
   listAgentMdFiles,

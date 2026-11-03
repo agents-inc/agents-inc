@@ -13,6 +13,7 @@ import type {
   AgentScopeConfig,
   CategoryDefinition,
   ExtractedSkillMetadata,
+  PluginManifest,
   SkillConfig,
   SkillId,
   SkillSlug,
@@ -66,12 +67,10 @@ export type TestProjectConfig = {
   version?: string;
 };
 
-export type TestPluginManifest = {
-  name: string;
-  version?: string;
-  description?: string;
-  category?: string;
-};
+export type TestPluginManifest = Pick<
+  PluginManifest,
+  "name" | "version" | "description" | "category" | "agents"
+>;
 
 export type TestStack = {
   id: string;

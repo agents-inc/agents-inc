@@ -5,8 +5,6 @@ import { DEFAULT_VERSION } from "../../consts";
 import type { PluginAuthor, PluginManifest } from "../../types";
 import { getPluginManifestPath } from "./plugin-finder";
 
-const AGENT_PLUGIN_PREFIX = "agent-";
-
 type SkillManifestOptions = {
   skillName: string;
   description?: string;
@@ -15,12 +13,6 @@ type SkillManifestOptions = {
   category?: string;
   version?: string;
   keywords?: string[];
-};
-
-type AgentManifestOptions = {
-  agentName: string;
-  description?: string;
-  version?: string;
 };
 
 function buildAuthor(name?: string, email?: string): PluginAuthor | undefined {
@@ -40,20 +32,6 @@ export function generateSkillPluginManifest(options: SkillManifestOptions): Plug
     ...(author ? { author } : {}),
     ...(options.category ? { category: options.category } : {}),
     ...(options.keywords?.length ? { keywords: options.keywords } : {}),
-  };
-}
-
-/** Both the plugin's manifest name and the folder it is built into. */
-export function agentPluginName(agentName: string): string {
-  return `${AGENT_PLUGIN_PREFIX}${agentName}`;
-}
-
-export function generateAgentPluginManifest(options: AgentManifestOptions): PluginManifest {
-  return {
-    name: agentPluginName(options.agentName),
-    version: options.version ?? DEFAULT_VERSION,
-    agents: "./agents/",
-    ...(options.description ? { description: options.description } : {}),
   };
 }
 

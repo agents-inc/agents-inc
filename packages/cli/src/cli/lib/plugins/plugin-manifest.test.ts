@@ -1,11 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import path from "path";
 import { readFile, stat } from "fs/promises";
-import {
-  generateAgentPluginManifest,
-  generateSkillPluginManifest,
-  writePluginManifest,
-} from "./plugin-manifest";
+import { generateSkillPluginManifest, writePluginManifest } from "./plugin-manifest";
 import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../../consts";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 
@@ -151,90 +147,6 @@ describe("plugin-manifest", () => {
       });
 
       expect(manifest.keywords).toBeUndefined();
-    });
-  });
-
-  describe("generateAgentPluginManifest", () => {
-    it("should generate manifest with agent- prefix", () => {
-      const manifest = generateAgentPluginManifest({
-        agentName: "web-developer",
-      });
-
-      expect(manifest.name).toBe("agent-web-developer");
-    });
-
-    it("should include agents path", () => {
-      const manifest = generateAgentPluginManifest({
-        agentName: "web-developer",
-      });
-
-      expect(manifest.agents).toBe("./agents/");
-    });
-
-    it("should not include skills path", () => {
-      const manifest = generateAgentPluginManifest({
-        agentName: "web-developer",
-      });
-
-      expect(manifest.skills).toBeUndefined();
-    });
-
-    it("should default to version 1.0.0", () => {
-      const manifest = generateAgentPluginManifest({
-        agentName: "web-developer",
-      });
-
-      expect(manifest.version).toBe("1.0.0");
-    });
-
-    it("should use custom version when provided", () => {
-      const manifest = generateAgentPluginManifest({
-        agentName: "web-developer",
-        version: "2.0.0",
-      });
-
-      expect(manifest.version).toBe("2.0.0");
-    });
-
-    it("should include description when provided", () => {
-      const manifest = generateAgentPluginManifest({
-        agentName: "web-developer",
-        description: "Agent for web development tasks",
-      });
-
-      expect(manifest.description).toBe("Agent for web development tasks");
-    });
-
-    it("should not include description when not provided", () => {
-      const manifest = generateAgentPluginManifest({
-        agentName: "web-developer",
-      });
-
-      expect(manifest.description).toBeUndefined();
-    });
-
-    it("should not include author field", () => {
-      const manifest = generateAgentPluginManifest({
-        agentName: "web-developer",
-      });
-
-      expect(manifest.author).toBeUndefined();
-    });
-
-    it("should not include keywords field", () => {
-      const manifest = generateAgentPluginManifest({
-        agentName: "web-developer",
-      });
-
-      expect(manifest.keywords).toBeUndefined();
-    });
-
-    it("should not include hooks field", () => {
-      const manifest = generateAgentPluginManifest({
-        agentName: "web-developer",
-      });
-
-      expect(manifest.hooks).toBeUndefined();
     });
   });
 

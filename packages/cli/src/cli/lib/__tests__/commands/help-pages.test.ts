@@ -333,11 +333,11 @@ describe("each command's help page", () => {
     `);
   });
 
-  it("update says which marketplaces it refreshes", async () => {
+  it("update says it refreshes the marketplaces and moves every installed plugin to its newest version", async () => {
     const { stdout } = await runCliCommand(["update", "--help"]);
 
     expect(stdout).toMatchInlineSnapshot(`
-      "Refresh the marketplaces this installation uses
+      "Refresh the marketplaces and move every plugin to its newest version
 
       USAGE
         $ agents-inc update [--provider <claude|codex>]
@@ -346,10 +346,11 @@ describe("each command's help page", () => {
         --provider=<claude|codex>  Which provider's installation this run is about
 
       DESCRIPTION
-        Refresh the marketplaces this installation uses
+        Refresh the marketplaces and move every plugin to its newest version
 
-        Runs Claude's own marketplace update for every marketplace this installation's
-        config names. Ejected skills are copies you own and are never touched.
+        Refreshes the listing of every marketplace this installation's config names,
+        then moves every installed plugin to its newest version. Ejected skills are
+        copies you own and are never touched.
 
       EXAMPLES
         $ agents-inc update
@@ -362,26 +363,22 @@ describe("each command's help page", () => {
     const { stdout } = await runCliCommand(["build", "plugins", "--help"]);
 
     expect(stdout).toMatchInlineSnapshot(`
-      "Build skills and agents into standalone plugins
+      "Build skills into standalone plugins
 
       USAGE
-        $ agents-inc build plugins [-a <value>] [-o <value>] [--skill <value>]
-          [-v]
+        $ agents-inc build plugins [-o <value>] [--skill <value>] [-v]
 
       FLAGS
-        -a, --agents-dir=<value>  Agents source directory (builds one plugin per
-                                  agent)
         -o, --output-dir=<value>  [default: dist/plugins] Output directory
         -v, --verbose             Enable verbose logging
             --skill=<value>       Compile only a specific skill (path to skill
                                   directory)
 
       DESCRIPTION
-        Build skills and agents into standalone plugins
+        Build skills into standalone plugins
 
-        Build skills and agents into standalone plugins. By default, compiles all
-        skills. Use --skill to compile a specific skill only. Use --agents-dir to also
-        compile agents.
+        Build skills into standalone plugins. By default, compiles all skills. Use
+        --skill to compile a specific skill only.
 
       EXAMPLES
         Compile every skill into plugins
@@ -395,10 +392,6 @@ describe("each command's help page", () => {
         Write plugins to a custom output directory
 
           $ agents-inc build plugins --output-dir ./plugins
-
-        Also compile agents from a directory
-
-          $ agents-inc build plugins --agents-dir ./agents
 
         Compile with verbose logging
 

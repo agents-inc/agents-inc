@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import path from "path";
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "fs/promises";
 import { missingArgsRefusal, parseRefusal, runCliCommand } from "../../helpers/cli-runner.js";
 import { setupIsolatedHome } from "../../helpers/isolated-home.js";
 import { fileExists, directoryExists } from "../../test-fs-utils";
 import { renderAgentMd, renderSkillMd } from "../../content-generators";
 import { flattenCliOutput } from "../../helpers/flatten-cli-output.js";
+import { EXIT_CODES } from "../../../exit-codes";
 import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE, STANDARD_FILES } from "../../../../consts";
 import type { PluginManifest } from "../../../../types";
 
@@ -137,6 +138,39 @@ describe("build:plugins command", () => {
       const output = error?.message || "";
       expect(output).not.toContain(parseRefusal("--skill"));
       expect(output).not.toContain(parseRefusal("--verbose"));
+    });
+  });
+
+  describe("a directory of sub-agents", () => {
+    let skillsDir: string;
+    let outputDir: string;
+    let agentsDir: string;
+
+    beforeEach(async () => {
+      skillsDir = path.join(projectDir, "src", "skills");
+      outputDir = path.join(projectDir, "dist", "plugins");
+      agentsDir = path.join(projectDir, "agents");
+      await writeSkill(skillsDir, "web-framework-react");
+      await mkdir(agentsDir, { recursive: true });
+      await writeFile(path.join(agentsDir, "web-developer.md"), renderAgentMd("web-developer"));
+    });
+
+    it.each(["--agents-dir", "-a"])(
+      "refuses %s as an option build plugins does not have, and builds nothing",
+      async (option) => {
+        const { error } = await runCliCommand(["build", "plugins", option, agentsDir]);
+
+        expect(error?.oclif?.exit).toBe(EXIT_CODES.INVALID_ARGS);
+        expect(error?.message).toContain(parseRefusal(option));
+        expect(await directoryExists(outputDir), "a refused build writes no plugin").toBe(false);
+      },
+    );
+
+    it("builds the skills, and nothing for the sub-agents, without the option", async () => {
+      const { error } = await runCliCommand(["build", "plugins"]);
+
+      expect(error).toBeUndefined();
+      expect(await readdir(outputDir)).toStrictEqual(["web-framework-react"]);
     });
   });
 
@@ -350,17 +384,19 @@ describe("build:plugins command", () => {
       expect(await fileExists(path.join(nonPluginDir, "notes.txt"))).toBe(true);
     });
 
-    it("should preserve agent plugins when pruning skill orphans", async () => {
+    it("should prune an agent plugin an earlier build left, as it prunes any stale plugin", async () => {
       await writeSkill(skillsDir, "web-framework-react");
       const agentDir = await writePluginDir("agent-cli-developer", {
         name: "agent-cli-developer",
         agents: "./agents/",
       });
 
-      const { error } = await runCliCommand(["build:plugins", "--output-dir", outputDir]);
+      const { stdout, error } = await runCliCommand(["build:plugins", "--output-dir", outputDir]);
 
       expect(error).toBeUndefined();
-      expect(await directoryExists(agentDir)).toBe(true);
+      expect(await directoryExists(agentDir)).toBe(false);
+      expect(stdout).toContain("  Pruned stale plugin: agent-cli-developer\n");
+      expect(await readdir(outputDir)).toStrictEqual(["web-framework-react"]);
     });
   });
 
@@ -433,45 +469,6 @@ describe("build:plugins command", () => {
       );
     });
 
-    it("compiles the agents --agents-dir names after the skills, and says so", async () => {
-      await writeSkill(skillsDir, "web-framework-react");
-      const agentsDir = path.join(projectDir, "agents");
-      await mkdir(agentsDir, { recursive: true });
-      await writeFile(path.join(agentsDir, "web-developer.md"), renderAgentMd("web-developer"));
-
-      const { stdout, error } = await runCliCommand(["build", "plugins", "--agents-dir", "agents"]);
-
-      expect(error).toBeUndefined();
-      expect(stdout).toBe(
-        [
-          ...header(),
-          "Finding and compiling all skills...",
-          "  [OK] web-framework-react",
-          "Compiled 1 skill plugin",
-          "",
-          "Compiled 1 skill plugin:",
-          "  - web-framework-react (v1.0.0)",
-          "",
-          "Compiling agent plugins",
-          `  Agents directory: ${agentsDir}`,
-          "",
-          "Finding and compiling all agents...",
-          "  [OK] agent-web-developer",
-          "Compiled 1 agent plugin",
-          "",
-          "Compiled 1 agent plugin:",
-          "  - agent-web-developer (v1.0.0)",
-          "",
-          "✓ Plugin compilation complete!",
-          "",
-        ].join("\n"),
-      );
-      expect(
-        await directoryExists(path.join(outputDir, "agent-web-developer")),
-        "the agent's plugin is written beside the skill plugins",
-      ).toBe(true);
-    });
-
     it("says which skills failed and why it will not prune", async () => {
       await writeSkill(skillsDir, "web-framework-react");
       for (const bad of ["bad-skill", "worse-skill"]) {
@@ -483,7 +480,7 @@ describe("build:plugins command", () => {
 
       expect(error).toBeUndefined();
       expect(flattenCliOutput(stderr)).toContain(
-        "Warning: Skipping stale-plugin pruning: 2 skill(s) failed to compile (bad-skill, worse-skill). A failed skill is indistinguishable from a removed one.",
+        "Warning: Skipping stale-plugin pruning: 2 skills failed to compile (bad-skill, worse-skill). A failed skill is indistinguishable from a removed one.",
       );
     });
 

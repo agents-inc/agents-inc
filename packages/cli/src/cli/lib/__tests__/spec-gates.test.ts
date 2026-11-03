@@ -35,7 +35,6 @@ const RECOGNISED_NON_SPEC_NAMES = [
 
 /** Specs no journey names. May only shrink: a spec gaining a row must leave the list. */
 const SPECS_BELONGING_TO_NO_JOURNEY: readonly string[] = [
-  "commands/build-agent-plugins",
   "commands/compile",
   "commands/compile-edge-cases",
   "commands/compile-global-scope-hint",
@@ -55,15 +54,12 @@ const SPECS_BELONGING_TO_NO_JOURNEY: readonly string[] = [
   "commands/handed-out-invocations",
   "commands/init-from-mixed-scope-config-split",
   "commands/init-project-skill-reaching-no-agent",
-  "commands/list",
   "commands/local-skill-invalid-metadata-yaml",
   "commands/plugin-build-versioning",
   "commands/plugin-uninstall-core",
   "commands/plugin-uninstall-edge-cases",
   "commands/relationships",
   "commands/search-static",
-  "commands/source-flag-is-init-only",
-  "commands/uninstall",
   "commands/uninstall-global-propagation",
   "commands/uninstall-manifest-removal",
   "commands/uninstall-marker-sweep",
@@ -80,9 +76,7 @@ const SPECS_BELONGING_TO_NO_JOURNEY: readonly string[] = [
   "interactive/uninstall",
   "interactive/uninstall-below-the-minimum-terminal-size",
   "lifecycle/compile-after-scope-change",
-  "lifecycle/compile-at-home-propagates-global-hand-edit",
   "lifecycle/config-scope-integrity",
-  "lifecycle/doctor-dual-scope",
   "lifecycle/doctor-global-scope-blind-spots",
   "lifecycle/dual-scope-edit-integrity",
   "lifecycle/dual-scope-edit-mixed-sources",
@@ -127,7 +121,6 @@ const SPECS_BELONGING_TO_NO_JOURNEY: readonly string[] = [
   "lifecycle/scope-toggle-roundtrip",
   "lifecycle/selected-agent-name-excluded",
   "lifecycle/unified-config-view",
-  "lifecycle/uninstall-reinit-lifecycle",
 ];
 
 /** Calls that write the state the run reads: a spec beginning from one is a variant. */
