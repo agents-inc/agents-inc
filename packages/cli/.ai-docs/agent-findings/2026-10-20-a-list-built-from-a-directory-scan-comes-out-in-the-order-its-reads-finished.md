@@ -16,7 +16,7 @@ root_cause: missing-rule
 status: partial
 partial_note: >-
   The fast-glob half is done. glob() in src/cli/utils/fs.ts sorts its matches bytewise
-  (glob-order.test.ts), `validatePluginSkillFiles` and `validatePluginAgentFiles` scan through it
+  (glob-order.test.ts), `validateDeclaredFiles` scans a plugin's skill and agent files through it
   (plugin-validator-order.test.ts), and eslint.config.js refuses a fast-glob import under src/cli
   outside fs.ts and dist-staleness.ts, which fast-glob-imports-are-funnelled.test.ts holds in every
   zone. listDirectories sorts bytewise too (list-directories-order.test.ts); the other readdir

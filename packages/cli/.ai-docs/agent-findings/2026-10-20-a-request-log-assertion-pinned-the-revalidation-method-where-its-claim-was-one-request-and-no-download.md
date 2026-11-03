@@ -12,10 +12,12 @@ reporting_agent: cli-tester
 category: testing
 domain: e2e
 root_cause: missing-rule
-status: partial
-partial_note: >-
-  The spec asserts the outcome. user-journeys.md row 22 still describes the unchanged arm as
-  "exactly one HEAD and no GET", which the spec no longer holds.
+status: resolved
+resolved_by: >-
+  `statusFor` in `e2e/helpers/tarball-source-server.ts` answers a matching `If-None-Match` with 304
+  again, so a conditional-GET revalidation logs `GET 304` and no download. user-journeys.md row 22
+  reads "exactly one request and no download". The proposed standard for assertions.md is not
+  applied.
 ---
 
 ## What Was Wrong

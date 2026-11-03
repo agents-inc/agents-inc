@@ -13,12 +13,13 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: convention-undocumented
-status: partial
-partial_note: >-
-  The refused-save lines in init --from now count carried skills apart from copies
-  (`skillsRemoved` in init.tsx takes the carried folders out of the copy result). The success-path
-  counts still include them, which is an owner question, not a defect to fix here: init's
-  `skillsCopiedLine` ("Copied 2 skills to ...") and edit's `localSkillsCopied(copyResult.totalCopied)`.
+status: resolved
+resolved_by: >-
+  The refused-save lines in init --from count carried skills apart from copies (`skillsRemoved` in
+  init.tsx takes the carried folders out of the copy result). The success-path counts keep
+  including them by the owner's answer of 2026-11-02, "Leave it" (board card
+  q-cli-1015-copied-line-counts-carried): init's `skillsCopiedLine` ("Copied 2 skills to ...") and
+  edit's `localSkillsCopied(copyResult.totalCopied)` are unchanged.
 ---
 
 ## What Was Wrong

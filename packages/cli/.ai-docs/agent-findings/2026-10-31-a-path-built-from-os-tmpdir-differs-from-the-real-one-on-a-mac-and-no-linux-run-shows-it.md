@@ -14,10 +14,12 @@ root_cause: enforcement-gap
 status: resolved
 resolved_by: >-
   `createTempDir` in `src/cli/lib/__tests__/test-fs-utils.ts` hands out the real path, and
-  `vitest.setup.ts` makes the default test home through it; four specs whose assertion depended on
-  the temp path's spelling (its length, or a `.claude` folder above it) no longer do.
-  `test-fs-utils.test.ts` pins the real path under a symlinked TMPDIR on a Linux run, red first. The
-  unit suite passes from `packages/cli` under a symlinked TMPDIR; nothing runs it that way in CI.
+  `vitest.setup.ts` makes the default test home through it. Three specs whose assertion depended on
+  the temp path's spelling (its length, or a `.claude` folder above it) no longer do:
+  `base-command.test.ts`, `uninstall.test.ts` and `local-skill-mover-dir-cleanup.test.ts`. A fourth,
+  `home-dir-read-at-call-time.test.ts`, expected the as-given `os.tmpdir()` and now takes its real
+  path. `test-fs-utils.test.ts` pins the real path under a symlinked TMPDIR on a Linux run, red
+  first. The unit suite passes from `packages/cli` under a symlinked TMPDIR.
 ---
 
 ## What Was Wrong

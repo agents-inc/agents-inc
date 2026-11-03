@@ -25,7 +25,9 @@ resolved_by: >-
   path before its `.claude/` negative, and `local-skill-mover-dir-cleanup.test.ts` asks the path
   relative to the project. The e2e specs compare a wrapped path through `compactCliOutput`, and their
   two `.claude` negatives read `compactedWithoutTempFolder` (`e2e/helpers/test-utils.ts`), which
-  leaves out the temp folder every fixture sits in.
+  leaves out the temp folder every fixture sits in. Those two ask the negative of the whole output,
+  rightly, since their subject is that no line of the run names Claude's folder. The Proposed
+  Standard below forbids that; it does not hold where the subject is the whole run.
 ---
 
 ## What Was Wrong

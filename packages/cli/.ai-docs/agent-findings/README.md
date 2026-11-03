@@ -29,12 +29,11 @@ about a date.
 
 **One field is live, and it is `status:`.** It is edited in place after the fact, on the same file at
 the same path — written `open`, moved to `partial` when half the work lands, to `resolved` or
-`superseded` when it closes. `2026-07-17-d227-same-scope-active-tombstone-duplicate.md` has carried
-three different values over five weeks against a body that never moved. `partial_note:` travels with
-it and is live for the same reason: "Resolution Model (authoritative)" below binds it to be
-re-derived by any pass that opens the file at all. Everything else in the frontmatter is dated like
-the body — `affected_files:` names the tree the finding was written against, and `resolved_by:`
-records the mechanism that closed it on the day it closed.
+`superseded` when it closes. `partial_note:` travels with it and is live for the same reason:
+"Resolution Model (authoritative)" below binds it to be re-derived by any pass that opens the file
+at all. Everything else in the frontmatter is dated like the body — `affected_files:` names the
+tree the finding was written against, and `resolved_by:` records the mechanism that closed it on the
+day it closed.
 
 `scripts/check-findings-frontmatter.ts` reports dangling `affected_files:` entries and lifecycle
 notes naming symbols the tree no longer declares, and its suite holds both to the set already on
@@ -43,8 +42,7 @@ disk. A red there means a NEW one arrived. It is not a worklist against the ones
 **When the LIVE half is wrong, correct the field and append — never edit the body in place.** Set the
 status the tree supports, re-derive the note beside it, and where the old claim would have misled a
 reader, add a short correction at the END of the body naming what it asserted and what is actually
-true. The same d227 file is the worked example: a false supersession was replaced in the frontmatter
-and answered in a `## Correction` section, with the original body left exactly as written.
+true.
 
 **Reading a finding is safe; following one is not.** Re-derive before acting on a Proposed Standard —
 `.ai-docs/standards/documentation-bible.md` → "Agent Findings" carries that rule, and "Writing a

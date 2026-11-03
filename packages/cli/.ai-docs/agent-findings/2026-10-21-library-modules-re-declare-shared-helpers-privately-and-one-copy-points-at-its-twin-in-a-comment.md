@@ -21,9 +21,10 @@ domain: cli
 root_cause: scope-discipline-deferred
 status: partial
 partial_note: >-
-  Two copies folded in lane X3 round 2 (isFieldMapping into isRecord, publish-seed's arrivedAsText
-  into fetch-seed's). Three remain, each needing a home in a file X3 does not own (utils/,
-  matrix/matrix-provider.ts).
+  Code half done: one `parseJsonOrUndefined` in utils/json.ts replaces the three copies and
+  config.ts's fourth; matrix-health-check.ts imports compile's `isExclusiveCategory`, as
+  seed-apply.ts and propagate.ts do; `CATALOGUE_SKILL_IDS` is declared once, in source-loader.ts.
+  The clean-code-standards.md line proposed below is not written.
 ---
 
 ## What Was Wrong

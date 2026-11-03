@@ -15,8 +15,9 @@ domain: cli
 root_cause: missing-rule
 status: resolved
 resolved_by: >-
-  The outer catches of `discoverAllPluginSkills` and `listPluginNames` and `validatePluginManifest`'s
-  `Manifest file not found` branch are deleted. The proposed standard is not applied.
+  The outer catches of `discoverAllPluginSkills` and `listPluginNames` are deleted, and
+  `readManifestForValidation`, which now reads the manifest, has no `Manifest file not found`
+  branch. The proposed standard is not applied.
 ---
 
 ## What Was Wrong

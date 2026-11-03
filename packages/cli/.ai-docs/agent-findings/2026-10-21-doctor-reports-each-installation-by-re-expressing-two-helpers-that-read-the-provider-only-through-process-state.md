@@ -14,7 +14,12 @@ reporting_agent: cli-developer
 category: architecture
 domain: cli
 root_cause: convention-undocumented
-status: open
+status: partial
+partial_note: >-
+  Code half in part: `getVerifiedPluginInstallPaths` takes the provider and doctor's
+  `installedPluginSkillIds` calls it; `placementsOffered` reuses `placementsAskedIn` and
+  `refusalsAmong`, but `unofferablePlacementsFound` still takes no provider. The CLAUDE.md rule
+  proposed below is not written.
 ---
 
 ## What Was Wrong
@@ -62,3 +67,18 @@ scope rules: a read that a per-installation report may need takes the provider a
 rather than reading the process's choice, because `--provider` is process state and one report can
 be about two installations. Not checked against an existing standard; nothing in CLAUDE.md speaks
 to it.
+
+## Correction
+
+Added 2026-11-03 by the cli-developer (REPO-55 follow-ups). Two claims above no longer hold.
+
+- The copy named `unofferablePlacements` is now `placementsOffered` in
+  `lib/doctor/installation-reads.ts`. It is built from `placementsAskedIn` and `refusalsAmong` in
+  `lib/hosts/configured-placements.ts` rather than restating them, but `unofferablePlacementsFound`
+  still takes no provider.
+- `getVerifiedPluginInstallPaths` now takes a provider, defaulting to `providerInUse`, and
+  `installedPluginSkillIds` calls it rather than restating it.
+
+Checked with
+`grep -n "export async function getVerifiedPluginInstallPaths" -A3 src/cli/lib/plugins/plugin-discovery.ts`
+and `sed -n '/export async function installedPluginSkillIds/,/^}/p;/export async function placementsOffered/,/^}/p' src/cli/lib/doctor/installation-reads.ts`.

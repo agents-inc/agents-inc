@@ -47,3 +47,14 @@ Add `{ name: "", accepted: false }` to `NAMES` in `kebab-name-judges-agree.test.
 red on the `plugin.json` judge. Then refuse the empty string in the schema, with `.min(1)` on
 `name` and on `version`, so the kebab-case and semver checks keep skipping it and the user sees one
 message, not two. Not in conflict with `CLAUDE.md`.
+
+## Correction
+
+2026-11-02. `validatePluginManifest`, named in "What Was Wrong", no longer exists:
+`grep -rn validatePluginManifest src scripts e2e` from `packages/cli` returns nothing. The checks
+now live in `validateManifestFields` in `plugin-validator.ts`, which `validatePlugin` calls on the
+parsed manifest: `kebabNameErrors` and `semverErrors`, each still behind `isNonEmptyString`. The gap
+is unchanged, so `status: open` stands. `validatePlugin` still answers
+`{"valid":true,"errors":[],"warnings":[]}` for `"name": ""` and for `"version": ""`, and refuses
+`"name": "Bad_Name"`. `pluginManifestObjectSchema.name` is still a bare `z.string()`, and `NAMES` in
+`kebab-name-judges-agree.test.ts` still has no `""`. The body above is left as written.
