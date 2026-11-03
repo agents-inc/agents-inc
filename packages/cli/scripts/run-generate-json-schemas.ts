@@ -1,28 +1,17 @@
 /** Entry point for `bun run generate:schemas` and `generate:schemas:check`. */
 import path from "path";
 
-import { EXIT_CODES } from "../src/cli/lib/exit-codes.ts";
-
+import { reportCheck } from "./emitted-files.ts";
 import { check, generate } from "./generate-json-schemas.ts";
 
 const CHECK_FLAG = "--check";
 const SCHEMAS_DIR = path.resolve(import.meta.dirname, "../src/schemas");
 
 if (process.argv.includes(CHECK_FLAG)) {
-  const { clean, drifted } = await check({ schemasDir: SCHEMAS_DIR });
-
-  if (!clean) {
-    console.error("src/schemas is out of date:");
-    for (const file of drifted) {
-      console.error(`  ${file}`);
-    }
-    console.error(
-      "\nRun `bun run generate:schemas` in packages/cli and commit everything it writes.",
-    );
-    process.exit(EXIT_CODES.ERROR);
-  }
-
-  console.log("  ✓ src/schemas matches what the generator emits");
+  reportCheck(await check({ schemasDir: SCHEMAS_DIR }), {
+    label: "src/schemas",
+    script: "generate:schemas",
+  });
 } else {
   const { written } = await generate({ schemasDir: SCHEMAS_DIR });
 

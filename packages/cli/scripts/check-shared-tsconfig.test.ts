@@ -1,30 +1,27 @@
 import { spawnSync } from "child_process";
-import { mkdirSync, writeFileSync } from "fs";
 import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { EXIT_CODES } from "../src/cli/lib/exit-codes.js";
-import { cleanupTempDir, createTempDir } from "../src/cli/lib/__tests__/test-fs-utils.js";
 
 import {
   check,
   MISSING_DEPENDENCY,
   MISSING_TSCONFIG,
   NO_SHARED_BASE,
-  NO_WORKSPACES,
   OPT_OUT_KEY,
   SHARED_CONFIG_PACKAGE,
 } from "./check-shared-tsconfig.js";
+import { NO_WORKSPACES } from "./workspace-manifests.js";
+import { sharedConfigFixtureRepos } from "./shared-config-fixture-repos.js";
 
 const RUNNER = path.resolve(import.meta.dirname, "run-check-shared-tsconfig.ts");
 const ROOT_FLAG = "--root";
 
-const WORKSPACE_GLOBS = ["packages/*"];
 const WORKSPACE_DIR = "packages/thing";
 const SHARED_NODE_CONFIG = `${SHARED_CONFIG_PACKAGE}/node.json`;
 const SHARED_BASE_CONFIG = `${SHARED_CONFIG_PACKAGE}/base.json`;
 
-const DECLARED_VERSION = "workspace:*";
 const OPT_OUT_REASON = "ships plain JavaScript — there is no TypeScript here to type-check";
 
 /** The JSONC reader answers this with the key present but `undefined`, plus an error. */
@@ -32,50 +29,12 @@ const UNCONVERTIBLE_TSCONFIG = '{ "extends": someExpression }';
 
 const UNREADABLE_MESSAGE = /tsconfig\.json could not be read: \S/;
 
-type FixtureWorkspace = {
-  directory: string;
-  declaresSharedConfig?: boolean;
-  manifestExtras?: Record<string, string>;
-  configs?: Record<string, string>;
-};
-
-const roots: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(roots.splice(0).map(cleanupTempDir));
+const { writeFixtureRepo, removeFixtureRepos } = sharedConfigFixtureRepos({
+  tempDirPrefix: "shared-tsconfig-",
+  sharedConfigPackage: SHARED_CONFIG_PACKAGE,
 });
 
-async function writeFixtureRepo(workspaces: FixtureWorkspace[]): Promise<string> {
-  const root = await createTempDir("shared-tsconfig-");
-  roots.push(root);
-
-  writeJson(path.join(root, "package.json"), { workspaces: WORKSPACE_GLOBS });
-
-  for (const workspace of workspaces) {
-    const workspaceRoot = path.join(root, workspace.directory);
-    mkdirSync(workspaceRoot, { recursive: true });
-
-    writeJson(path.join(workspaceRoot, "package.json"), {
-      name: workspace.directory,
-      ...(workspace.declaresSharedConfig === false
-        ? {}
-        : { devDependencies: { [SHARED_CONFIG_PACKAGE]: DECLARED_VERSION } }),
-      ...workspace.manifestExtras,
-    });
-
-    for (const [file, content] of Object.entries(workspace.configs ?? {})) {
-      const target = path.join(workspaceRoot, file);
-      mkdirSync(path.dirname(target), { recursive: true });
-      writeFileSync(target, content);
-    }
-  }
-
-  return root;
-}
-
-function writeJson(filePath: string, value: unknown): void {
-  writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
-}
+afterEach(removeFixtureRepos);
 
 describe("a workspace that has stopped extending the shared config", () => {
   it("is reported, and the check is not clean", async () => {

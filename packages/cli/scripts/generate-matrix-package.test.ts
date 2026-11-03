@@ -3,6 +3,7 @@ import path from "path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { STANDARD_FILES } from "../src/cli/consts.js";
+import { toPosixPath } from "../src/cli/utils/posix-path.js";
 import { bytewise } from "../src/cli/utils/string.js";
 import { renderAgentYaml } from "../src/cli/lib/__tests__/content-generators.js";
 import { AGENT_DEFS } from "../src/cli/lib/__tests__/mock-data/mock-agents.js";
@@ -32,9 +33,7 @@ const REVIEWER_FLAVOR = "reviewer";
 const listFilesRecursive = (root: string): string[] =>
   readdirSync(root, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile())
-    .map((entry) =>
-      path.relative(root, path.join(entry.parentPath, entry.name)).split(path.sep).join("/"),
-    )
+    .map((entry) => toPosixPath(path.relative(root, path.join(entry.parentPath, entry.name))))
     .sort();
 
 const modifiedAt = (filePath: string): bigint => statSync(filePath, { bigint: true }).mtimeNs;

@@ -2,22 +2,7 @@
 import { EXIT_CODES } from "../src/cli/lib/exit-codes.ts";
 
 import { check, type WorkspaceVerdict } from "./check-vitest-collects-every-test.ts";
-
-/** Lets the suite drive this entry point against a fixture repository. */
-const ROOT_FLAG = "--root";
-
-function repoRootFromArgv(argv: string[]): string | undefined {
-  const flagIndex = argv.indexOf(ROOT_FLAG);
-  if (flagIndex === -1) return undefined;
-
-  const value = argv[flagIndex + 1];
-  if (value === undefined) {
-    console.error(`${ROOT_FLAG} needs a directory`);
-    process.exit(EXIT_CODES.INVALID_ARGS);
-  }
-
-  return value;
-}
+import { repoRootFromArgv } from "./workspace-manifests.ts";
 
 function reportUncollected(verdicts: WorkspaceVerdict[]): void {
   console.error(

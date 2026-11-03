@@ -3,9 +3,6 @@
  * `project-source-config.schema.json` are hand-maintained and not touched here.
  */
 import { z } from "zod";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
-import path from "path";
-import { format, resolveConfig } from "prettier";
 import {
   agentYamlGenerationSchema,
   agentFrontmatterValidationSchema,
@@ -21,14 +18,25 @@ import {
 import { CATEGORIES } from "../src/cli/types/generated/source-types.ts";
 import { isRecord } from "../src/cli/utils/type-guards.ts";
 
-import type { Options as PrettierOptions } from "prettier";
+import {
+  compareWithCommitted,
+  formatEmittedFiles,
+  writeEmittedFiles,
+  type CheckResult,
+  type EmittedFile,
+} from "./emitted-files.ts";
 
 const JSON_PARSER = "json";
 
-const STACK_SUBCATEGORY_ENUM = [...CATEGORIES];
-
-/** `path` is relative to the schemas directory. */
-type EmittedFile = { path: string; content: string };
+const STACK_AGENT_KEYS_PATH = [
+  "properties",
+  "stacks",
+  "items",
+  "properties",
+  "agents",
+  "additionalProperties",
+  "propertyNames",
+];
 
 type GeneratorRoots = { schemasDir: string };
 
@@ -44,36 +52,19 @@ type SchemaEntry = {
 };
 
 /**
- * Adds the category enum to stackAgentConfig's propertyNames. The Zod side validates keys with
- * superRefine (z.record(z.enum()) would make every key mandatory), which JSON Schema cannot express.
+ * Zod leaves a stack sub-agent's category keys open; the schema lists the built-in ones, so an
+ * editor flags any other.
  */
-function injectSubcategoryPropertyNames(obj: unknown): void {
-  if (Array.isArray(obj)) {
-    for (const item of obj) injectSubcategoryPropertyNames(item);
-    return;
-  }
-  if (!isRecord(obj)) return;
+function listBuiltInCategoriesAsStackAgentKeys(schema: Record<string, unknown>): void {
+  objectAt(schema, STACK_AGENT_KEYS_PATH).enum = [...CATEGORIES];
+}
 
-  const propNames = obj.propertyNames;
-  const additionalProps = obj.additionalProperties;
-  if (
-    obj.type === "object" &&
-    isRecord(propNames) &&
-    propNames.type === "string" &&
-    !propNames.enum &&
-    isRecord(additionalProps) &&
-    additionalProps.anyOf
-  ) {
-    // The skill id pattern is what identifies a stackAgentConfig.
-    const json = JSON.stringify(additionalProps);
-    if (json.includes("(web|api|cli|mobile|infra|meta|security)-.+-.+")) {
-      propNames.enum = STACK_SUBCATEGORY_ENUM;
-    }
-  }
-
-  for (const value of Object.values(obj)) {
-    injectSubcategoryPropertyNames(value);
-  }
+function objectAt(root: Record<string, unknown>, keys: string[]): Record<string, unknown> {
+  return keys.reduce((node, key) => {
+    const child = node[key];
+    if (!isRecord(child)) throw new Error(`The schema has no object at ${keys.join(".")}`);
+    return child;
+  }, root);
 }
 
 const SCHEMA_ENTRIES: SchemaEntry[] = [
@@ -162,7 +153,7 @@ const SCHEMA_ENTRIES: SchemaEntry[] = [
       title: "Stacks Configuration",
       description: "Schema for config/stacks.ts defining agent groupings.",
     },
-    postProcess: injectSubcategoryPropertyNames,
+    postProcess: listBuiltInCategoriesAsStackAgentKeys,
   },
   {
     filename: "stack.schema.json",
@@ -191,59 +182,19 @@ function schemaDocument(entry: SchemaEntry): Record<string, unknown> {
   return output;
 }
 
-/** Resolved from this file, not the destination, so a fixture dir in os.tmpdir() formats the same. */
-async function packagePrettierOptions(): Promise<PrettierOptions> {
-  const options = await resolveConfig(import.meta.filename);
-  if (options === null) {
-    throw new Error(
-      `No Prettier config resolved from ${import.meta.filename} — the emitted bytes would not ` +
-        "match the committed schemas.",
-    );
-  }
-  return options;
-}
+const schemaFile = (entry: SchemaEntry): EmittedFile => ({
+  path: entry.filename,
+  content: `${JSON.stringify(schemaDocument(entry), null, 2)}\n`,
+});
 
-async function emittedFiles(): Promise<EmittedFile[]> {
-  const options = await packagePrettierOptions();
-
-  return Promise.all(
-    SCHEMA_ENTRIES.map(async (entry) => ({
-      path: entry.filename,
-      content: await format(`${JSON.stringify(schemaDocument(entry), null, 2)}\n`, {
-        ...options,
-        parser: JSON_PARSER,
-      }),
-    })),
-  );
-}
-
-function writeEmittedFile(schemasDir: string, file: EmittedFile): void {
-  writeFileSync(path.join(schemasDir, file.path), file.content);
-}
-
-function matchesCommitted(schemasDir: string, file: EmittedFile): boolean {
-  const target = path.join(schemasDir, file.path);
-  return existsSync(target) && readFileSync(target, "utf-8") === file.content;
+function emittedFiles(): Promise<EmittedFile[]> {
+  return formatEmittedFiles(SCHEMA_ENTRIES.map(schemaFile), JSON_PARSER);
 }
 
 export async function generate({ schemasDir }: GeneratorRoots): Promise<{ written: string[] }> {
-  const files = await emittedFiles();
-
-  mkdirSync(schemasDir, { recursive: true });
-  for (const file of files) {
-    writeEmittedFile(schemasDir, file);
-  }
-
-  return { written: files.map((file) => file.path) };
+  return { written: writeEmittedFiles(schemasDir, await emittedFiles()) };
 }
 
-export async function check({ schemasDir }: GeneratorRoots): Promise<{
-  clean: boolean;
-  drifted: string[];
-}> {
-  const drifted = (await emittedFiles())
-    .filter((file) => !matchesCommitted(schemasDir, file))
-    .map((file) => file.path);
-
-  return { clean: drifted.length === 0, drifted };
+export async function check({ schemasDir }: GeneratorRoots): Promise<CheckResult> {
+  return compareWithCommitted(schemasDir, await emittedFiles());
 }

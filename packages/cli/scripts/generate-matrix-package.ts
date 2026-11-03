@@ -3,23 +3,30 @@
  * and the agent definitions in `src/generated/agents.ts`. Importing this file writes nothing.
  */
 import { matrixSchema } from "@workspace/matrix/matrix-schema";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "fs";
+import { readFileSync } from "fs";
 import path from "path";
-import { parse as parseYaml } from "yaml";
 
-import { STANDARD_FILES } from "../src/cli/consts.ts";
+import { DIRS } from "../src/cli/consts.ts";
 import { bytewise } from "../src/cli/utils/string.ts";
 import { typedEntries } from "../src/cli/utils/typed-object.ts";
 
 import type { AgentYamlConfig } from "../src/cli/types/index.ts";
 
+import {
+  compareWithCommitted,
+  writeEmittedFiles,
+  type CheckResult,
+  type EmittedFile,
+} from "./emitted-files.ts";
+import {
+  findAgentSources,
+  readAgentMetadata,
+  type AgentSource,
+} from "./generate-compile-package.ts";
+
 const CLI_ROOT = path.resolve(import.meta.dirname, "..");
 
 const CLI_TYPES_DIR = "src/cli/types";
-const CLI_AGENTS_DIR = "src/agents";
-
-/** Agent roles starting with this are scaffolding, not agents (`_templates`). */
-const RESERVED_FLAVOR_PREFIX = "_";
 
 const VENDOR_DIR = "src/vendor";
 const AGENTS_FILE = "src/generated/agents.ts";
@@ -35,12 +42,7 @@ const VENDORED_TYPE_FILES = [
   "generated/activation-descriptions.ts",
 ];
 
-/** `path` is relative to the matrix package root. */
-type EmittedFile = { path: string; content: string };
-
 type GeneratorRoots = { matrixRoot: string; cliRoot?: string };
-
-type AgentSource = { flavor: string; agent: string; metadataPath: string };
 
 type GeneratedAgentDefinition = Pick<
   AgentYamlConfig,
@@ -92,29 +94,9 @@ export type GeneratedAgentDefinition = {
 }
 `;
 
-const directoryNames = (dir: string): string[] =>
-  readdirSync(dir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name);
-
-function findAgentSources(cliRoot: string): AgentSource[] {
-  const agentsRoot = path.join(cliRoot, CLI_AGENTS_DIR);
-
-  return directoryNames(agentsRoot)
-    .filter((flavor) => !flavor.startsWith(RESERVED_FLAVOR_PREFIX))
-    .flatMap((flavor) =>
-      directoryNames(path.join(agentsRoot, flavor)).map((agent) => ({
-        flavor,
-        agent,
-        metadataPath: path.join(agentsRoot, flavor, agent, STANDARD_FILES.AGENT_METADATA_YAML),
-      })),
-    )
-    .filter((source) => existsSync(source.metadataPath));
-}
-
-function toAgentDefinition({ flavor, agent, metadataPath }: AgentSource): GeneratedAgentDefinition {
-  // Parse boundary: the CLI's own metadata.yaml.
-  const metadata = parseYaml(readFileSync(metadataPath, "utf-8")) as AgentYamlConfig;
+function toAgentDefinition(source: AgentSource): GeneratedAgentDefinition {
+  const { flavor, agent } = source;
+  const metadata = readAgentMetadata(source);
 
   return {
     id: metadata.id,
@@ -144,7 +126,7 @@ function serializeAgentDefinition(definition: GeneratedAgentDefinition): string 
 }
 
 function agentDefinitionsFile(cliRoot: string): EmittedFile {
-  const definitions = findAgentSources(cliRoot)
+  const definitions = findAgentSources(path.join(cliRoot, DIRS.agents))
     .map(toAgentDefinition)
     // Byte order keeps the committed output machine-independent.
     .sort((a, b) => bytewise(a.id, b.id));
@@ -163,17 +145,6 @@ function emittedFiles(cliRoot: string): EmittedFile[] {
   return [...vendoredTypeFiles(cliRoot), agentDefinitionsFile(cliRoot)];
 }
 
-function writeEmittedFile(matrixRoot: string, file: EmittedFile): void {
-  const target = path.join(matrixRoot, file.path);
-  mkdirSync(path.dirname(target), { recursive: true });
-  writeFileSync(target, file.content);
-}
-
-function matchesCommitted(matrixRoot: string, file: EmittedFile): boolean {
-  const target = path.join(matrixRoot, file.path);
-  return existsSync(target) && readFileSync(target, "utf-8") === file.content;
-}
-
 /** Byte-faithful vendoring cannot tell whether the matrix still has the wire shape; this can. */
 export function matrixShapeIssues(matrix: unknown): string[] {
   const result = matrixSchema.safeParse(matrix);
@@ -185,22 +156,9 @@ export function matrixShapeIssues(matrix: unknown): string[] {
 export function generate({ matrixRoot, cliRoot = CLI_ROOT }: GeneratorRoots): {
   written: string[];
 } {
-  const files = emittedFiles(cliRoot);
-
-  for (const file of files) {
-    writeEmittedFile(matrixRoot, file);
-  }
-
-  return { written: files.map((file) => file.path) };
+  return { written: writeEmittedFiles(matrixRoot, emittedFiles(cliRoot)) };
 }
 
-export function check({ matrixRoot, cliRoot = CLI_ROOT }: GeneratorRoots): {
-  clean: boolean;
-  drifted: string[];
-} {
-  const drifted = emittedFiles(cliRoot)
-    .filter((file) => !matchesCommitted(matrixRoot, file))
-    .map((file) => file.path);
-
-  return { clean: drifted.length === 0, drifted };
+export function check({ matrixRoot, cliRoot = CLI_ROOT }: GeneratorRoots): CheckResult {
+  return compareWithCommitted(matrixRoot, emittedFiles(cliRoot));
 }

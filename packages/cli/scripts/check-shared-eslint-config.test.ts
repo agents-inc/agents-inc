@@ -1,25 +1,23 @@
 import { spawnSync } from "child_process";
-import { mkdirSync, writeFileSync } from "fs";
 import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { EXIT_CODES } from "../src/cli/lib/exit-codes.js";
-import { cleanupTempDir, createTempDir } from "../src/cli/lib/__tests__/test-fs-utils.js";
 
 import {
   check,
   MISSING_DEPENDENCY,
   NO_SHARED_IMPORT,
-  NO_WORKSPACES,
   OPT_OUT_KEY,
   SHARED_CONFIG_PACKAGE,
   UNDECLARED_CONFIG_LESS,
 } from "./check-shared-eslint-config.js";
+import { NO_WORKSPACES } from "./workspace-manifests.js";
+import { sharedConfigFixtureRepos } from "./shared-config-fixture-repos.js";
 
 const RUNNER = path.resolve(import.meta.dirname, "run-check-shared-eslint-config.ts");
 const ROOT_FLAG = "--root";
 
-const WORKSPACE_GLOBS = ["packages/*"];
 const WORKSPACE_DIR = "packages/thing";
 const SHARED_BASE_ENTRY = `${SHARED_CONFIG_PACKAGE}/base`;
 
@@ -27,7 +25,6 @@ const ESLINT_CONFIG_JS = "eslint.config.js";
 const ESLINT_CONFIG_MJS = "eslint.config.mjs";
 const ESLINT_CONFIG_TS = "eslint.config.ts";
 
-const DECLARED_VERSION = "workspace:*";
 const OPT_OUT_REASON =
   "an Astro-only workspace — the shared base matches nothing here, and .astro needs a parser the shared package does not ship";
 
@@ -68,55 +65,12 @@ const JAVASCRIPT_CONTENT = `export const thing = 1\n`;
 const CONFIG_LESS_OPT_OUT_REASON =
   "the only TypeScript here is a hand-written declaration file — read by scripts/check-shared-eslint-config.ts";
 
-type FixtureWorkspace = {
-  directory: string;
-  declaresSharedConfig?: boolean;
-  manifestExtras?: Record<string, string>;
-  configs?: Record<string, string>;
-  sources?: Record<string, string>;
-};
-
-const roots: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(roots.splice(0).map(cleanupTempDir));
+const { writeFixtureRepo, removeFixtureRepos } = sharedConfigFixtureRepos({
+  tempDirPrefix: "shared-eslint-config-",
+  sharedConfigPackage: SHARED_CONFIG_PACKAGE,
 });
 
-async function writeFixtureRepo(workspaces: FixtureWorkspace[]): Promise<string> {
-  const root = await createTempDir("shared-eslint-config-");
-  roots.push(root);
-
-  writeJson(path.join(root, "package.json"), { workspaces: WORKSPACE_GLOBS });
-
-  for (const workspace of workspaces) {
-    const workspaceRoot = path.join(root, workspace.directory);
-    mkdirSync(workspaceRoot, { recursive: true });
-
-    writeJson(path.join(workspaceRoot, "package.json"), {
-      name: workspace.directory,
-      ...(workspace.declaresSharedConfig === false
-        ? {}
-        : { devDependencies: { [SHARED_CONFIG_PACKAGE]: DECLARED_VERSION } }),
-      ...workspace.manifestExtras,
-    });
-
-    for (const [file, content] of Object.entries(workspace.configs ?? {})) {
-      writeFileSync(path.join(workspaceRoot, file), content);
-    }
-
-    for (const [file, content] of Object.entries(workspace.sources ?? {})) {
-      const sourcePath = path.join(workspaceRoot, file);
-      mkdirSync(path.dirname(sourcePath), { recursive: true });
-      writeFileSync(sourcePath, content);
-    }
-  }
-
-  return root;
-}
-
-function writeJson(filePath: string, value: unknown): void {
-  writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
-}
+afterEach(removeFixtureRepos);
 
 describe("a workspace whose eslint config stands alone", () => {
   it("is reported when it composes the shared set by hand, and the check is not clean", async () => {
@@ -172,6 +126,19 @@ describe("a workspace whose eslint config stands alone", () => {
         outcome: "diverged",
         problems: [NO_SHARED_IMPORT, MISSING_DEPENDENCY],
       },
+    ]);
+  });
+
+  it("is judged by the eslint.config.js eslint loads, not an eslint.config.ts beside it that extends the shared one", async () => {
+    const root = await writeFixtureRepo([
+      {
+        directory: WORKSPACE_DIR,
+        configs: { [ESLINT_CONFIG_JS]: RESTATING_CONFIG, [ESLINT_CONFIG_TS]: EXTENDING_CONFIG },
+      },
+    ]);
+
+    expect(check({ repoRoot: root }).verdicts).toStrictEqual([
+      { workspace: WORKSPACE_DIR, outcome: "diverged", problems: [NO_SHARED_IMPORT] },
     ]);
   });
 });

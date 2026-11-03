@@ -6,6 +6,7 @@ import { parse as parseYaml } from "yaml";
 import { STANDARD_FILES } from "../src/cli/consts.js";
 import { cleanupTempDir, createTempDir } from "../src/cli/lib/__tests__/test-fs-utils.js";
 import { AGENT_NAMES } from "../src/cli/types/agents.js";
+import { toPosixPath } from "../src/cli/utils/posix-path.js";
 
 import { check, generate } from "./generate-matrix-package.js";
 
@@ -68,9 +69,7 @@ const PM_ENTRY = agentDefinitionEntry(PLANNING_FLAVOR, PM);
 const listFilesRecursive = (root: string): string[] =>
   readdirSync(root, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile())
-    .map((entry) =>
-      path.relative(root, path.join(entry.parentPath, entry.name)).split(path.sep).join("/"),
-    )
+    .map((entry) => toPosixPath(path.relative(root, path.join(entry.parentPath, entry.name))))
     .sort();
 
 const readEmitted = (root: string, relativePaths: string[]): Record<string, string> =>

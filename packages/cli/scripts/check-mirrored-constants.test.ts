@@ -24,7 +24,7 @@ const NAME = "EXIT_CODES";
 const SHARED_KEY = "CANCELLED";
 const SHARED_VALUE = 4;
 
-/** The shell's command-not-found status, which the CLI never emits. */
+/** oclif's exit for an unknown command, which exit-codes.ts does not declare. */
 const MIRROR_ONLY = `  UNKNOWN_COMMAND: 127,`;
 
 const RECORD_MIRROR: Mirror = {
@@ -160,6 +160,65 @@ describe("check-mirrored-constants", () => {
       };
 
       expect(check({ packageRoot, mirrors: [mirror] }).clean).toBe(true);
+    });
+  });
+
+  describe("a mirror whose declaration carries `as const satisfies` its shape", () => {
+    const SHAPE = `type Size = { rows: number; cols: number };`;
+    const mirrorSource = (rows: number): string =>
+      `${SHAPE}\nexport const TERMINAL_SIZE = { SHORT: { rows: ${rows}, cols: 100 } } as const satisfies Record<string, Size>;`;
+    const productSource = (rows: number): string =>
+      `export const MIN_TERMINAL_SIZE = { COLS: 80, ROWS: ${rows} } as const;`;
+
+    it("agrees when the value behind the clause is the gate", async () => {
+      const packageRoot = await packageWith({
+        [MIRROR_FILE]: mirrorSource(20),
+        [PRODUCT_FILE]: productSource(20),
+      });
+
+      expect(check({ packageRoot, mirrors: [VALUE_MIRROR] })).toStrictEqual({
+        clean: true,
+        verdicts: [{ name: VALUE_MIRROR.name, outcome: "agrees" }],
+      });
+    });
+
+    it("reports the value behind the clause when it no longer tracks the gate", async () => {
+      const packageRoot = await packageWith({
+        [MIRROR_FILE]: mirrorSource(20),
+        [PRODUCT_FILE]: productSource(22),
+      });
+
+      expect(check({ packageRoot, mirrors: [VALUE_MIRROR] })).toStrictEqual({
+        clean: false,
+        verdicts: [
+          {
+            name: VALUE_MIRROR.name,
+            outcome: "drifted",
+            detail: "mirror holds 20, product holds 22",
+          },
+        ],
+      });
+    });
+
+    it("reads a record behind the clause", async () => {
+      const packageRoot = await packageWith({
+        [MIRROR_FILE]: `export const ${SYMBOL} = { ${SHARED_KEY}: ${SHARED_VALUE} } as const satisfies Record<string, number>;`,
+        [PRODUCT_FILE]: record(SHARED_VALUE),
+      });
+
+      expect(check({ packageRoot, mirrors: [RECORD_MIRROR] })).toStrictEqual({
+        clean: true,
+        verdicts: [{ name: NAME, outcome: "agrees" }],
+      });
+    });
+
+    it("still refuses a reference behind the clause", async () => {
+      const packageRoot = await packageWith({
+        [MIRROR_FILE]: `const GATE = 20;\nexport const TERMINAL_SIZE = { SHORT: { rows: GATE satisfies number, cols: 100 } } as const;`,
+        [PRODUCT_FILE]: productSource(20),
+      });
+
+      expectRefusal(() => check({ packageRoot, mirrors: [VALUE_MIRROR] }), NOT_A_LITERAL);
     });
   });
 

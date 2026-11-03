@@ -22,6 +22,7 @@ import { SKILLS } from "../src/cli/lib/__tests__/test-fixtures.js";
 import type { AgentName } from "../src/cli/types/agents.js";
 import { AGENT_NAMES } from "../src/cli/types/agents.js";
 import { PROJECT_ROOT } from "../src/cli/consts.js";
+import { toPosixPath } from "../src/cli/utils/posix-path.js";
 import { typedValues } from "../src/cli/utils/typed-object.js";
 
 import { check, generate } from "./generate-compile-package.js";
@@ -46,9 +47,7 @@ const FIDELITY_AGENT_PATH = "developer/web-developer";
 const listFilesRecursive = (root: string, extension: string): string[] =>
   readdirSync(root, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(extension))
-    .map((entry) =>
-      path.relative(root, path.join(entry.parentPath, entry.name)).split(path.sep).join("/"),
-    )
+    .map((entry) => toPosixPath(path.relative(root, path.join(entry.parentPath, entry.name))))
     .sort();
 
 const modifiedAt = (filePath: string): bigint => statSync(filePath, { bigint: true }).mtimeNs;

@@ -8,6 +8,8 @@ import path from "path";
 
 import ts from "typescript";
 
+import { eachNode } from "../src/cli/lib/__tests__/helpers/syntax-tree.ts";
+import { toPosixPath } from "../src/cli/utils/posix-path.ts";
 import { bytewise } from "../src/cli/utils/string.ts";
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..");
@@ -94,7 +96,7 @@ function doorsIn(packageRoot: string, module: string): Door[] {
     const env = envHandedBy(call);
 
     return {
-      file: module.split(path.sep).join("/"),
+      file: toPosixPath(module),
       spawnedBy: calleeNameOf(call.expression),
       guarded: reachesGuard(env, file),
     };
@@ -104,11 +106,9 @@ function doorsIn(packageRoot: string, module: string): Door[] {
 function spawnCallsIn(file: ts.SourceFile): ts.CallExpression[] {
   const calls: ts.CallExpression[] = [];
 
-  const collect = (node: ts.Node): void => {
+  eachNode(file, (node) => {
     if (ts.isCallExpression(node) && node.arguments.some(namesTheBinary)) calls.push(node);
-    node.forEachChild(collect);
-  };
-  file.forEachChild(collect);
+  });
 
   return calls;
 }
@@ -132,11 +132,9 @@ function isTheBinary(element: ts.Expression): boolean {
 function literalPiecesIn(node: ts.Node): string[] {
   const pieces: string[] = [];
 
-  const collect = (child: ts.Node): void => {
+  eachNode(node, (child) => {
     if (ts.isStringLiteralLike(child) || isTemplatePiece(child)) pieces.push(child.text);
-    child.forEachChild(collect);
-  };
-  collect(node);
+  });
 
   return pieces;
 }
@@ -219,7 +217,7 @@ function valueIdentifiersIn(node: ts.Node): string[] {
 function initializerOf(file: ts.SourceFile, name: string): ts.Expression | undefined {
   let found: ts.Expression | undefined;
 
-  const search = (node: ts.Node): void => {
+  eachNode(file, (node) => {
     if (
       ts.isVariableDeclaration(node) &&
       ts.isIdentifier(node.name) &&
@@ -228,9 +226,7 @@ function initializerOf(file: ts.SourceFile, name: string): ts.Expression | undef
     ) {
       found ??= node.initializer;
     }
-    node.forEachChild(search);
-  };
-  file.forEachChild(search);
+  });
 
   return found;
 }

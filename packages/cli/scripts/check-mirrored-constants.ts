@@ -142,6 +142,24 @@ const MIRRORS: Mirror[] = [
     product: { file: COMPILE_PATHS, symbol: "STANDARD_FILES", path: ["REFERENCE_MD"] },
   },
   {
+    name: "FILES.CODEX_CONFIG_TOML",
+    kind: "value",
+    e2e: { file: E2E_CONSTANTS, symbol: "FILES", path: ["CODEX_CONFIG_TOML"] },
+    product: { file: INSTALL_LAYOUT, symbol: "CODEX_CONFIG_FILE", path: [] },
+  },
+  {
+    name: "CLI_INVOKE_COMMAND",
+    kind: "value",
+    e2e: { file: E2E_CONSTANTS, symbol: "CLI_INVOKE_COMMAND", path: [] },
+    product: { file: COMPILE_PATHS, symbol: "CLI_INVOKE_COMMAND", path: [] },
+  },
+  {
+    name: "BRANDING.DEFAULT_NAME",
+    kind: "value",
+    e2e: { file: E2E_CONSTANTS, symbol: "BRANDING", path: ["DEFAULT_NAME"] },
+    product: { file: CONSTS, symbol: "DEFAULT_BRANDING", path: ["NAME"] },
+  },
+  {
     name: "SOURCE_PATHS.AGENTS_DIR",
     kind: "value",
     e2e: { file: E2E_CONSTANTS, symbol: "SOURCE_PATHS", path: ["AGENTS_DIR"] },
@@ -301,7 +319,13 @@ function literalValue(
 }
 
 function unwrap(node: ts.Expression): ts.Expression {
-  if (ts.isAsExpression(node) || ts.isParenthesizedExpression(node)) return unwrap(node.expression);
+  if (
+    ts.isAsExpression(node) ||
+    ts.isSatisfiesExpression(node) ||
+    ts.isParenthesizedExpression(node)
+  ) {
+    return unwrap(node.expression);
+  }
   return node;
 }
 

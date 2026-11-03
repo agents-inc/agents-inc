@@ -7,7 +7,8 @@
 import { existsSync, readdirSync, readFileSync } from "fs";
 import path from "path";
 
-const REPOSITORY_ROOT = path.resolve(import.meta.dirname, "../../..");
+import { filesUnder, refusal } from "./owned-sources.js";
+import { REPOSITORY_ROOT } from "./repository-root.js";
 
 const MARKDOWN_EXTENSION = ".md";
 
@@ -92,7 +93,7 @@ function citationsUnder(repositoryRoot: string, scope: CitationScope): ScopedCit
   const scopePath = path.join(repositoryRoot, scope.directory);
   if (!existsSync(scopePath)) throw refusal(NO_SCOPE_DIRECTORY, scope.directory);
 
-  return citingFilesUnder(scopePath).flatMap((document) =>
+  return filesUnder(scopePath, isCitingFile).flatMap((document) =>
     citationsIn(readFileSync(path.join(scopePath, document), "utf-8")).map((cited) => ({
       citation: { document: `${scope.directory}/${document}`, ...cited },
       scope,
@@ -110,17 +111,8 @@ function isRefused(scope: CitationScope, form: CitationForm): boolean {
 
 const CITING_EXTENSIONS = [MARKDOWN_EXTENSION, ".ts", ".tsx", ".mjs"];
 
-function citingFilesUnder(directoryPath: string, prefix = ""): string[] {
-  return readdirSync(directoryPath, { withFileTypes: true }).flatMap((entry) => {
-    const relativePath = path.join(prefix, entry.name);
-    if (entry.isDirectory()) {
-      return citingFilesUnder(path.join(directoryPath, entry.name), relativePath);
-    }
-
-    return CITING_EXTENSIONS.some((extension) => entry.name.endsWith(extension))
-      ? [relativePath]
-      : [];
-  });
+function isCitingFile(name: string): boolean {
+  return CITING_EXTENSIONS.some((extension) => name.endsWith(extension));
 }
 
 /** A date then a long slug; the lookbehind stops a date inside a longer filename matching. */
@@ -165,8 +157,4 @@ function citedName(matched: string): string {
 
 function withoutExtension(name: string): string {
   return name.endsWith(MARKDOWN_EXTENSION) ? name.slice(0, -MARKDOWN_EXTENSION.length) : name;
-}
-
-function refusal(problem: string, subject: string): Error {
-  return new Error(`${problem}: ${subject}`);
 }

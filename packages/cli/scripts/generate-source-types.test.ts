@@ -176,6 +176,28 @@ describe("resolveStack", () => {
     });
   });
 
+  it("leaves out a category none of whose skills this catalogue ships", () => {
+    const stack: Stack = {
+      id: "unshipped-category-stack",
+      name: "Unshipped category",
+      description: "One category ships nothing",
+      agents: {
+        "web-developer": {
+          "web-framework": [{ id: UNKNOWN_SKILL_ID, preloaded: true }],
+          "web-client-state": [{ id: "web-state-zustand", preloaded: false }],
+        },
+      },
+    };
+
+    const result = resolveStack(stack, KNOWN_SKILL_IDS);
+
+    expect(result.skills).toStrictEqual({
+      "web-developer": {
+        "web-client-state": ["web-state-zustand"],
+      },
+    });
+  });
+
   it("deduplicates allSkillIds across agents", () => {
     const stack: Stack = {
       id: "dedup-stack",

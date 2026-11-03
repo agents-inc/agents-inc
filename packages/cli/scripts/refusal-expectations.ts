@@ -11,6 +11,10 @@ import fg from "fast-glob";
 import ts from "typescript";
 import { expect } from "vitest";
 
+import { eachNode } from "../src/cli/lib/__tests__/helpers/syntax-tree.js";
+
+import { importedNamesIn } from "./owned-sources.js";
+
 export const UNSTATED_REFUSAL =
   "asserts a refusal whose message is not stated — an imported constant its module does not export is `undefined` here, and matches every error";
 
@@ -103,11 +107,9 @@ function isNegated(expression: ts.Expression): boolean {
 function throwAssertionsIn(file: ts.SourceFile): ts.CallExpression[] {
   const calls: ts.CallExpression[] = [];
 
-  const visit = (node: ts.Node): void => {
+  eachNode(file, (node) => {
     if (isThrowAssertion(node)) calls.push(node);
-    ts.forEachChild(node, visit);
-  };
-  ts.forEachChild(file, visit);
+  });
 
   return calls;
 }
@@ -118,23 +120,4 @@ function isThrowAssertion(node: ts.Node): node is ts.CallExpression {
     ts.isPropertyAccessExpression(node.expression) &&
     THROW_MATCHERS.includes(node.expression.name.text)
   );
-}
-
-function importedNamesIn(file: ts.SourceFile): Set<string> {
-  return new Set(file.statements.flatMap(importedNamesOf));
-}
-
-function importedNamesOf(statement: ts.Statement): string[] {
-  if (!ts.isImportDeclaration(statement) || statement.importClause === undefined) return [];
-
-  const { name, namedBindings } = statement.importClause;
-  const defaults = name === undefined ? [] : [name.text];
-  if (namedBindings === undefined) return defaults;
-
-  return [
-    ...defaults,
-    ...(ts.isNamedImports(namedBindings)
-      ? namedBindings.elements.map((element) => element.name.text)
-      : [namedBindings.name.text]),
-  ];
 }

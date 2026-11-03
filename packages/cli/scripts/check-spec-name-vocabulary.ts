@@ -9,6 +9,8 @@ import { fileURLToPath } from "url";
 import fg from "fast-glob";
 import ts from "typescript";
 
+import { eachNode } from "../src/cli/lib/__tests__/helpers/syntax-tree.js";
+
 export const NO_SPECS = "read no spec at all";
 export const NO_MODULES = "resolved its names against no module at all";
 
@@ -96,13 +98,11 @@ export function specNamesIn(source: string, file: string): string[] {
   const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, false);
   const names: string[] = [];
 
-  const visit = (node: ts.Node): void => {
+  eachNode(parsed, (node) => {
     if (ts.isCallExpression(node) && isNamingCall(node.expression)) {
       names.push(...literalPartsOf(node.arguments[0]));
     }
-    ts.forEachChild(node, visit);
-  };
-  ts.forEachChild(parsed, visit);
+  });
 
   return names;
 }

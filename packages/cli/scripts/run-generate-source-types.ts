@@ -4,6 +4,7 @@ import path from "path";
 
 import { EXIT_CODES } from "../src/cli/lib/exit-codes.ts";
 
+import { reportCheck } from "./emitted-files.ts";
 import { check, generate } from "./generate-source-types.ts";
 
 const CHECK_FLAG = "--check";
@@ -37,20 +38,11 @@ const skillsSource = skillsSourceFromArgv();
 if (process.argv.includes(CHECK_FLAG)) {
   refuseMissingSkillsCheckout(skillsSource);
 
-  const { clean, drifted } = await check({ outDir: OUT_DIR, skillsSource });
-
-  if (!clean) {
-    console.error(`src/cli/types/generated is out of date against ${skillsSource}:`);
-    for (const file of drifted) {
-      console.error(`  ${file}`);
-    }
-    console.error(
-      "\nRun `bun run generate:types` in packages/cli and commit everything it writes.",
-    );
-    process.exit(EXIT_CODES.ERROR);
-  }
-
-  console.log("  ✓ src/cli/types/generated matches what the generator emits");
+  reportCheck(await check({ outDir: OUT_DIR, skillsSource }), {
+    label: "src/cli/types/generated",
+    script: "generate:types",
+    against: skillsSource,
+  });
 } else {
   console.log(`Generating source types from ${skillsSource}\n`);
 

@@ -8,12 +8,14 @@ import { EXIT_CODES } from "../src/cli/lib/exit-codes.js";
 import { cleanupTempDir, createTempDir } from "../src/cli/lib/__tests__/test-fs-utils.js";
 import { typedEntries } from "../src/cli/utils/typed-object.js";
 
-import { check, NO_WORKSPACES } from "./check-vitest-collects-every-test.js";
+import { check } from "./check-vitest-collects-every-test.js";
+import { REPOSITORY_ROOT } from "./repository-root.js";
+import { writeJson } from "./shared-config-fixture-repos.js";
+import { NO_WORKSPACES } from "./workspace-manifests.js";
 
 const RUNNER = path.resolve(import.meta.dirname, "run-check-vitest-collects-every-test.ts");
 const ROOT_FLAG = "--root";
 
-const REPOSITORY_ROOT = path.resolve(import.meta.dirname, "../../..");
 const RUNNER_FROM_THE_REPOSITORY = "packages/cli/scripts/run-check-vitest-collects-every-test.ts";
 
 const WORKSPACE_GLOBS = ["packages/*"];
@@ -21,6 +23,7 @@ const WORKSPACE_DIR = "packages/thing";
 const OTHER_WORKSPACE_DIR = "packages/other";
 
 const VITEST_CONFIG = "vitest.config.ts";
+const VITE_CONFIG = "vite.config.ts";
 
 const SRC_TEST = "src/format.test.ts";
 const SCRIPTS_TEST = "scripts/build.test.ts";
@@ -104,10 +107,6 @@ async function reachedThroughSymlink(root: string): Promise<string> {
   symlinkSync(root, link, "dir");
 
   return link;
-}
-
-function writeJson(filePath: string, value: unknown): void {
-  writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 function runTheCheck(root: string, cwd?: string): SpawnSyncReturns<string> {
@@ -382,6 +381,65 @@ describe("a workspace whose test files are all collected", () => {
     expect(await check({ repoRoot: root })).toStrictEqual({
       clean: true,
       verdicts: [{ workspace: WORKSPACE_DIR, collected: [], uncollected: [] }],
+    });
+  });
+});
+
+describe("a workspace whose only config is the vite.config vitest falls back to", () => {
+  it("is clean when the vite.config's include patterns reach every test file", async () => {
+    const root = await writeFixtureRepo([
+      {
+        directory: WORKSPACE_DIR,
+        files: {
+          [VITE_CONFIG]: SRC_AND_SCRIPTS_CONFIG,
+          [SRC_TEST]: TEST_BODY,
+          [SCRIPTS_TEST]: TEST_BODY,
+        },
+      },
+    ]);
+
+    expect(await check({ repoRoot: root })).toStrictEqual({
+      clean: true,
+      verdicts: [
+        { workspace: WORKSPACE_DIR, collected: [SCRIPTS_TEST, SRC_TEST], uncollected: [] },
+      ],
+    });
+  });
+
+  it("reports only the test file the vite.config's include patterns do not reach", async () => {
+    const root = await writeFixtureRepo([
+      {
+        directory: WORKSPACE_DIR,
+        files: {
+          [VITE_CONFIG]: SRC_ONLY_CONFIG,
+          [SRC_TEST]: TEST_BODY,
+          [SCRIPTS_TEST]: TEST_BODY,
+        },
+      },
+    ]);
+
+    expect(await check({ repoRoot: root })).toStrictEqual({
+      clean: false,
+      verdicts: [{ workspace: WORKSPACE_DIR, collected: [SRC_TEST], uncollected: [SCRIPTS_TEST] }],
+    });
+  });
+
+  it("is judged by the vitest.config beside it, which vitest loads first", async () => {
+    const root = await writeFixtureRepo([
+      {
+        directory: WORKSPACE_DIR,
+        files: {
+          [VITEST_CONFIG]: SRC_ONLY_CONFIG,
+          [VITE_CONFIG]: SRC_AND_SCRIPTS_CONFIG,
+          [SRC_TEST]: TEST_BODY,
+          [SCRIPTS_TEST]: TEST_BODY,
+        },
+      },
+    ]);
+
+    expect(await check({ repoRoot: root })).toStrictEqual({
+      clean: false,
+      verdicts: [{ workspace: WORKSPACE_DIR, collected: [SRC_TEST], uncollected: [SCRIPTS_TEST] }],
     });
   });
 });

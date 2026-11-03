@@ -7,6 +7,7 @@ import path from "path";
 import { describe, expect, it, vi } from "vitest";
 
 import { cleanupTempDir, createTempDir } from "../src/cli/lib/__tests__/test-fs-utils.js";
+import { CATEGORIES } from "../src/cli/types/generated/source-types.js";
 
 import { check, generate } from "./generate-json-schemas.js";
 
@@ -28,6 +29,8 @@ const GENERATED_SCHEMAS = [
 ];
 
 const HAND_MAINTAINED_SCHEMAS = ["project-config.schema.json", "project-source-config.schema.json"];
+
+const STACKS_SCHEMA = "stacks.schema.json";
 
 const DRIFTED_FILE = "metadata.schema.json";
 const DRIFTED_CONTENT = '{ "hand-edited after generation": true }\n';
@@ -92,6 +95,33 @@ describe("generating into a fresh directory", () => {
         `${name} must be identical to the file committed in src/schemas`,
       ).toBe(readFileSync(path.join(SCHEMAS_DIR, name), "utf-8"));
     }
+
+    await cleanupTempDir(outputRoot);
+  });
+});
+
+describe("the stacks schema", () => {
+  it("names the built-in categories as the only keys a stack's sub-agent may use", async () => {
+    const outputRoot = await createTempDir("schemas-stack-categories-");
+
+    await generate({ schemasDir: outputRoot });
+
+    const stacksSchema: unknown = JSON.parse(
+      readFileSync(path.join(outputRoot, STACKS_SCHEMA), "utf-8"),
+    );
+    expect(stacksSchema).toMatchObject({
+      properties: {
+        stacks: {
+          items: {
+            properties: {
+              agents: {
+                additionalProperties: { propertyNames: { type: "string", enum: [...CATEGORIES] } },
+              },
+            },
+          },
+        },
+      },
+    });
 
     await cleanupTempDir(outputRoot);
   });

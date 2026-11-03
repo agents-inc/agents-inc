@@ -2,14 +2,22 @@
  * Vendors the agent partials and Liquid templates into `packages/compile` as string data, so the
  * editor's browser preview renders what the CLI compiles. Importing this file writes nothing.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, readdirSync } from "fs";
 import path from "path";
 import { parse as parseYaml } from "yaml";
 
 import { DIRS, STANDARD_FILES } from "../src/cli/consts.ts";
+import { toPosixPath } from "../src/cli/utils/posix-path.ts";
 import { bytewise } from "../src/cli/utils/string.ts";
 
 import type { AgentYamlConfig } from "../src/cli/types/index.ts";
+
+import {
+  compareWithCommitted,
+  writeEmittedFiles,
+  type CheckResult,
+  type EmittedFile,
+} from "./emitted-files.ts";
 
 const CLI_ROOT = path.resolve(import.meta.dirname, "..");
 
@@ -23,13 +31,15 @@ const LIQUID_EXTENSION = ".liquid";
 
 const CORPUS_FILE = "src/generated/corpus.ts";
 
-/** `path` is relative to the compile package root. */
-type EmittedFile = { path: string; content: string };
-
 /** `cliRoot` is a parameter so the suite can drive the generator against a fixture checkout. */
 type GeneratorRoots = { compileRoot: string; cliRoot?: string };
 
-type AgentSource = { flavor: string; agent: string; agentDir: string; metadataPath: string };
+export type AgentSource = {
+  flavor: string;
+  agent: string;
+  agentDir: string;
+  metadataPath: string;
+};
 
 type AgentPartials = {
   identity: string;
@@ -60,7 +70,7 @@ const directoryNames = (dir: string): string[] =>
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name);
 
-function findAgentSources(agentsRoot: string): AgentSource[] {
+export function findAgentSources(agentsRoot: string): AgentSource[] {
   return directoryNames(agentsRoot)
     .filter((flavor) => !flavor.startsWith(RESERVED_FLAVOR_PREFIX))
     .flatMap((flavor) =>
@@ -99,9 +109,7 @@ function readAgentPartials(source: AgentSource, agentsRoot: string): AgentPartia
 function liquidTemplatePaths(agentsRoot: string): string[] {
   return readdirSync(agentsRoot, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(LIQUID_EXTENSION))
-    .map((entry) =>
-      path.relative(agentsRoot, path.join(entry.parentPath, entry.name)).split(path.sep).join("/"),
-    )
+    .map((entry) => toPosixPath(path.relative(agentsRoot, path.join(entry.parentPath, entry.name))))
     .sort(bytewise);
 }
 
@@ -120,18 +128,19 @@ function serializeAgentPartials(id: string, partials: AgentPartials): string {
   return `  ${JSON.stringify(id)}: {\n${fields}\n  },`;
 }
 
-/** The id the metadata declares, never the directory name. */
-function agentIdOf(source: AgentSource): string {
+export function readAgentMetadata(source: AgentSource): AgentYamlConfig {
   // Parse boundary: the CLI's own metadata.yaml.
-  const metadata = parseYaml(readFileSync(source.metadataPath, "utf-8")) as AgentYamlConfig;
-  return metadata.id;
+  return parseYaml(readFileSync(source.metadataPath, "utf-8")) as AgentYamlConfig;
 }
 
 function corpusFile(cliRoot: string): EmittedFile {
   const agentsRoot = path.join(cliRoot, DIRS.agents);
 
   const agents = findAgentSources(agentsRoot)
-    .map((source) => ({ id: agentIdOf(source), partials: readAgentPartials(source, agentsRoot) }))
+    .map((source) => ({
+      id: readAgentMetadata(source).id,
+      partials: readAgentPartials(source, agentsRoot),
+    }))
     // Byte order keeps the committed output machine-independent.
     .sort((a, b) => bytewise(a.id, b.id));
 
@@ -175,36 +184,12 @@ function emittedFiles(cliRoot: string): EmittedFile[] {
   return [corpusFile(cliRoot)];
 }
 
-function writeEmittedFile(compileRoot: string, file: EmittedFile): void {
-  const target = path.join(compileRoot, file.path);
-  mkdirSync(path.dirname(target), { recursive: true });
-  writeFileSync(target, file.content);
-}
-
-function matchesCommitted(compileRoot: string, file: EmittedFile): boolean {
-  const target = path.join(compileRoot, file.path);
-  return existsSync(target) && readFileSync(target, "utf-8") === file.content;
-}
-
 export function generate({ compileRoot, cliRoot = CLI_ROOT }: GeneratorRoots): {
   written: string[];
 } {
-  const files = emittedFiles(cliRoot);
-
-  for (const file of files) {
-    writeEmittedFile(compileRoot, file);
-  }
-
-  return { written: files.map((file) => file.path) };
+  return { written: writeEmittedFiles(compileRoot, emittedFiles(cliRoot)) };
 }
 
-export function check({ compileRoot, cliRoot = CLI_ROOT }: GeneratorRoots): {
-  clean: boolean;
-  drifted: string[];
-} {
-  const drifted = emittedFiles(cliRoot)
-    .filter((file) => !matchesCommitted(compileRoot, file))
-    .map((file) => file.path);
-
-  return { clean: drifted.length === 0, drifted };
+export function check({ compileRoot, cliRoot = CLI_ROOT }: GeneratorRoots): CheckResult {
+  return compareWithCommitted(compileRoot, emittedFiles(cliRoot));
 }

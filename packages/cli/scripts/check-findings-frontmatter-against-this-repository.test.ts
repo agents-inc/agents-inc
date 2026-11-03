@@ -10,6 +10,26 @@ import {
 /** Named, not counted. References outside the repository or git-ignored are never judged, so never belong here. */
 const UNRESOLVED_REFERENCES_ON_DISK: UnresolvedReference[] = [
   {
+    file: "2026-10-20-a-helper-production-calls-in-its-own-file-and-only-tests-import-passes-the-tested-exports-gate.md",
+    key: "affected_files",
+    value: "packages/cli/src/cli/lib/agents/agent-plugin-compiler.ts",
+  },
+  {
+    file: "2026-10-21-a-census-for-the-agent-extension-that-greps-a-quoted-md-misses-its-template-and-glob-spellings.md",
+    key: "affected_files",
+    value: "src/cli/lib/agents/agent-plugin-compiler.ts",
+  },
+  {
+    file: "2026-10-21-an-agent-plugin-still-versions-by-its-source-and-is-built-over-its-earlier-build.md",
+    key: "affected_files",
+    value: "src/cli/lib/agents/agent-plugin-compiler.ts",
+  },
+  {
+    file: "2026-10-21-plugin-path-builders-were-re-derived-beside-the-functions-that-own-them.md",
+    key: "affected_files",
+    value: "src/cli/lib/agents/agent-plugin-compiler.ts",
+  },
+  {
     file: "2026-10-22-the-summary-panel-is-drawn-only-by-render-to-string-so-its-scroll-hooks-never-act.md",
     key: "affected_files",
     value: "packages/cli/src/cli/components/hooks/use-panel-scroll.ts",
@@ -42,7 +62,13 @@ const UNRESOLVED_REFERENCES_ON_DISK: UnresolvedReference[] = [
 ];
 
 /** Re-derive from the diff this assertion prints, not from a count. */
-const UNDECLARED_SYMBOLS_ON_DISK: UndeclaredSymbol[] = [];
+const UNDECLARED_SYMBOLS_ON_DISK: UndeclaredSymbol[] = [
+  {
+    file: "2026-10-21-an-agent-plugin-still-versions-by-its-source-and-is-built-over-its-earlier-build.md",
+    key: "resolved_by",
+    symbol: "compileAgentPlugin",
+  },
+];
 
 /** Read once: the symbol scan parses every module in the repository. */
 describe("this repository", () => {

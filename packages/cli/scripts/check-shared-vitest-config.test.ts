@@ -1,31 +1,35 @@
 import { spawnSync } from "child_process";
-import { mkdirSync, writeFileSync } from "fs";
 import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { EXIT_CODES } from "../src/cli/lib/exit-codes.js";
-import { cleanupTempDir, createTempDir } from "../src/cli/lib/__tests__/test-fs-utils.js";
 
 import {
   check,
   MISSING_DEPENDENCY,
   NO_SHARED_IMPORT,
-  NO_WORKSPACES,
   OPT_OUT_KEY,
   SHARED_CONFIG_PACKAGE,
 } from "./check-shared-vitest-config.js";
+import { NO_WORKSPACES } from "./workspace-manifests.js";
+import { sharedConfigFixtureRepos } from "./shared-config-fixture-repos.js";
 
 const RUNNER = path.resolve(import.meta.dirname, "run-check-shared-vitest-config.ts");
 const ROOT_FLAG = "--root";
 
-const WORKSPACE_GLOBS = ["packages/*"];
 const WORKSPACE_DIR = "packages/thing";
 const SHARED_NODE_ENTRY = `${SHARED_CONFIG_PACKAGE}/node`;
 
 const VITEST_CONFIG_TS = "vitest.config.ts";
 const VITEST_CONFIG_MTS = "vitest.config.mts";
+const VITEST_CONFIG_JS = "vitest.config.js";
+const VITE_CONFIG_TS = "vite.config.ts";
 
-const DECLARED_VERSION = "workspace:*";
+/** Makes a workspace holding only a vite.config a suite vitest runs, not a bare Vite build. */
+const A_TEST_FILE = {
+  "src/format.test.ts": `import { it } from "vitest";\n\nit("runs", () => {});\n`,
+};
+
 const OPT_OUT_REASON =
   "a browser suite — the shared config is node-only, and every option it sets is the opposite of what this needs";
 
@@ -51,48 +55,12 @@ const CONFIG_NAMING_THE_SHARED_PACKAGE_IN_A_COMMENT = [
   `export default defineConfig({ test: { browser: { enabled: true } } })`,
 ].join("\n");
 
-type FixtureWorkspace = {
-  directory: string;
-  declaresSharedConfig?: boolean;
-  manifestExtras?: Record<string, string>;
-  configs?: Record<string, string>;
-};
-
-const roots: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(roots.splice(0).map(cleanupTempDir));
+const { writeFixtureRepo, removeFixtureRepos } = sharedConfigFixtureRepos({
+  tempDirPrefix: "shared-vitest-config-",
+  sharedConfigPackage: SHARED_CONFIG_PACKAGE,
 });
 
-async function writeFixtureRepo(workspaces: FixtureWorkspace[]): Promise<string> {
-  const root = await createTempDir("shared-vitest-config-");
-  roots.push(root);
-
-  writeJson(path.join(root, "package.json"), { workspaces: WORKSPACE_GLOBS });
-
-  for (const workspace of workspaces) {
-    const workspaceRoot = path.join(root, workspace.directory);
-    mkdirSync(workspaceRoot, { recursive: true });
-
-    writeJson(path.join(workspaceRoot, "package.json"), {
-      name: workspace.directory,
-      ...(workspace.declaresSharedConfig === false
-        ? {}
-        : { devDependencies: { [SHARED_CONFIG_PACKAGE]: DECLARED_VERSION } }),
-      ...workspace.manifestExtras,
-    });
-
-    for (const [file, content] of Object.entries(workspace.configs ?? {})) {
-      writeFileSync(path.join(workspaceRoot, file), content);
-    }
-  }
-
-  return root;
-}
-
-function writeJson(filePath: string, value: unknown): void {
-  writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
-}
+afterEach(removeFixtureRepos);
 
 describe("a workspace whose vitest config stands alone", () => {
   it("is reported, and the check is not clean", async () => {
@@ -181,6 +149,69 @@ describe("a workspace whose vitest config reaches the shared one", () => {
 
     expect(check({ repoRoot: root }).verdicts).toStrictEqual([
       { workspace: WORKSPACE_DIR, outcome: "bound", via: SHARED_NODE_ENTRY },
+    ]);
+  });
+
+  it("is judged by the vitest.config.ts vitest loads, not the standalone configs beside it", async () => {
+    const root = await writeFixtureRepo([
+      {
+        directory: WORKSPACE_DIR,
+        configs: {
+          [VITEST_CONFIG_TS]: MERGING_CONFIG,
+          [VITEST_CONFIG_MTS]: STANDALONE_CONFIG,
+          [VITEST_CONFIG_JS]: STANDALONE_CONFIG,
+        },
+      },
+    ]);
+
+    expect(check({ repoRoot: root }).verdicts).toStrictEqual([
+      { workspace: WORKSPACE_DIR, outcome: "bound", via: SHARED_NODE_ENTRY },
+    ]);
+  });
+});
+
+describe("a workspace whose only config is the vite.config vitest falls back to", () => {
+  it("is bound when it merges the shared config into its own", async () => {
+    const root = await writeFixtureRepo([
+      {
+        directory: WORKSPACE_DIR,
+        configs: { [VITE_CONFIG_TS]: MERGING_CONFIG },
+        sources: A_TEST_FILE,
+      },
+    ]);
+
+    expect(check({ repoRoot: root })).toStrictEqual({
+      clean: true,
+      verdicts: [{ workspace: WORKSPACE_DIR, outcome: "bound", via: SHARED_NODE_ENTRY }],
+    });
+  });
+
+  it("is reported when it stands alone", async () => {
+    const root = await writeFixtureRepo([
+      {
+        directory: WORKSPACE_DIR,
+        configs: { [VITE_CONFIG_TS]: STANDALONE_CONFIG },
+        sources: A_TEST_FILE,
+      },
+    ]);
+
+    expect(check({ repoRoot: root })).toStrictEqual({
+      clean: false,
+      verdicts: [{ workspace: WORKSPACE_DIR, outcome: "diverged", problems: [NO_SHARED_IMPORT] }],
+    });
+  });
+
+  it("is judged by a vitest.config of any extension before a vite.config", async () => {
+    const root = await writeFixtureRepo([
+      {
+        directory: WORKSPACE_DIR,
+        configs: { [VITEST_CONFIG_JS]: STANDALONE_CONFIG, [VITE_CONFIG_TS]: MERGING_CONFIG },
+        sources: A_TEST_FILE,
+      },
+    ]);
+
+    expect(check({ repoRoot: root }).verdicts).toStrictEqual([
+      { workspace: WORKSPACE_DIR, outcome: "diverged", problems: [NO_SHARED_IMPORT] },
     ]);
   });
 });

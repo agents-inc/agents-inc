@@ -5,7 +5,8 @@
 import { existsSync, readFileSync } from "fs";
 import path from "path";
 
-const REPOSITORY_ROOT = path.resolve(import.meta.dirname, "../../..");
+import { toPosixPath } from "../src/cli/utils/posix-path.js";
+import { REPOSITORY_ROOT } from "./repository-root.js";
 
 /** The two files every agent working in this repository is instructed to read. */
 export const BINDING_DOCUMENTS = ["CLAUDE.md", "packages/cli/CLAUDE.md"];
@@ -36,7 +37,8 @@ export function check({
   bindingDocuments = BINDING_DOCUMENTS,
   briefingContract = BRIEFING_CONTRACT,
 }: CheckOptions = {}): CheckResult {
-  const links = linkingDocuments(bindingDocuments, briefingContract).flatMap((document) =>
+  // The contract's own links are followed too, but it is not required to link itself.
+  const links = [...bindingDocuments, briefingContract].flatMap((document) =>
     linksOf(repositoryRoot, document),
   );
 
@@ -48,11 +50,6 @@ export function check({
   return { clean: unreachable.length === 0, examined: links.length, unreachable };
 }
 
-/** The contract's own links are followed too, but it is not required to link itself. */
-function linkingDocuments(bindingDocuments: readonly string[], briefingContract: string): string[] {
-  return [...bindingDocuments, briefingContract];
-}
-
 type Link = Unreachable & { reason: typeof BROKEN_LINK };
 
 /** Resolved against the document's own directory; an absent document is refused. */
@@ -60,7 +57,7 @@ function linksOf(repositoryRoot: string, document: string): Link[] {
   const documentPath = path.join(repositoryRoot, document);
   if (!existsSync(documentPath)) throw refusal(NO_BINDING_DOCUMENT, document);
 
-  const directory = path.posix.dirname(toPosix(document));
+  const directory = path.posix.dirname(toPosixPath(document));
 
   return localTargets(readFileSync(documentPath, "utf-8")).map((target) => ({
     document,
@@ -99,17 +96,13 @@ function unbound(
   links: readonly Link[],
   briefingContract: string,
 ): Unreachable[] {
-  const contract = path.posix.normalize(toPosix(briefingContract));
+  const contract = path.posix.normalize(toPosixPath(briefingContract));
   const binds = (document: string): boolean =>
     links.some((link) => link.document === document && link.target === contract);
 
   return bindingDocuments
     .filter((document) => !binds(document))
     .map((document) => ({ document, target: briefingContract, reason: UNBOUND_CONTRACT }));
-}
-
-function toPosix(value: string): string {
-  return value.split(path.sep).join("/");
 }
 
 function refusal(reason: string, subject: string): Error {

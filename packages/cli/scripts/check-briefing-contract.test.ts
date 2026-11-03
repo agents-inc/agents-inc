@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanupTempDir, createTempDir } from "../src/cli/lib/__tests__/test-fs-utils.js";
 
 import { expectRefusal } from "./refusal-expectations.js";
+import { REPOSITORY_ROOT } from "./repository-root.js";
 
 import {
   BINDING_DOCUMENTS,
@@ -21,8 +22,6 @@ const ROOT_CLAUDE_MD = "CLAUDE.md";
 const PACKAGE_CLAUDE_MD = "packages/cli/CLAUDE.md";
 
 const A_PATH_NOTHING_HOLDS = "todo/plans/a-programme-that-never-ran.md";
-
-const REPOSITORY_ROOT = path.resolve(import.meta.dirname, "../../..");
 
 function linkFrom(document: string, target: string): string {
   return path.posix.relative(path.posix.dirname(document), target);

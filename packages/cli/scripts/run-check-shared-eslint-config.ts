@@ -7,43 +7,7 @@ import {
   SHARED_CONFIG_PACKAGE,
   type WorkspaceVerdict,
 } from "./check-shared-eslint-config.ts";
-
-/** Lets the suite drive this entry point against a fixture repository. */
-const ROOT_FLAG = "--root";
-
-function repoRootFromArgv(argv: string[]): string | undefined {
-  const flagIndex = argv.indexOf(ROOT_FLAG);
-  if (flagIndex === -1) return undefined;
-
-  const value = argv[flagIndex + 1];
-  if (value === undefined) {
-    console.error(`${ROOT_FLAG} needs a directory`);
-    process.exit(EXIT_CODES.INVALID_ARGS);
-  }
-
-  return value;
-}
-
-function reportDiverged(verdicts: WorkspaceVerdict[]): void {
-  console.error("Workspaces have diverged from the shared ESLint config:\n");
-
-  for (const verdict of verdicts) {
-    if (verdict.outcome !== "diverged") continue;
-
-    console.error(`  ${verdict.workspace}`);
-    for (const problem of verdict.problems) {
-      console.error(`    ${problem}`);
-    }
-  }
-
-  console.error(
-    [
-      "",
-      `Extend the config in packages/eslint-config and declare ${SHARED_CONFIG_PACKAGE},`,
-      `or record the decision by adding "${OPT_OUT_KEY}": "<why>" to the workspace's package.json.`,
-    ].join("\n"),
-  );
-}
+import { isDiverged, repoRootFromArgv, reportDiverged } from "./workspace-manifests.ts";
 
 function summarise(verdicts: WorkspaceVerdict[]): string {
   const count = (outcome: WorkspaceVerdict["outcome"]): number =>
@@ -59,7 +23,12 @@ function summarise(verdicts: WorkspaceVerdict[]): string {
 const { clean, verdicts } = check({ repoRoot: repoRootFromArgv(process.argv) });
 
 if (!clean) {
-  reportDiverged(verdicts);
+  reportDiverged(verdicts.filter(isDiverged), {
+    tool: "ESLint",
+    extend: "the config in packages/eslint-config",
+    packageName: SHARED_CONFIG_PACKAGE,
+    optOutKey: OPT_OUT_KEY,
+  });
   process.exit(EXIT_CODES.ERROR);
 }
 

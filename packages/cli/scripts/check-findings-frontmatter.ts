@@ -13,6 +13,7 @@ import path from "path";
 import ts from "typescript";
 import { parse } from "yaml";
 
+import { eachNode } from "../src/cli/lib/__tests__/helpers/syntax-tree.ts";
 import { getErrorMessage } from "../src/cli/utils/errors.ts";
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..");
@@ -511,7 +512,7 @@ function matchesIgnorePattern(gitOptions: string[], repositoryRoot: string, file
   throw new Error(gitFailure(result.stderr));
 }
 
-/** A silent "not ignored" on a git failure is how an export once judged ignored paths as missing. */
+/** Thrown, since a silent "not ignored" on a git failure judges every ignored path missing. */
 function gitFailure(stderr: string): string {
   return `git could not say what the repository's .gitignore ignores: ${stderr.trim()}`;
 }
@@ -567,11 +568,9 @@ function identifiersIn(filePath: string): string[] {
   );
   const names = new Set<string>();
 
-  const collect = (node: ts.Node): void => {
+  eachNode(file, (node) => {
     if (ts.isIdentifier(node)) names.add(node.text);
-    node.forEachChild(collect);
-  };
-  file.forEachChild(collect);
+  });
 
   return [...names];
 }

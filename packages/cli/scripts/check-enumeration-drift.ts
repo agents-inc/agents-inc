@@ -2,10 +2,12 @@
  * Refuses a document whose exhaustive enumeration of a source symbol disagrees with what the symbol
  * holds, judged as membership in both directions. A row that judges nothing throws.
  */
-import { existsSync, readdirSync, readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import path from "path";
 
 import ts from "typescript";
+
+import { filesUnder, importedNamesIn } from "./owned-sources.js";
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..");
 
@@ -245,46 +247,28 @@ function reexportsIn(
   return exportClause.elements.map((element) => element.name.text);
 }
 
-function importedNamesIn(file: ts.SourceFile): Set<string> {
-  return new Set(file.statements.flatMap(importedNamesOf));
-}
-
-function importedNamesOf(statement: ts.Statement): string[] {
-  if (!ts.isImportDeclaration(statement) || statement.importClause === undefined) return [];
-
-  const { name, namedBindings } = statement.importClause;
-  const defaultName = name === undefined ? [] : [name.text];
-  if (namedBindings === undefined) return defaultName;
-
-  return ts.isNamespaceImport(namedBindings)
-    ? [...defaultName, namedBindings.name.text]
-    : [...defaultName, ...namedBindings.elements.map((element) => element.name.text)];
-}
-
 function membersOfDirectory(
   packageRoot: string,
-  source: { directory: string; enumerates: "exported-values" | "command-ids" },
+  source: Extract<SourceEnumeration, { directory: string }>,
   claim: string,
 ): string[] {
   const directoryPath = path.join(packageRoot, source.directory);
   if (!existsSync(directoryPath)) throw refusal(claim, NO_SOURCE_DIRECTORY, source.directory);
 
-  const modules = modulesUnder(directoryPath);
+  const modules = filesUnder(directoryPath, isModule);
 
-  if (source.enumerates === "command-ids") return modules.map(commandIdOf);
-
-  return [...new Set(modules.flatMap((module) => exportedValuesOf(directoryPath, module, claim)))];
-}
-
-function modulesUnder(directoryPath: string, prefix = ""): string[] {
-  return readdirSync(directoryPath, { withFileTypes: true }).flatMap((entry) => {
-    const relativePath = path.join(prefix, entry.name);
-    if (entry.isDirectory()) {
-      return modulesUnder(path.join(directoryPath, entry.name), relativePath);
+  switch (source.enumerates) {
+    case "command-ids":
+      return modules.map(commandIdOf);
+    case "exported-values":
+      return [
+        ...new Set(modules.flatMap((module) => exportedValuesOf(directoryPath, module, claim))),
+      ];
+    default: {
+      const exhaustive: never = source.enumerates;
+      return exhaustive;
     }
-
-    return isModule(entry.name) ? [relativePath] : [];
-  });
+  }
 }
 
 function isModule(name: string): boolean {

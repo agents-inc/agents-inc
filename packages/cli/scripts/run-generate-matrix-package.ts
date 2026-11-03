@@ -4,6 +4,7 @@ import path from "path";
 import { EXIT_CODES } from "../src/cli/lib/exit-codes.ts";
 import { BUILT_IN_MATRIX } from "../src/cli/types/generated/matrix.ts";
 
+import { reportCheck } from "./emitted-files.ts";
 import { check, generate, matrixShapeIssues } from "./generate-matrix-package.ts";
 
 const CHECK_FLAG = "--check";
@@ -28,20 +29,10 @@ function refuseMalformedMatrix(): void {
 refuseMalformedMatrix();
 
 if (process.argv.includes(CHECK_FLAG)) {
-  const { clean, drifted } = check({ matrixRoot: MATRIX_ROOT });
-
-  if (!clean) {
-    console.error("packages/matrix is out of date:");
-    for (const file of drifted) {
-      console.error(`  ${file}`);
-    }
-    console.error(
-      "\nRun `bun run generate:matrix` in packages/cli and commit everything it writes.",
-    );
-    process.exit(EXIT_CODES.ERROR);
-  }
-
-  console.log("  ✓ packages/matrix matches what the generator emits");
+  reportCheck(check({ matrixRoot: MATRIX_ROOT }), {
+    label: "packages/matrix",
+    script: "generate:matrix",
+  });
 } else {
   const { written } = generate({ matrixRoot: MATRIX_ROOT });
   console.log(`  ✓ wrote ${written.length} files to packages/matrix`);

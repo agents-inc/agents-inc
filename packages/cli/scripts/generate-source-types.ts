@@ -2,9 +2,8 @@
  * Writes `src/cli/types/generated/` from a skills checkout and this package's agent metadata.
  * Importing this file writes nothing.
  */
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from "fs";
+import { readFileSync, readdirSync } from "fs";
 import path from "path";
-import { format, resolveConfig } from "prettier";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
@@ -17,8 +16,21 @@ import {
 } from "../src/cli/lib/matrix/skill-resolution";
 import { bytewise } from "../src/cli/utils/string";
 
-import type { ExtractedSkillMetadata, ResolvedStack, SkillId } from "../src/cli/types";
-import type { Options as PrettierOptions } from "prettier";
+import type {
+  ExtractedSkillMetadata,
+  ResolvedStack,
+  SkillAssignment,
+  SkillId,
+  StackAgentConfig,
+} from "../src/cli/types";
+
+import {
+  compareWithCommitted,
+  formatEmittedFiles,
+  writeEmittedFiles,
+  type CheckResult,
+  type EmittedFile,
+} from "./emitted-files";
 
 const CLI_ROOT = path.resolve(import.meta.dirname, "..");
 
@@ -28,12 +40,11 @@ const SOURCE_TYPES_FILE = "source-types.ts";
 const MATRIX_FILE = "matrix.ts";
 const ACTIVATION_DESCRIPTIONS_FILE = "activation-descriptions.ts";
 
+const AGENT_TEMPLATES_DIR = "_templates";
+
 export type AgentEntry = {
   id: string;
 };
-
-/** `path` is relative to the output directory. */
-type EmittedFile = { path: string; content: string };
 
 type SourceRoots = { skillsSource: string; cliRoot?: string };
 
@@ -81,99 +92,112 @@ function parseMetadata<T>(schema: z.ZodType<T>, raw: string, describe: string): 
 
 export function extractSkills(skillsSourcePath: string): ExtractedSkillMetadata[] {
   const skillsDir = path.join(skillsSourcePath, "src/skills");
-  const entries: ExtractedSkillMetadata[] = [];
 
-  for (const dir of readdirSync(skillsDir, { withFileTypes: true })) {
-    if (!dir.isDirectory()) continue;
+  return subdirectoryNames(skillsDir).flatMap((dirName) => extractSkill(skillsDir, dirName) ?? []);
+}
 
-    const metadataPath = path.join(skillsDir, dir.name, "metadata.yaml");
-    const skillMdPath = path.join(skillsDir, dir.name, "SKILL.md");
+function extractSkill(skillsDir: string, dirName: string): ExtractedSkillMetadata | undefined {
+  const files = readSkillFiles(path.join(skillsDir, dirName));
+  if (!files) return skipSkill(dirName, "missing metadata.yaml or SKILL.md");
 
-    let metadataRaw: string;
-    let skillMdRaw: string;
-    try {
-      metadataRaw = readFileSync(metadataPath, "utf-8");
-      skillMdRaw = readFileSync(skillMdPath, "utf-8");
-    } catch {
-      console.warn(`  ⚠ Skipping ${dir.name}: missing metadata.yaml or SKILL.md`);
-      continue;
-    }
+  const metadata = parseMetadata(skillMetadataSchema, files.metadata, `${dirName}/metadata.yaml`);
+  if (metadata.custom) return undefined;
 
-    const metadata = parseMetadata(skillMetadataSchema, metadataRaw, `${dir.name}/metadata.yaml`);
-    if (metadata.custom) continue;
+  const frontmatterYaml = frontmatterBlock(files.skillMd);
+  if (frontmatterYaml === undefined) return skipSkill(dirName, "no frontmatter in SKILL.md");
+  const frontmatter = parseMetadata(
+    skillFrontmatterSchema,
+    frontmatterYaml,
+    `${dirName}/SKILL.md frontmatter`,
+  );
 
-    const fmMatch = skillMdRaw.match(/^---\n([\s\S]*?)\n---/);
-    if (!fmMatch) {
-      console.warn(`  ⚠ Skipping ${dir.name}: no frontmatter in SKILL.md`);
-      continue;
-    }
-    const [, frontmatterYaml = ""] = fmMatch;
-    const frontmatter = parseMetadata(
-      skillFrontmatterSchema,
-      frontmatterYaml,
-      `${dir.name}/SKILL.md frontmatter`,
-    );
+  return toExtractedSkill(dirName, metadata, frontmatter);
+}
 
-    if (!metadata.cliDescription) {
-      throw new Error(`Skill ${dir.name} is missing required 'cliDescription' in metadata.yaml`);
-    }
+function subdirectoryNames(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+}
 
-    if (!metadata.displayName) {
-      throw new Error(`Skill ${dir.name} is missing required 'displayName' in metadata.yaml`);
-    }
+function readSkillFiles(skillDir: string): { metadata: string; skillMd: string } | undefined {
+  try {
+    return {
+      metadata: readFileSync(path.join(skillDir, "metadata.yaml"), "utf-8"),
+      skillMd: readFileSync(path.join(skillDir, "SKILL.md"), "utf-8"),
+    };
+  } catch {
+    return undefined;
+  }
+}
 
-    // Parse boundary: YAML strings narrowed to the generated unions.
-    entries.push({
-      slug: metadata.slug as ExtractedSkillMetadata["slug"],
-      id: frontmatter.name as ExtractedSkillMetadata["id"],
-      category: metadata.category as ExtractedSkillMetadata["category"],
-      domain: metadata.domain as ExtractedSkillMetadata["domain"],
-      displayName: metadata.displayName,
-      description: metadata.cliDescription,
-      // Same rule `extractAllSkills` applies to catalog.json.
-      ...(frontmatter.description && { activationDescription: frontmatter.description }),
-      ...(metadata.usageGuidance !== undefined && { usageGuidance: metadata.usageGuidance }),
-      author: metadata.author || "",
-      directoryPath: dir.name,
-      path: `skills/${dir.name}`,
-    });
+function skipSkill(dirName: string, reason: string): undefined {
+  console.warn(`  ⚠ Skipping ${dirName}: ${reason}`);
+  return undefined;
+}
+
+function frontmatterBlock(skillMd: string): string | undefined {
+  const match = skillMd.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return undefined;
+
+  const [, block = ""] = match;
+  return block;
+}
+
+function toExtractedSkill(
+  dirName: string,
+  metadata: z.infer<typeof skillMetadataSchema>,
+  frontmatter: z.infer<typeof skillFrontmatterSchema>,
+): ExtractedSkillMetadata {
+  if (!metadata.cliDescription) {
+    throw new Error(`Skill ${dirName} is missing required 'cliDescription' in metadata.yaml`);
   }
 
-  return entries;
+  if (!metadata.displayName) {
+    throw new Error(`Skill ${dirName} is missing required 'displayName' in metadata.yaml`);
+  }
+
+  // Parse boundary: YAML strings narrowed to the generated unions.
+  return {
+    slug: metadata.slug as ExtractedSkillMetadata["slug"],
+    id: frontmatter.name as ExtractedSkillMetadata["id"],
+    category: metadata.category as ExtractedSkillMetadata["category"],
+    domain: metadata.domain as ExtractedSkillMetadata["domain"],
+    displayName: metadata.displayName,
+    description: metadata.cliDescription,
+    // Same rule `extractAllSkills` applies to catalog.json.
+    ...(frontmatter.description && { activationDescription: frontmatter.description }),
+    ...(metadata.usageGuidance !== undefined && { usageGuidance: metadata.usageGuidance }),
+    author: metadata.author || "",
+    directoryPath: dirName,
+    path: `skills/${dirName}`,
+  };
 }
 
 export function extractAgents(cliRootPath: string): AgentEntry[] {
   const agentsDir = path.join(cliRootPath, "src/agents");
-  const agents: AgentEntry[] = [];
 
-  for (const group of readdirSync(agentsDir, { withFileTypes: true })) {
-    if (!group.isDirectory() || group.name === "_templates") continue;
-    const groupDir = path.join(agentsDir, group.name);
+  return subdirectoryNames(agentsDir)
+    .filter((group) => group !== AGENT_TEMPLATES_DIR)
+    .flatMap((group) =>
+      subdirectoryNames(path.join(agentsDir, group)).flatMap(
+        (agent) => extractAgent(agentsDir, `${group}/${agent}`) ?? [],
+      ),
+    );
+}
 
-    for (const agent of readdirSync(groupDir, { withFileTypes: true })) {
-      if (!agent.isDirectory()) continue;
-      const metadataPath = path.join(groupDir, agent.name, "metadata.yaml");
-
-      let raw: string;
-      try {
-        raw = readFileSync(metadataPath, "utf-8");
-      } catch {
-        continue;
-      }
-
-      const metadata = parseMetadata(
-        agentMetadataSchema,
-        raw,
-        `${group.name}/${agent.name}/metadata.yaml`,
-      );
-      if (metadata.custom) continue;
-      if (metadata.id) {
-        agents.push({ id: metadata.id });
-      }
-    }
+function extractAgent(agentsDir: string, agentPath: string): AgentEntry | undefined {
+  let raw: string;
+  try {
+    raw = readFileSync(path.join(agentsDir, agentPath, "metadata.yaml"), "utf-8");
+  } catch {
+    return undefined;
   }
 
-  return agents;
+  const metadata = parseMetadata(agentMetadataSchema, raw, `${agentPath}/metadata.yaml`);
+  if (metadata.custom || !metadata.id) return undefined;
+
+  return { id: metadata.id };
 }
 
 function assertUnique(values: string[], label: string): void {
@@ -360,28 +384,12 @@ export function resolveStack(
   stack: (typeof defaultStacks)[number],
   skillIdSet: Set<string>,
 ): ResolvedStack {
-  const skills: Record<string, Record<string, string[]>> = {};
-
-  for (const [agentId, agentConfig] of Object.entries(stack.agents)) {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops `| undefined` from the value type, but a slot can still be explicitly undefined
-    if (!agentConfig) continue;
-
-    const agentSkills: Record<string, string[]> = {};
-
-    for (const [category, assignments] of Object.entries(agentConfig)) {
+  const skills = Object.fromEntries(
+    Object.entries(stack.agents).flatMap(([agentId, agentConfig]) =>
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops `| undefined` from the value type, but a slot can still be explicitly undefined
-      if (!assignments || !Array.isArray(assignments) || assignments.length === 0) continue;
-      const validIds = assignments
-        .filter((a: { id: string }) => skillIdSet.has(a.id))
-        .map((a: { id: string }) => a.id);
-
-      if (validIds.length > 0) {
-        agentSkills[category] = validIds;
-      }
-    }
-
-    skills[agentId] = agentSkills;
-  }
+      agentConfig ? [[agentId, shippedSkillsByCategory(agentConfig, skillIdSet)] as const] : [],
+    ),
+  );
 
   const allSkillIds = [...new Set(Object.values(skills).flatMap((s) => Object.values(s).flat()))];
 
@@ -396,27 +404,26 @@ export function resolveStack(
   };
 }
 
-/** Resolved from this file, not the destination, so a fixture dir in os.tmpdir() formats the same. */
-async function packagePrettierOptions(): Promise<PrettierOptions> {
-  const options = await resolveConfig(import.meta.filename);
-  if (options === null) {
-    throw new Error(
-      `No Prettier config resolved from ${import.meta.filename} — the emitted bytes would not ` +
-        "match the committed types.",
-    );
-  }
-  return options;
+/** Categories left with no skill this catalogue ships are dropped. */
+function shippedSkillsByCategory(
+  agentConfig: StackAgentConfig,
+  skillIdSet: Set<string>,
+): Record<string, string[]> {
+  return Object.fromEntries(
+    Object.entries(agentConfig).flatMap(([category, assignments]) => {
+      const shipped = shippedSkillIds(assignments, skillIdSet);
+      return shipped.length > 0 ? [[category, shipped] as const] : [];
+    }),
+  );
 }
 
-async function formatEmitted(files: EmittedFile[]): Promise<EmittedFile[]> {
-  const options = await packagePrettierOptions();
+function shippedSkillIds(assignments: SkillAssignment[], skillIdSet: Set<string>): string[] {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops `| undefined` from the value type, but a slot can still be explicitly undefined
+  if (!assignments || !Array.isArray(assignments)) return [];
 
-  return Promise.all(
-    files.map(async (file) => ({
-      path: file.path,
-      content: await format(file.content, { ...options, parser: TYPESCRIPT_PARSER }),
-    })),
-  );
+  return assignments
+    .filter((assignment) => skillIdSet.has(assignment.id))
+    .map((assignment) => assignment.id);
 }
 
 async function emittedFiles({ skillsSource, cliRoot = CLI_ROOT }: SourceRoots): Promise<Emission> {
@@ -429,11 +436,14 @@ async function emittedFiles({ skillsSource, cliRoot = CLI_ROOT }: SourceRoots): 
   const matrix = renderMatrix(skills, skillIds);
 
   return {
-    files: await formatEmitted([
-      { path: SOURCE_TYPES_FILE, content: sourceTypes },
-      { path: MATRIX_FILE, content: matrix },
-      { path: ACTIVATION_DESCRIPTIONS_FILE, content: renderActivationDescriptions(skills) },
-    ]),
+    files: await formatEmittedFiles(
+      [
+        { path: SOURCE_TYPES_FILE, content: sourceTypes },
+        { path: MATRIX_FILE, content: matrix },
+        { path: ACTIVATION_DESCRIPTIONS_FILE, content: renderActivationDescriptions(skills) },
+      ],
+      TYPESCRIPT_PARSER,
+    ),
     counts: catalogueCounts(skills, agentEntries),
   };
 }
@@ -450,35 +460,17 @@ function catalogueCounts(
   };
 }
 
-function writeEmittedFile(outDir: string, file: EmittedFile): void {
-  writeFileSync(path.join(outDir, file.path), file.content);
-}
-
-function matchesCommitted(outDir: string, file: EmittedFile): boolean {
-  const target = path.join(outDir, file.path);
-  return existsSync(target) && readFileSync(target, "utf-8") === file.content;
-}
-
 export async function generate({ outDir, ...roots }: GeneratorRoots): Promise<{
   written: string[];
   counts: CatalogueCounts;
 }> {
   const { files, counts } = await emittedFiles(roots);
 
-  mkdirSync(outDir, { recursive: true });
-  for (const file of files) {
-    writeEmittedFile(outDir, file);
-  }
-
-  return { written: files.map((file) => file.path), counts };
+  return { written: writeEmittedFiles(outDir, files), counts };
 }
 
-export async function check({ outDir, ...roots }: GeneratorRoots): Promise<{
-  clean: boolean;
-  drifted: string[];
-}> {
+export async function check({ outDir, ...roots }: GeneratorRoots): Promise<CheckResult> {
   const { files } = await emittedFiles(roots);
-  const drifted = files.filter((file) => !matchesCommitted(outDir, file)).map((file) => file.path);
 
-  return { clean: drifted.length === 0, drifted };
+  return compareWithCommitted(outDir, files);
 }
