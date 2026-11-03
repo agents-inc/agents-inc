@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 
-import type { PluginHost } from "../../hosts/plugin-host.js";
+import type { MarketplaceTakeBack, PluginHost } from "../../hosts/plugin-host.js";
 
 /** A PluginHost whose every verb is a spy; mock `lib/hosts/host-for.js` to return it. */
 export function createMockPluginHost(overrides: Partial<PluginHost> = {}): PluginHost {
@@ -17,10 +17,17 @@ export function createMockPluginHost(overrides: Partial<PluginHost> = {}): Plugi
     marketplaceExists: vi.fn<PluginHost["marketplaceExists"]>().mockResolvedValue(true),
     addMarketplace: vi.fn<PluginHost["addMarketplace"]>().mockResolvedValue(undefined),
     refreshMarketplace: vi.fn<PluginHost["refreshMarketplace"]>().mockResolvedValue(undefined),
+    marketplaceTakeBack: {
+      marketplacesHeld: vi.fn<MarketplaceTakeBack["marketplacesHeld"]>().mockResolvedValue([]),
+      removeMarketplace: vi
+        .fn<MarketplaceTakeBack["removeMarketplace"]>()
+        .mockResolvedValue(undefined),
+    },
     installPlugin: vi.fn<PluginHost["installPlugin"]>().mockResolvedValue(undefined),
     uninstallPlugin: vi.fn<PluginHost["uninstallPlugin"]>().mockResolvedValue("removed"),
     updatePlugin: vi.fn<PluginHost["updatePlugin"]>().mockResolvedValue(undefined),
     listPlugins: vi.fn<PluginHost["listPlugins"]>().mockResolvedValue([]),
+    pluginsHeld: vi.fn<PluginHost["pluginsHeld"]>().mockResolvedValue([]),
     ...overrides,
   };
 }

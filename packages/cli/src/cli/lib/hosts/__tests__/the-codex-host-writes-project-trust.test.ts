@@ -3,8 +3,14 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { overrideEnv, type RestoreEnv } from "../../__tests__/helpers/env-override.js";
 import { cleanupTempDir, createTempDir } from "../../__tests__/test-fs-utils.js";
-import { codexProjectTrustMessage, trustCodexProject } from "../codex-project-trust.js";
+import {
+  codexProjectTrustMessage,
+  codexProjectUntrustMessage,
+  trustCodexProject,
+  untrustCodexProject,
+} from "../codex-project-trust.js";
 
 // Codex reads project roles only while its global `config.toml` trusts the exact path. The file is
 // the user's: their lines survive and an answer they gave is never overwritten.
@@ -26,19 +32,17 @@ const THE_USERS_OWN_CONFIG = [
 let tempDir: string;
 let codexHome: string;
 let projectDir: string;
-let originalCodexHome: string | undefined;
+let restoreCodexHome: RestoreEnv;
 
 beforeEach(async () => {
   tempDir = await createTempDir();
   codexHome = path.join(tempDir, ".codex");
   projectDir = path.join(tempDir, "project");
-  originalCodexHome = process.env[CODEX_HOME_VAR];
-  process.env[CODEX_HOME_VAR] = codexHome;
+  restoreCodexHome = overrideEnv(CODEX_HOME_VAR, codexHome);
 });
 
 afterEach(async () => {
-  if (originalCodexHome === undefined) delete process.env[CODEX_HOME_VAR];
-  else process.env[CODEX_HOME_VAR] = originalCodexHome;
+  restoreCodexHome();
   await cleanupTempDir(tempDir);
 });
 
@@ -291,5 +295,99 @@ describe("what the install says, word for word", () => {
     expect(said).toBe(
       `Codex reads this project's sub-agents only once it is trusted, and ${path.join(codexHome, CODEX_CONFIG_TOML)} sets trust_level = "untrusted" under [projects."${projectDir}"]. Left as you set it — change it to "trusted" for Codex to read them.`,
     );
+  });
+});
+
+describe("taking the trust out on uninstall", () => {
+  async function untrustingFrom(theirs: string) {
+    await theirConfigIs(theirs);
+    return { removal: await untrustCodexProject(projectDir), written: await theConfig() };
+  }
+
+  function trustRemoved() {
+    return { kind: "trust removed", configFile: path.join(codexHome, CODEX_CONFIG_TOML) };
+  }
+
+  it("gives back the user's own config as it was before the install trusted the project", async () => {
+    await theirConfigIs(THE_USERS_OWN_CONFIG);
+    await trustCodexProject(projectDir);
+
+    expect(await untrustCodexProject(projectDir)).toStrictEqual(trustRemoved());
+    expect(await theConfig()).toBe(THE_USERS_OWN_CONFIG);
+  });
+
+  it("keeps the user's other settings under the project's table, and the table with them", async () => {
+    expect(
+      await untrustingFrom(
+        `[projects."${projectDir}"]\ntrust_level = "trusted"\nsome_setting_of_theirs = true\n`,
+      ),
+    ).toStrictEqual({
+      removal: trustRemoved(),
+      written: `[projects."${projectDir}"]\nsome_setting_of_theirs = true\n`,
+    });
+  });
+
+  it("keeps a blank line between what came before the table and the table after it", async () => {
+    const before = 'model = "o3"\n\n';
+    const after = '[marketplaces.their-own]\nsource_type = "git"\n';
+
+    expect(await untrustingFrom(`${before}${trustedTable(projectDir)}\n\n${after}`)).toStrictEqual({
+      removal: trustRemoved(),
+      written: `${before}${after}`,
+    });
+  });
+
+  it("leaves another project's trust where it is", async () => {
+    const elsewhere = `${trustedTable(path.join(tempDir, "elsewhere"))}\n`;
+
+    expect(await untrustingFrom(`${elsewhere}\n${trustedTable(projectDir)}\n`)).toStrictEqual({
+      removal: trustRemoved(),
+      written: elsewhere,
+    });
+  });
+
+  it("takes out a trust line spelled with other spacing", async () => {
+    expect(
+      await untrustingFrom(`[projects."${projectDir}"]\n  trust_level="trusted"\n`),
+    ).toStrictEqual({ removal: trustRemoved(), written: "" });
+  });
+
+  it("leaves the file in place, empty, when the trust was all it held", async () => {
+    expect(await untrustingFrom(`${trustedTable(projectDir)}\n`)).toStrictEqual({
+      removal: trustRemoved(),
+      written: "",
+    });
+  });
+
+  it("changes nothing where the user set another level", async () => {
+    const theirs = `[projects."${projectDir}"]\ntrust_level = "untrusted"\n`;
+
+    expect(await untrustingFrom(theirs)).toStrictEqual({
+      removal: { kind: "not trusted" },
+      written: theirs,
+    });
+  });
+
+  it("writes no config where there was none", async () => {
+    expect(await untrustCodexProject(projectDir)).toStrictEqual({ kind: "not trusted" });
+    await expect(theConfig()).rejects.toThrow();
+  });
+});
+
+describe("what the uninstall says, word for word", () => {
+  it("names the line, the table and the file it took it out of", async () => {
+    await theirConfigIs(`${trustedTable(projectDir)}\n`);
+
+    const said = codexProjectUntrustMessage(projectDir, await untrustCodexProject(projectDir));
+
+    expect(said).toBe(
+      `Removed this project's trust from your Codex configuration: deleted trust_level = "trusted" under [projects."${projectDir}"] in ${path.join(codexHome, CODEX_CONFIG_TOML)}.`,
+    );
+  });
+
+  it("says nothing when there was no trust to take out", async () => {
+    expect(
+      codexProjectUntrustMessage(projectDir, await untrustCodexProject(projectDir)),
+    ).toBeUndefined();
   });
 });

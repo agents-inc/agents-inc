@@ -4,6 +4,7 @@ import { chmod, mkdir, readdir, stat, symlink, writeFile as fsWriteFile } from "
 import {
   copy,
   glob,
+  isKnownAbsent,
   isSymlink,
   listDirectories,
   readFileOptional,
@@ -150,6 +151,38 @@ describe("fs utilities", () => {
         "shown",
       ]);
     });
+  });
+
+  describe("knowing a file is absent", () => {
+    it("answers absent for a path nothing is at", async () => {
+      expect(await isKnownAbsent(path.join(tempDir, "absent.json"))).toBe(true);
+    });
+
+    it("answers not absent for a file that is there", async () => {
+      const file = path.join(tempDir, "present.json");
+      await fsWriteFile(file, "{}");
+
+      expect(await isKnownAbsent(file)).toBe(false);
+    });
+
+    // Root searches a folder whatever its mode bits.
+    it.skipIf(process.getuid?.() === 0)(
+      "answers not absent where the folder above cannot be searched",
+      async () => {
+        const folder = path.join(tempDir, "unsearchable");
+        await mkdir(folder);
+        await fsWriteFile(path.join(folder, "settings.json"), "{}");
+        await chmod(folder, 0o000);
+        try {
+          expect(
+            await isKnownAbsent(path.join(folder, "settings.json")),
+            "a file the run cannot check reads as there, so nothing deletes it as the run's own",
+          ).toBe(false);
+        } finally {
+          await chmod(folder, 0o755);
+        }
+      },
+    );
   });
 
   describe("telling a link from what it names", () => {

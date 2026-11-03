@@ -4,6 +4,7 @@ import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { hostFor } from "../host-for.js";
+import type { MarketplaceTakeBack } from "../plugin-host.js";
 import { verbose, warnOnce } from "../../../utils/logger.js";
 import { cleanupTempDir, createTempDir, directoryExists } from "../../__tests__/test-fs-utils.js";
 import { type FakeChildReply, fakeChildProcess } from "./helpers/fake-child-process.js";
@@ -114,6 +115,10 @@ function onlyInvocation(): Invocation {
 
 function everyArgv(): (readonly string[])[] {
   return invocations.map((invocation) => invocation.args);
+}
+
+function codexTakeBack(): MarketplaceTakeBack {
+  return hostFor("codex").marketplaceTakeBack;
 }
 
 describe("the Codex host's invocations", () => {
@@ -314,7 +319,6 @@ describe("the Codex host's invocations", () => {
     });
   });
 
-  // Codex has no `plugin update`; adding an installed plugin again installs the newest version.
   describe("updating a plugin", () => {
     it("adds it again from the home directory, Codex having no update verb of its own", async () => {
       // Answers a listing too, should the host look before it adds; `plugin add` ignores stdout.
@@ -470,6 +474,50 @@ describe("the Codex host's invocations", () => {
     });
   });
 
+  describe("taking back the marketplace a refused run registered", () => {
+    it("names every marketplace Codex lists, asking from the home directory", async () => {
+      replies = [
+        {
+          stdout: marketplaceListDocument([
+            {
+              name: A_MARKETPLACE_WE_DID_NOT_ADD,
+              sourceType: "local",
+              source: `${CODEX_STATE}/.tmp/plugins`,
+            },
+            { name: MARKETPLACE, sourceType: "local", source: MARKETPLACE_SOURCE },
+          ]),
+        },
+      ];
+
+      expect(
+        await codexTakeBack().marketplacesHeld({ configDir: CODEX_STATE }),
+        "a marketplace missing from what was held before the run reads as the run's own, and the take-back removes it",
+      ).toStrictEqual([A_MARKETPLACE_WE_DID_NOT_ADD, MARKETPLACE]);
+      expect(onlyInvocation()).toStrictEqual({
+        command: "codex",
+        args: ["plugin", "marketplace", "list", "--json"],
+        cwd: HOME,
+        codexHome: CODEX_STATE,
+      });
+    });
+
+    it("removes the marketplace it is named with Codex's own verb, from the home directory", async () => {
+      replies = [{ stdout: JSON.stringify({ marketplaceName: MARKETPLACE, installedRoot: null }) }];
+
+      await codexTakeBack().removeMarketplace(MARKETPLACE, { configDir: CODEX_STATE });
+
+      expect(
+        invocations,
+        "a removal under another state tree takes the marketplace out of a Codex the run never wrote to",
+      ).toContainEqual({
+        command: "codex",
+        args: ["plugin", "marketplace", "remove", MARKETPLACE, "--json"],
+        cwd: HOME,
+        codexHome: CODEX_STATE,
+      });
+    });
+  });
+
   // One deleted marketplace source fails every listing: reads degrade, writes still throw.
   describe("a marketplace Codex can no longer read", () => {
     const REGISTRY_UNREADABLE =
@@ -518,6 +566,15 @@ describe("the Codex host's invocations", () => {
       ).rejects.toThrow();
     });
 
+    it("throws rather than answering none when asked which marketplaces were held before a run", async () => {
+      replies = [{ exitCode: 1, stderr: REGISTRY_UNREADABLE }];
+
+      await expect(
+        codexTakeBack().marketplacesHeld({ configDir: CODEX_STATE }),
+        "an unreadable registry answered as empty makes the user's own marketplace look like the run's, and the take-back removes it",
+      ).rejects.toThrow();
+    });
+
     it("still throws from a removal, which cannot be classified from a listing it never read", async () => {
       replies = [{ exitCode: 1, stderr: SNAPSHOT_UNREADABLE }];
 
@@ -552,6 +609,17 @@ describe("the Codex host's invocations", () => {
       expect(invocations, "a reference refused on one host and spawned on the other").toStrictEqual(
         [],
       );
+    });
+
+    it("holds a marketplace's removal to the same check, spawning nothing", async () => {
+      await expect(
+        codexTakeBack().removeMarketplace("a marketplace; rm -rf /", { configDir: CODEX_STATE }),
+      ).rejects.toThrow(/invalid characters/i);
+
+      expect(
+        invocations,
+        "a name refused by the Claude host's removal and spawned by Codex's",
+      ).toStrictEqual([]);
     });
 
     it("still removes an ordinary reference, which is what that check may not cost", async () => {
@@ -690,10 +758,10 @@ describe("what the Codex host says when Codex fails", () => {
     await hostFor("codex").listPlugins(PROJECT, OPTIONS);
 
     expect(warnOnce).toHaveBeenCalledWith(
-      `Codex could not list the marketplaces it knows, so this run is treating it as having none. It said: Failed to read the marketplaces codex knows: ${refusal}`,
+      `Codex could not list the marketplaces it knows. It said: Failed to read the marketplaces codex knows: ${refusal}`,
     );
     expect(warnOnce).toHaveBeenCalledWith(
-      `Codex could not list the plugins it has installed, so this run is treating it as having none. It said: Failed to read the plugins codex has installed: ${refusal}`,
+      `Codex could not list the plugins it has installed. It said: Failed to read the plugins codex has installed: ${refusal}`,
     );
   });
 

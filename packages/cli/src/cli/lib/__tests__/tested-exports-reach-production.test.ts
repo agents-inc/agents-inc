@@ -41,12 +41,6 @@ type TestOnlyExport = ExportSite & { posture: Posture };
  */
 const TEST_ONLY_EXPORTS = [
   {
-    file: "src/cli/lib/hosts/claude-host.ts",
-    name: "claudePluginMarketplaceRemove",
-    // A marketplace is user-level state, so no project command may remove one; e2e setup does.
-    posture: "test utility",
-  },
-  {
     file: "src/cli/lib/installation/install-layout.ts",
     name: "ownedRoots",
     // A host role nothing asks until a second provider can be installed.

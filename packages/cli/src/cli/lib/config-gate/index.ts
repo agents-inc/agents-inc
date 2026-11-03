@@ -3,13 +3,15 @@ import path from "path";
 import type { ProjectConfig } from "../../types";
 import type { AuthoritativeScope } from "../configuration/config-merger";
 import { CLI_INVOKE_COMMAND } from "../../consts";
-import { ensureDir, writeFile } from "../../utils/fs";
+import { directoryExists, ensureDir, removeDirIfEmpty, writeFile } from "../../utils/fs";
+import { mapInTurn } from "../../utils/in-turn";
 import { getErrorMessage } from "../../utils/errors";
 import { verbose } from "../../utils/logger";
+import { plural } from "../../utils/string";
 import { isHomeDirectory } from "../installation/is-home-directory";
 import type { Provider } from "../../consts";
 import { getInstalledConfigPath, getProjectConfigPath } from "../installation/install-base-dir";
-import { providerInUse } from "../installation/install-layout";
+import { providerInUse, sourceFolderInUse } from "../installation/install-layout";
 import { loadProjectConfigFromDir } from "../configuration/project-config";
 import { normalizeStackRecord } from "../stacks/stacks-loader";
 import { splitConfigByScope } from "../configuration/config-generator";
@@ -25,7 +27,7 @@ import {
   consequenceTier,
   tierPropagates,
   tierRegeneratesTypes,
-  NO_CHANGES,
+  noChanges,
   type GlobalChangeSet,
 } from "./classify.js";
 import { resolveGateDeps, type GateDeps, type LoadedGateDeps } from "./deps.js";
@@ -40,6 +42,7 @@ import {
   buildProjectTypesExtras,
   mergeGlobalConfigs,
   normalizeProjectPath,
+  nothingPropagated,
   propagateGlobalChangesToProjects,
   pruneGlobalEntriesFromRegisteredProjects,
   reconcileProjectSplitAgainstGlobal,
@@ -47,7 +50,7 @@ import {
   writeProjectConfigPair,
   type PropagationResult,
 } from "./propagate.js";
-import { NOTHING_RECOMPILED, pairRewriteSummary, recompilePropagated } from "./recompile.js";
+import { nothingRecompiled, pairRewriteSummary, recompilePropagated } from "./recompile.js";
 import { pairsRewrittenSince, restoreProjectPairs, snapshotProjectPairs } from "./pair-snapshot.js";
 import type { PropagatedRecompileSummary } from "../operations/project/recompile-project-agents.js";
 
@@ -70,14 +73,6 @@ export type GateReport = {
  * directory and writes only a project's own config.
  */
 
-const NOTHING_PROPAGATED: PropagationResult = {
-  updated: [],
-  unreadable: [],
-  gone: [],
-  notOurs: [],
-  failed: [],
-};
-
 /** Whether a gated write moved anything the global install's compiled sub-agents are built from. */
 export function movedGlobalAgentInputs(written: GateReport): boolean {
   return tierRegeneratesTypes(consequenceTier(written.changes));
@@ -86,8 +81,8 @@ export function movedGlobalAgentInputs(written: GateReport): boolean {
 function report(
   globalWritten: boolean,
   changes: GlobalChangeSet,
-  propagated: PropagationResult = NOTHING_PROPAGATED,
-  recompile: PropagatedRecompileSummary = NOTHING_RECOMPILED,
+  propagated: PropagationResult = nothingPropagated(),
+  recompile: PropagatedRecompileSummary = nothingRecompiled(),
 ): GateReport {
   return { globalWritten, changes, propagated, recompile };
 }
@@ -116,7 +111,7 @@ async function fanOut(
 
 function sayPropagated(propagated: PropagationResult): void {
   if (propagated.updated.length > 0) {
-    verbose(`Propagated global changes to ${propagated.updated.length} project(s)`);
+    verbose(`Propagated global changes to ${plural(propagated.updated.length, "project")}`);
   }
 }
 
@@ -131,7 +126,7 @@ async function applyConsequences(
   const tier = consequenceTier(changes);
   const projects = globalConfig.projects ?? [];
   if (!tierPropagates(tier) || projects.length === 0) {
-    return { propagated: NOTHING_PROPAGATED, recompile: NOTHING_RECOMPILED };
+    return { propagated: nothingPropagated(), recompile: nothingRecompiled() };
   }
 
   const regenerateTypes = tierRegeneratesTypes(tier);
@@ -218,12 +213,41 @@ async function writeFromProjectContext(
   homeDir: string,
   deps: LoadedGateDeps,
 ): Promise<GateReport> {
-  const { finalConfig, projectDir } = args;
-
-  const { global: globalConfig, project: projectSplitConfig } = splitConfigByScope(finalConfig);
+  const { projectDir } = args;
   // The project's provider: each provider family inherits and propagates only within itself.
   const provider = providerInUse(projectDir);
-  const globalConfigPath = getProjectConfigPath(homeDir, provider);
+
+  const written = await restoringThePairsOnFailure([projectDir, homeDir], provider, () =>
+    writeBothPairs(args, homeDir, provider, deps),
+  );
+
+  const { propagated, recompile } = await applyConsequences(
+    written.effectiveGlobalConfig,
+    written.changes,
+    deps,
+    provider,
+    projectDir,
+  );
+
+  return report(written.globalWritten, written.changes, propagated, recompile);
+}
+
+type BothPairsWritten = {
+  globalWritten: boolean;
+  changes: GlobalChangeSet;
+  effectiveGlobalConfig: ProjectConfig;
+};
+
+/** The project's pair first, so a project that refuses it leaves the home as it was. */
+async function writeBothPairs(
+  args: WriteConfigByScopeArgs,
+  homeDir: string,
+  provider: Provider,
+  deps: LoadedGateDeps,
+): Promise<BothPairsWritten> {
+  const { global: globalConfig, project: projectSplitConfig } = splitConfigByScope(
+    args.finalConfig,
+  );
 
   // Before the project's pair, whose types import the global ones only where they exist.
   await ensureBlankPairInternal(provider);
@@ -233,50 +257,31 @@ async function writeFromProjectContext(
   const effective = await resolveEffectiveGlobalConfig(
     globalConfig,
     existingGlobal?.config,
-    projectDir,
+    args.projectDir,
     args.authoritativeScope,
   );
-  const effectiveGlobalConfig = effective.config;
-
-  const changes = classifyGlobalChange(existingGlobal?.config, effectiveGlobalConfig);
+  const changes = classifyGlobalChange(existingGlobal?.config, effective.config);
 
   // Reconcile with the inlined global, or a colliding global entry lands active beside ours.
   const reconciledProjectConfig = reconcileProjectSplitAgainstGlobal(
     projectSplitConfig,
-    effectiveGlobalConfig,
+    effective.config,
     deps.matrix,
   );
 
-  // The project's pair first, so a project that refuses it leaves the home as it was.
-  const globalWritten = await restoringThePairsOnFailure(
-    [projectDir, homeDir],
-    provider,
-    async () => {
-      await writeProjectPairWhenOwed(
-        args,
-        provider,
-        reconciledProjectConfig,
-        effectiveGlobalConfig,
-        deps,
-      );
-      return writeGlobalPairWhenChanged(effective, globalConfigPath, deps);
-    },
-  );
-
-  const { propagated, recompile } = await applyConsequences(
-    effectiveGlobalConfig,
-    changes,
+  await writeProjectPairWhenOwed(args, provider, reconciledProjectConfig, effective.config, deps);
+  const globalWritten = await writeGlobalPairWhenChanged(
+    effective,
+    getProjectConfigPath(homeDir, provider),
     deps,
-    provider,
-    projectDir,
   );
-
-  return report(globalWritten, changes, propagated, recompile);
+  return { globalWritten, changes, effectiveGlobalConfig: effective.config };
 }
 
 /**
  * Fails with the write's own cause: the restore undoes it and says nothing over it. A pair is two
  * files written one after the other, so a refused second half must not leave the first one saved.
+ * A folder made for a pair goes with it.
  */
 async function restoringThePairsOnFailure<T>(
   dirs: readonly string[],
@@ -284,14 +289,35 @@ async function restoringThePairsOnFailure<T>(
   write: () => Promise<T>,
 ): Promise<T> {
   const before = await snapshotProjectPairs(dirs, provider);
+  const foldersMissing = await foldersMissingOnTheWayToEach(
+    dirs.map((dir) => sourceFolderInUse(dir, provider).dir),
+  );
   try {
     return await write();
   } catch (error) {
-    await restoreProjectPairs(before, provider).catch((restoreError: unknown) => {
-      verbose(`Could not restore a config pair: ${getErrorMessage(restoreError)}`);
-    });
+    await restoreProjectPairs(before, provider)
+      .then(() => removeFoldersLeftEmpty(foldersMissing))
+      .catch((restoreError: unknown) => {
+        verbose(`Could not restore a config pair: ${getErrorMessage(restoreError)}`);
+      });
     throw error;
   }
+}
+
+/** Read before a write, so a take-back removes only the folders that write made. */
+async function foldersMissingOnTheWayToEach(dirs: readonly string[]): Promise<string[]> {
+  return (await Promise.all(dirs.map(foldersMissingOnTheWayTo))).flat();
+}
+
+async function foldersMissingOnTheWayTo(dir: string): Promise<string[]> {
+  if (await directoryExists(dir)) return [];
+  return [dir, ...(await foldersMissingOnTheWayTo(path.dirname(dir)))];
+}
+
+/** Deepest first and in turn, since a folder empties only once the one inside it has gone. */
+async function removeFoldersLeftEmpty(folders: readonly string[]): Promise<void> {
+  const deepestFirst = folders.toSorted((a, b) => b.length - a.length);
+  await mapInTurn(deepestFirst, removeDirIfEmpty);
 }
 
 async function writeGlobalPairWhenChanged(
@@ -470,11 +496,11 @@ export async function mutateGlobal(mutation: GlobalMutation, deps: GateDeps): Pr
     const provider = globalProviderFor(mutation, homeDir);
     // The full loader normalizes the stack; re-emitting bare values drops exclusive categories.
     const loadedGlobal = await loadProjectConfigFromDir(homeDir, provider);
-    if (!loadedGlobal) return report(false, NO_CHANGES);
+    if (!loadedGlobal) return report(false, noChanges());
 
     const current = loadedGlobal.config;
     const mutated = applyMutation(mutation, current);
-    if (!mutated) return report(false, NO_CHANGES);
+    if (!mutated) return report(false, noChanges());
 
     const prior = fillRequiredFields(current, fallbackNameFor(mutation));
     const next = fillRequiredFields(mutated, fallbackNameFor(mutation));

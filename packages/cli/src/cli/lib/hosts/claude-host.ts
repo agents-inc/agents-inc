@@ -1,10 +1,8 @@
 /** Claude Code's plugin machinery, behind {@link PluginHost}. */
 
 import os from "os";
-import path from "path";
 import { z } from "zod";
 
-import { PLUGINS_SUBDIR } from "../../consts.js";
 import type { ClaudePluginScope, SkillScope } from "../../types/config.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import {
@@ -16,18 +14,18 @@ import {
 } from "../../utils/exec.js";
 import { fileExists } from "../../utils/fs.js";
 import { warn } from "../../utils/logger.js";
-import { pluginsDir } from "../installation/install-layout.js";
 import {
   getEnabledPluginKeys,
   getInstalledPluginsRegistryPath,
   listPluginInstallsForProject,
 } from "../plugins/plugin-settings.js";
-import type {
-  HostCallOptions,
-  HostPlugin,
-  InstallPlacement,
-  PluginHost,
-  PluginRemovalOutcome,
+import {
+  pluginsRootFor,
+  type HostCallOptions,
+  type HostPlugin,
+  type InstallPlacement,
+  type PluginHost,
+  type PluginRemovalOutcome,
 } from "./plugin-host.js";
 
 const CLAUDE: PluginHost["provider"] = "claude";
@@ -64,6 +62,18 @@ function configDirEnv(options: ClaudeConfigOptions | undefined): { env?: NodeJS.
   return { env: { CLAUDE_CONFIG_DIR: options.configDir } };
 }
 
+function runScopedPluginVerb(
+  verb: "install" | "update" | "uninstall",
+  pluginRef: string,
+  scope: ClaudePluginScope,
+  projectDir: string,
+  options: ClaudeConfigOptions | undefined,
+): Promise<ExecResult> {
+  const cwd = resolvePluginCwd(scope, projectDir);
+  const args = ["plugin", verb, pluginRef, "--scope", scope];
+  return execCommand("claude", args, { cwd, ...configDirEnv(options) });
+}
+
 export async function claudePluginInstall(
   pluginPath: string,
   scope: ClaudePluginScope,
@@ -72,10 +82,7 @@ export async function claudePluginInstall(
 ): Promise<void> {
   validatePluginPath(pluginPath);
 
-  const cwd = resolvePluginCwd(scope, projectDir);
-  const args = ["plugin", "install", pluginPath, "--scope", scope];
-  const result = await execCommand("claude", args, { cwd, ...configDirEnv(options) });
-
+  const result = await runScopedPluginVerb("install", pluginPath, scope, projectDir, options);
   if (result.exitCode !== 0) {
     throw new Error(`Plugin installation failed: ${whyClaudeFailed(result)}`);
   }
@@ -93,10 +100,7 @@ async function claudePluginUpdate(
 ): Promise<void> {
   validatePluginName(pluginRef);
 
-  const cwd = resolvePluginCwd(scope, projectDir);
-  const args = ["plugin", "update", pluginRef, "--scope", scope];
-  const result = await execCommand("claude", args, { cwd, ...configDirEnv(options) });
-
+  const result = await runScopedPluginVerb("update", pluginRef, scope, projectDir, options);
   if (result.exitCode !== 0) throw new Error(whyClaudeFailed(result));
 }
 
@@ -125,21 +129,30 @@ const marketplaceInfoListSchema: z.ZodType<MarketplaceInfo[]> = z.array(
   }),
 );
 
+const MARKETPLACE_LIST_ARGS = ["plugin", "marketplace", "list", "--json"];
+
 export async function claudePluginMarketplaceList(
   options?: ClaudeConfigOptions,
 ): Promise<MarketplaceInfo[]> {
   try {
-    const result = await execCommand(
-      "claude",
-      ["plugin", "marketplace", "list", "--json"],
-      configDirEnv(options),
-    );
+    const result = await execCommand("claude", MARKETPLACE_LIST_ARGS, configDirEnv(options));
 
     if (result.exitCode !== 0) return [];
     return marketplacesListedIn(result.stdout);
   } catch {
     return [];
   }
+}
+
+/** Throws where {@link claudePluginMarketplaceList} answers none, so a take-back can tell the two. */
+async function claudeMarketplacesHeld(options?: ClaudeConfigOptions): Promise<string[]> {
+  const result = await runClaude(MARKETPLACE_LIST_ARGS, options, "list marketplaces");
+  if (result.exitCode !== 0) {
+    throw new Error(`Failed to list marketplaces: ${whyClaudeFailed(result)}`);
+  }
+
+  const listed = marketplaceInfoListSchema.parse(JSON.parse(result.stdout));
+  return listed.map(({ name }) => name);
 }
 
 function marketplacesListedIn(stdout: string): MarketplaceInfo[] {
@@ -236,10 +249,7 @@ export async function claudePluginUninstall(
 ): Promise<PluginRemovalOutcome> {
   validatePluginName(pluginName);
 
-  const cwd = resolvePluginCwd(scope, projectDir);
-  const args = ["plugin", "uninstall", pluginName, "--scope", scope];
-  const result = await execCommand("claude", args, { cwd, ...configDirEnv(options) });
-
+  const result = await runScopedPluginVerb("uninstall", pluginName, scope, projectDir, options);
   if (result.exitCode === 0) return "removed";
 
   const said = whyClaudeFailed(result);
@@ -251,14 +261,6 @@ function namesNothingThere(message: string): boolean {
   return NOT_INSTALLED_MESSAGES.some((phrase) => message.includes(phrase));
 }
 
-function claudePluginsRoot(
-  projectDir: string,
-  options: ClaudeConfigOptions | undefined,
-): string | null {
-  if (options?.configDir !== undefined) return path.join(options.configDir, PLUGINS_SUBDIR);
-  return pluginsDir(CLAUDE, "global", projectDir);
-}
-
 /**
  * Read from files, since Claude has no `plugin list --json`. A key recorded more than once
  * answers with this project's own record, else the user-scoped one.
@@ -267,7 +269,7 @@ async function claudeListPlugins(
   projectDir: string,
   options?: ClaudeConfigOptions,
 ): Promise<HostPlugin[]> {
-  const pluginsRoot = claudePluginsRoot(projectDir, options);
+  const pluginsRoot = pluginsRootFor(CLAUDE, projectDir, options);
   if (pluginsRoot === null) return [];
   if (!(await fileExists(getInstalledPluginsRegistryPath(pluginsRoot)))) return [];
 
@@ -284,6 +286,13 @@ async function claudeListPlugins(
   }));
 }
 
+async function claudePluginsHeld(
+  projectDir: string,
+  options?: ClaudeConfigOptions,
+): Promise<string[]> {
+  return (await claudeListPlugins(projectDir, options)).map(({ pluginKey }) => pluginKey);
+}
+
 /** A factory so no caller shares another's `offeredPlacements` array by identity. */
 export function claudeHost(): PluginHost {
   return {
@@ -294,6 +303,10 @@ export function claudeHost(): PluginHost {
     marketplaceExists: claudePluginMarketplaceExists,
     addMarketplace: claudePluginMarketplaceAdd,
     refreshMarketplace: claudePluginMarketplaceUpdate,
+    marketplaceTakeBack: {
+      marketplacesHeld: claudeMarketplacesHeld,
+      removeMarketplace: claudePluginMarketplaceRemove,
+    },
     installPlugin: (pluginRef, scope, projectDir, options) =>
       claudePluginInstall(pluginRef, toClaudePluginScope(scope), projectDir, options),
     updatePlugin: (pluginRef, scope, projectDir, options) =>
@@ -301,5 +314,6 @@ export function claudeHost(): PluginHost {
     uninstallPlugin: (pluginRef, scope, projectDir, options) =>
       claudePluginUninstall(pluginRef, toClaudePluginScope(scope), projectDir, options),
     listPlugins: claudeListPlugins,
+    pluginsHeld: claudePluginsHeld,
   };
 }

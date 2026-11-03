@@ -2,9 +2,11 @@ import fs from "fs-extra";
 import fg from "fast-glob";
 import os from "os";
 import path from "path";
+import type { z } from "zod";
 import { PROVIDERS, STANDARD_FILES } from "../consts";
 import { sourceDir } from "../lib/installation/install-layout.js";
 import { bytewise } from "./string.js";
+import { isRecord } from "./type-guards.js";
 // Private gate module, allowed here by an eslint exception: this is the write choke point.
 import { assertGateToken } from "../lib/config-gate/gate-token.js";
 
@@ -39,6 +41,36 @@ export async function readFileOptional(filePath: string, fallback = ""): Promise
 
 export async function fileExists(filePath: string): Promise<boolean> {
   return fs.pathExists(filePath);
+}
+
+/** Unlike {@link fileExists}, a path that cannot be checked counts as there. */
+export async function isKnownAbsent(filePath: string): Promise<boolean> {
+  try {
+    await fs.lstat(filePath);
+    return false;
+  } catch (error) {
+    return isRecord(error) && error.code === "ENOENT";
+  }
+}
+
+/** False for a missing, unreadable or non-JSON file, so a caller deleting on true keeps it. */
+export async function jsonFileMatches(filePath: string, schema: z.ZodType): Promise<boolean> {
+  try {
+    return schema.safeParse(JSON.parse(await readFile(filePath))).success;
+  } catch {
+    // The cause is irrelevant: whatever could not be read is kept.
+    return false;
+  }
+}
+
+/** False for a missing or unreadable file, as {@link jsonFileMatches} is. */
+export async function isBlankFile(filePath: string): Promise<boolean> {
+  try {
+    return (await readFile(filePath)).trim() === "";
+  } catch {
+    // As in jsonFileMatches: whatever could not be read is kept.
+    return false;
+  }
 }
 
 export async function directoryExists(dirPath: string): Promise<boolean> {

@@ -28,7 +28,11 @@ import {
   buildProjectConfig,
   buildSourceConfig,
 } from "../factories/config-factories.js";
-import { buildSkillConfigs, type FixtureSkillConfig } from "../helpers/skill-config-builders.js";
+import {
+  buildSkillConfigs,
+  type FixtureProjectConfig,
+  type FixtureSkillConfig,
+} from "../helpers/skill-config-builders.js";
 import { SKILLS } from "../test-fixtures";
 import { AGENT_DEFS } from "../mock-data/mock-agents.js";
 import { initializeMatrix } from "../../matrix/matrix-provider";
@@ -39,15 +43,22 @@ import {
   STANDARD_DIRS,
   CLAUDE_DIR,
   PROVIDERS,
+  type Provider,
 } from "../../../consts";
 import { CODEX_HOME_VAR, sourceFolderInUse } from "../../installation/install-layout.js";
 import { loadProjectConfigFromDir } from "../../configuration/project-config.js";
+import { generateBlankGlobalConfigTypesSource } from "../../configuration/config-types-writer";
+import { blankGlobalConfig } from "@workspace/compile/global-config";
 import type { AgentScopeConfig, BrandingConfig, SkillId } from "../../../types";
 import { hostAt } from "../../hosts/host-for.js";
 import { stampProvenanceMarker } from "../../agents/agent-provenance.js";
 import { renderAgentMd, renderConfigTsWithBigIntField } from "../content-generators.js";
 import { writeRawTestConfig, writeTestTsConfig } from "../helpers/config-io.js";
-import { compactCliOutput, flattenCliOutput } from "../helpers/flatten-cli-output.js";
+import {
+  compactCliOutput,
+  compactedWithoutTempFolder,
+  flattenCliOutput,
+} from "../helpers/flatten-cli-output.js";
 import { standAtTerminal } from "../helpers/terminal-input.js";
 import { renderUnparseableConfigTs } from "../factories/unloadable-config-factories.js";
 import { delay, RENDER_DELAY_MS } from "../test-constants";
@@ -80,6 +91,20 @@ function removedRow(name: string): string {
 }
 const NOTHING_TO_UNINSTALL = "Nothing to uninstall";
 const UNINSTALL_COMPLETE = "Uninstall complete";
+const CODEX_TRUST_REMOVED = "Removed this project's trust from your Codex configuration";
+
+/** As Claude's own `plugin uninstall --scope project` leaves it. */
+const SETTINGS_EMPTIED_BY_CLAUDE = '{\n  "enabledPlugins": {}\n}\n';
+
+const THEIR_OWN_CODEX_CONFIG = 'model_reasoning_effort = "high"\n';
+
+const CODEX_PROJECT_FOLDER = ".codex";
+
+/** The folder above where Codex reads a project's skills. */
+const CODEX_PROJECT_SKILLS_FOLDER = ".agents";
+
+/** Ends on the blank line after, so a line printed under the pair fails it. */
+const CODEX_FOLDERS_REMOVED_BLOCK = "✓ Removed .codex/\n✓ Removed .agents/\n\n";
 
 const TEST_PLUGIN_NAME = "test-plugin@marketplace";
 
@@ -943,11 +968,6 @@ describe("uninstall command", () => {
       ).toStrictEqual([]);
     });
 
-    /**
-     * Each host keeps a global installation's copies where it reads them: Claude in home's
-     * `.claude/`, Codex under `$CODEX_HOME` (else `~/.codex`), which a project's `.agents/skills`
-     * and `.codex/agents` are not. Claude is the control: both of its answers are home's `.claude/`.
-     */
     describe("removes the copy and the compiled sub-agent from where the host keeps them", () => {
       const GLOBAL_EJECTED = {
         name: "global",
@@ -1049,6 +1069,17 @@ describe("uninstall command", () => {
 
 async function listInstalledEntries(dir: string): Promise<string[]> {
   return (await directoryExists(dir)) ? (await fs.promises.readdir(dir)).sort() : [];
+}
+
+/** Each file directly in `dir` by name, with its content; `null` when the folder is gone. */
+async function readFolder(dir: string): Promise<Record<string, string> | null> {
+  if (!(await directoryExists(dir))) return null;
+  const names = await fs.promises.readdir(dir);
+  return Object.fromEntries(
+    await Promise.all(
+      names.map(async (name) => [name, await readFile(path.join(dir, name), "utf-8")] as const),
+    ),
+  );
 }
 
 /** What a person reads from uninstall, word for word, and what the run left behind. */
@@ -1537,7 +1568,7 @@ describe("what uninstall says", () => {
 
   it("warns that it could not update the global registry, and still completes", async () => {
     await createProjectConfig(projectDir, { agents: buildAgentConfigs(["web-developer"]) });
-    await writeRawTestConfig(fakeHome, renderUnparseableConfigTs());
+    const homeConfigPath = await writeRawTestConfig(fakeHome, renderUnparseableConfigTs());
 
     const { stdout, stderr } = await runCliCommand(["uninstall", "--yes"]);
 
@@ -1545,6 +1576,7 @@ describe("what uninstall says", () => {
       "Warning: Could not update the global project registry:",
     );
     expect(stdout).toContain("✓ Uninstall complete!");
+    expect(await readFile(homeConfigPath, "utf-8")).toBe(renderUnparseableConfigTs());
   });
 
   // Root writes through the mode bits, so the failure under test cannot happen there.
@@ -1606,6 +1638,267 @@ describe("what uninstall says", () => {
     },
   );
 
+  describe("a .claude/settings.json holding only the empty plugin list", () => {
+    async function installWithSettings(settings: string): Promise<string> {
+      await createProjectConfig(projectDir, { agents: buildAgentConfigs(["web-developer"]) });
+      await createAgentFile(projectDir, "web-developer", { compiled: true });
+      const settingsPath = path.join(projectDir, CLAUDE_DIR, "settings.json");
+      await writeFile(settingsPath, settings);
+      return settingsPath;
+    }
+
+    it.each([
+      { as: "Claude's plugin uninstall leaves it", settings: SETTINGS_EMPTIED_BY_CLAUDE },
+      { as: "the user wrote it", settings: '{"enabledPlugins":{}}' },
+    ])("goes, and .claude/ with it when nothing else is in it, as $as", async ({ settings }) => {
+      await installWithSettings(settings);
+
+      const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+      expect(error, stderr).toBeUndefined();
+      expect(await directoryExists(path.join(projectDir, CLAUDE_DIR))).toBe(false);
+      expect(stdout).toContain("✓ Removed .claude/\n");
+      expect(stdout).not.toContain("Kept .claude/");
+    });
+
+    it("goes, and .claude/ stays for the file of the user's beside it", async () => {
+      const settingsPath = await installWithSettings(SETTINGS_EMPTIED_BY_CLAUDE);
+      const claudeMdPath = await createUserClaudeMd(path.join(projectDir, CLAUDE_DIR));
+
+      const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+      expect(error, stderr).toBeUndefined();
+      expect(await fileExists(settingsPath)).toBe(false);
+      expect(await fileExists(claudeMdPath)).toBe(true);
+      expect(stdout).toContain("Kept .claude/ (contains user content)\n");
+    });
+
+    it.each([
+      {
+        holding: "a setting beside the empty plugin list",
+        settings: JSON.stringify({ enabledPlugins: {}, permissions: { allow: ["Read(*)"] } }),
+      },
+      {
+        holding: "a plugin still listed, switched off",
+        settings: JSON.stringify({ enabledPlugins: { "other-plugin@elsewhere": false } }),
+      },
+    ])("is kept as it was when it holds $holding", async ({ settings }) => {
+      const settingsPath = await installWithSettings(settings);
+
+      const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+      expect(error, stderr).toBeUndefined();
+      expect(await readFile(settingsPath, "utf-8")).toBe(settings);
+      expect(stdout).toContain("Kept .claude/ (contains user content)\n");
+    });
+  });
+
+  describe("on a Codex project, whose installation holds nothing in .claude/", () => {
+    let codexConfig: string;
+    let project: string;
+
+    beforeEach(async () => {
+      vi.stubEnv(CODEX_HOME_VAR, path.join(fakeHome, ".codex"));
+      codexConfig = path.join(fakeHome, ".codex", "config.toml");
+      await mkdir(path.dirname(codexConfig), { recursive: true });
+      // The spelling Codex matches: the run's working folder, links resolved.
+      project = fs.realpathSync(projectDir);
+    });
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    async function installOnCodex(): Promise<string> {
+      return writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({ name: "codex-project" }),
+        sourceFolderInUse(projectDir, "codex").relName,
+      );
+    }
+
+    function trustTableFor(dir: string): string {
+      return `[projects."${dir}"]\ntrust_level = "trusted"\n`;
+    }
+
+    it.each([
+      { holding: "nothing", files: {} },
+      { holding: "a file of the user's", files: { [STANDARD_FILES.CLAUDE_MD]: "# Mine\n" } },
+      {
+        holding: "only the empty plugin list",
+        files: { "settings.json": SETTINGS_EMPTIED_BY_CLAUDE },
+      },
+    ])(
+      "leaves a .claude/ holding $holding as it was, and says nothing of it",
+      async ({ files }: { files: Record<string, string> }) => {
+        await installOnCodex();
+        const claudeDir = path.join(projectDir, CLAUDE_DIR);
+        await mkdir(claudeDir, { recursive: true });
+        for (const [name, content] of Object.entries(files)) {
+          await writeFile(path.join(claudeDir, name), content);
+        }
+
+        const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+        expect(error, stderr).toBeUndefined();
+        expect(stdout).toContain("✓ Uninstall complete!\n");
+        expect(await readFolder(claudeDir)).toStrictEqual(files);
+        expect(compactedWithoutTempFolder(stdout)).not.toContain(".claude/");
+      },
+    );
+
+    it("takes out the trust its install added to the Codex configuration, leaving the rest as the user wrote it, and says so", async () => {
+      await installOnCodex();
+      await writeFile(codexConfig, `${THEIR_OWN_CODEX_CONFIG}\n${trustTableFor(project)}`);
+
+      const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+      expect(error, stderr).toBeUndefined();
+      expect(await readFile(codexConfig, "utf-8")).toBe(THEIR_OWN_CODEX_CONFIG);
+      expect(stdout).toContain(
+        `Removed this project's trust from your Codex configuration: deleted trust_level = "trusted" under [projects."${project}"] in ${codexConfig}.\n`,
+      );
+    });
+
+    it("takes out a trust the user wrote as a dotted key, and only that line", async () => {
+      await installOnCodex();
+      await writeFile(
+        codexConfig,
+        `${THEIR_OWN_CODEX_CONFIG}projects."${project}".trust_level = "trusted"\n`,
+      );
+
+      const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+      expect(error, stderr).toBeUndefined();
+      expect(await readFile(codexConfig, "utf-8")).toBe(THEIR_OWN_CODEX_CONFIG);
+      expect(stdout).toContain(CODEX_TRUST_REMOVED);
+    });
+
+    it("takes out the trust when --provider codex names it in a project holding a Claude installation too, and leaves the Claude side alone", async () => {
+      await installOnCodex();
+      const claudeConfigPath = await createProjectConfig(projectDir, {
+        agents: buildAgentConfigs(["web-developer"]),
+      });
+      const claudeAgentPath = await createAgentFile(projectDir, "web-developer", {
+        compiled: true,
+      });
+      await writeFile(codexConfig, `${THEIR_OWN_CODEX_CONFIG}\n${trustTableFor(project)}`);
+
+      const { stdout, stderr, error } = await runCliCommand([
+        "uninstall",
+        "--provider",
+        "codex",
+        "--yes",
+      ]);
+
+      expect(error, stderr).toBeUndefined();
+      expect(await readFile(codexConfig, "utf-8")).toBe(THEIR_OWN_CODEX_CONFIG);
+      expect(stdout).toContain(CODEX_TRUST_REMOVED);
+      expect(await fileExists(claudeConfigPath)).toBe(true);
+      expect(await fileExists(claudeAgentPath)).toBe(true);
+      expect(
+        compactedWithoutTempFolder(stdout),
+        "what is in .claude/ is the Claude installation's, not the user's",
+      ).not.toContain(".claude/");
+    });
+
+    it("leaves a trust level the user set other than trusted as it was, and says nothing of trust", async () => {
+      await installOnCodex();
+      const theirs = `${THEIR_OWN_CODEX_CONFIG}\n[projects."${project}"]\ntrust_level = "untrusted"\n`;
+      await writeFile(codexConfig, theirs);
+
+      const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+      expect(error, stderr).toBeUndefined();
+      expect(await readFile(codexConfig, "utf-8")).toBe(theirs);
+      expect(stdout).not.toContain(CODEX_TRUST_REMOVED);
+    });
+
+    it("writes no Codex configuration where there was none, and says nothing of trust", async () => {
+      await installOnCodex();
+
+      const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+      expect(error, stderr).toBeUndefined();
+      expect(await fileExists(codexConfig)).toBe(false);
+      expect(stdout).not.toContain(CODEX_TRUST_REMOVED);
+    });
+
+    it("deletes the Codex configuration the trust was all it held", async () => {
+      await installOnCodex();
+      await writeFile(codexConfig, trustTableFor(project));
+
+      const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+      expect(error, stderr).toBeUndefined();
+      expect(stdout).toContain(CODEX_TRUST_REMOVED);
+      expect(await fileExists(codexConfig)).toBe(false);
+    });
+
+    // Root writes through the mode bits, so the failure under test cannot happen there.
+    it.skipIf(process.getuid?.() === 0)(
+      "warns and finishes when the Codex configuration the trust was all it held cannot be deleted",
+      async () => {
+        await installOnCodex();
+        await writeFile(codexConfig, trustTableFor(project));
+        await chmod(path.dirname(codexConfig), 0o555);
+        try {
+          const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+          expect(error, stderr).toBeUndefined();
+          expect(flattenCliOutput(stderr)).toContain(
+            `Warning: Could not remove ${codexConfig}, which now holds nothing: EACCES`,
+          );
+          expect(stdout).toContain("✓ Uninstall complete!\n");
+          expect(await readFile(codexConfig, "utf-8")).toBe("");
+        } finally {
+          await chmod(path.dirname(codexConfig), 0o755);
+        }
+      },
+    );
+
+    it("removes the project's .codex/ and .agents/ it leaves holding nothing, and says so", async () => {
+      await installOnCodex();
+      const codexFolder = path.join(projectDir, CODEX_PROJECT_FOLDER);
+      const agentsFolder = path.join(projectDir, CODEX_PROJECT_SKILLS_FOLDER);
+      await mkdir(path.join(codexFolder, STANDARD_DIRS.AGENTS), { recursive: true });
+      await mkdir(path.join(agentsFolder, STANDARD_DIRS.SKILLS), { recursive: true });
+
+      const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+      expect(error, stderr).toBeUndefined();
+      expect(stdout).toContain(CODEX_FOLDERS_REMOVED_BLOCK);
+      expect(await directoryExists(codexFolder)).toBe(false);
+      expect(await directoryExists(agentsFolder)).toBe(false);
+    });
+
+    it("keeps the project's .codex/ while it holds the user's own configuration, and says so", async () => {
+      await installOnCodex();
+      const theirProjectConfig = path.join(projectDir, CODEX_PROJECT_FOLDER, "config.toml");
+      await mkdir(path.dirname(theirProjectConfig), { recursive: true });
+      await writeFile(theirProjectConfig, THEIR_OWN_CODEX_CONFIG);
+
+      const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+      expect(error, stderr).toBeUndefined();
+      expect(stdout).toContain("Kept .codex/ (contains user content)\n");
+      expect(await readFile(theirProjectConfig, "utf-8")).toBe(THEIR_OWN_CODEX_CONFIG);
+    });
+
+    it("control: a Claude project's uninstall leaves the Codex configuration's trust for it alone", async () => {
+      await createProjectConfig(projectDir, { agents: buildAgentConfigs(["web-developer"]) });
+      const theirs = `${THEIR_OWN_CODEX_CONFIG}\n${trustTableFor(project)}`;
+      await writeFile(codexConfig, theirs);
+
+      const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+      expect(error, stderr).toBeUndefined();
+      expect(stdout).toContain("✓ Uninstall complete!\n");
+      expect(await readFile(codexConfig, "utf-8")).toBe(theirs);
+      expect(stdout).not.toContain(CODEX_TRUST_REMOVED);
+    });
+  });
+
   /**
    * A project is registered with its own provider's global only. Claude is the control, being also
    * the provider a home holding both would otherwise be read as.
@@ -1646,6 +1939,165 @@ describe("what uninstall says", () => {
             loaded?.config.projects,
             `the ${atHome} global's registered projects`,
           ).toStrictEqual([neighbour]);
+        }
+      },
+    );
+  });
+
+  describe("the home config a project's install made", () => {
+    const OTHER_PROVIDER = {
+      claude: "codex",
+      codex: "claude",
+    } as const satisfies Record<Provider, Provider>;
+
+    const USERS_NOTE = { "notes.md": "mine" };
+
+    type HomeConfigRow = {
+      holding: string;
+      fields: Partial<FixtureProjectConfig>;
+      alsoListsNeighbour: boolean;
+    };
+
+    const STAYS_HOLDING: HomeConfigRow[] = [
+      { holding: "another project", fields: {}, alsoListsNeighbour: true },
+      {
+        holding: "a global sub-agent and skill",
+        fields: {
+          agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+          skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+        },
+        alsoListsNeighbour: false,
+      },
+      {
+        holding: "a selected domain",
+        fields: { selectedDomains: ["web"] },
+        alsoListsNeighbour: false,
+      },
+      { holding: "a name of its own", fields: { name: "my-machine" }, alsoListsNeighbour: false },
+      {
+        holding: "a description",
+        fields: { description: "The sub-agents on this machine" },
+        alsoListsNeighbour: false,
+      },
+      {
+        holding: "a marketplace another command recorded",
+        fields: { marketplace: TEST_SOURCE },
+        alsoListsNeighbour: false,
+      },
+    ];
+
+    function homeFolderOf(provider: Provider): string {
+      return sourceFolderInUse(fakeHome, provider).dir;
+    }
+
+    function homeRootSpellings(): string[] {
+      return [fakeHome, fs.realpathSync(fakeHome)].map((home) => path.join(home, ".agents-inc"));
+    }
+
+    function installedProject(provider: Provider, dir: string = projectDir): Promise<string> {
+      return writeTestTsConfig(
+        dir,
+        buildProjectConfig({ name: "registered" }),
+        sourceFolderInUse(dir, provider).relName,
+      );
+    }
+
+    async function installedNeighbour(provider: Provider): Promise<string> {
+      const neighbour = path.join(tempDir, "neighbour");
+      await installedProject(provider, neighbour);
+      return fs.realpathSync(neighbour);
+    }
+
+    async function homePairListing(
+      provider: Provider,
+      config: FixtureProjectConfig,
+    ): Promise<string> {
+      await writeTestTsConfig(
+        fakeHome,
+        buildProjectConfig(config),
+        sourceFolderInUse(fakeHome, provider).relName,
+      );
+      const typesPath = path.join(homeFolderOf(provider), STANDARD_FILES.CONFIG_TYPES_TS);
+      await writeFile(typesPath, generateBlankGlobalConfigTypesSource());
+      return typesPath;
+    }
+
+    function listing(projects: string[]): FixtureProjectConfig {
+      return { ...blankGlobalConfig(), projects };
+    }
+
+    it.each(PROVIDERS)(
+      "deletes the %s home config and its types once this project was all it listed, and the folders they leave empty, naming none of them",
+      async (provider) => {
+        const projectConfigPath = await installedProject(provider);
+        await homePairListing(provider, listing([fs.realpathSync(projectDir)]));
+
+        const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+        expect(error, stderr).toBeUndefined();
+        expect(stdout).toContain(`\n- ${projectConfigPath}\n`);
+        expect(stdout).toContain("✓ Uninstall complete!\n");
+        expect(await readFolder(homeFolderOf(provider))).toBeNull();
+        expect(await directoryExists(path.dirname(homeFolderOf(provider)))).toBe(false);
+        for (const homeRoot of homeRootSpellings()) {
+          expect(stdout + stderr).not.toContain(homeRoot);
+        }
+      },
+    );
+
+    it.each(PROVIDERS)(
+      "deletes only the pair, keeping the %s home folder for a file of the user's beside it",
+      async (provider) => {
+        await installedProject(provider);
+        await homePairListing(provider, listing([fs.realpathSync(projectDir)]));
+        await writeFile(path.join(homeFolderOf(provider), "notes.md"), USERS_NOTE["notes.md"]);
+
+        const { stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+        expect(error, stderr).toBeUndefined();
+        expect(await readFolder(homeFolderOf(provider))).toStrictEqual(USERS_NOTE);
+      },
+    );
+
+    it.each(PROVIDERS)(
+      "keeps the home .agents-inc/ for the other provider's folder beside the %s one it empties",
+      async (provider) => {
+        const other = OTHER_PROVIDER[provider];
+        await installedProject(provider);
+        await homePairListing(provider, listing([fs.realpathSync(projectDir)]));
+        await homePairListing(other, listing([await installedNeighbour(other)]));
+        const otherFolderBefore = await readFolder(homeFolderOf(other));
+
+        const { stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+        expect(error, stderr).toBeUndefined();
+        expect(await readFolder(homeFolderOf(provider))).toBeNull();
+        expect(await readFolder(homeFolderOf(other))).toStrictEqual(otherFolderBefore);
+      },
+    );
+
+    it.each(STAYS_HOLDING.flatMap((row) => PROVIDERS.map((provider) => ({ ...row, provider }))))(
+      "keeps the $provider home config holding $holding, taking only this project off",
+      async ({ provider, fields, alsoListsNeighbour }) => {
+        const neighbours = alsoListsNeighbour ? [await installedNeighbour(provider)] : [];
+        await installedProject(provider);
+        const typesPath = await homePairListing(provider, {
+          ...listing([...neighbours, fs.realpathSync(projectDir)]),
+          ...fields,
+        });
+        const configBefore = (await loadProjectConfigFromDir(fakeHome, provider))?.config;
+        const typesBefore = await readFile(typesPath, "utf-8");
+
+        const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+        expect(error, stderr).toBeUndefined();
+        expect((await loadProjectConfigFromDir(fakeHome, provider))?.config).toStrictEqual({
+          ...configBefore,
+          projects: neighbours,
+        });
+        expect(await readFile(typesPath, "utf-8")).toBe(typesBefore);
+        for (const homeRoot of homeRootSpellings()) {
+          expect(stdout + stderr).not.toContain(homeRoot);
         }
       },
     );
@@ -2518,6 +2970,102 @@ describe("what uninstall says of plugins", () => {
         ["api-framework-hono@marketplace", "project", projectDir],
         ["api-framework-hono@marketplace", "global", projectDir],
       ]);
+    });
+
+    async function globalInstallationHolds(skills: FixtureSkillConfig[]): Promise<void> {
+      await writeTestTsConfig(
+        fakeHome,
+        buildProjectConfig({ name: "global", skills, agents: [] }),
+        sourceFolderInUse(fakeHome, "claude").relName,
+      );
+    }
+
+    const REACT_HELD_BY_THE_PROJECT = buildSkillConfigs(["web-framework-react"], {
+      scope: "project",
+      origin: "marketplace",
+    });
+
+    it.each([
+      {
+        as: "beside the global entry the project switched off",
+        skills: [
+          ...buildSkillConfigs(["web-framework-react"], {
+            scope: "global",
+            origin: "marketplace",
+            excluded: true,
+          }),
+          ...REACT_HELD_BY_THE_PROJECT,
+        ],
+      },
+      { as: "alone", skills: REACT_HELD_BY_THE_PROJECT },
+    ])(
+      "leaves the plugin registered at the global scope while the global installation holds it, the project's entry $as",
+      async ({ skills }) => {
+        await globalInstallationHolds(
+          buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "marketplace" }),
+        );
+
+        const swept = await sweptScopes(skills, ["web-framework-react@marketplace"]);
+
+        expect(swept).toStrictEqual([["web-framework-react@marketplace", "project", projectDir]]);
+      },
+    );
+
+    it("still sweeps a leftover registration at the global scope when the global installation does not hold the plugin", async () => {
+      await globalInstallationHolds(
+        buildSkillConfigs(["api-framework-hono"], { scope: "global", origin: "marketplace" }),
+      );
+
+      const swept = await sweptScopes(REACT_HELD_BY_THE_PROJECT, [
+        "web-framework-react@marketplace",
+      ]);
+
+      expect(swept).toStrictEqual([
+        ["web-framework-react@marketplace", "project", projectDir],
+        ["web-framework-react@marketplace", "global", projectDir],
+      ]);
+    });
+
+    it("sweeps the project's own scope first beside a switched-off global entry the global installation no longer holds", async () => {
+      await globalInstallationHolds(
+        buildSkillConfigs(["api-framework-hono"], { scope: "global", origin: "marketplace" }),
+      );
+
+      const swept = await sweptScopes(
+        [
+          ...buildSkillConfigs(["web-framework-react"], {
+            scope: "global",
+            origin: "marketplace",
+            excluded: true,
+          }),
+          ...REACT_HELD_BY_THE_PROJECT,
+        ],
+        ["web-framework-react@marketplace"],
+      );
+
+      expect(swept).toStrictEqual([
+        ["web-framework-react@marketplace", "project", projectDir],
+        ["web-framework-react@marketplace", "global", projectDir],
+      ]);
+    });
+
+    it("leaves the plugin registered at the global scope, and says why, when the global config cannot be read", async () => {
+      const globalConfigPath = await writeRawTestConfig(fakeHome, renderUnparseableConfigTs());
+      await createProjectConfig(projectDir, { skills: REACT_HELD_BY_THE_PROJECT });
+      await installPlugins(["web-framework-react@marketplace"]);
+      const uninstallPlugin = vi.mocked(hostAt(projectDir).uninstallPlugin);
+      uninstallPlugin.mockClear();
+
+      const { stderr } = await runUninstall();
+
+      expect(
+        uninstallPlugin.mock.calls.map(([ref, scope, dir]) => [ref, scope, dir]),
+      ).toStrictEqual([["web-framework-react@marketplace", "project", projectDir]]);
+      expect(compactCliOutput(stderr)).toContain(
+        compactCliOutput(
+          `Warning: Could not read the global config — plugins and compiled agents it lists may be left behind: Config at '${globalConfigPath}' could not be loaded`,
+        ),
+      );
     });
 
     it("sweeps only the plugin scopes the host offers, when the skill's own is not one", async () => {

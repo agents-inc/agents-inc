@@ -7,7 +7,6 @@ import os from "os";
 import path from "path";
 import { z } from "zod";
 
-import { PLUGINS_SUBDIR } from "../../consts.js";
 import type { SkillScope } from "../../types/config.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import {
@@ -19,18 +18,19 @@ import {
 } from "../../utils/exec.js";
 import { verbose, warnOnce } from "../../utils/logger.js";
 import { ensureDir } from "../../utils/fs.js";
-import { CODEX_CONFIG_FILE, pluginsDir, userConfigRoot } from "../installation/install-layout.js";
+import { CODEX_CONFIG_FILE, userConfigRoot } from "../installation/install-layout.js";
 import {
   FailedLeavingPluginsSwitchedOnError,
   PluginsLeftSwitchedOnError,
   switchCodexPluginsOff,
 } from "./codex-plugin-switch.js";
-import type {
-  HostCallOptions,
-  HostPlugin,
-  InstallPlacement,
-  PluginHost,
-  PluginRemovalOutcome,
+import {
+  pluginsRootFor,
+  type HostCallOptions,
+  type HostPlugin,
+  type InstallPlacement,
+  type PluginHost,
+  type PluginRemovalOutcome,
 } from "./plugin-host.js";
 
 const CODEX: PluginHost["provider"] = "codex";
@@ -177,14 +177,6 @@ const pluginListingSchema = z.object({
 
 type CodexInstalledPlugin = z.infer<typeof pluginListingSchema>["installed"][number];
 
-function codexPluginsRoot(
-  projectDir: string,
-  options: CodexConfigOptions | undefined,
-): string | null {
-  if (options?.configDir !== undefined) return path.join(options.configDir, PLUGINS_SUBDIR);
-  return pluginsDir(CODEX, "global", projectDir);
-}
-
 /** The state tree is pinned because even `codex --version` writes under `$CODEX_HOME/tmp/arg0/`. */
 async function isCodexCLIAvailable(options?: CodexConfigOptions): Promise<boolean> {
   try {
@@ -218,33 +210,44 @@ async function codexMarketplaces(
   return registry.marketplaces;
 }
 
-/** By name, never by count: a Codex home may hold the user's own marketplaces beside ours. */
+/**
+ * By name, never by count: a Codex home may hold the user's own marketplaces beside ours. False for
+ * an unreadable registry too; the caller then adds, which still works there.
+ */
 async function codexMarketplaceExists(
   name: string,
   options?: CodexConfigOptions,
 ): Promise<boolean> {
-  return (await codexRegisteredMarketplace(name, options)) !== null;
-}
-
-/** `null` also for an unreadable registry; the caller then adds, which still works there. */
-async function codexRegisteredMarketplace(
-  name: string,
-  options?: CodexConfigOptions,
-): Promise<CodexMarketplace | null> {
   let registered;
   try {
     registered = await codexMarketplaces(options);
   } catch (error) {
     if (!namesAnUnreadableMarketplace(error)) throw error;
     warnOnce(sayWhatCodexRefused("list the marketplaces it knows", getErrorMessage(error)));
-    return null;
+    return false;
   }
 
-  return registered.find((marketplace) => marketplace.name === name) ?? null;
+  return registered.some((marketplace) => marketplace.name === name);
+}
+
+/** Throws where {@link codexMarketplaceExists} answers false, so a take-back can tell the two. */
+async function codexMarketplacesHeld(options?: CodexConfigOptions): Promise<string[]> {
+  return (await codexMarketplaces(options)).map(({ name }) => name);
+}
+
+/** One Codex does not hold throws, unlike Claude's; a take-back removes only what it saw added. */
+async function codexMarketplaceRemove(name: string, options?: CodexConfigOptions): Promise<void> {
+  validatePluginName(name);
+  await runCodexOrThrow(
+    ["plugin", "marketplace", "remove", name, "--json"],
+    options,
+    "remove marketplace",
+    codexPluginCwd(),
+  );
 }
 
 function sayWhatCodexRefused(attempt: string, said: string): string {
-  return `Codex could not ${attempt}, so this run is treating it as having none. It said: ${said}`;
+  return `Codex could not ${attempt}. It said: ${said}`;
 }
 
 export async function codexMarketplaceAdd(
@@ -294,7 +297,6 @@ async function upgradeGitMarketplace(
   );
 }
 
-/** Every plugin of the marketplace, named in the project's config or not. */
 async function reinstallEachPluginOf(
   name: string,
   options: CodexConfigOptions | undefined,
@@ -460,6 +462,14 @@ async function codexListPlugins(
   return [];
 }
 
+/** Throws where {@link codexListPlugins} answers none, so a take-back can tell the two. */
+async function codexPluginsHeld(
+  projectDir: string,
+  options?: CodexConfigOptions,
+): Promise<string[]> {
+  return (await codexPluginListing(options, projectDir)).map(({ pluginId }) => pluginId);
+}
+
 type CodexPluginListing =
   | { readonly kind: "listed"; readonly plugins: readonly HostPlugin[] }
   | { readonly kind: "unreadable"; readonly reason: string };
@@ -468,7 +478,7 @@ async function codexPluginsOrUnreadable(
   projectDir: string,
   options?: CodexConfigOptions,
 ): Promise<CodexPluginListing> {
-  const pluginsRoot = codexPluginsRoot(projectDir, options);
+  const pluginsRoot = pluginsRootFor(CODEX, projectDir, options);
   if (pluginsRoot === null) return { kind: "listed", plugins: [] };
   const cacheRoot = path.join(pluginsRoot, PLUGIN_CACHE_SUBDIR);
 
@@ -500,9 +510,14 @@ export function codexHost(): PluginHost {
     marketplaceExists: codexMarketplaceExists,
     addMarketplace: codexMarketplaceAdd,
     refreshMarketplace: refreshCodexMarketplace,
+    marketplaceTakeBack: {
+      marketplacesHeld: codexMarketplacesHeld,
+      removeMarketplace: codexMarketplaceRemove,
+    },
     installPlugin: codexInstallPlugin,
     updatePlugin: codexUpdatePlugin,
     uninstallPlugin: codexUninstallPlugin,
     listPlugins: codexListPlugins,
+    pluginsHeld: codexPluginsHeld,
   };
 }

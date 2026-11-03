@@ -3,8 +3,11 @@
  * `global`/`project` and mode is `plugin`/`eject`. Each host translates at its own edge.
  */
 
-import type { Provider } from "../../consts.js";
+import path from "path";
+
+import { PLUGINS_SUBDIR, type Provider } from "../../consts.js";
 import type { InstallMode, SkillScope } from "../../types/index.js";
+import { pluginsDir } from "../installation/install-layout.js";
 
 /** Both are ordinary outcomes, so the distinction is a return value rather than an exception. */
 export type PluginRemovalOutcome = "removed" | "absent";
@@ -31,6 +34,24 @@ export type HostPlugin = {
  */
 export type HostCallOptions = { configDir?: string };
 
+/** Where the installation a call reads keeps its plugins; null where there is none. */
+export function pluginsRootFor(
+  provider: Provider,
+  projectDir: string,
+  options: HostCallOptions | undefined,
+): string | null {
+  if (options?.configDir !== undefined) return path.join(options.configDir, PLUGINS_SUBDIR);
+  return pluginsDir(provider, "global", projectDir);
+}
+
+/** What lets a refused run remove the marketplace it registered and no other. */
+export type MarketplaceTakeBack = {
+  /** Throws where the host cannot say, where `marketplaceExists` answers false. */
+  marketplacesHeld: (options?: HostCallOptions) => Promise<string[]>;
+
+  removeMarketplace: (name: string, options?: HostCallOptions) => Promise<void>;
+};
+
 /** A plain value object built fresh per call, so no caller shares another's arrays. */
 export type PluginHost = {
   provider: Provider;
@@ -50,6 +71,8 @@ export type PluginHost = {
 
   /** Named for neither host's verb: Claude's is `update`, Codex's is `upgrade`. */
   refreshMarketplace: (name: string, options?: HostCallOptions) => Promise<void>;
+
+  marketplaceTakeBack: MarketplaceTakeBack;
 
   installPlugin: (
     pluginRef: string,
@@ -76,4 +99,7 @@ export type PluginHost = {
 
   /** `projectDir` decides the enabled switch; `options` decides which installation is read. */
   listPlugins: (projectDir: string, options?: HostCallOptions) => Promise<HostPlugin[]>;
+
+  /** Plugin keys. Throws where the host cannot say, where `listPlugins` answers none. */
+  pluginsHeld: (projectDir: string, options?: HostCallOptions) => Promise<string[]>;
 };

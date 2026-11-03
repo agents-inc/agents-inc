@@ -1,9 +1,9 @@
-import os from "os";
 import React from "react";
+import path from "path";
 
 import { Errors, Flags, type Interfaces } from "@oclif/core";
 import { Box, Text, useApp } from "ink";
-import { partition } from "remeda";
+import { partition, unique } from "remeda";
 import { render } from "../components/render.js";
 
 import { BaseCommand } from "../base-command.js";
@@ -28,28 +28,18 @@ import {
   skillFoldersAt,
 } from "../lib/operations/skills/copy-local-skills.js";
 import { movedGlobalAgentInputs, type GateReport } from "../lib/config-gate/index.js";
-import { fetchSeedConfig } from "../lib/seed/fetch-seed.js";
-import {
-  registerExternalSkills,
-  writeExternalSkills,
-  type ExternalSkillInstall,
-} from "../lib/seed/external-skills.js";
-import { seedToInstallSelection, type SeedMapping } from "../lib/seed/seed-to-selection.js";
 import {
   holdInstalledGlobal,
-  installsAtHome,
   joinedStatement,
+  keptAsInstalledStatement,
   notInstalledGlobally,
-  panelRowEntries,
   readInstalledGlobal,
+  runFromHomeFor,
   type HeldGlobal,
   type InstalledGlobal,
+  type RunFromHome,
 } from "../lib/seed/seed-apply.js";
-import {
-  agentChangesAmong,
-  namedByActiveEntries,
-  type AgentChange,
-} from "../lib/configuration/scope-diff.js";
+import { agentChangesAmong, type AgentChange } from "../lib/configuration/scope-diff.js";
 import { isActiveAt } from "../lib/configuration/scope-predicates.js";
 import { summaryPanelBlock, type SummaryPanelProps } from "../components/common/summary-panel.js";
 import {
@@ -67,7 +57,6 @@ import {
   detectInstallation,
   detectProjectInstallation,
   deriveInstallMode,
-  holdsItsOwnInstallation,
   resolveInstallPaths,
   buildAgentScopeMap,
   isHomeDirectory,
@@ -76,16 +65,24 @@ import {
 } from "../lib/installation/index.js";
 import { hostAt } from "../lib/hosts/host-for.js";
 import {
+  filesATakeBackMayEmpty,
+  foldersAPluginInstallMayEmpty,
+  foldersATakeBackMayEmpty,
+  removeIfHoldingNothing,
+} from "../lib/hosts/host-files-left-empty.js";
+import type { PluginHost } from "../lib/hosts/plugin-host.js";
+import {
   agentCodec,
   chooseProviderForThisRun,
+  hostCompilesAgent,
   providerAtScope,
   providerInUse,
   relativeConfigPath,
+  whileInstallingInto,
 } from "../lib/installation/install-layout.js";
 import { providerToNameAt } from "../lib/installation/provider-to-name.js";
 import { hostCompileNotices } from "../lib/hosts/host-compile-notices.js";
 import {
-  installationToName,
   providerFlag,
   providerNamedBy,
   providerNeedsAConfigurationToInstall,
@@ -102,12 +99,13 @@ import {
   type Provider,
 } from "../consts.js";
 import { clearTerminalScreen } from "../utils/terminal.js";
+import { isKnownAbsent, removeDirIfEmpty } from "../utils/fs.js";
+import { mapInTurn } from "../utils/in-turn.js";
 import { SelectList, type SelectListItem } from "../components/common/select-list.js";
 import { promptConfirm, promptValue } from "../components/common/prompt-confirm.js";
 import { Confirm } from "../components/common/confirm.js";
 import { getErrorMessage } from "../utils/errors.js";
 import { EXIT_CODES } from "../lib/exit-codes.js";
-import { openUrl } from "../utils/open-url.js";
 import { plural } from "../utils/string.js";
 import type {
   AgentName,
@@ -126,13 +124,12 @@ import {
   STATUS_MESSAGES,
   addMarketplaceInTheEditor,
   agentsNotCompiled,
-  applySharedConfigHere,
   carriedSkillsRemovedAfterRefusedSave,
-  carriedSkillsWritten,
   copiedSkillsRemovedAfterRefusedSave,
   globalScopedAgentsHint,
   initSucceeded,
-  keptAsInstalledGlobally,
+  marketplaceRemovedAfterRefusedSave,
+  pluginKeptAfterRefusedSave,
   sharedConfigExistingInstall,
   subAgentChanged,
 } from "../utils/messages.js";
@@ -283,8 +280,9 @@ type Selection = {
   sourceFlags: SourceFlags;
   /** A global install's own skills, recorded as they are and never installed over. */
   installedAlready: ReadonlySet<SkillId>;
-  /** The skill folders at both scopes before this run wrote one. */
   skillFoldersBefore: ReadonlySet<string>;
+  installFoldersMissing: string[];
+  hostPathsMissing: HostPathsMissing;
   carriedSkillDirs: ReadonlySet<string>;
 };
 
@@ -350,18 +348,12 @@ export default class Init extends BaseCommand {
     // Above the first line, so a ref the install route would refuse is refused before any output.
     const marketplaceLine =
       marketplace === undefined ? undefined : this.addMarketplaceLineOrFail(marketplace);
-
-    const installedHere = await holdsItsOwnInstallation(projectDir);
-    const toName = installedHere ? await installationToName(projectDir, provider) : provider;
+    const applyHere = await this.howToApplyItHere(id, projectDir, provider);
 
     this.log(id === undefined ? `Build it at ${url}` : `Open it at ${url}`);
     if (marketplaceLine !== undefined) this.log(marketplaceLine);
-    this.log(applySharedConfigHere(id, installedHere, toName));
-
-    if (!process.stdin.isTTY) return;
-
-    const opened = await openUrl(url);
-    if (!opened.ok) this.warn(opened.error);
+    this.log(applyHere);
+    await this.openInBrowserAtATerminal(url);
   }
 
   private async install(): Promise<void> {
@@ -382,15 +374,23 @@ export default class Init extends BaseCommand {
       );
     }
 
-    // ABORT: an unreadable config is refused here, before any route reads it.
+    const { from } = flags;
+    if (from === undefined) return this.showDashboardOrOpenEditor(projectDir);
+
+    return whileInstallingInto(projectDir, () => this.installSharedConfig(from, flags, projectDir));
+  }
+
+  private async installSharedConfig(
+    id: string,
+    flags: SourceFlags,
+    projectDir: string,
+  ): Promise<void> {
+    // ABORT: an unreadable config is refused here, before anything reads it.
     await this.ensureConfigReadable(projectDir);
-
-    if (flags.from === undefined) return this.showDashboardOrOpenEditor(projectDir);
-
     // Its degrade arm cannot fire: `ensureConfigReadable` already refused every unreadable config.
     this.brandingName = await this.resolveBrandingName(projectDir);
 
-    const selection = await this.selectionFromSharedConfig(flags.from, flags, projectDir);
+    const selection = await this.selectionFromSharedConfig(id, flags, projectDir);
     if (!selection) this.exit(EXIT_CODES.CANCELLED);
 
     this.reportValidationErrors(selection.result.validation);
@@ -399,6 +399,8 @@ export default class Init extends BaseCommand {
   }
 
   private async showDashboardOrOpenEditor(projectDir: string): Promise<void> {
+    // ABORT: an unreadable config is refused here, before the dashboard reads it.
+    await this.ensureConfigReadable(projectDir);
     const dashboard = await runDashboardFlow(projectDir, this.config, (msg) => this.log(msg));
     switch (dashboard) {
       case "cancelled":
@@ -442,6 +444,8 @@ export default class Init extends BaseCommand {
     flags: SourceFlags,
     projectDir: string,
   ): Promise<Selection | null> {
+    // First: on Codex even the source load's plugin listing writes into the host's home.
+    const hostPathsMissing = await hostPathsMissingAt(projectDir);
     await this.refuseInstalledProject(projectDir, id);
 
     const payload = await this.fetchSharedConfigOrFail(id);
@@ -477,10 +481,7 @@ export default class Init extends BaseCommand {
     this.refuseAnEmptySelection(held.result, id);
 
     const stackName = await this.stackNameOf(result.selectedStackId, sourceResult);
-    this.logWhatGoesWhere(held, installedGlobal, stackName, {
-      id: installsAtHome(result) ? id : undefined,
-      provider: providerToNameAt(os.homedir(), providerInUse(projectDir)),
-    });
+    this.logWhatGoesWhere(held, installedGlobal, stackName, runFromHomeFor(result, id, projectDir));
     if (process.stdin.isTTY && !(await this.confirmInstall())) {
       this.log("Setup cancelled");
       return null;
@@ -488,8 +489,9 @@ export default class Init extends BaseCommand {
 
     // After the question, so a refusal or a no leaves nothing written.
     const skillFoldersBefore = await skillFoldersAt(projectDir);
+    const installFoldersMissing = await installFoldersMissingAt(projectDir);
     await this.writeCarriedSkills(arrivingCarried);
-    this.announceArrivingSkills(held, result.selectedAgents.length);
+    this.announceArrivingSkills(held, countCompiledAgents(projectDir, result.agentConfigs));
 
     return {
       result: held.result,
@@ -497,6 +499,8 @@ export default class Init extends BaseCommand {
       sourceFlags,
       installedAlready: new Set(held.installed.skillIds),
       skillFoldersBefore,
+      installFoldersMissing,
+      hostPathsMissing,
       carriedSkillDirs: new Set(arrivingCarried.map(({ skillDir }) => skillDir)),
     };
   }
@@ -515,7 +519,7 @@ export default class Init extends BaseCommand {
     const lines = summaryPanelBlock(
       installPanel(held, installedGlobal, joined, stackName),
       joined.map(subAgentChanged),
-      [...joinedStatement(held), ...keptAsInstalledStatement(held, runFromHome)],
+      [...joinedStatement(held), ...keptAsInstalledStatement(held, [], runFromHome)],
     );
     for (const line of lines) {
       this.log(line);
@@ -534,7 +538,9 @@ export default class Init extends BaseCommand {
     const arriving = notInstalledGlobally(held.result.skills, held);
     if (arriving.length === 0) return;
 
-    this.log(`Installing ${arriving.length} skill(s) across ${agentCount} sub-agent(s)\n`);
+    this.log(
+      `Installing ${plural(arriving.length, "skill")} across ${plural(agentCount, "sub-agent")}\n`,
+    );
   }
 
   private async confirmInstall(): Promise<boolean> {
@@ -557,48 +563,6 @@ export default class Init extends BaseCommand {
     this.error(sharedConfigExistingInstall(installation.configPath, id, provider), {
       exit: EXIT_CODES.ERROR,
     });
-  }
-
-  private async fetchSharedConfigOrFail(id: string): Promise<SeedPayload> {
-    this.log(`Fetching configuration ${id}...`);
-    const fetched = await fetchSeedConfig(id);
-    if (!fetched.ok) {
-      this.error(fetched.error, { exit: EXIT_CODES.ERROR });
-    }
-    return fetched.payload;
-  }
-
-  private decodeSeedOrFail(payload: SeedPayload, matrix: MergedSkillsMatrix): SeedMapping {
-    try {
-      return seedToInstallSelection(payload, matrix);
-    } catch (error) {
-      this.handleError(error);
-    }
-  }
-
-  private registerExternalSkillsOrFail(
-    payload: SeedPayload,
-    matrix: MergedSkillsMatrix,
-    projectDir: string,
-  ): ExternalSkillInstall[] {
-    try {
-      return registerExternalSkills(payload, matrix, projectDir);
-    } catch (error) {
-      this.handleError(error);
-    }
-  }
-
-  private async writeCarriedSkills(carried: ExternalSkillInstall[]): Promise<void> {
-    if (carried.length === 0) return;
-
-    await writeExternalSkills(carried);
-    const recorded = carried.map(({ id, skill }) => ({ id, displayName: skill.displayName }));
-    this.log(
-      carriedSkillsWritten(
-        carried.map(({ id }) => id),
-        namedByActiveEntries(recorded),
-      ),
-    );
   }
 
   private async loadSourceOrFail(
@@ -630,6 +594,8 @@ export default class Init extends BaseCommand {
       sourceFlags,
       installedAlready,
       skillFoldersBefore,
+      installFoldersMissing,
+      hostPathsMissing,
       carriedSkillDirs,
     }: Selection,
     projectDir: string,
@@ -638,16 +604,16 @@ export default class Init extends BaseCommand {
     this.logInstallPlan(plan);
 
     // Before any copy, so a failed resolution cannot leave a half-install with no config.ts.
-    const resolvedMarketplace = await this.marketplaceForPluginSkills(
+    const marketplace = await this.marketplaceForPluginSkills(
       plan.pluginSkills,
       sourceResult,
       projectDir,
     );
 
     const copyResult = await this.copyEjectedSkills(plan, projectDir, sourceResult);
-    const pluginsNewlyInstalled = await this.installPluginSkillsNotingWhatWasHeld(
+    const plugins = await this.installPluginSkillsNotingWhatWasHeld(
       plan.pluginSkills,
-      resolvedMarketplace,
+      marketplace,
       projectDir,
       sourceResult.matrix,
     );
@@ -657,7 +623,15 @@ export default class Init extends BaseCommand {
       sourceResult,
       sourceFlags,
       projectDir,
-      { skillFoldersBefore, carriedSkillDirs, copyResult, pluginsNewlyInstalled },
+      {
+        skillFoldersBefore,
+        installFoldersMissing,
+        hostPathsMissing,
+        carriedSkillDirs,
+        copyResult,
+        plugins,
+        marketplace,
+      },
     );
     try {
       const written = await this.compileWrittenConfig(configResult, projectDir);
@@ -673,15 +647,18 @@ export default class Init extends BaseCommand {
     pluginSkills: InstallSelection["skills"],
     sourceResult: SourceLoadResult,
     projectDir: string,
-  ): Promise<string | null> {
+  ): Promise<MarketplaceInUse | null> {
     if (pluginSkills.length === 0) return null;
 
-    return this.requireMarketplaceOrExit(
+    const host = hostAt(projectDir);
+    const heldBefore = await marketplacesHeldBy(host);
+    const name = await this.requireMarketplaceOrExit(
       sourceResult,
       "install plugin skills",
-      hostAt(projectDir),
+      host,
       (marketplace) => this.log(`Registering marketplace "${marketplace}"...`),
     );
+    return { name, newlyRegistered: !heldBefore(name) };
   }
 
   /** One frame, then unmount: the notice has no exit of its own and `--from` must run headless. */
@@ -712,20 +689,19 @@ export default class Init extends BaseCommand {
     return copyResult;
   }
 
-  /** Each plugin this run installed that the host did not already hold, at the scope it went to. */
   private async installPluginSkillsNotingWhatWasHeld(
     pluginSkills: SkillConfig[],
-    marketplace: string | null,
+    marketplace: MarketplaceInUse | null,
     projectDir: string,
     matrix: MergedSkillsMatrix,
-  ): Promise<InstalledPlugin[]> {
-    if (marketplace === null) return [];
+  ): Promise<PluginsPutDown> {
+    if (marketplace === null) return { newlyInstalled: [], perhapsHeld: [], foldersMissing: [] };
 
     const heldBefore = await pluginRefsHeldAt(projectDir);
-    await this.installPluginSkillsReported(pluginSkills, marketplace, projectDir, matrix);
-    return pluginSkills
-      .map(({ id, scope }) => ({ ref: buildMarketplacePluginRef(id, marketplace), scope }))
-      .filter(({ ref }) => !heldBefore(ref));
+    const foldersMissing = await pluginInstallFoldersMissingAt(projectDir, marketplace.name);
+    await this.installPluginSkillsReported(pluginSkills, marketplace.name, projectDir, matrix);
+    const installed = pluginsInstalledFrom(marketplace.name, pluginSkills);
+    return { ...splitByWhatWasHeld(installed, heldBefore), foldersMissing };
   }
 
   private async compileWrittenConfig(
@@ -772,7 +748,6 @@ export default class Init extends BaseCommand {
     return configResult;
   }
 
-  /** Fails with the write's own cause once nothing this run put down is left with no config. */
   private async takingBackOnFailure<T>(
     putDown: PutDown,
     projectDir: string,
@@ -782,14 +757,21 @@ export default class Init extends BaseCommand {
       return await write();
     } catch (error) {
       const foldersRemoved = await removeNewSkillFolders(putDown.skillFoldersBefore, projectDir);
-      await uninstallEach(putDown.pluginsNewlyInstalled, projectDir);
-      this.failSayingWhatWasRemoved(error, skillsRemoved(putDown, foldersRemoved));
+      await uninstallEach(putDown.plugins.newlyInstalled, projectDir);
+      const marketplaceRemoved = await removeNewMarketplace(putDown, projectDir);
+      await removeHostFilesLeftEmpty(putDown.hostPathsMissing.files);
+      await removeFoldersLeftEmpty(foldersThisRunMade(putDown));
+      this.failSayingWhatWasTakenBack(error, {
+        ...skillsRemoved(putDown, foldersRemoved),
+        marketplace: marketplaceRemoved,
+        pluginsKept: putDown.plugins.perhapsHeld.map(({ ref }) => ref),
+      });
     }
   }
 
   /** oclif prints a thrown error last, so this one is printed here and thrown already printed. */
-  private failSayingWhatWasRemoved(error: unknown, removed: SkillsRemoved): never {
-    const lines = linesSayingWhatWasRemoved(removed);
+  private failSayingWhatWasTakenBack(error: unknown, takenBack: TakenBack): never {
+    const lines = linesSayingWhatWasTakenBack(takenBack);
     if (lines.length === 0) this.handleError(error);
 
     const message = getErrorMessage(error);
@@ -919,23 +901,6 @@ async function installedGlobalToHold(projectDir: string): Promise<InstalledGloba
   return await readInstalledGlobal(projectDir);
 }
 
-/** The run from home that changes what a project run keeps, where home would take it. */
-type RunFromHome = { id: string | undefined; provider: Provider | undefined };
-
-function keptAsInstalledStatement(held: HeldGlobal, runFromHome: RunFromHome): string[] {
-  const { skillIds, agentNames } = held.keptAsInstalled;
-  if (skillIds.length === 0 && agentNames.length === 0) return [];
-  return [
-    keptAsInstalledGlobally(
-      skillIds,
-      agentNames,
-      runFromHome.id,
-      runFromHome.provider,
-      panelRowEntries(held),
-    ),
-  ];
-}
-
 type GlobalEntries = { skills: SkillConfig[]; agents: AgentScopeConfig[] };
 
 /** What the project inherits that the configuration leaves unnamed: a project config copies it all. */
@@ -1026,22 +991,62 @@ type WrittenInstall = {
 
 type InstalledPlugin = { ref: string; scope: SkillScope };
 
-/** What this run put down before the save, for a refused save to take back. */
-type PutDown = {
-  skillFoldersBefore: ReadonlySet<string>;
-  carriedSkillDirs: ReadonlySet<string>;
-  copyResult: SkillCopyResult | null;
-  pluginsNewlyInstalled: InstalledPlugin[];
+/** Newly registered only where the host listed what it held before and this was not among it. */
+type MarketplaceInUse = { name: string; newlyRegistered: boolean };
+
+/** `perhapsHeld`: installed where the host could not say what it held before. */
+type PluginsPutDown = {
+  newlyInstalled: InstalledPlugin[];
+  perhapsHeld: InstalledPlugin[];
+  foldersMissing: string[];
 };
 
-/** Unreadable, every plugin counts as held: a take-back must never touch one that was there. */
-async function pluginRefsHeldAt(projectDir: string): Promise<(ref: string) => boolean> {
+type HostPathsMissing = { files: string[]; folders: string[] };
+
+type PutDown = {
+  skillFoldersBefore: ReadonlySet<string>;
+  installFoldersMissing: string[];
+  hostPathsMissing: HostPathsMissing;
+  carriedSkillDirs: ReadonlySet<string>;
+  copyResult: SkillCopyResult | null;
+  plugins: PluginsPutDown;
+  marketplace: MarketplaceInUse | null;
+};
+
+/** Null where the host cannot say: a take-back must never touch a plugin that may have been there. */
+async function pluginRefsHeldAt(projectDir: string): Promise<ReadonlySet<string> | null> {
   try {
-    const held = await hostAt(projectDir).listPlugins(projectDir);
-    const refs = new Set(held.map(({ pluginKey }) => pluginKey));
-    return (ref) => refs.has(ref);
+    return new Set(await hostAt(projectDir).pluginsHeld(projectDir));
   } catch (error) {
     verbose(`Could not read the plugins installed before this run: ${getErrorMessage(error)}`);
+    return null;
+  }
+}
+
+function pluginsInstalledFrom(marketplace: string, pluginSkills: SkillConfig[]): InstalledPlugin[] {
+  return pluginSkills.map(({ id, scope }) => ({
+    ref: buildMarketplacePluginRef(id, marketplace),
+    scope,
+  }));
+}
+
+function splitByWhatWasHeld(
+  installed: InstalledPlugin[],
+  heldBefore: ReadonlySet<string> | null,
+): Pick<PluginsPutDown, "newlyInstalled" | "perhapsHeld"> {
+  if (heldBefore === null) return { newlyInstalled: [], perhapsHeld: installed };
+  return { newlyInstalled: installed.filter(({ ref }) => !heldBefore.has(ref)), perhapsHeld: [] };
+}
+
+/** As for plugins, unreadable counts as held. */
+async function marketplacesHeldBy(host: PluginHost): Promise<(name: string) => boolean> {
+  try {
+    const held = new Set(await host.marketplaceTakeBack.marketplacesHeld());
+    return (name) => held.has(name);
+  } catch (error) {
+    verbose(
+      `Could not read the marketplaces registered before this run: ${getErrorMessage(error)}`,
+    );
     return () => true;
   }
 }
@@ -1058,7 +1063,84 @@ async function removeNewSkillFolders(
   }
 }
 
-/** In install order; a failure is diagnostic only, since the save's own error is what is reported. */
+/** Read before the copies, so a take-back removes only the folders this run made. */
+async function installFoldersMissingAt(projectDir: string): Promise<string[]> {
+  return foldersMissingOnTheWayToEach(foldersWrittenBeforeTheSave(projectDir));
+}
+
+/** Each scope's skills folder, and the project's config folder `writeProjectConfig` makes. */
+function foldersWrittenBeforeTheSave(projectDir: string): string[] {
+  const project = resolveInstallPaths(projectDir, "project");
+  return [
+    project.skillsDir,
+    resolveInstallPaths(projectDir, "global").skillsDir,
+    path.dirname(project.configPath),
+  ];
+}
+
+async function foldersMissingOnTheWayToEach(folders: string[]): Promise<string[]> {
+  const chains = await Promise.all(folders.map(foldersMissingOnTheWayTo));
+  return unique(chains.flat());
+}
+
+/** One the run cannot tell is missing counts as there, so it stays. */
+async function foldersMissingOnTheWayTo(dir: string): Promise<string[]> {
+  if (!(await isKnownAbsent(dir))) return [];
+  return [dir, ...(await foldersMissingOnTheWayTo(path.dirname(dir)))];
+}
+
+/** Read before anything asks the host, so a take-back deletes only what this run created. */
+async function hostPathsMissingAt(projectDir: string): Promise<HostPathsMissing> {
+  const provider = providerInUse(projectDir);
+  const files = filesATakeBackMayEmpty(provider, projectDir);
+  const absent = await Promise.all(files.map(isKnownAbsent));
+  return {
+    files: files.filter((_, at) => absent[at]),
+    folders: await foldersMissingOnTheWayToEach(foldersATakeBackMayEmpty(provider, projectDir)),
+  };
+}
+
+/** Read before the install, the one verb that makes them. */
+async function pluginInstallFoldersMissingAt(
+  projectDir: string,
+  marketplace: string,
+): Promise<string[]> {
+  const provider = providerInUse(projectDir);
+  return foldersMissingOnTheWayToEach(
+    foldersAPluginInstallMayEmpty(provider, projectDir, marketplace),
+  );
+}
+
+function foldersThisRunMade({
+  installFoldersMissing,
+  hostPathsMissing,
+  plugins,
+}: PutDown): string[] {
+  return [...installFoldersMissing, ...hostPathsMissing.folders, ...plugins.foldersMissing];
+}
+
+/** Before the folders, which a file left in them keeps. */
+async function removeHostFilesLeftEmpty(files: string[]): Promise<void> {
+  await Promise.all(
+    files.map((file) =>
+      removeIfHoldingNothing(file).catch((error: unknown) => {
+        verbose(`Could not remove ${file}, which this run created: ${getErrorMessage(error)}`);
+      }),
+    ),
+  );
+}
+
+/** Deepest first and in turn, since a folder empties only once the one inside it has gone. */
+async function removeFoldersLeftEmpty(folders: string[]): Promise<void> {
+  const deepestFirst = unique(folders).toSorted((a, b) => b.length - a.length);
+  try {
+    await mapInTurn(deepestFirst, removeDirIfEmpty);
+  } catch (error) {
+    verbose(`Could not remove a folder this run made: ${getErrorMessage(error)}`);
+  }
+}
+
+/** A failure is diagnostic only, since the save's own error is what is reported. */
 async function uninstallEach(plugins: InstalledPlugin[], projectDir: string): Promise<void> {
   const host = hostAt(projectDir);
   for (const { ref, scope } of plugins) {
@@ -1068,7 +1150,31 @@ async function uninstallEach(plugins: InstalledPlugin[], projectDir: string): Pr
   }
 }
 
+/**
+ * Answers the name it removed; a failure is diagnostic only, as for the plugins. One a kept plugin
+ * came from stays, since Claude's `marketplace remove` uninstalls its plugins too.
+ */
+async function removeNewMarketplace(
+  { marketplace, plugins }: PutDown,
+  projectDir: string,
+): Promise<string | null> {
+  const keepsAPluginFromIt = plugins.perhapsHeld.length > 0;
+  if (marketplace === null || !marketplace.newlyRegistered || keepsAPluginFromIt) return null;
+
+  try {
+    await hostAt(projectDir).marketplaceTakeBack.removeMarketplace(marketplace.name);
+    return marketplace.name;
+  } catch (error) {
+    verbose(
+      `Could not remove the marketplace "${marketplace.name}", which this run registered: ${getErrorMessage(error)}`,
+    );
+    return null;
+  }
+}
+
 type SkillsRemoved = { copied: number; carried: number };
+
+type TakenBack = SkillsRemoved & { marketplace: string | null; pluginsKept: string[] };
 
 /** A carried skill is recorded among the copies in place, so it is counted as carried only. */
 function skillsRemoved(
@@ -1085,10 +1191,17 @@ function copyDestinations(copyResult: SkillCopyResult | null): string[] {
   return [...copyResult.projectCopied, ...copyResult.globalCopied].map(({ destPath }) => destPath);
 }
 
-function linesSayingWhatWasRemoved({ copied, carried }: SkillsRemoved): string[] {
+function linesSayingWhatWasTakenBack({
+  copied,
+  carried,
+  marketplace,
+  pluginsKept,
+}: TakenBack): string[] {
   return [
     ...(copied > 0 ? [copiedSkillsRemovedAfterRefusedSave(copied)] : []),
     ...(carried > 0 ? [carriedSkillsRemovedAfterRefusedSave(carried)] : []),
+    ...(marketplace !== null ? [marketplaceRemovedAfterRefusedSave(marketplace)] : []),
+    ...pluginsKept.map(pluginKeptAfterRefusedSave),
   ];
 }
 
@@ -1195,12 +1308,30 @@ type AgentScopeSplit = { globalAgentCount: number; isGlobalOnly: boolean };
 function splitAgentScopes(cwd: string, agentScopeMap: Map<AgentName, SkillScope>): AgentScopeSplit {
   if (isHomeDirectory(cwd)) return { globalAgentCount: 0, isGlobalOnly: false };
 
-  const scopes = [...agentScopeMap.values()];
+  const scopes = scopesOfCompiledAgents(cwd, agentScopeMap);
   const globalAgentCount = scopes.filter((scope) => scope === "global").length;
   return {
     globalAgentCount,
     isGlobalOnly: globalAgentCount > 0 && globalAgentCount === scopes.length,
   };
+}
+
+/** Codex leaves some sub-agents out, so each counts only where its scope's host compiles it. */
+function compiledAt(cwd: string, name: AgentName, scope: SkillScope): boolean {
+  return hostCompilesAgent(providerAtScope(cwd, scope), name);
+}
+
+function scopesOfCompiledAgents(
+  cwd: string,
+  agentScopeMap: Map<AgentName, SkillScope>,
+): SkillScope[] {
+  return [...agentScopeMap]
+    .filter(([name, scope]) => compiledAt(cwd, name, scope))
+    .map(([, scope]) => scope);
+}
+
+function countCompiledAgents(cwd: string, agents: AgentScopeConfig[]): number {
+  return agents.filter(({ name, scope }) => compiledAt(cwd, name, scope)).length;
 }
 
 /**

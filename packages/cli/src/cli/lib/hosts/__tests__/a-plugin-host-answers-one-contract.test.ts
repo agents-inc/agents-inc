@@ -13,7 +13,9 @@ const PLUGIN_HOST_MEMBERS = [
   "isAvailable",
   "listPlugins",
   "marketplaceExists",
+  "marketplaceTakeBack",
   "offeredPlacements",
+  "pluginsHeld",
   "provider",
   "refreshMarketplace",
   "uninstallPlugin",
@@ -40,7 +42,9 @@ const EXPECTED_MEMBER_KINDS: Record<(typeof PLUGIN_HOST_MEMBERS)[number], string
   isAvailable: "function",
   listPlugins: "function",
   marketplaceExists: "function",
+  marketplaceTakeBack: "object",
   offeredPlacements: "object",
+  pluginsHeld: "function",
   provider: "string",
   refreshMarketplace: "function",
   uninstallPlugin: "function",
@@ -74,6 +78,13 @@ function fakePluginHost(): PluginHost {
       return Promise.resolve();
     },
     refreshMarketplace: () => Promise.resolve(),
+    marketplaceTakeBack: {
+      marketplacesHeld: () => Promise.resolve([...marketplaces]),
+      removeMarketplace: (name: string) => {
+        marketplaces.delete(name);
+        return Promise.resolve();
+      },
+    },
     installPlugin: (pluginRef: string) => {
       installed.set(pluginRef, { pluginKey: pluginRef, installPath: "/somewhere", enabled: true });
       return Promise.resolve();
@@ -82,6 +93,7 @@ function fakePluginHost(): PluginHost {
       Promise.resolve(installed.delete(pluginRef) ? "removed" : "absent"),
     updatePlugin: () => Promise.resolve(),
     listPlugins: () => Promise.resolve([...installed.values()]),
+    pluginsHeld: () => Promise.resolve([...installed.keys()]),
   };
 }
 
@@ -114,14 +126,25 @@ describe("every plugin host answers the same roster", () => {
   });
 
   it.each(HOSTS)("answers each member with the kind the seam declares — $name", ({ host }) => {
+    const kindOf = (value: unknown) => (value === null ? "null" : typeof value);
     const kinds = Object.fromEntries(
-      PLUGIN_HOST_MEMBERS.map((member) => [member, typeof host[member]]),
+      PLUGIN_HOST_MEMBERS.map((member) => [member, kindOf(host[member])]),
     );
 
     expect(
       kinds,
       "a member present under the right name and the wrong kind satisfies a roster check and fails at the call",
     ).toStrictEqual(EXPECTED_MEMBER_KINDS);
+  });
+
+  it.each(HOSTS)("carries a take-back that lists and removes marketplaces — $name", ({ host }) => {
+    expect(
+      host.marketplaceTakeBack,
+      "a host without one leaves behind, on every refused save, the marketplace that run registered",
+    ).toStrictEqual({
+      marketplacesHeld: expect.any(Function),
+      removeMarketplace: expect.any(Function),
+    });
   });
 
   it.each(HOSTS)("names no member after the host it was extracted from — $name", ({ host }) => {
