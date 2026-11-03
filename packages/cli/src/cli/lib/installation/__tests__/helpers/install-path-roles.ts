@@ -23,10 +23,6 @@ export const ROOT_SITE_REFUSED = "a role site at the tree root claims every path
 
 const TREE_ROOT_SPELLINGS = ["", ".", "/", "./"];
 
-function isTreeRoot(at: string): boolean {
-  return TREE_ROOT_SPELLINGS.includes(at);
-}
-
 function claimsPath(site: RoleSite, recorded: string): boolean {
   return recorded === site.at || recorded.startsWith(`${site.at}/`);
 }
@@ -36,7 +32,7 @@ export function attributeByRole(
   recorded: readonly string[],
   sites: readonly RoleSite[],
 ): Attribution {
-  const atRoot = sites.filter((site) => isTreeRoot(site.at));
+  const atRoot = sites.filter((site) => TREE_ROOT_SPELLINGS.includes(site.at));
   if (atRoot.length > 0) {
     throw new Error(`${ROOT_SITE_REFUSED}: ${atRoot.map((site) => site.role).join(", ")}`);
   }

@@ -2,6 +2,8 @@
 // tree rather than text, so a comment or a string naming `it.fails` is not a known gap.
 import ts from "typescript";
 
+import { eachNode, isFunctionLiteral } from "./syntax-tree.js";
+
 export type KnownGap = {
   /** One-based: the line the call starts on. */
   line: number;
@@ -20,11 +22,11 @@ export function knownGapsIn(source: string, fileName: string): KnownGap[] {
   return knownGapMarkersIn(parsed).map((marker) => readKnownGap(marker, parsed));
 }
 
-function knownGapMarkersIn(node: ts.Node): ts.PropertyAccessExpression[] {
-  const markers = isKnownGapMarker(node) ? [node] : [];
+function knownGapMarkersIn(root: ts.Node): ts.PropertyAccessExpression[] {
+  const markers: ts.PropertyAccessExpression[] = [];
 
-  ts.forEachChild(node, (child) => {
-    markers.push(...knownGapMarkersIn(child));
+  eachNode(root, (node) => {
+    if (isKnownGapMarker(node)) markers.push(node);
   });
 
   return markers;
@@ -72,10 +74,6 @@ function retryIn(secondArgument: ts.Expression | undefined, site: string): numbe
   }
 
   return retrySetBy(secondArgument, site);
-}
-
-function isFunctionLiteral(expression: ts.Expression): boolean {
-  return ts.isArrowFunction(expression) || ts.isFunctionExpression(expression);
 }
 
 function retrySetBy(options: ts.ObjectLiteralExpression, site: string): number | null {

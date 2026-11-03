@@ -9,7 +9,12 @@ import {
   SHARED_CHECKOUT_ETAG,
 } from "../helpers/shared-marketplace-checkout.js";
 import { EXIT_CODES } from "../../exit-codes";
-import { renderAgentMd, renderMetadataYaml, renderSkillMd } from "../content-generators";
+import {
+  renderAgentMd,
+  renderConfigTs,
+  renderMetadataYaml,
+  renderSkillMd,
+} from "../content-generators";
 import { stampProvenanceMarker } from "../../agents/agent-provenance.js";
 import { writeRawTestConfig, writeTestTsConfig } from "../helpers/config-io.js";
 import { renderUnparseableConfigTs } from "../factories/unloadable-config-factories.js";
@@ -170,6 +175,30 @@ describe("doctor command", () => {
       );
       expect(output).toContain("No skills configured");
       expect(output).toContain("No agents configured");
+    });
+
+    it("should say each field it defaulted once, however many times the run reads the config", async () => {
+      /** Verbatim from a run, each after `Project config at '<config.ts path>' `. */
+      const DEFAULTED = [
+        "is missing required 'name' field — defaulting to directory name",
+        "is missing 'skills' array — defaulting to empty",
+      ] as const;
+      const configPath = await writeRawTestConfig(
+        projectDir,
+        renderConfigTs({ agents: buildAgentConfigs(["web-developer"], { scope: "project" }) }),
+      );
+
+      const { stdout, stderr } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain("config.ts is valid");
+      expect(stdout, "no row skipped reading the config").not.toContain("Skipped (config invalid)");
+      for (const defaulted of DEFAULTED) {
+        const line = `Project config at '${configPath}' ${defaulted}\n`;
+        expect(stderr).toContain(line);
+        expect(stderr.indexOf(line), `said once, not once per read:\n${stderr}`).toBe(
+          stderr.lastIndexOf(line),
+        );
+      }
     });
   });
 
@@ -349,7 +378,7 @@ describe("doctor command", () => {
       expect(output).toMatch(
         new RegExp(`No Orphans\\s+${matchedAsWritten(STATUS_SKIP)}\\s+Skipped`),
       );
-      expect(output).not.toContain("no configuration declares them");
+      expect(output).not.toContain("no configuration declares");
     });
 
     it("counts only the directories carrying provenance when a foreign one sits beside them", async () => {
@@ -377,7 +406,7 @@ describe("doctor command", () => {
       expect(output).toMatch(
         new RegExp(`No Orphans\\s+${matchedAsWritten(STATUS_SKIP)}\\s+Skipped`),
       );
-      expect(output).not.toContain("no configuration declares them");
+      expect(output).not.toContain("no configuration declares");
       expect(output).not.toContain("Nothing declares the files above");
 
       // Stepped over is not unmentioned: the content layer names it.
@@ -410,7 +439,7 @@ describe("doctor command", () => {
       expect(output).toMatch(
         new RegExp(`No Orphans\\s+${matchedAsWritten(STATUS_SKIP)}\\s+Skipped`),
       );
-      expect(output).not.toContain("no configuration declares them");
+      expect(output).not.toContain("no configuration declares");
     });
 
     it("names a stranded skill alone, word for word", async () => {
@@ -421,7 +450,7 @@ describe("doctor command", () => {
 
       expect(stdout).toContain(
         [
-          "    No Orphans              ✗  1 skill installed here, and no configuration declares them",
+          "    No Orphans              ✗  1 skill installed here, and no configuration declares it",
           `                               - ${path.join(projectDir, LOCAL_SKILLS_PATH, ORPHANED_SKILL_ID)}`,
           "    Skills Installed",
         ].join("\n"),
@@ -436,7 +465,7 @@ describe("doctor command", () => {
 
       expect(stdout).toContain(
         [
-          "    No Orphans              ✗  1 agent installed here, and no configuration declares them",
+          "    No Orphans              ✗  1 agent installed here, and no configuration declares it",
           `                               - ${path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS, `${ORPHANED_AGENT_NAME}.md`)}`,
           "    Skills Installed",
         ].join("\n"),
@@ -453,7 +482,7 @@ describe("doctor command", () => {
       // Unreadable is not absent: it is a content finding that gates this row too.
       expect(output).toContain("exists but could not be loaded");
       expect(output).toContain("Skipped — fix the content errors above first");
-      expect(output).not.toContain("no configuration declares them");
+      expect(output).not.toContain("no configuration declares");
     });
   });
 

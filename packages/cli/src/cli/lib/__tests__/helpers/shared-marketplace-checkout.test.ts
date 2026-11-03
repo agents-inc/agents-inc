@@ -15,6 +15,7 @@ import {
   serveDefaultMarketplaceHere,
   SHARED_CHECKOUT_ETAG,
 } from "./shared-marketplace-checkout.js";
+import { overrideEnv } from "./env-override.js";
 import { matchedAsWritten } from "./matched-as-written.js";
 
 // Assembled independently of the module under test, so a wrong address there can fail.
@@ -229,15 +230,12 @@ const STAND_IN_ETAG = 'W/"stand-in"';
 describe("serveDefaultMarketplaceHere", () => {
   const GITHUB_URL = "GIGET_GITHUB_URL";
   let tempDir: string;
-  let previousXdgCacheHome: string | undefined;
 
   beforeEach(async () => {
     tempDir = await createTempDir("cc-stand-in-spec-");
-    previousXdgCacheHome = process.env.XDG_CACHE_HOME;
-    process.env.XDG_CACHE_HOME = path.join(tempDir, "xdg");
+    const restoreXdgCacheHome = overrideEnv("XDG_CACHE_HOME", path.join(tempDir, "xdg"));
     return async () => {
-      if (previousXdgCacheHome === undefined) delete process.env.XDG_CACHE_HOME;
-      else process.env.XDG_CACHE_HOME = previousXdgCacheHome;
+      restoreXdgCacheHome();
       await cleanupTempDir(tempDir);
     };
   });

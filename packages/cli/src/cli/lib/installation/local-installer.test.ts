@@ -41,7 +41,7 @@ import { readTestTsConfig } from "../__tests__/helpers/config-io";
 import { useFakeHome } from "../__tests__/helpers/isolated-home";
 import { loadSkillsFromAllSources } from "../loading";
 import { DEFAULT_SOURCE } from "../configuration";
-import { NO_CHANGES } from "../config-gate/classify.js";
+import { noChanges } from "../config-gate/classify.js";
 import { fileExists } from "../../utils/fs";
 import { SKILLS } from "../__tests__/test-fixtures";
 import {
@@ -280,7 +280,7 @@ describe("local-installer", () => {
         wasMerged: false,
         // The only global change: this project was registered.
         propagation: buildGateReport([], {
-          changes: { ...NO_CHANGES, projectsChanged: true },
+          changes: { ...noChanges(), projectsChanged: true },
         }),
       });
       expect(

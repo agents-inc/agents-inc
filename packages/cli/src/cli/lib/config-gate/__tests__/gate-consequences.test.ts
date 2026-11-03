@@ -182,7 +182,7 @@ describe("the config gate's entry points", () => {
         failedCount: 0,
         warnings: [],
       });
-      said("Propagated global changes to 1 project(s)");
+      said("Propagated global changes to 1 project");
     });
 
     it("counts a registered project whose config pair it rewrote as rewritten, though it holds no sub-agent", async () => {
@@ -302,7 +302,7 @@ describe("the config gate's entry points", () => {
 
       expect(report.globalWritten).toBe(true);
       expect(report.propagated.updated).toStrictEqual([other]);
-      said("Propagated global changes to 1 project(s)");
+      said("Propagated global changes to 1 project");
     });
 
     it("counts a registered project rewritten while the fan-out changes its pair, and unchanged once it does not", async () => {

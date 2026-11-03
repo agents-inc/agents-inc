@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Provider } from "../../../consts.js";
 import type { SkillScope } from "../../../types/config.js";
 import { renderAgentMd } from "../../__tests__/content-generators.js";
+import { captureEnv, type RestoreEnv } from "../../__tests__/helpers/env-override.js";
 import {
   agentCodec,
   agentsDir,
@@ -143,20 +144,11 @@ const CODEX_PROJECT: HostRoles = {
   ],
 };
 
-function captureCodexHome(): () => void {
-  const original = process.env[CODEX_HOME];
-
-  return () => {
-    if (original === undefined) delete process.env[CODEX_HOME];
-    else process.env[CODEX_HOME] = original;
-  };
-}
-
 describe("the install layout answers the host roles per provider", () => {
-  let restoreCodexHome: () => void;
+  let restoreCodexHome: RestoreEnv;
 
   beforeEach(() => {
-    restoreCodexHome = captureCodexHome();
+    restoreCodexHome = captureEnv(CODEX_HOME);
     delete process.env[CODEX_HOME];
     vi.spyOn(os, "homedir").mockReturnValue(HOME);
   });

@@ -14,6 +14,7 @@ import { isLocalSource } from "../configuration";
 import { CACHE_HASH_LENGTH, CACHE_READABLE_PREFIX_LENGTH, PLUGIN_MANIFEST_DIR } from "../../consts";
 import type { Marketplace } from "../../types";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
+import { captureEnv, type RestoreEnv } from "../__tests__/helpers/env-override.js";
 import { elementAt } from "../__tests__/helpers/element-at.js";
 
 /** A literal: importing the command's definition would move both sides of the assertion. */
@@ -317,14 +318,14 @@ describe("source-fetcher", () => {
 });
 
 describe("getGigetCacheDir", () => {
-  const originalXdgCacheHome = process.env.XDG_CACHE_HOME;
+  let restoreXdgCacheHome: RestoreEnv;
+
+  beforeEach(() => {
+    restoreXdgCacheHome = captureEnv("XDG_CACHE_HOME");
+  });
 
   afterEach(() => {
-    if (originalXdgCacheHome !== undefined) {
-      process.env.XDG_CACHE_HOME = originalXdgCacheHome;
-    } else {
-      delete process.env.XDG_CACHE_HOME;
-    }
+    restoreXdgCacheHome();
   });
 
   it("should return cache path for github: protocol", () => {

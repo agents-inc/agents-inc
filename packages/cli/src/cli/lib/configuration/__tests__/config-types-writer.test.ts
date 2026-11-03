@@ -19,6 +19,7 @@ import {
   buildAgentConfigs,
 } from "../../__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../__tests__/helpers/skill-config-builders.js";
+import { overrideEnv, type RestoreEnv } from "../../__tests__/helpers/env-override.js";
 import {
   readGeneratedUnion,
   readGeneratedUnionMembers,
@@ -1051,19 +1052,17 @@ describe("generateProjectConfigTypesSource", () => {
 describe("regenerateConfigTypes with global install", () => {
   let tempDir: string;
   let globalDir: string;
-  let savedHome: string | undefined;
+  let restoreHome: RestoreEnv;
 
   beforeEach(async () => {
     tempDir = await createTempDir("cc-regen-project-types-test-");
     // A global root reached through HOME, which `globalInstallRoot()` reads at call time.
     globalDir = await createTempDir("cc-regen-global-root-test-");
-    savedHome = process.env.HOME;
-    process.env.HOME = globalDir;
+    restoreHome = overrideEnv("HOME", globalDir);
   });
 
   afterEach(async () => {
-    if (savedHome === undefined) delete process.env.HOME;
-    else process.env.HOME = savedHome;
+    restoreHome();
     await cleanupTempDir(tempDir);
     await cleanupTempDir(globalDir);
   });

@@ -87,6 +87,16 @@ describe("plugin-validator", () => {
       expect(result.valid).toBe(true);
       expect(result.warnings).toContain("Missing README.md (recommended for documentation)");
     });
+
+    it("keeps the missing-README warning beside a manifest that does not parse", async () => {
+      await writePluginJsonText(tempDir, "{ invalid json }");
+
+      expect(await validatePlugin(tempDir)).toStrictEqual({
+        valid: false,
+        errors: [expect.stringMatching(/^Invalid JSON in plugin\.json: /)],
+        warnings: ["Missing README.md (recommended for documentation)"],
+      });
+    });
   });
 
   describe("a plugin's manifest", () => {
@@ -236,10 +246,13 @@ Content here.
     });
 
     it("should fail if file does not exist", async () => {
-      const result = await validateSkillFrontmatter(path.join(tempDir, STANDARD_FILES.SKILL_MD));
+      const skillPath = path.join(tempDir, STANDARD_FILES.SKILL_MD);
 
-      expect(result.valid).toBe(false);
-      expect(result.errors[0]).toContain("not found");
+      expect(await validateSkillFrontmatter(skillPath)).toStrictEqual({
+        valid: false,
+        errors: [`Skill file not found: ${skillPath}`],
+        warnings: [],
+      });
     });
 
     it("should fail if frontmatter missing", async () => {
@@ -338,10 +351,13 @@ tools: Read, Write, Edit, Grep, Glob
     });
 
     it("should fail if file does not exist", async () => {
-      const result = await validateAgentFrontmatter(path.join(tempDir, "agent.md"));
+      const agentPath = path.join(tempDir, "agent.md");
 
-      expect(result.valid).toBe(false);
-      expect(result.errors[0]).toContain("not found");
+      expect(await validateAgentFrontmatter(agentPath)).toStrictEqual({
+        valid: false,
+        errors: [`Agent file not found: ${agentPath}`],
+        warnings: [],
+      });
     });
 
     it("should fail if name not kebab-case", async () => {

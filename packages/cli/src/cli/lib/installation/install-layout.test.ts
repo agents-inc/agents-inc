@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildProjectConfig } from "../__tests__/factories/config-factories.js";
 import { writeTestTsConfig } from "../__tests__/helpers/config-io.js";
+import { captureEnv, type RestoreEnv } from "../__tests__/helpers/env-override.js";
 import { cleanupTempDir, createTempDir } from "../__tests__/test-fs-utils.js";
 import { getProjectConfigPath } from "./install-base-dir.js";
 import {
@@ -208,19 +209,15 @@ describe("hostCompilesAgent", () => {
 describe("skillsPathPrefix under a relocated CODEX_HOME", () => {
   const RELOCATION_VARS = ["HOME", "CODEX_HOME"] as const;
   let root: string;
-  let saved: Partial<Record<(typeof RELOCATION_VARS)[number], string>>;
+  let restoreEnv: RestoreEnv[];
 
   beforeEach(async () => {
     root = await createTempDir("cc-skills-prefix-");
-    saved = Object.fromEntries(RELOCATION_VARS.map((name) => [name, process.env[name]]));
+    restoreEnv = RELOCATION_VARS.map(captureEnv);
   });
 
   afterEach(async () => {
-    for (const name of RELOCATION_VARS) {
-      const value = saved[name];
-      if (value === undefined) delete process.env[name];
-      else process.env[name] = value;
-    }
+    for (const restore of restoreEnv) restore();
     await cleanupTempDir(root);
   });
 

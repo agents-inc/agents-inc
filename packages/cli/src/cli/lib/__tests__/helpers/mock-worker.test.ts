@@ -1,8 +1,8 @@
 import { createServer, type Server } from "http";
-import type { AddressInfo } from "net";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MockInstance } from "vitest";
 
+import { closeServer, listenOnLoopback } from "./loopback-server.js";
 import { useMockWorker } from "./mock-worker.js";
 
 /** yoga-layout, Ink's layout engine, fetches its wasm from a URL shaped like this one. */
@@ -26,13 +26,11 @@ describe("useMockWorker", () => {
       reachedPaths.push(String(request.url));
       response.end();
     });
-    await new Promise<void>((resolve) => reachable.listen(0, "127.0.0.1", resolve));
-    // A TCP listener's address() is always an AddressInfo.
-    reachableOrigin = `http://127.0.0.1:${(reachable.address() as AddressInfo).port}`;
+    reachableOrigin = (await listenOnLoopback(reachable)).origin;
   });
 
   afterAll(async () => {
-    await new Promise<void>((resolve) => reachable.close(() => resolve()));
+    await closeServer(reachable);
   });
 
   let stderrWrite: MockInstance<typeof process.stderr.write>;

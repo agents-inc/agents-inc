@@ -2,7 +2,8 @@ import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import path from "path";
 import type { Liquid } from "liquidjs";
 import { pick } from "remeda";
-import { buildSkillRefsFromConfig, resolveAgents } from "./resolver";
+import { resolveAgents } from "./resolver";
+import { resolveAgentConfigToSkills } from "./stacks/stacks-loader";
 import { compileAgentForHost, createLiquidEngine } from "./compiler";
 import { createTempDir, cleanupTempDir } from "./__tests__/test-fs-utils";
 import { writeSourceAgent } from "./__tests__/helpers/disk-writers";
@@ -67,14 +68,14 @@ const RESOLVE_AGENTS_SKILL_MAP: Record<string, SkillDefinition> = {
   "api-database-drizzle": DRIZZLE_DEFINITION,
 };
 
-describe("buildSkillRefsFromConfig", () => {
+describe("resolveAgentConfigToSkills over the built-in catalogue", () => {
   it("should build skill references from agent stack config", () => {
     const agentStack: StackAgentConfig = {
       "web-framework": [sa("web-framework-react")],
       "web-styling": [sa("web-styling-scss-modules")],
     };
 
-    const result = buildSkillRefsFromConfig(agentStack);
+    const result = resolveAgentConfigToSkills(agentStack);
 
     expect(result).toHaveLength(2);
     expect(result.map((r) => r.id)).toContain("web-framework-react");
@@ -86,7 +87,7 @@ describe("buildSkillRefsFromConfig", () => {
       "web-framework": [sa("web-framework-react", true)],
     };
 
-    const result = buildSkillRefsFromConfig(agentStack);
+    const result = resolveAgentConfigToSkills(agentStack);
 
     expect(result).toHaveLength(1);
     expect(firstElement(result).preloaded).toBe(true);
@@ -97,7 +98,7 @@ describe("buildSkillRefsFromConfig", () => {
       "web-framework": [saUnflagged("web-framework-react")],
     };
 
-    const result = buildSkillRefsFromConfig(agentStack);
+    const result = resolveAgentConfigToSkills(agentStack);
 
     expect(result).toHaveLength(1);
     expect(firstElement(result).preloaded).toBe(false);
@@ -111,7 +112,7 @@ describe("buildSkillRefsFromConfig", () => {
     // Read from BUILT_IN_MATRIX so a metadata edit cannot redden it; the negative keeps it honest.
     const stated = getSkillById("web-framework-react").usageGuidance;
 
-    const result = buildSkillRefsFromConfig(agentStack);
+    const result = resolveAgentConfigToSkills(agentStack);
 
     expect(stated, "the catalogue entry this spec reads must still state guidance").toEqual(
       expect.any(String),
@@ -124,7 +125,7 @@ describe("buildSkillRefsFromConfig", () => {
   });
 
   it("should return empty array for empty config", () => {
-    const result = buildSkillRefsFromConfig({});
+    const result = resolveAgentConfigToSkills({});
 
     expect(result).toStrictEqual([]);
   });
@@ -134,7 +135,7 @@ describe("buildSkillRefsFromConfig", () => {
       "web-framework": [sa("web-framework-react")],
     };
 
-    const result = buildSkillRefsFromConfig(agentStack);
+    const result = resolveAgentConfigToSkills(agentStack);
 
     expect(result).toHaveLength(1);
     expect(firstElement(result).id).toBe("web-framework-react");
@@ -148,7 +149,7 @@ describe("buildSkillRefsFromConfig", () => {
       ],
     };
 
-    const result = buildSkillRefsFromConfig(agentStack);
+    const result = resolveAgentConfigToSkills(agentStack);
 
     expect(result).toHaveLength(2);
     expect(firstElement(result).id).toBe("meta-methodology-research-methodology");

@@ -52,6 +52,11 @@ const ASSIGNED_STACK: Partial<Record<AgentName, StackAgentConfig>> = {
   [WEB_DEVELOPER]: { "web-framework": [{ id: REACT, preloaded: false }] },
 };
 
+const ASSIGNED_PAIR_STACK: Partial<Record<AgentName, StackAgentConfig>> = {
+  ...ASSIGNED_STACK,
+  [API_DEVELOPER]: { "api-api": [{ id: HONO, preloaded: false }] },
+};
+
 describe("buildAndMergeConfig", () => {
   const consoleSpies = silenceConsole(["log", "warn"]);
   let tempDir: string;
@@ -96,9 +101,9 @@ describe("buildAndMergeConfig", () => {
       `buildInstallConfig: selectedStackId='${BUILT_IN_STACK_ID}', skills=[${REACT}], selectedAgents=[${WEB_DEVELOPER}]`,
     );
     said(`buildInstallConfig: loadedStack=found (id='${BUILT_IN_STACK_ID}')`);
-    said(`buildInstallConfig result: stack=1 agents, agents=[${WEB_DEVELOPER}], skills=1`);
-    said("buildAndMergeConfig: before merge — stack=1 agents");
-    said("buildAndMergeConfig: after merge — stack=1 agents, merged=false");
+    said(`buildInstallConfig result: stack=1 agent, agents=[${WEB_DEVELOPER}], skills=1`);
+    said("buildAndMergeConfig: before merge — stack=1 agent");
+    said("buildAndMergeConfig: after merge — stack=1 agent, merged=false");
   });
 
   it("lists several selected skills and sub-agents comma-separated in the trail", async () => {
@@ -106,7 +111,7 @@ describe("buildAndMergeConfig", () => {
       buildInstallSelection(buildSkillConfigs([REACT, HONO]), {
         selectedAgents: [WEB_DEVELOPER, API_DEVELOPER],
         agentConfigs: buildAgentConfigs([WEB_DEVELOPER, API_DEVELOPER]),
-        assignedStack: ASSIGNED_STACK,
+        assignedStack: ASSIGNED_PAIR_STACK,
       }),
       sourceResultFor(DEFAULT_SOURCE),
       tempDir,
@@ -116,7 +121,7 @@ describe("buildAndMergeConfig", () => {
       `  buildInstallConfig: selectedStackId='null', skills=[${REACT}, ${HONO}], selectedAgents=[${WEB_DEVELOPER}, ${API_DEVELOPER}]`,
     );
     expect(consoleSpies.log).toHaveBeenCalledWith(
-      `  buildInstallConfig result: stack=1 agents, agents=[${API_DEVELOPER}, ${WEB_DEVELOPER}], skills=2`,
+      `  buildInstallConfig result: stack=2 agents, agents=[${API_DEVELOPER}, ${WEB_DEVELOPER}], skills=2`,
     );
   });
 

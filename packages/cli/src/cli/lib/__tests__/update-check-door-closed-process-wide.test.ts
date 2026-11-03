@@ -2,6 +2,7 @@ import { Config } from "@oclif/core";
 import { describe, expect, it } from "vitest";
 
 import { CLI_ROOT } from "./helpers/cli-runner.js";
+import { captureEnv } from "./helpers/env-override.js";
 
 /** Named so the pin cannot outlive the plugin whose init hook is the door. */
 const UPDATE_CHECK_PLUGIN = "@oclif/plugin-warn-if-update-available";
@@ -11,19 +12,14 @@ const SKIP_NEW_VERSION_CHECK = "SKIP_NEW_VERSION_CHECK";
 
 /** Clears every key `scopedEnvVarTrue` consults (bin and aliases), then restores each as found. */
 function doorWithoutThePin(config: Config): boolean {
-  const pinned = config
-    .scopedEnvVarKeys(SKIP_NEW_VERSION_CHECK)
-    .map((key) => ({ key, value: process.env[key] }));
-
-  for (const { key } of pinned) delete process.env[key];
+  const keys = config.scopedEnvVarKeys(SKIP_NEW_VERSION_CHECK);
+  const restorePins = keys.map(captureEnv);
+  for (const key of keys) delete process.env[key];
 
   try {
     return config.scopedEnvVarTrue(SKIP_NEW_VERSION_CHECK);
   } finally {
-    for (const { key, value } of pinned) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
+    for (const restore of restorePins) restore();
   }
 }
 

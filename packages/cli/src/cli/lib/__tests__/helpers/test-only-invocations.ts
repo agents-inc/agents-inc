@@ -2,6 +2,8 @@
 // don't count as invocations while a bare name passed as a callback does.
 import ts from "typescript";
 
+import { isFunctionLiteral } from "./syntax-tree.js";
+
 const TEST_SUPPORT_MARKS = [
   /\.test\.tsx?$/,
   /(^|\/)(__tests__|__mocks__)\//,
@@ -62,10 +64,6 @@ function functionValuedName(declaration: ts.VariableDeclaration): string[] {
   if (declaration.initializer === undefined) return [];
 
   return isFunctionLiteral(declaration.initializer) ? [declaration.name.text] : [];
-}
-
-function isFunctionLiteral(expression: ts.Expression): boolean {
-  return ts.isArrowFunction(expression) || ts.isFunctionExpression(expression);
 }
 
 function valueIdentifiersIn(node: ts.Node): string[] {

@@ -570,6 +570,26 @@ describe("source-validator", () => {
         expect(toolsErrors.length).toBeGreaterThan(0);
         expect(toolsErrors[0]?.severity).toBe("error");
       });
+
+      it("reports every agent metadata.yaml that does not parse, in path order", async () => {
+        const agentFiles = ["api-developer", "web-developer"].map((agent) =>
+          path.join(DIRS.agents, "developer", agent, STANDARD_FILES.AGENT_METADATA_YAML),
+        );
+        for (const agentFile of agentFiles) {
+          await mkdir(path.dirname(path.join(sourceDir, agentFile)), { recursive: true });
+          await writeFile(path.join(sourceDir, agentFile), renderUnparseableMetadataYaml());
+        }
+
+        const result = await validateSource(sourceDir);
+
+        expect(result.issues.filter((i) => i.file.startsWith(DIRS.agents))).toStrictEqual(
+          agentFiles.map((file) => ({
+            severity: "error",
+            file,
+            message: expect.stringContaining(PARSER_REASON),
+          })),
+        );
+      });
     });
 
     describe("TS config file validation", () => {

@@ -9,6 +9,7 @@ import { readFile, readdir } from "fs/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SkillScope } from "../../../types/config.js";
+import { toPosixPath } from "../../../utils/posix-path.js";
 import { CLI_ROOT } from "../../__tests__/helpers/cli-runner.js";
 import type { RecordedGolden } from "../../__tests__/helpers/golden-tree.js";
 import { getProjectConfigPath } from "../install-base-dir.js";
@@ -41,7 +42,7 @@ const CLAUDE_BUILDERS_THE_RECORDING_BACKS = [
 ] as const;
 
 function treeRelative(absolute: string): string {
-  return path.relative(TREE_ROOT, absolute).split(path.sep).join("/");
+  return toPosixPath(path.relative(TREE_ROOT, absolute));
 }
 
 function sitesFor(provider: "claude" | "codex"): RoleSite[] {

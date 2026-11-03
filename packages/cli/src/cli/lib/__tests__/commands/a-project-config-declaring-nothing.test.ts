@@ -31,34 +31,18 @@ import { DEFAULT_PUBLIC_SOURCE_NAME } from "../../../consts";
 import type { ProjectConfig } from "../../../types";
 
 /**
- * Owner 2026-10-24 ("Never count it, and say so"): a project folder whose `config.ts` declares no
- * skill and no sub-agent is treated exactly like a project with no config at all. A command run
- * there works on the global installation, or, where HOME holds both providers' installations,
- * refuses naming both; and it first prints one line saying so. The leftover config is the user's:
- * no command removes it.
- *
  * Each spec runs the command from the project with no config first, then writes a config that
  * declares nothing and runs it again: the second run prints what the first printed, after the line.
  * A warm-up run comes first, so a command that writes leaves the same state for both runs to see.
- * The line is pinned on stderr, where the old-`.claude-src/` line sits, so piped output is unchanged.
- *
- * Owner 2026-10-26 ("A line worded for each"): that line is not true of every command, so
- * `uninstall`, `eject`, `init` and `search`, and a run where HOME holds no installation it could
- * work on, each print a line of their own in its place, true for that command; `uninstall`'s says
- * there is nothing to remove, so it is printed only where the run finds nothing. Owner, the same
- * day ("Keep removing it"): an `uninstall` run at HOME still removes HOME's config however empty,
- * since there it is the global installation.
  */
 
 /** Rendered text, word for word as the owner chose it, so a literal. */
 const SAYS_SO =
   "This project's config declares nothing, so this works on your global installation.\n";
 
-/** Where HOME holds no installation the run could work on. */
 const SAYS_THERE_IS_NO_GLOBAL =
   "This project's config declares nothing, and there is no global installation for this to work on.\n";
 
-/** The owner's own example for `uninstall`. */
 const UNINSTALL_SAYS =
   "This project's config declares nothing, so there is nothing to uninstall in this project.\n";
 
@@ -80,7 +64,6 @@ const CODEX_FOLDER = ".agents-inc/codex";
 const CLAUDE_SKILLS = ".claude/skills";
 const CLAUDE_AGENTS = ".claude/agents";
 
-/** The skills the fixture marketplace publishes, as the folders an eject leaves. */
 const MARKETPLACE_SKILL_IDS = inTestMarketplace(DEFAULT_TEST_SKILLS)
   .map((skill) => skill.id)
   .sort();
@@ -261,7 +244,6 @@ describe("a project whose config declares nothing", () => {
       ).toStrictEqual(homeBefore);
     });
 
-    /** The control beside the one above: the line is about a config, so no config, no line. */
     it("eject from a project with no config is told nothing about one", async () => {
       await installAtHome(WITH_A_SUB_AGENT);
 
@@ -472,7 +454,6 @@ describe("a project whose config declares nothing", () => {
     });
   });
 
-  /** `eject` run at HOME leaves HOME so. */
   describe("under a HOME holding only a config that declares nothing", () => {
     beforeEach(async () => {
       await installAtHome(buildProjectConfig({ name: "placeholder", skills: [], agents: [] }));
@@ -585,7 +566,6 @@ describe("a project whose config declares nothing", () => {
     );
   });
 
-  /** `eject` leaves a project so: copies stamped as this CLI's, beside a config declaring nothing. */
   describe("holding what this CLI copied or compiled into it", () => {
     let dirs: TestDirs;
 
@@ -689,7 +669,6 @@ describe("a project whose config declares nothing", () => {
       expect(stderr, "stderr is the one line saying how init treats this project").toBe(INIT_SAYS);
     });
 
-    /** The control beside the one above: the line is about a config, so no config, no line. */
     it("from a project with no config is told nothing about one", async () => {
       const { stderr, error } = await initFrom();
 
@@ -698,10 +677,6 @@ describe("a project whose config declares nothing", () => {
     });
   });
 
-  /**
-   * The permitted twin of the spec below: at HOME the config is the global installation however
-   * empty, so an uninstall run there removes it, as the owner kept, and says no line of a project's.
-   */
   it("uninstall run at HOME removes HOME's config that declares nothing, with no line", async () => {
     const configPath = await writeTestTsConfig(
       fakeHome,

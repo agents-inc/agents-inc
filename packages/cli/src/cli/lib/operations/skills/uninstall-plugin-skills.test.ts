@@ -15,7 +15,6 @@ import { buildSkillConfig } from "../../__tests__/helpers/index.js";
 const mockUninstallPlugin = vi.mocked(hostAt("/any-root").uninstallPlugin);
 
 const PROJECT_DIR = "/tmp/test-project";
-/** The installation's marketplace; an entry installed from it records it as its `origin`. */
 const MARKETPLACE = "agents-inc-marketplace";
 
 describe("uninstallPluginSkills", () => {

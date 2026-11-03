@@ -8,6 +8,7 @@ import {
   writeTestPackageJson,
   writeTestTsConfig,
 } from "../__tests__/helpers/config-io.js";
+import { overrideEnv, type RestoreEnv } from "../__tests__/helpers/env-override.js";
 import { silenceConsole } from "../__tests__/helpers/silence-console.js";
 import {
   buildAgentConfigs,
@@ -613,19 +614,18 @@ describe("config", () => {
   });
 
   describe("resolveSource", () => {
-    let savedHome: string;
+    let restoreHome: RestoreEnv;
     let homeDir: string;
 
     beforeEach(async () => {
-      savedHome = process.env.HOME ?? "";
       // HOME inside the temp dir and distinct from the project, so the two rungs can be told apart.
       homeDir = path.join(tempDir, "home");
       await mkdir(homeDir, { recursive: true });
-      process.env.HOME = homeDir;
+      restoreHome = overrideEnv("HOME", homeDir);
     });
 
     afterEach(() => {
-      process.env.HOME = savedHome;
+      restoreHome();
     });
 
     it("should return flag value with highest priority", async () => {
@@ -793,7 +793,6 @@ describe("config", () => {
       });
     });
 
-    /** A shared id naming no marketplace names the public catalogue, not another install's. */
     describe("the stored rungs are the stored caller's alone", () => {
       it("should pass over the project config's marketplace for an init caller", async () => {
         await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: "github:project/repo" }));
@@ -1399,19 +1398,18 @@ describe("config", () => {
   describe("resolveBranding", () => {
     // `resolveBranding` falls through to the global config via `os.homedir()`, which bun fixes at
     // startup, so both HOME and the homedir are stubbed.
-    let savedHome: string;
+    let restoreHome: RestoreEnv;
     let homeDir: string;
 
     beforeEach(async () => {
-      savedHome = process.env.HOME ?? "";
       homeDir = path.join(tempDir, "branding-home");
       await mkdir(homeDir, { recursive: true });
-      process.env.HOME = homeDir;
+      restoreHome = overrideEnv("HOME", homeDir);
       vi.spyOn(os, "homedir").mockReturnValue(homeDir);
     });
 
     afterEach(() => {
-      process.env.HOME = savedHome;
+      restoreHome();
       vi.mocked(os.homedir).mockRestore();
     });
 
@@ -1692,14 +1690,13 @@ describe("what the config readers say and raise", () => {
   const consoleSpies = silenceConsole(["log"]);
   let tempDir: string;
   let homeDir: string;
-  let savedHome: string;
+  let restoreHome: RestoreEnv;
 
   beforeEach(async () => {
     tempDir = await createTempDir("cc-config-readers-");
     homeDir = path.join(tempDir, "home");
     await mkdir(homeDir, { recursive: true });
-    savedHome = process.env.HOME ?? "";
-    process.env.HOME = homeDir;
+    restoreHome = overrideEnv("HOME", homeDir);
     vi.spyOn(os, "homedir").mockReturnValue(homeDir);
     delete process.env[MARKETPLACE_ENV_VAR];
     setVerbose(true);
@@ -1707,7 +1704,7 @@ describe("what the config readers say and raise", () => {
 
   afterEach(async () => {
     setVerbose(false);
-    process.env.HOME = savedHome;
+    restoreHome();
     vi.mocked(os.homedir).mockRestore();
     delete process.env[MARKETPLACE_ENV_VAR];
     await cleanupTempDir(tempDir);

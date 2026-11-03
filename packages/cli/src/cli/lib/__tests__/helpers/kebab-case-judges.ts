@@ -4,6 +4,8 @@
  */
 import ts from "typescript";
 
+import { eachNode } from "./syntax-tree.js";
+
 export const SHARED_PATTERN = "KEBAB_CASE_PATTERN";
 
 /** Identifies a judge, not its correctness: names judges disagree on (`acme-`) are left out. */
@@ -94,11 +96,4 @@ function isImportBinding(node: ts.Identifier): boolean {
   const { parent } = node;
 
   return ts.isImportSpecifier(parent) || ts.isImportClause(parent) || ts.isNamespaceImport(parent);
-}
-
-function eachNode(root: ts.Node, visit: (node: ts.Node) => void): void {
-  visit(root);
-  ts.forEachChild(root, (child) => {
-    eachNode(child, visit);
-  });
 }

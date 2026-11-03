@@ -41,8 +41,10 @@ function makeCapturingConsoleMethod(buf: string[]): (...args: unknown[]) => void
   };
 }
 
+type CapturedOutput = { stdout: string[]; stderr: string[]; restore: () => void };
+
 /** Also captures `console.*`, which bun does not route through `process.stdout.write`. */
-export async function runCliCommand(args: string[]) {
+function captureProcessOutput(): CapturedOutput {
   // eslint-disable-next-line @typescript-eslint/unbound-method -- restored, not called
   const origStdoutWrite = process.stdout.write;
   // eslint-disable-next-line @typescript-eslint/unbound-method -- restored, not called
@@ -51,36 +53,52 @@ export async function runCliCommand(args: string[]) {
   const origWarn = console.warn;
   const origError = console.error;
 
-  const stdoutBuf: string[] = [];
-  const stderrBuf: string[] = [];
+  const stdout: string[] = [];
+  const stderr: string[] = [];
 
-  process.stdout.write = makeCapturingWrite(stdoutBuf);
-  process.stderr.write = makeCapturingWrite(stderrBuf);
-
-  console.log = makeCapturingConsoleMethod(stdoutBuf);
-  console.warn = makeCapturingConsoleMethod(stderrBuf);
-  console.error = makeCapturingConsoleMethod(stderrBuf);
-
-  let error: (Error & Partial<Errors.CLIError>) | undefined;
-  try {
-    await run(args, { root: CLI_ROOT });
-  } catch (e) {
-    if (e instanceof Error) {
-      error = Object.assign(e, { message: ansis.strip(e.message) });
-    }
-  } finally {
-    process.stdout.write = origStdoutWrite;
-    process.stderr.write = origStderrWrite;
-    console.log = origLog;
-    console.warn = origWarn;
-    console.error = origError;
-  }
+  process.stdout.write = makeCapturingWrite(stdout);
+  process.stderr.write = makeCapturingWrite(stderr);
+  console.log = makeCapturingConsoleMethod(stdout);
+  console.warn = makeCapturingConsoleMethod(stderr);
+  console.error = makeCapturingConsoleMethod(stderr);
 
   return {
-    stdout: stdoutBuf.map((s) => ansis.strip(s)).join(""),
-    stderr: stderrBuf.map((s) => ansis.strip(s)).join(""),
+    stdout,
+    stderr,
+    restore: () => {
+      process.stdout.write = origStdoutWrite;
+      process.stderr.write = origStderrWrite;
+      console.log = origLog;
+      console.warn = origWarn;
+      console.error = origError;
+    },
+  };
+}
+
+async function runReportingFailure(
+  args: string[],
+): Promise<(Error & Partial<Errors.CLIError>) | undefined> {
+  try {
+    await run(args, { root: CLI_ROOT });
+    return undefined;
+  } catch (e) {
+    return e instanceof Error ? Object.assign(e, { message: ansis.strip(e.message) }) : undefined;
+  }
+}
+
+function joinStripped(chunks: string[]): string {
+  return chunks.map((chunk) => ansis.strip(chunk)).join("");
+}
+
+export async function runCliCommand(args: string[]) {
+  const output = captureProcessOutput();
+  const error = await runReportingFailure(args).finally(output.restore);
+
+  return {
+    stdout: joinStripped(output.stdout),
+    stderr: joinStripped(output.stderr),
     // Unstripped: the only reading an assertion about ANSI escapes can be made against.
-    rawStdout: stdoutBuf.join(""),
+    rawStdout: output.stdout.join(""),
     error,
   };
 }

@@ -15,6 +15,7 @@ import {
   buildInstallSelection,
   initMatrixAndSource,
 } from "../factories/config-factories.js";
+import { overrideEnv, type RestoreEnv } from "../helpers/env-override.js";
 import { readGeneratedUnion } from "../helpers/generated-types.js";
 import { buildSkillConfigs } from "../helpers/skill-config-builders.js";
 import { cleanupTestSource, createTestSource, type TestDirs } from "../fixtures/create-test-source";
@@ -38,7 +39,7 @@ describe("config-types.ts written by init and refreshed by compile", () => {
   let sourceResult: SourceLoadResult;
   let homeDir: string;
   let tempDir: string;
-  let savedHome: string | undefined;
+  let restoreHome: RestoreEnv;
 
   function globalTypesPath(): string {
     return path.join(sourceFolderInUse(homeDir, "claude").dir, STANDARD_FILES.CONFIG_TYPES_TS);
@@ -49,8 +50,7 @@ describe("config-types.ts written by init and refreshed by compile", () => {
     homeDir = path.join(tempDir, "home");
     await mkdir(homeDir, { recursive: true });
     // `vitest.setup.ts` spies `os.homedir()` to honour a HOME the test sets.
-    savedHome = process.env.HOME;
-    process.env.HOME = homeDir;
+    restoreHome = overrideEnv("HOME", homeDir);
 
     source = await createTestSource({
       skills: INIT_TEST_SKILLS,
@@ -67,8 +67,7 @@ describe("config-types.ts written by init and refreshed by compile", () => {
   });
 
   afterEach(async () => {
-    if (savedHome === undefined) delete process.env.HOME;
-    else process.env.HOME = savedHome;
+    restoreHome();
     await cleanupTestSource(source);
     await cleanupTempDir(tempDir);
   });

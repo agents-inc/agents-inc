@@ -88,6 +88,12 @@ const PROJECT_TEMPLATE_MARKER = "Rendered by the project's own agent template.";
 /** The shipped template always emits this and the fixture never: replacement, not addition. */
 const SHIPPED_TEMPLATE_KEY = "permissionMode:";
 
+const LEGACY_TEMPLATE_MARKER = "Rendered by the legacy templates folder.";
+
+const LEGACY_TEMPLATE = ["---", "name: {{ agent.name }}", "---", LEGACY_TEMPLATE_MARKER, ""].join(
+  "\n",
+);
+
 /** A sub-agent whose own metadata carries Liquid syntax, so the sanitiser has something to strip. */
 const WEB_DEV_LIQUID_INJECTION: AgentConfig = createMockAgentConfig("web-developer", [], {
   name: '{{ "INJECTED" }}',
@@ -297,6 +303,31 @@ describe("compiler", () => {
       expect(verbose).toHaveBeenCalledWith("Compiling agent: api-developer (claude)");
     });
 
+    it("compiles each critical file into its own section", async () => {
+      const output = await compileAgentForHost(
+        "claude",
+        "web-developer",
+        createMockAgentConfig("web-developer"),
+        projectDir,
+        await createLiquidEngine(),
+      );
+
+      expect(output).toContain(
+        [
+          "<critical_requirements>",
+          await fixtureText("web-developer", "critical-requirements.md"),
+          "</critical_requirements>",
+        ].join("\n"),
+      );
+      expect(output).toContain(
+        [
+          "<critical_reminders>",
+          await fixtureText("web-developer", "critical-reminders.md"),
+          "</critical_reminders>",
+        ].join("\n"),
+      );
+    });
+
     it.each([
       ["has no output.md", undefined],
       ["has an empty output.md", ""],
@@ -391,6 +422,29 @@ describe("compiler", () => {
       );
       expect(compiled, "nothing rendered the fixture template here").not.toContain(
         PROJECT_TEMPLATE_MARKER,
+      );
+    });
+
+    it("renders the source folder's template over the legacy folder's when a project has both", async () => {
+      await installProjectTemplateOverride(projectDir);
+      const legacyDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.TEMPLATES);
+      await mkdir(legacyDir, { recursive: true });
+      await fsWrite(path.join(legacyDir, "agent.liquid"), LEGACY_TEMPLATE);
+      const engine = await createLiquidEngine(projectDir);
+
+      const compiled = await compileAgentForHost(
+        "claude",
+        "web-developer",
+        createMockAgentConfig("web-developer"),
+        projectDir,
+        engine,
+      );
+
+      expect(compiled, "the source folder's template is the one that rendered").toContain(
+        PROJECT_TEMPLATE_MARKER,
+      );
+      expect(compiled, "the legacy folder's template lost to it").not.toContain(
+        LEGACY_TEMPLATE_MARKER,
       );
     });
   });

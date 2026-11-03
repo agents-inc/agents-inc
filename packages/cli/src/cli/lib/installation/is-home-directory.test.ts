@@ -2,7 +2,7 @@ import os from "os";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { isHomeDirectory } from "./is-home-directory.js";
+import { isHomeDirectory, scopeAt } from "./is-home-directory.js";
 
 /** A home that is not on disk, so the real-path compare cannot run and the plain one answers. */
 const ABSENT_HOME = path.join(path.sep, "no-such-root", "home", "someone");
@@ -22,5 +22,15 @@ describe("isHomeDirectory for a home that cannot be resolved", () => {
 
   it("matches no other directory", () => {
     expect(isHomeDirectory(path.join(ABSENT_HOME, "project"))).toBe(false);
+  });
+});
+
+describe("scopeAt", () => {
+  it("answers global for the home", () => {
+    expect(scopeAt(os.homedir())).toBe("global");
+  });
+
+  it("answers project for a folder under the home", () => {
+    expect(scopeAt(path.join(os.homedir(), "project"))).toBe("project");
   });
 });

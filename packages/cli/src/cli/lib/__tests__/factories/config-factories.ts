@@ -13,8 +13,8 @@ import type { GateReport } from "../../config-gate/index.js";
 import type { ConfigWriteResult } from "../../operations/index.js";
 import type { TestProjectConfig } from "../fixtures/create-test-source";
 import { initializeMatrix } from "../../matrix/matrix-provider";
-import { NO_CHANGES } from "../../config-gate/classify.js";
-import { NOTHING_RECOMPILED } from "../../config-gate/recompile.js";
+import { noChanges } from "../../config-gate/classify.js";
+import { nothingRecompiled } from "../../config-gate/recompile.js";
 import { EJECT_SOURCE } from "../../../consts";
 import { TEST_CUSTOM_SOURCE_URL } from "../test-constants.js";
 import { typedKeys } from "../../../utils/typed-object";
@@ -38,9 +38,9 @@ export function buildGateReport(
 ): GateReport {
   return {
     globalWritten: true,
-    changes: NO_CHANGES,
+    changes: noChanges(),
     propagated: { updated: propagatedTo, unreadable: [], gone: [], notOurs: [], failed: [] },
-    recompile: { ...NOTHING_RECOMPILED, rewrittenCount: propagatedTo.length },
+    recompile: { ...nothingRecompiled(), rewrittenCount: propagatedTo.length },
     ...overrides,
   };
 }

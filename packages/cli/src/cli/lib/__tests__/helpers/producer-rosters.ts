@@ -4,6 +4,8 @@
  */
 import ts from "typescript";
 
+import { eachNode, isFunctionLiteral } from "./syntax-tree.js";
+
 export type ProducerRoster = {
   name: string;
   derived: boolean;
@@ -77,7 +79,7 @@ function isHeldAgainstAWalk(name: string, index: SpecIndex): boolean {
 function isProducer(member: ts.Expression, index: SpecIndex): boolean {
   const node = unwrap(member);
 
-  if (isFunction(node)) return references(node, index.productImports);
+  if (isFunctionLiteral(node)) return references(node, index.productImports);
   if (ts.isIdentifier(node)) {
     const callable = index.callables.get(node.text);
     return callable !== undefined && references(callable, index.productImports);
@@ -220,7 +222,7 @@ function declarationsIn(sourceFile: ts.SourceFile): {
 
     bindings.set(node.name.text, node.initializer);
     const value = unwrap(node.initializer);
-    if (isFunction(value)) callables.set(node.name.text, value);
+    if (isFunctionLiteral(value)) callables.set(node.name.text, value);
   });
 
   return { bindings, callables };
@@ -291,10 +293,6 @@ function isNamedDeclaration(
   );
 }
 
-function isFunction(node: ts.Node): boolean {
-  return ts.isArrowFunction(node) || ts.isFunctionExpression(node);
-}
-
 function isDynamicImport(expression: ts.Expression): boolean {
   const node = unwrap(expression);
   return ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword;
@@ -320,13 +318,6 @@ function unwrap(expression: ts.Expression): ts.Expression {
   }
 
   return node;
-}
-
-function eachNode(root: ts.Node, visit: (node: ts.Node) => void): void {
-  visit(root);
-  ts.forEachChild(root, (child) => {
-    eachNode(child, visit);
-  });
 }
 
 function containsNode(root: ts.Node, matches: (node: ts.Node) => boolean): boolean {

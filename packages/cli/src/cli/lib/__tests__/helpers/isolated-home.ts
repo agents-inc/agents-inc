@@ -3,6 +3,7 @@ import { mkdir } from "fs/promises";
 import { afterEach, beforeEach } from "vitest";
 import { cleanupTempDir, createTempDir } from "../test-fs-utils";
 import { CLAUDE_CONFIG_DIR_VAR } from "../../installation/install-layout.js";
+import { captureEnv, overrideEnv, type RestoreEnv } from "./env-override.js";
 import { linkSharedCache } from "./shared-marketplace-checkout.js";
 
 export type IsolatedHome = {
@@ -17,24 +18,6 @@ export type IsolatedHome = {
  * resurrecting a removed fake home. The key is oclif's own; only `"1"` and `"true"` count.
  */
 const OCLIF_SKIP_VERSION_CHECK = { name: "AGENTS_INC_SKIP_NEW_VERSION_CHECK", value: "1" };
-
-/** Restores one variable as it was found, absent included. */
-type RestoreEnv = () => void;
-
-function captureEnv(name: string): RestoreEnv {
-  const original = process.env[name];
-
-  return () => {
-    if (original === undefined) delete process.env[name];
-    else process.env[name] = original;
-  };
-}
-
-function overrideEnv(name: string, value: string): RestoreEnv {
-  const restore = captureEnv(name);
-  process.env[name] = value;
-  return restore;
-}
 
 // Claude Code's state file follows `CLAUDE_CONFIG_DIR` before HOME, so an exported one would
 // send a spec's writes to the developer's real state file.

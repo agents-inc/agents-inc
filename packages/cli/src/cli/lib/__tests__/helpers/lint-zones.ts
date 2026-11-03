@@ -48,26 +48,34 @@ function filesSelectedBy(
   ignore: readonly string[],
   cwd: string,
 ): Set<string> {
-  const selected = new Set<string>();
+  return new Set(
+    selectorsOf(block).flatMap((selector) =>
+      filesMatchingEvery(patternGroupOf(selector), ignore, cwd),
+    ),
+  );
+}
 
-  for (const selector of selectorsOf(block)) {
-    // A nested array is ESLint's AND.
-    const [firstPattern, ...alsoRequired] = (
-      typeof selector === "string" ? [selector] : selector
-    ).map((pattern) => new Set(fg.sync([pattern], { cwd, ignore: [...ignore], onlyFiles: true })));
+/** A nested array is ESLint's AND. */
+function patternGroupOf(selector: string | readonly string[]): readonly string[] {
+  return typeof selector === "string" ? [selector] : selector;
+}
 
-    if (firstPattern === undefined) {
-      throw new Error(
-        "a config block selects files with an empty pattern group, which matches nothing",
-      );
-    }
+function filesMatchingEvery(
+  patterns: readonly string[],
+  ignore: readonly string[],
+  cwd: string,
+): string[] {
+  const [firstPattern, ...alsoRequired] = patterns.map(
+    (pattern) => new Set(fg.sync([pattern], { cwd, ignore: [...ignore], onlyFiles: true })),
+  );
 
-    for (const file of firstPattern) {
-      if (alsoRequired.every((required) => required.has(file))) selected.add(file);
-    }
+  if (firstPattern === undefined) {
+    throw new Error(
+      "a config block selects files with an empty pattern group, which matches nothing",
+    );
   }
 
-  return selected;
+  return [...firstPattern].filter((file) => alsoRequired.every((required) => required.has(file)));
 }
 
 function isLintableSubject(file: string): boolean {

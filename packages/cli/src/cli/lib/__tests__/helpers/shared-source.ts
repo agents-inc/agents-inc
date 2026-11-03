@@ -5,9 +5,8 @@ import path from "path";
 /**
  * The E2E source non-mutating specs share, frozen (`chmod a-w`) so a stray write fails with EACCES
  * in the spec that made it. Each run builds its own folder, named for the process that owns it, so
- * two runs never touch each other's and a later run can sweep one a killed run left. Workers find it
- * in `SHARED_SOURCE_ENV`, inherited from global setup. The name avoids "source"/"marketplace"
- * because specs assert refusals never say those words.
+ * two runs never touch each other's and a later run can sweep one a killed run left. The name
+ * avoids "source"/"marketplace" because specs assert refusals never say those words.
  */
 const SHARED_SOURCE_PREFIX = "agents-inc-e2e-shared-fixtures-";
 const SHARED_SOURCE_NAME = new RegExp(`^${SHARED_SOURCE_PREFIX}(\\d+)-[A-Za-z0-9]+$`);
@@ -15,7 +14,6 @@ const SHARED_SOURCE_ENV = "AGENTS_INC_E2E_SHARED_FIXTURES";
 
 type BuildInto = (dir: string) => Promise<void>;
 
-/** Where the folder goes, and the process whose exit lets a later run sweep it. */
 type SharedSourceOptions = { parent?: string; pid?: number };
 
 export function sharedSourcePath(): string {
@@ -33,10 +31,6 @@ export function isSharedSource(dir: string): boolean {
   return SHARED_SOURCE_NAME.test(path.basename(path.resolve(dir)));
 }
 
-/**
- * For a run's global setup: sweeps what killed runs left, builds this run's folder and publishes it
- * to every process started after this (vitest's workers among them). Answers the run's teardown.
- */
 export async function setUpSharedSource(build: BuildInto): Promise<() => Promise<void>> {
   await sweepAbandonedSharedSources(os.tmpdir());
   const dir = await buildSharedSource(build);
@@ -58,7 +52,6 @@ export async function removeFrozenSourceTree(root: string): Promise<void> {
   await rm(root, { recursive: true, force: true });
 }
 
-/** A new folder on every call, so no two runs share one. */
 export async function buildSharedSource(
   build: BuildInto,
   { parent = os.tmpdir(), pid = process.pid }: SharedSourceOptions = {},
@@ -72,7 +65,6 @@ export async function removeSharedSource(dir: string): Promise<void> {
   await removeFrozenSourceTree(dir);
 }
 
-/** Removes the folders of runs whose process is gone; a live run's, or one naming no run, stays. */
 export async function sweepAbandonedSharedSources(parent: string): Promise<void> {
   const abandoned = (await readdir(parent)).filter(isAbandonedSharedSource);
 
@@ -137,14 +129,12 @@ async function unfreeze(root: string): Promise<void> {
 async function chmodTree(dir: string, dirMode: number, fileMode: number): Promise<void> {
   const entries = await readdir(dir, { withFileTypes: true });
 
-  for (const entry of entries) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      await chmodTree(full, dirMode, fileMode);
-    } else {
-      await chmod(full, fileMode);
-    }
-  }
+  await Promise.all(
+    entries.map((entry) => {
+      const full = path.join(dir, entry.name);
+      return entry.isDirectory() ? chmodTree(full, dirMode, fileMode) : chmod(full, fileMode);
+    }),
+  );
 
   await chmod(dir, dirMode);
 }

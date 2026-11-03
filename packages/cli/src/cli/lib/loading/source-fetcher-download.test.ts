@@ -7,6 +7,7 @@ import {
   directoryExists,
   fileExists,
 } from "../__tests__/test-fs-utils";
+import { captureEnv, overrideEnv, type RestoreEnv } from "../__tests__/helpers/env-override.js";
 import { sanitizeSourceForCache } from "./source-fetcher";
 
 let mockCacheDir: string;
@@ -92,9 +93,7 @@ const NETWORK_ERROR = [
 ].join("\n");
 
 describe("source-fetcher download", () => {
-  const originalXdgCacheHome = process.env.XDG_CACHE_HOME;
-  const originalGigetAuth = process.env.GIGET_AUTH;
-
+  let restoreEnv: RestoreEnv[];
   let tempDir: string;
   let cacheDir: string;
   let recordPath: string;
@@ -106,7 +105,10 @@ describe("source-fetcher download", () => {
     mockCacheDir = path.join(tempDir, "cache");
     cacheDir = path.join(mockCacheDir, "sources", sanitizeSourceForCache(SOURCE));
     recordPath = fetchRecordPath(cacheDir);
-    process.env.XDG_CACHE_HOME = path.join(tempDir, "xdg");
+    restoreEnv = [
+      overrideEnv("XDG_CACHE_HOME", path.join(tempDir, "xdg")),
+      captureEnv("GIGET_AUTH"),
+    ];
     gigetDir = path.join(tempDir, "xdg", "giget", "github", GIGET_TEMPLATE);
     gigetCacheHeldAtDownload = undefined;
     delete process.env.GIGET_AUTH;
@@ -115,10 +117,7 @@ describe("source-fetcher download", () => {
 
   afterEach(async () => {
     vi.unstubAllGlobals();
-    if (originalXdgCacheHome === undefined) delete process.env.XDG_CACHE_HOME;
-    else process.env.XDG_CACHE_HOME = originalXdgCacheHome;
-    if (originalGigetAuth === undefined) delete process.env.GIGET_AUTH;
-    else process.env.GIGET_AUTH = originalGigetAuth;
+    for (const restore of restoreEnv) restore();
     await cleanupTempDir(tempDir);
   });
 

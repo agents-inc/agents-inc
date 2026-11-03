@@ -867,9 +867,14 @@ describe("what eject says", () => {
   const HEADER = ["", "Agents Inc. Eject", ""];
   const ENDING = ["", "✓ Eject complete!", "", ""];
   const PARTIALS_CUSTOMIZABLE =
-    "Each sub-agent directory there holds identity.md, playbook.md, critical-requirements.md, critical-reminders.md, output.md — edit those to customize that sub-agent.";
+    "Each sub-agent directory there holds up to 5 partials (identity.md, playbook.md, critical-requirements.md, critical-reminders.md, output.md) — edit those to customize that sub-agent.";
   const CONFIG_DECLARES_NOTHING =
     "This project's config declares nothing; eject works on this project, not on a global installation.";
+
+  /** The same words wherever the copy is, in a project or the global installation. */
+  function localCopyKept(skillId: string, copyDir: string): string {
+    return `Warning: Skipped ${skillId}: its local copy at ${copyDir} stays as it is, even with --force.`;
+  }
 
   function agentsDirOf(root: string): string {
     return path.join(sourceFolderInUse(root, "claude").dir, STANDARD_DIRS.AGENTS);
@@ -1185,24 +1190,36 @@ describe("what eject says", () => {
       await cleanupTestSource(dirs);
     });
 
-    it("says there is nothing to eject when the project holds a local copy of every skill", async () => {
+    it("names each skill the project holds a local copy of, rather than saying the marketplace has none", async () => {
       const outputDir = path.join(dirs.tempDir, "ejected");
+      const skillsDir = path.join(dirs.projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
+      const againDir = path.join(dirs.tempDir, "again");
       await runCliCommand(["eject", "skills", "--output", outputDir]);
-      await cp(outputDir, path.join(dirs.projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS), {
-        recursive: true,
-      });
+      await cp(outputDir, skillsDir, { recursive: true });
+      const configBefore = await readFile(getProjectConfigPath(dirs.projectDir, "claude"), "utf-8");
 
-      const { stderr, error } = await runCliCommand([
+      const { stdout, stderr, error } = await runCliCommand([
         "eject",
         "skills",
         "--output",
-        path.join(dirs.tempDir, "again"),
+        againDir,
       ]);
 
       expect(error).toBeUndefined();
-      expect(flattenCliOutput(stderr)).toBe(
-        `${CONFIG_DECLARES_NOTHING} Warning: No skills found in the marketplace to eject.`,
+      expect(compactCliOutput(stderr)).toBe(
+        compactCliOutput(
+          [
+            CONFIG_DECLARES_NOTHING,
+            ...MARKETPLACE_SKILL_IDS.map((id) => localCopyKept(id, path.join(skillsDir, id))),
+          ].join("\n"),
+        ),
       );
+      expect(stdout).toBe([...HEADER, `Output directory: ${againDir}`, ...ENDING].join("\n"));
+      expect([
+        await directoryExists(againDir),
+        [...(await readdir(skillsDir))].sort(),
+        await readFile(getProjectConfigPath(dirs.projectDir, "claude"), "utf-8"),
+      ]).toStrictEqual([false, MARKETPLACE_SKILL_IDS, configBefore]);
     });
 
     /**
@@ -1402,24 +1419,161 @@ describe("what eject says", () => {
       expect([...(await readdir(outputDir))].sort()).toStrictEqual(MARKETPLACE_SKILL_IDS);
     });
 
-    it("leaves out a skill the project already holds a local copy of", async () => {
+    it("leaves out a skill the project already holds a local copy of, naming it and where that copy is", async () => {
       const outputDir = path.join(dirs.tempDir, "ejected");
+      const againDir = path.join(dirs.tempDir, "again");
       await runCliCommand(["eject", "skills", "--output", outputDir]);
       const skillsDir = path.join(dirs.projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
       await mkdir(skillsDir, { recursive: true });
-      const ownCopy = firstElement(await readdir(outputDir));
-      await cp(path.join(outputDir, ownCopy), path.join(skillsDir, ownCopy), { recursive: true });
+      await cp(path.join(outputDir, KEPT_SKILL_ID), path.join(skillsDir, KEPT_SKILL_ID), {
+        recursive: true,
+      });
 
-      const { stdout } = await runCliCommand([
+      const { stdout, stderr, error } = await runCliCommand([
         "eject",
         "skills",
         "--output",
-        path.join(dirs.tempDir, "again"),
+        againDir,
       ]);
 
-      expect(stdout).toContain(
-        `✓ 3 skills ejected to ${path.join(dirs.tempDir, "again")} from ${dirs.sourceDir}`,
+      expect(error).toBeUndefined();
+      expect(compactCliOutput(stderr)).toBe(
+        compactCliOutput(
+          [
+            CONFIG_DECLARES_NOTHING,
+            localCopyKept(KEPT_SKILL_ID, path.join(skillsDir, KEPT_SKILL_ID)),
+          ].join("\n"),
+        ),
       );
+      expect(stdout).toBe(
+        [
+          ...HEADER,
+          `Output directory: ${againDir}`,
+          `✓ 3 skills ejected to ${againDir} from ${dirs.sourceDir}`,
+          "You can now customize skill content locally.",
+          ...ENDING,
+        ].join("\n"),
+      );
+      expect([...(await readdir(againDir))].sort()).toStrictEqual(
+        MARKETPLACE_SKILL_IDS.filter((id) => id !== KEPT_SKILL_ID),
+      );
+    });
+
+    describe("beside a local copy in the global installation", () => {
+      let globalSkillsDir: string;
+      let globalCopy: string;
+      let globalCopyBefore: string;
+
+      beforeEach(async () => {
+        const outputDir = path.join(dirs.tempDir, "ejected");
+        globalSkillsDir = path.join(fakeHome, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
+        globalCopy = path.join(globalSkillsDir, KEPT_SKILL_ID);
+        await runCliCommand(["eject", "skills", "--output", outputDir]);
+        await mkdir(globalSkillsDir, { recursive: true });
+        await cp(path.join(outputDir, KEPT_SKILL_ID), globalCopy, { recursive: true });
+        await writeFile(
+          path.join(globalCopy, STANDARD_FILES.SKILL_MD),
+          `${await readFile(path.join(globalCopy, STANDARD_FILES.SKILL_MD), "utf-8")}\n${USERS_OWN_SKILL_EDIT}\n`,
+        );
+        globalCopyBefore = await readFile(path.join(globalCopy, STANDARD_FILES.SKILL_MD), "utf-8");
+      });
+
+      it("ejects every other skill into the project, naming the one it left and where its copy is", async () => {
+        const skillsDir = path.join(dirs.projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
+
+        const { stdout, stderr, error } = await runCliCommand(["eject", "skills"]);
+
+        expect(error).toBeUndefined();
+        expect(compactCliOutput(stderr)).toBe(
+          compactCliOutput(
+            [CONFIG_DECLARES_NOTHING, localCopyKept(KEPT_SKILL_ID, globalCopy)].join("\n"),
+          ),
+        );
+        expect(stdout).toBe(
+          [
+            ...HEADER,
+            `✓ 3 skills ejected to ${skillsDir} from ${dirs.sourceDir}`,
+            "You can now customize skill content locally.",
+            ...ENDING,
+          ].join("\n"),
+        );
+        expect([
+          [...(await readdir(skillsDir))].sort(),
+          await readFile(path.join(globalCopy, STANDARD_FILES.SKILL_MD), "utf-8"),
+        ]).toStrictEqual([
+          MARKETPLACE_SKILL_IDS.filter((id) => id !== KEPT_SKILL_ID),
+          globalCopyBefore,
+        ]);
+      });
+
+      it("leaves that copy as it is with --force too, still naming it", async () => {
+        const skillsDir = path.join(dirs.projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
+
+        const { stdout, stderr, error } = await runCliCommand(["eject", "skills", "--force"]);
+
+        expect(error).toBeUndefined();
+        expect(compactCliOutput(stderr)).toBe(
+          compactCliOutput(
+            [CONFIG_DECLARES_NOTHING, localCopyKept(KEPT_SKILL_ID, globalCopy)].join("\n"),
+          ),
+        );
+        expect(stdout).toContain(`✓ 3 skills ejected to ${skillsDir} from ${dirs.sourceDir}\n`);
+        expect([
+          [...(await readdir(skillsDir))].sort(),
+          await readFile(path.join(globalCopy, STANDARD_FILES.SKILL_MD), "utf-8"),
+        ]).toStrictEqual([
+          MARKETPLACE_SKILL_IDS.filter((id) => id !== KEPT_SKILL_ID),
+          globalCopyBefore,
+        ]);
+      });
+
+      it("names it after saying the rest are already in the project", async () => {
+        const skillsDir = path.join(dirs.projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
+        await runCliCommand(["eject", "skills"]);
+
+        const { stdout, stderr, error } = await runCliCommand(["eject", "skills"]);
+
+        expect(error).toBeUndefined();
+        expect(compactCliOutput(stderr)).toBe(
+          compactCliOutput(
+            [
+              CONFIG_DECLARES_NOTHING,
+              `Warning: Skills already exist at ${skillsDir}. Use --force to overwrite.`,
+              localCopyKept(KEPT_SKILL_ID, globalCopy),
+            ].join("\n"),
+          ),
+        );
+        expect(stdout).toBe([...HEADER, ...ENDING].join("\n"));
+      });
+
+      it("at home, names it in the same words when ejecting into another folder", async () => {
+        const againDir = path.join(dirs.tempDir, "again");
+        await writeTestTsConfig(
+          fakeHome,
+          buildProjectConfig({ skills: [], agents: [], marketplace: dirs.sourceDir }),
+        );
+        process.chdir(fakeHome);
+
+        const { stdout, stderr, error } = await runCliCommand([
+          "eject",
+          "skills",
+          "--output",
+          againDir,
+        ]);
+
+        expect(error).toBeUndefined();
+        expect(compactCliOutput(stderr)).toBe(
+          compactCliOutput(localCopyKept(KEPT_SKILL_ID, globalCopy)),
+        );
+        expect(stdout).toContain(`✓ 3 skills ejected to ${againDir} from ${dirs.sourceDir}\n`);
+        expect([
+          [...(await readdir(againDir))].sort(),
+          await readFile(path.join(globalCopy, STANDARD_FILES.SKILL_MD), "utf-8"),
+        ]).toStrictEqual([
+          MARKETPLACE_SKILL_IDS.filter((id) => id !== KEPT_SKILL_ID),
+          globalCopyBefore,
+        ]);
+      });
     });
   });
 
@@ -1776,7 +1930,7 @@ describe("what eject says", () => {
             "Warning: Could not create .agents-inc/claude/config.ts: EACCES",
           );
           expect(stdout).toContain(
-            "Completed with 1 failure(s) — the changes above landed, these did not:\n  Could not create .agents-inc/claude/config.ts: EACCES",
+            "Completed with 1 failure — the changes above landed, these did not:\n  Could not create .agents-inc/claude/config.ts: EACCES",
           );
           expect(error?.oclif?.exit).toBe(EXIT_CODES.COMPLETED_WITH_FAILURES);
         } finally {

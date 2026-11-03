@@ -1,6 +1,5 @@
 import { mkdir, rename, rm, symlink, writeFile } from "fs/promises";
 import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import os from "os";
 import path from "path";
 
@@ -11,6 +10,8 @@ import { DEFAULT_PLUGIN_NAME } from "../../../consts.js";
 import { DEFAULT_SOURCE } from "../../configuration/config.js";
 import { fetchRecordPath, sanitizeSourceForCache } from "../../loading/source-fetcher.js";
 import { cleanupTempDir, createTempDir, directoryExists } from "../test-fs-utils.js";
+import { overrideEnv } from "./env-override.js";
+import { closeServer, listenOnLoopback } from "./loopback-server.js";
 
 /**
  * One machine-wide checkout of the default marketplace that every isolated home links to, so
@@ -154,17 +155,13 @@ export async function serveDefaultMarketplaceHere(): Promise<() => Promise<void>
     });
     response.end(request.method === "GET" ? body : undefined);
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-
-  const previous = process.env[GIGET_GITHUB_URL];
-  // A TCP listener's address() is always an AddressInfo.
-  process.env[GIGET_GITHUB_URL] = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const { origin } = await listenOnLoopback(server);
+  const restoreGitHubUrl = overrideEnv(GIGET_GITHUB_URL, origin);
 
   return async () => {
-    if (previous === undefined) delete process.env[GIGET_GITHUB_URL];
-    else process.env[GIGET_GITHUB_URL] = previous;
+    restoreGitHubUrl();
     // giget's fetch keeps its connection alive, which would hold `close` open.
     server.closeAllConnections();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await closeServer(server);
   };
 }

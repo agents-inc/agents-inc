@@ -33,6 +33,7 @@ import { downloadTemplate } from "giget";
 import type { z } from "zod";
 import { marketplaceManifestPath } from "../../consts";
 import type { sourceRevalidationSchema } from "../schemas";
+import { overrideEnv, type RestoreEnv } from "../__tests__/helpers/env-override.js";
 import { matchedAsWritten } from "../__tests__/helpers/matched-as-written";
 import { log, warn } from "../../utils/logger";
 import { sourceUnreachableUsingCache, STATUS_MESSAGES } from "../../utils/messages";
@@ -99,7 +100,6 @@ const BY_URL: GigetRef = {
   version: "",
 };
 
-/** The two kinds of remote marketplace: giget keeps a tarball of each, under its provider. */
 const MARKETPLACE_KINDS = [
   { kind: "on GitHub", ref: MAIN },
   { kind: "by its URL", ref: BY_URL },
@@ -119,7 +119,6 @@ const SAVED_TARBALL_CONTENT = "tarball an earlier download saved";
 const FETCHED_TARBALL_CONTENT = "tarball this download fetched";
 const PARTIAL_TARBALL_CONTENT = "the first half of a tarball";
 
-/** A fetch record as the fetcher writes it beside a saved copy. */
 type SourceRecord = z.infer<typeof sourceRevalidationSchema>;
 
 function headResponse(etag?: string): Response {
@@ -168,7 +167,6 @@ function refusedWarning(status: number, source: string = SOURCE): string {
   return `${source} refused the request (${status}) — using the cached copy, which may be out of date.`;
 }
 
-/** What a load says when the marketplace announced newer content and the download of it failed. */
 function updateNotFetchedWarning(source: string): string {
   return `Could not fetch the update from ${source} — using the cached copy, which is out of date.`;
 }
@@ -198,8 +196,7 @@ function opening(text: string): RegExp {
 }
 
 describe("source-fetcher revalidation", () => {
-  const originalXdgCacheHome = process.env.XDG_CACHE_HOME;
-
+  let restoreXdgCacheHome: RestoreEnv;
   let tempDir: string;
   let cacheDir: string;
   let recordPath: string;
@@ -209,7 +206,7 @@ describe("source-fetcher revalidation", () => {
     mockCacheDir = path.join(tempDir, "cache");
     cacheDir = cacheDirOf(SOURCE);
     recordPath = `${cacheDir}.etag.json`;
-    process.env.XDG_CACHE_HOME = path.join(tempDir, "xdg");
+    restoreXdgCacheHome = overrideEnv("XDG_CACHE_HOME", path.join(tempDir, "xdg"));
     await mkdir(cacheDir, { recursive: true });
     vi.clearAllMocks();
   });
@@ -218,7 +215,6 @@ describe("source-fetcher revalidation", () => {
     return path.join(mockCacheDir, "sources", sanitizeSourceForCache(source));
   }
 
-  /** Where giget saves a provider's tarballs, each in its template's folder. */
   function gigetProviderFolder(provider: string): string {
     return path.join(tempDir, "xdg", "giget", provider);
   }
@@ -230,8 +226,7 @@ describe("source-fetcher revalidation", () => {
 
   afterEach(async () => {
     vi.unstubAllGlobals();
-    if (originalXdgCacheHome === undefined) delete process.env.XDG_CACHE_HOME;
-    else process.env.XDG_CACHE_HOME = originalXdgCacheHome;
+    restoreXdgCacheHome();
     await cleanupTempDir(tempDir);
   });
 
@@ -316,10 +311,6 @@ describe("source-fetcher revalidation", () => {
     );
   }
 
-  /**
-   * giget when its download fails: the tarball it saved, extracted, while that tarball is on disk;
-   * the failure itself once it is gone.
-   */
   function stubFailingDownload(ref: GigetRef, failure: string): void {
     mockDownloadTemplate.mockImplementation(async (source, options) => {
       if (await fileExists(gigetTarballOf(ref))) return extractingSaved(ref)(source, options);
@@ -327,7 +318,6 @@ describe("source-fetcher revalidation", () => {
     });
   }
 
-  /** The copy an earlier download of `ref` left, and its record when given one. */
   async function seedCopyOf(ref: GigetRef, record?: SourceRecord): Promise<void> {
     const copy = cacheDirOf(ref.source);
     await mkdir(copy, { recursive: true });
@@ -335,10 +325,6 @@ describe("source-fetcher revalidation", () => {
     if (record) await writeFile(fetchRecordPath(copy), JSON.stringify(record));
   }
 
-  /**
-   * What an earlier download of `ref` left: the copy, its record when given one, and giget's
-   * tarball of the same content beside the record of the ETag it was saved under.
-   */
   async function seedEarlierDownload(ref: GigetRef, record?: SourceRecord): Promise<void> {
     await seedCopyOf(ref, record);
     await seedGigetTarball(CACHED_ETAG, ref);
@@ -421,7 +407,6 @@ describe("source-fetcher revalidation", () => {
     expect(warn).toHaveBeenCalledWith(sourceUnreachableUsingCache(SOURCE));
   });
 
-  /** A load outside doctor asks about a copy saved without a version stamp as about any other. */
   describe("a copy whose record carries no ETag", () => {
     it("asks about it before anything else, and downloads it again without claiming the source moved on when the source answers with an ETag", async () => {
       await seedCachedCopy({ tar: TARBALL });
@@ -651,10 +636,8 @@ describe("source-fetcher revalidation", () => {
   });
 
   /**
-   * Outside doctor a failed download falls back on what the earlier download left, whichever copy
-   * holds it, and says so: after the marketplace announced newer content, and when the copy lost its
-   * record and the marketplace cannot be reached. giget extracts the tarball it saved while it is on
-   * disk, so the CLI's copy and giget's tarball hold the same content here, as they do on disk.
+   * giget extracts the tarball it saved while it is on disk, so the CLI's copy and giget's tarball
+   * hold the same content here, as they do on disk.
    */
   describe.each(MARKETPLACE_KINDS)(
     "a download failing for a marketplace named $kind",
@@ -710,14 +693,9 @@ describe("source-fetcher revalidation", () => {
         expect(warn).toHaveBeenCalledExactlyOnceWith(sourceUnreachableUsingCache(ref.source));
       });
 
-      /**
-       * With no record and no tarball of giget's, giget's failed download is the only answer the load
-       * gets, so a refusal in it is taken as the version check's would be.
-       */
       describe("over a copy that lost its record, with no tarball of giget's to fall back on", () => {
         const copy = () => cacheDirOf(ref.source);
 
-        /** Every request answered `status`, giget's download among them. */
         function refusingEveryRequest(status: number, statusText: string): void {
           vi.stubGlobal("fetch", vi.fn().mockResolvedValue(refusal(status)));
           stubFailingDownload(ref, `Failed to download ${ref.tar}: ${status} ${statusText}`);

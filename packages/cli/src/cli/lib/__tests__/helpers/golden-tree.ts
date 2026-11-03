@@ -8,6 +8,7 @@ import path from "path";
 import { format, type Options } from "prettier";
 
 import { STANDARD_FILES } from "../../../consts.js";
+import { toPosixPath } from "../../../utils/posix-path.js";
 import { bytewise } from "../../../utils/string.js";
 import { typedEntries } from "../../../utils/typed-object.js";
 
@@ -109,7 +110,7 @@ function isSkipped(relative: string, skip: readonly string[]): boolean {
 }
 
 function relativeTo(root: string, absolute: string): string {
-  return path.relative(root, absolute).split(path.sep).join("/");
+  return toPosixPath(path.relative(root, absolute));
 }
 
 /** Volatile values as placeholders and paths sorted, so two runs serialise to the same bytes. */

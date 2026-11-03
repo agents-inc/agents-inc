@@ -26,6 +26,7 @@ import { buildProjectConfig, buildSourceConfig } from "../__tests__/factories/co
 import { renderUnparseableConfigTs } from "../__tests__/factories/unloadable-config-factories.js";
 import { writeRawTestConfig, writeTestTsConfig } from "../__tests__/helpers/config-io.js";
 import { buildSkillConfigs } from "../__tests__/helpers/skill-config-builders.js";
+import { overrideEnv, type RestoreEnv } from "../__tests__/helpers/env-override.js";
 import { silenceConsole } from "../__tests__/helpers/silence-console.js";
 import { firstElement } from "../__tests__/helpers/element-at.js";
 import { DEFAULT_TEST_SKILLS } from "../__tests__/mock-data/mock-skills";
@@ -72,14 +73,13 @@ function loadedSkill(matrix: MergedSkillsMatrix, id: string): ResolvedSkill | un
 describe("source-loader: what the global installation adds to a project's load", () => {
   const consoleSpies = silenceConsole(["log", "warn"]);
   let fakeHome: string;
-  let savedHome: string | undefined;
+  let restoreHome: RestoreEnv;
   let projectSource: TestDirs;
   let globalSource: TestDirs | undefined;
 
   beforeEach(async () => {
     fakeHome = await createTempDir("cc-loader-global-home-");
-    savedHome = process.env.HOME;
-    process.env.HOME = fakeHome;
+    restoreHome = overrideEnv("HOME", fakeHome);
     vi.spyOn(os, "homedir").mockReturnValue(fakeHome);
     delete process.env[SOURCE_ENV_VAR];
     projectSource = await createTestSource({ skills: PROJECT_SKILLS });
@@ -89,8 +89,7 @@ describe("source-loader: what the global installation adds to a project's load",
   afterEach(async () => {
     setVerbose(false);
     vi.mocked(os.homedir).mockRestore();
-    if (savedHome === undefined) delete process.env.HOME;
-    else process.env.HOME = savedHome;
+    restoreHome();
     await cleanupTestSource(projectSource);
     await cleanupTestSource(globalSource);
     globalSource = undefined;
@@ -251,7 +250,7 @@ describe("source-loader: what the global installation adds to a project's load",
 describe("source-loader: a marketplace fetched from a remote ref", () => {
   const consoleSpies = silenceConsole(["log", "warn"]);
   let fakeHome: string;
-  let savedHome: string | undefined;
+  let restoreHome: RestoreEnv;
   let fetched: TestDirs;
   /** Whether the stand-in fetch reports the ref as unreachable, its cache standing in. */
   let unreachable: boolean;
@@ -259,8 +258,7 @@ describe("source-loader: a marketplace fetched from a remote ref", () => {
   beforeEach(async () => {
     unreachable = false;
     fakeHome = await createTempDir("cc-loader-remote-home-");
-    savedHome = process.env.HOME;
-    process.env.HOME = fakeHome;
+    restoreHome = overrideEnv("HOME", fakeHome);
     vi.spyOn(os, "homedir").mockReturnValue(fakeHome);
     delete process.env[SOURCE_ENV_VAR];
     fetched = await createTestSource({ skills: PROJECT_SKILLS });
@@ -280,8 +278,7 @@ describe("source-loader: a marketplace fetched from a remote ref", () => {
     vi.mocked(fetchFromSource).mockImplementation(actualFetcher.fetchFromSource);
     vi.mocked(fetchMarketplace).mockImplementation(actualFetcher.fetchMarketplace);
     vi.mocked(os.homedir).mockRestore();
-    if (savedHome === undefined) delete process.env.HOME;
-    else process.env.HOME = savedHome;
+    restoreHome();
     await cleanupTestSource(fetched);
     await cleanupTempDir(fakeHome);
   });

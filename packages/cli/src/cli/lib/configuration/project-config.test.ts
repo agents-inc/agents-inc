@@ -15,6 +15,7 @@ import { initializeMatrix, matrix } from "../matrix/matrix-provider";
 import { setVerbose } from "../../utils/logger";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { writeRawTestConfig, writeTestTsConfig } from "../__tests__/helpers/config-io.js";
+import { overrideEnv, type RestoreEnv } from "../__tests__/helpers/env-override.js";
 import { silenceConsole } from "../__tests__/helpers/silence-console.js";
 import { useFakeHome } from "../__tests__/helpers/isolated-home.js";
 import { renderConfigTs } from "../__tests__/content-generators.js";
@@ -207,20 +208,19 @@ describe("project-config", () => {
 
   describe("loadProjectConfigFromDir verbose reporting", () => {
     const consoleSpies = silenceConsole(["log"]);
-    let savedHome: string;
+    let restoreHome: RestoreEnv;
     let homeDir: string;
 
     beforeEach(async () => {
-      savedHome = process.env.HOME ?? "";
       homeDir = path.join(tempDir, "home");
       await mkdir(homeDir, { recursive: true });
-      process.env.HOME = homeDir;
+      restoreHome = overrideEnv("HOME", homeDir);
       setVerbose(true);
     });
 
     afterEach(() => {
       setVerbose(false);
-      process.env.HOME = savedHome;
+      restoreHome();
     });
 
     it("should announce a config loaded from the home root as the global one", async () => {

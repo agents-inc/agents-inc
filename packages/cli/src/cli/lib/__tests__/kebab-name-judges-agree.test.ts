@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "fs/promises";
+import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -13,7 +13,8 @@ import {
 import { kebabCaseJudgesIn, SHARED_PATTERN } from "./helpers/kebab-case-judges.js";
 import { customMetadataValidationSchema, marketplaceSchema } from "../schemas.js";
 import { validateKebabCaseName } from "../validate-kebab-name.js";
-import { validatePluginManifest } from "../plugins/plugin-validator.js";
+import { getPluginManifestPath } from "../plugins/plugin-finder.js";
+import { validatePlugin } from "../plugins/plugin-validator.js";
 
 const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
@@ -50,9 +51,10 @@ describe("every judge of a kebab-case name", () => {
   }
 
   async function pluginManifestAccepts(name: string): Promise<boolean> {
-    const manifestPath = path.join(tempDir, "plugin.json");
+    const manifestPath = getPluginManifestPath(tempDir);
+    await mkdir(path.dirname(manifestPath), { recursive: true });
     await writeFile(manifestPath, JSON.stringify({ name, version: "1.0.0" }));
-    const { errors } = await validatePluginManifest(manifestPath);
+    const { errors } = await validatePlugin(tempDir);
 
     return !errors.some((error) => error.includes("kebab-case"));
   }

@@ -21,6 +21,7 @@ import {
 } from "../../__tests__/fixtures/create-test-source.js";
 import { buildSkillConfig } from "../../__tests__/helpers/index.js";
 import { useFakeHome } from "../../__tests__/helpers/isolated-home.js";
+import { otherThan } from "../../__tests__/helpers/other-providers.js";
 import { INSTALL_MODE_SKILLS } from "../../__tests__/mock-data/mock-skills.js";
 import { directoryExists } from "../../__tests__/test-fs-utils.js";
 
@@ -147,7 +148,7 @@ describe("copyLocalSkills", () => {
           path.join(ownGlobalSkills, HONO),
         ]);
         expect(await skillFoldersIn(ownGlobalSkills)).toStrictEqual([HONO]);
-        for (const other of PROVIDERS.filter((atHome) => atHome !== provider)) {
+        for (const other of otherThan(provider)) {
           expect(
             await directoryExists(skillsDir(other, "global", home.dir)),
             `nothing is copied into the ${other} global installation`,

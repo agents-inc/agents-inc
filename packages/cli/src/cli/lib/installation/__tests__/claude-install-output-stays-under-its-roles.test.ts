@@ -9,6 +9,7 @@ import { readFile, readdir } from "fs/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SkillScope } from "../../../types/config.js";
+import { toPosixPath } from "../../../utils/posix-path.js";
 import { agentsDir, permissionFiles, pluginsDir, skillsDir, sourceDir } from "../install-layout.js";
 import { CLI_ROOT } from "../../__tests__/helpers/cli-runner.js";
 import type { RecordedGolden } from "../../__tests__/helpers/golden-tree.js";
@@ -55,7 +56,7 @@ const ROLES_EXERCISED = {
 } as const satisfies Record<GoldenTree, readonly string[]>;
 
 function treeRelative(absolute: string): string {
-  return path.relative(TREE_ROOT, absolute).split(path.sep).join("/");
+  return toPosixPath(path.relative(TREE_ROOT, absolute));
 }
 
 // `sourceDir` is included because the goldens record the config pair too.

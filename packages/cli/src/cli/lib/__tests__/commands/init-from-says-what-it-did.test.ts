@@ -185,7 +185,7 @@ describe("what init --from says", () => {
       [
         "┘",
         "",
-        "Installing 2 skill(s) across 2 sub-agent(s)",
+        "Installing 2 skills across 2 sub-agents",
         "",
         "",
         "",
@@ -415,9 +415,7 @@ describe("what init --from says", () => {
     expect(
       flattenCliOutput(stderr),
       "web-developer carries a skill the catalogue knows, so the warning does not name it",
-    ).toBe(
-      "Warning: Skipped 1 skill(s) this catalog does not know: web-framework-angular-standalone",
-    );
+    ).toBe("Warning: Skipped 1 skill this catalog does not know: web-framework-angular-standalone");
     expect(
       await installedAt(projectDir),
       "the skill the catalogue knows is installed, and the one it does not is recorded nowhere",
@@ -447,8 +445,8 @@ describe("what init --from says", () => {
     expect(flattenCliOutput(stderr)).toBe(
       flattenCliOutput(
         [
-          `Warning: Skipped 1 skill(s) this catalog does not know: ${unknown}`,
-          `  sub-agent(s) installed without ${unknown}, carrying nothing else this catalog knows: api-developer`,
+          `Warning: Skipped 1 skill this catalog does not know: ${unknown}`,
+          `  sub-agent installed without ${unknown}, carrying nothing else this catalog knows: api-developer`,
         ].join("\n"),
       ),
     );
@@ -485,8 +483,8 @@ describe("what init --from says", () => {
     expect(flattenCliOutput(stderr)).toBe(
       flattenCliOutput(
         [
-          `Warning: Skipped 1 skill(s) this catalog does not know: ${unknown}`,
-          `  sub-agent(s) installed without ${unknown}, carrying nothing else this catalog knows: web-developer`,
+          `Warning: Skipped 1 skill this catalog does not know: ${unknown}`,
+          `  sub-agent installed without ${unknown}, carrying nothing else this catalog knows: web-developer`,
         ].join("\n"),
       ),
     );
@@ -699,7 +697,7 @@ describe("what init --from says", () => {
         "  skill Hono",
         "  sub-agent api-developer",
         "",
-        "Installing 1 skill(s) across 2 sub-agent(s)",
+        "Installing 1 skill across 2 sub-agents",
       ].join("\n"),
     );
     expect(
@@ -801,7 +799,7 @@ describe("what init --from says", () => {
         "Added to sub-agents in the global install — each keeps everything it already has, since a project run only adds to the global install:",
         "  sub-agent api-developer: + Vitest",
         "",
-        "Installing 1 skill(s) across 1 sub-agent(s)",
+        "Installing 1 skill across 1 sub-agent",
       ].join("\n"),
     );
     expect(
@@ -941,7 +939,7 @@ describe("what init --from says", () => {
         "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
         "  skill Hono",
         "",
-        "Installing 1 skill(s) across 2 sub-agent(s)",
+        "Installing 1 skill across 2 sub-agents",
       ].join("\n"),
     );
     expect(
@@ -1002,7 +1000,7 @@ describe("what init --from says", () => {
         "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
         `  skill ${recordedName}`,
         "",
-        "Installing 1 skill(s) across 2 sub-agent(s)",
+        "Installing 1 skill across 2 sub-agents",
       ].join("\n"),
     );
     expect(
@@ -1110,7 +1108,7 @@ describe("what init --from says", () => {
         "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
         "  sub-agent api-developer",
         "",
-        "Installing 1 skill(s) across 2 sub-agent(s)",
+        "Installing 1 skill across 2 sub-agents",
       ].join("\n"),
     );
     expect(
@@ -1392,7 +1390,7 @@ describe("what init --from says", () => {
 
     expect(error).toBeUndefined();
     expect(flattenCliOutput(stderr)).toContain(
-      "Warning: Skipped 1 unknown sub-agent(s): no-such-agent",
+      "Warning: Skipped 1 unknown sub-agent: no-such-agent",
     );
     expect(
       await installedAt(projectDir),
@@ -1412,7 +1410,7 @@ describe("what init --from says", () => {
 
     expect(error).toBeUndefined();
     expect(stdout).toContain(
-      "\nWrote 1 skill(s) this configuration carries: Brainstorming\nInstalling 2 skill(s) across 1 sub-agent(s)\n",
+      "\nWrote 1 skill this configuration carries: Brainstorming\nInstalling 2 skills across 1 sub-agent\n",
     );
     expect(
       await installedAt(projectDir),
@@ -1445,7 +1443,7 @@ describe("what init --from says", () => {
         expect(stdout).toContain("Compiling agents...\nCompiled 0 agents (1 failed)\n");
         expect(stdout).not.toContain("initialized successfully");
         expect(flattenCliOutput(stderr)).toContain("web-developer");
-        expect(stdout).toContain("  1 sub-agent(s) did not compile: web-developer");
+        expect(stdout).toContain("  1 sub-agent did not compile: web-developer");
         expect(error?.oclif?.exit).toBe(EXIT_CODES.COMPLETED_WITH_FAILURES);
         const { skills, agents, copies } = await installedAt(projectDir);
         expect(

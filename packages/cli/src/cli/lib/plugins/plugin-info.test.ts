@@ -503,6 +503,23 @@ describe("plugin-info", () => {
       ).toBe(MARKETPLACE_SKILL_IDS.length);
     });
 
+    it("carries the marketplace the configuration records", async () => {
+      const configPath = getProjectConfigPath(PROJECT_DIR, "claude");
+      mockedDetectInstallation.mockResolvedValue(
+        buildInstallation({ mode: "eject", configPath, projectDir: PROJECT_DIR }),
+      );
+      mockedDirectoryExists.mockResolvedValue(false);
+      mockedLoadProjectConfig.mockResolvedValue({
+        config: buildProjectConfig({ name: "acme", marketplace: "github:acme/skills" }),
+        configPath,
+        provider: "claude",
+      });
+
+      const result = await getInstallationInfo();
+
+      expect(result?.marketplace).toBe("github:acme/skills");
+    });
+
     it("should use default name when local config has no name", async () => {
       const mockConfigPath = getProjectConfigPath(PROJECT_DIR, "claude");
 
@@ -815,6 +832,19 @@ describe("plugin-info", () => {
 
       expect(formatInstallationDisplay(info)).toBe(
         `Installation: empty-project\n  Mode:    Eject\n  Skills:  5\n  Agents:  0\n  Config:  ${info.configPath}`,
+      );
+    });
+
+    it("names the marketplace the configuration records on the line beneath the mode", () => {
+      const info = buildInstallationInfo({
+        name: "empty-project",
+        agentCount: 0,
+        agentDirs: [],
+        marketplace: "github:acme/skills",
+      });
+
+      expect(formatInstallationDisplay(info)).toBe(
+        `Installation: empty-project\n  Mode:    Eject\n  Marketplace: github:acme/skills\n  Skills:  5\n  Agents:  0\n  Config:  ${info.configPath}`,
       );
     });
 

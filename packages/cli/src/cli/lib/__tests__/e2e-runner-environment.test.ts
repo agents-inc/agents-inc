@@ -2,8 +2,9 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CODEX_SHIM_ENV } from "../../../../e2e/fixtures/codex-on-path.js";
 import { typedEntries } from "../../utils/typed-object.js";
 import {
   E2E_RUNNER_DOORS,
@@ -104,6 +105,9 @@ const CONTRADICTING_CALLER_ENV: ChildEnv = {
   CODEX_HOME: path.join(os.tmpdir(), "a-developers-codex-home"),
 };
 
+/** Named to workers by the e2e global setup, which this project does not run; nothing creates it. */
+const CODEX_SHIM_UNDER_TEST = path.join(os.tmpdir(), "a-codex-shim-no-door-creates");
+
 const BIN_RUN_PATH = path.join(CLI_ROOT, "bin", "run.js");
 
 /** Port 1 on loopback refuses at once, so an unpointed run fails fast and locally. */
@@ -137,11 +141,15 @@ async function openRunner(runner: E2eRunner, callerEnv: ChildEnv): Promise<void>
   await OPEN[runner](await loadRunner(runner), DRIVEN_FROM, callerEnv);
 }
 
-describe("a spawned binary is handed nothing the developer's shell exports for the product", () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
+beforeEach(() => {
+  vi.stubEnv(CODEX_SHIM_ENV, CODEX_SHIM_UNDER_TEST);
+});
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+describe("a spawned binary is handed nothing the developer's shell exports for the product", () => {
   it.each(E2E_RUNNER_DOORS)(
     "$spawns hands the child none of the variables the product reads",
     async ({ runner }) => {
@@ -188,10 +196,6 @@ describe("a spawned binary keeps each host's state inside the HOME it is handed"
 });
 
 describe("a spawned binary reaches no seed API a spec did not name", () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
   it.each(E2E_RUNNER_DOORS)(
     "$spawns hands it an unroutable address when the caller names none",
     async ({ runner }) => {

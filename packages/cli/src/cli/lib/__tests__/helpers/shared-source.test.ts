@@ -170,7 +170,6 @@ type RunningProcess = { pid: number; stop: () => Promise<void> };
 
 const runningProcesses: RunningProcess[] = [];
 
-/** A process that started and exited, so its pid names a run that is gone. */
 async function aFinishedProcessPid(): Promise<number> {
   const child = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
   const { pid } = child;
@@ -181,7 +180,6 @@ async function aFinishedProcessPid(): Promise<number> {
   return pid;
 }
 
-/** A process alive until stopped, standing for another run still in progress. */
 function aRunningProcess(): RunningProcess {
   const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1 << 30)"], {
     stdio: "ignore",
@@ -207,7 +205,7 @@ const BETWEEN_SWEEPS_MS = 1;
 /**
  * Runs starting moments apart: sweeps `parent`, then again every millisecond until that first sweep
  * is done, so later ones meet its removal part-way (two started in the same tick move in lockstep
- * and never do). Answers what any of them failed with.
+ * and never do).
  */
 async function failuresOfSweepsOverlappingOne(parent: string): Promise<unknown[]> {
   const failures: unknown[] = [];
