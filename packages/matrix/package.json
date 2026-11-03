@@ -28,8 +28,10 @@
     ".": "./src/index.ts",
     "./activation-descriptions": "./src/activation-descriptions.ts",
     "./built-in-matrix": "./src/built-in-matrix.ts",
+    "./github-tree": "./src/github-tree.ts",
     "./matrix-schema": "./src/matrix-schema.ts",
     "./seed": "./src/seed.ts",
-    "./skill-index": "./src/skill-index.ts"
+    "./skill-index": "./src/skill-index.ts",
+    "./worker-responses": "./src/worker-responses.ts"
   }
 }

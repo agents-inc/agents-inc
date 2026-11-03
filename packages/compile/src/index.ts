@@ -19,6 +19,12 @@ export type { CompileDiagnostics, CompileWarn } from "./diagnostics.js"
 
 export { orderDomains } from "./domain-order.js"
 export { bytewise, inAnEnglishList } from "./string.js"
+export {
+  typedEntries,
+  typedFromEntries,
+  typedKeys,
+  typedValues,
+} from "./typed-object.js"
 export { validateSelection } from "./selection.js"
 
 export * from "./paths.js"

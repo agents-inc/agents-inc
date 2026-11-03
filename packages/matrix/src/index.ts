@@ -17,6 +17,7 @@ export type {
 export {
   SUB_AGENT_GROUPS,
   SUB_AGENTS_BY_ID,
+  isAgentName,
   subAgentById,
 } from "./read-model/sub-agents"
 export type { SubAgent, SubAgentGroup } from "./read-model/sub-agents"

@@ -4,7 +4,8 @@ import { DEFAULT_SELECTION_OPTIONS } from "./read-model/selection-defaults"
 
 // The shared-config wire contract: the editor POSTs it, `init --from` reads it.
 
-// Bump on any shape change; only this exact version is accepted.
+// Raise it when an older reader would refuse or misread a link; an optional mark
+// it can drop needs none. Only this exact version is accepted.
 export const SEED_VERSION = 7
 
 export const seedModelSchema = z.enum(["opus", "fable", "sonnet", "haiku"])
@@ -105,6 +106,8 @@ export const seedPayloadSchema = z.object({
   marketplace: z.string().exactOptional(),
   // Minted inside a project, whose run adds to the global install but changes nothing it holds.
   fromProject: z.literal(true).exactOptional(),
+  // Minted from the global installation, which `edit --from` applies it back to; nothing is held.
+  fromGlobal: z.literal(true).exactOptional(),
   // Presence is selection.
   skills: z.record(z.string(), seedSkillSchema),
   // For ids no catalogue can resolve.

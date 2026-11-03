@@ -177,6 +177,31 @@ describe("a link made in a project", () => {
   })
 })
 
+describe("a link made from the global installation", () => {
+  it("says so, so the editor hands out the edit --from that applies it back", () => {
+    expect(
+      seedPayloadSchema.parse(payload({ fromGlobal: true }))
+    ).toHaveProperty("fromGlobal", true)
+  })
+
+  it("leaves the field off a link made anywhere else", () => {
+    expect(seedPayloadSchema.parse(payload())).not.toHaveProperty("fromGlobal")
+  })
+
+  // Absent is the only other spelling, so one payload has one id.
+  it("refuses false", () => {
+    expect(
+      seedPayloadSchema.safeParse(payload({ fromGlobal: false })).success
+    ).toBe(false)
+  })
+
+  it("refuses the field present holding undefined", () => {
+    expect(
+      seedPayloadSchema.safeParse(payload({ fromGlobal: undefined })).success
+    ).toBe(false)
+  })
+})
+
 // A key holding `undefined` cannot survive JSON.
 describe("the payload's optional fields", () => {
   it("refuses a marketplace present holding undefined", () => {

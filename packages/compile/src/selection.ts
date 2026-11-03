@@ -1,9 +1,10 @@
 import { groupBy } from "remeda"
 
-import type {
-  CatalogRequirement,
-  CatalogSkill,
-  CompileCatalog,
+import {
+  isInCatalog,
+  type CatalogRequirement,
+  type CatalogSkill,
+  type CompileCatalog,
 } from "./catalog.js"
 import { LOCAL_PSEUDO_CATEGORY } from "./paths.js"
 import type { SelectionValidation, SkillId, ValidationError } from "./types.js"
@@ -111,10 +112,7 @@ function validateExclusivity(
 ): ValidationError[] {
   const resolved = selections
     .map((skillId) => ({ skillId, skill: catalog.skills[skillId] }))
-    .filter(
-      (entry): entry is { skillId: SkillId; skill: CatalogSkill } =>
-        entry.skill != null
-    )
+    .filter(isInCatalog)
 
   return Object.entries(
     groupBy(resolved, (entry) => entry.skill.category)

@@ -14,6 +14,11 @@ import type {
   SeedSkill,
 } from "@workspace/matrix/seed"
 
+export {
+  GITHUB_API_ORIGIN,
+  GITHUB_RAW_ORIGIN,
+} from "@workspace/matrix/github-tree"
+
 // Plain values: no mocking library is imported here.
 
 // The editor's default `VITE_API_URL`.
@@ -75,9 +80,9 @@ const assignedAgents = (skills: SeedPayload["skills"]) =>
   Object.values(skills).flatMap((skill) => Object.keys(skill.assignments))
 
 /**
- * A selection as a bare `edit` mints it from an installation: no stack id, skills in id order,
- * and every installed sub-agent named, switched on at its scope. `alsoOn` names the ones no
- * skill reaches.
+ * A selection as the CLI mints it from an installation, unmarked as `share` sends it: no stack id,
+ * skills in id order, and every installed sub-agent named, switched on at its scope. `alsoOn`
+ * names the ones no skill reaches.
  */
 export const cliMintedPayload = (
   skills: SeedPayload["skills"],
@@ -120,6 +125,19 @@ export const projectMintedPayload = (
     agents: Object.fromEntries(Object.entries(minted.agents).map(atItsScope)),
   })
 }
+
+/**
+ * As a bare `edit` mints it from the global installation, at home or in a folder with none of its
+ * own: marked as made there.
+ */
+export const globalMintedPayload = (
+  skills: SeedPayload["skills"],
+  alsoOn: readonly string[] = []
+): SeedPayload =>
+  seedPayloadSchema.parse({
+    ...cliMintedPayload(skills, alsoOn),
+    fromGlobal: true,
+  })
 
 /** A skill a project installed for itself, carried by its own sub-agents. */
 export const projectOwnSkill = (agentIds: readonly string[]): SeedSkill => ({
@@ -286,8 +304,6 @@ export const COMPOSE_FAILED_BODY = {
 } as const
 export const COMPOSE_TOO_LONG_BODY = { error: "too long" } as const
 
-export const GITHUB_API_ORIGIN = "https://api.github.com"
-
 export const MARKETPLACE_REF = "acme/skills"
 
 // GitHub 404s a private repo for an unauthorized caller, so a 404 offers the token.
@@ -449,9 +465,6 @@ export const BIGCO_CATALOG = matrixSchema.parse(
       .replaceAll("Acme", "Bigco")
   )
 )
-
-// GitHub's raw CDN: CORS-open and not rate-limited, unlike the API origin.
-export const GITHUB_RAW_ORIGIN = "https://raw.githubusercontent.com"
 
 /** Set on `window` if the SKILL.md below were ever executed rather than shown. */
 export const XSS_SENTINEL = "__agentsIncSkillContentsRan"

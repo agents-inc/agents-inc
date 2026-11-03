@@ -1,5 +1,6 @@
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml"
 
+import { isKeyedRecord } from "./installed-format.js"
 import { GITHUB_PREFIX, STANDARD_FILES } from "./paths.js"
 
 import type { SeedExternalSkill, SeedSkillTree } from "@workspace/matrix"
@@ -180,7 +181,7 @@ function shippedMetadata(files: SeedSkillTree): Record<string, unknown> | null {
   if (shipped === undefined) return null
 
   const parsed = parsedYaml(shipped)
-  return isMapping(parsed) && hasReadableProvenance(parsed) ? parsed : null
+  return isKeyedRecord(parsed) && hasReadableProvenance(parsed) ? parsed : null
 }
 
 function parsedYaml(text: string): unknown {
@@ -192,9 +193,6 @@ function parsedYaml(text: string): unknown {
   }
 }
 
-const isMapping = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-
 const PROVENANCE_REQUIRED = ["skillId", "contentHash", "date"] as const
 const PROVENANCE_OPTIONAL = ["source", "path"] as const
 
@@ -203,7 +201,7 @@ function hasReadableProvenance(metadata: Record<string, unknown>): boolean {
 
   const provenance = metadata.forkedFrom
   return (
-    isMapping(provenance) &&
+    isKeyedRecord(provenance) &&
     PROVENANCE_REQUIRED.every((key) => typeof provenance[key] === "string") &&
     PROVENANCE_OPTIONAL.every(
       (key) =>

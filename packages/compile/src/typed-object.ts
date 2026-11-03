@@ -16,3 +16,10 @@ export function typedFromEntries<K extends string, V>(
 ): Partial<Record<K, V>> {
   return Object.fromEntries(entries) as Partial<Record<K, V>>
 }
+
+// Drops the `undefined` a `Partial` slot admits.
+export function typedValues<K extends string, V>(
+  obj: Partial<Record<K, V>>
+): V[] {
+  return Object.values(obj).filter((value): value is V => value !== undefined)
+}

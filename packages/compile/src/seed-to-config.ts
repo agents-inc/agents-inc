@@ -1,6 +1,6 @@
 import {
-  AGENT_NAMES,
   CODEX_MODEL_NAMES,
+  isAgentName,
   isSeedScopePairWritable,
   resolveAssignment,
   resolveLoadState,
@@ -18,6 +18,8 @@ import { groupBy, indexBy, isDefined, mapValues, omit, partition } from "remeda"
 import {
   byCategoryDeclarationOrder,
   categoryDomain,
+  isInCatalog,
+  skillIdsByCategory,
   type CatalogSkill,
   type CompileCatalog,
 } from "./catalog.js"
@@ -127,7 +129,7 @@ export function generateProjectConfigFromSkills(
   const agentConfigs = options?.agentConfigs ?? []
 
   diagnostics().verbose(
-    `generateProjectConfigFromSkills: ${selectedSkillIds.length} skills, ` +
+    `generateProjectConfigFromSkills: ${plural(selectedSkillIds.length, "skill")}, ` +
       `matrix has ${typedKeys<SkillId>(catalog.skills).length} entries, ` +
       `agents=[${agentList.join(", ")}]`
   )
@@ -139,7 +141,7 @@ export function generateProjectConfigFromSkills(
   reportAbsentSkills(absentSkillIds, catalog)
   diagnostics().verbose(
     `generateProjectConfigFromSkills: ${foundCount} found, ${absentSkillIds.length} not found, ` +
-      `${agentList.length} agents in stack`
+      `${plural(agentList.length, "agent")} in stack`
   )
 
   const stack = buildStackForSelection({
@@ -235,13 +237,6 @@ function resolveValidSkills(
   }
 }
 
-function isInCatalog(entry: {
-  skillId: SkillId
-  skill: CatalogSkill | undefined
-}): entry is { skillId: SkillId; skill: CatalogSkill } {
-  return entry.skill != null
-}
-
 function hasCategory(entry: {
   skillId: SkillId
   category: Category | undefined
@@ -270,8 +265,12 @@ function reportAbsentSkills(
     .slice(0, MATRIX_SAMPLE_SIZE)
     .join(", ")
   diagnostics().verbose(
-    `${absentSkillIds.length} skills absent from the matrix. Matrix keys sample: [${matrixSample}]`
+    `${plural(absentSkillIds.length, "skill")} absent from the matrix. Matrix keys sample: [${matrixSample}]`
   )
+}
+
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`
 }
 
 function absentSkillWarning(skillId: SkillId): string {
@@ -279,16 +278,6 @@ function absentSkillWarning(skillId: SkillId): string {
     `Skill '${skillId}' is not in this marketplace — it stays in the configuration and no ` +
     `sub-agent is given it. Run '${CLI_INVOKE_COMMAND} update' to refresh the marketplace, or ` +
     `remove it with '${CLI_INVOKE_COMMAND} edit'.`
-  )
-}
-
-function skillIdsByCategory(
-  skills: ResolvedSkillEntry[]
-): Map<Category, SkillId[]> {
-  return new Map(
-    typedEntries(groupBy(skills, (entry) => entry.category)).map(
-      ([category, entries]) => [category, entries.map((entry) => entry.skillId)]
-    )
   )
 }
 
@@ -500,10 +489,6 @@ function mappedLoadState(skillId: SkillId, agent: AgentName): LoadState {
   if (!isSkillId(skillId) || !isAgentName(agent)) return "lazy"
 
   return resolveLoadState({ skillId, agentId: agent })
-}
-
-function isAgentName(value: string): value is AgentName {
-  return (AGENT_NAMES as readonly string[]).includes(value)
 }
 
 function isSkillId(value: string): value is SkillId {

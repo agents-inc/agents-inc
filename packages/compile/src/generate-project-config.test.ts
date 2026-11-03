@@ -32,6 +32,7 @@ const HONO = "api-framework-hono"
 const ZUSTAND = "web-state-zustand"
 const MINE = "meta-design-expressive-typescript"
 const VUE = "web-framework-vue-composition-api"
+const SVELTE = "web-framework-svelte"
 const PLAYWRIGHT = "web-testing-playwright-e2e"
 
 // Boundary cast: a marketplace skill outside the generated union, as the CLI's loader hands it on.
@@ -416,9 +417,23 @@ describe("a skill this marketplace does not carry", () => {
     })
 
     expect(verbose).toStrictEqual([
-      "generateProjectConfigFromSkills: 1 skills, matrix has 8 entries, agents=[web-developer]",
-      `1 skills absent from the matrix. Matrix keys sample: [${REACT}, ${TAILWIND}, ${VITEST}, ${HONO}, ${ZUSTAND}]`,
-      "generateProjectConfigFromSkills: 0 found, 1 not found, 1 agents in stack",
+      "generateProjectConfigFromSkills: 1 skill, matrix has 8 entries, agents=[web-developer]",
+      `1 skill absent from the matrix. Matrix keys sample: [${REACT}, ${TAILWIND}, ${VITEST}, ${HONO}, ${ZUSTAND}]`,
+      "generateProjectConfigFromSkills: 0 found, 1 not found, 1 agent in stack",
+    ])
+  })
+
+  it("is counted in the plural when several are absent", () => {
+    generateProjectConfigFromSkills("my-app", [VUE, SVELTE], {
+      selectedAgents: ["web-developer", "web-tester"],
+      skillConfigs: globalSkills(VUE, SVELTE),
+      agentConfigs: [WEB_DEVELOPER, WEB_TESTER],
+    })
+
+    expect(verbose).toStrictEqual([
+      "generateProjectConfigFromSkills: 2 skills, matrix has 8 entries, agents=[web-developer, web-tester]",
+      `2 skills absent from the matrix. Matrix keys sample: [${REACT}, ${TAILWIND}, ${VITEST}, ${HONO}, ${ZUSTAND}]`,
+      "generateProjectConfigFromSkills: 0 found, 2 not found, 2 agents in stack",
     ])
   })
 })

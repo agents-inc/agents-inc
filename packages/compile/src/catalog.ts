@@ -3,6 +3,11 @@
  * seat different ones. {@link CompileCatalog} is the narrowest shape both satisfy.
  */
 
+import { groupBy } from "remeda"
+
+import { typedEntries } from "./typed-object.js"
+import type { Category, SkillId } from "./types.js"
+
 export type CatalogRelation = { skillId: string; reason: string }
 
 export type CatalogRequirement = {
@@ -40,6 +45,22 @@ export function isExclusiveCategory(
   category: string
 ): boolean {
   return catalog.categories[category]?.exclusive === true
+}
+
+export function isInCatalog<Entry extends { skill: CatalogSkill | undefined }>(
+  entry: Entry
+): entry is Entry & { skill: CatalogSkill } {
+  return entry.skill != null
+}
+
+export function skillIdsByCategory(
+  entries: readonly { skillId: SkillId; category: Category }[]
+): Map<Category, SkillId[]> {
+  return new Map(
+    typedEntries(groupBy(entries, (entry) => entry.category)).map(
+      ([category, grouped]) => [category, grouped.map((entry) => entry.skillId)]
+    )
+  )
 }
 
 export function categoryDomain(

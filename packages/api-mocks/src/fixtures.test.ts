@@ -47,6 +47,7 @@ import {
   cliMintedPayload,
   cliMintedStackPayload,
   freshlyPickedSkill,
+  globalMintedPayload,
   projectMintedPayload,
   projectOwnSkill,
   savedStack,
@@ -157,11 +158,28 @@ describe("a selection as a bare `edit` mints it inside a project", () => {
     })
   })
 
+  it("says nothing of the global installation", () => {
+    expect(
+      projectMintedPayload({ [REACT]: pickedFor("web-developer") })
+    ).not.toHaveProperty("fromGlobal")
+  })
+
   it("carries a project's own skill at project scope, on its sub-agents only", () => {
     expect(projectOwnSkill(["api-developer", "api-tester"])).toStrictEqual({
       install: "plugin",
       scope: "project",
       assignments: { "api-developer": "lazy", "api-tester": "lazy" },
+    })
+  })
+})
+
+describe("a selection as a bare `edit` mints it from the global installation", () => {
+  it("is what the CLI mints from an installation, marked as made there and nowhere else", () => {
+    const skills = { [REACT]: pickedFor("web-developer") }
+
+    expect(globalMintedPayload(skills, ["pm"])).toStrictEqual({
+      ...cliMintedPayload(skills, ["pm"]),
+      fromGlobal: true,
     })
   })
 })
@@ -426,7 +444,6 @@ describe("the saved stacks", () => {
     expect(ids.filter((id) => !WORKER_STACK_ID.test(id))).toStrictEqual([])
   })
 
-  // The control: minting the id leaves the rest of the row as it was given.
   it("keep the name, pointer and instant each save was given", () => {
     const given: Record<keyof SavedStack, unknown> = {
       id: expect.any(String),

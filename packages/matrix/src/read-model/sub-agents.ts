@@ -89,7 +89,7 @@ export const SUB_AGENTS_BY_ID: Partial<Record<AgentName, SubAgent>> = indexById(
 
 const ROSTER_IDS = new Set<string>(AGENT_NAMES)
 
-const isAgentName = (agentId: string): agentId is AgentName =>
+export const isAgentName = (agentId: string): agentId is AgentName =>
   ROSTER_IDS.has(agentId)
 
 /** A retired or unknown id answers `undefined`. */

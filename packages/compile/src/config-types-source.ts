@@ -1,7 +1,11 @@
 import { CODEX_MODEL_NAMES, EFFORT_NAMES, MODEL_NAMES } from "@workspace/matrix"
-import { groupBy, unique } from "remeda"
+import { unique } from "remeda"
 
-import { isExclusiveCategory, type CompileCatalog } from "./catalog.js"
+import {
+  isExclusiveCategory,
+  skillIdsByCategory,
+  type CompileCatalog,
+} from "./catalog.js"
 import {
   INDENT_STEP,
   brokenUnionLayout,
@@ -19,7 +23,7 @@ import {
   activeProjectAgentNames,
 } from "./scope-predicates.js"
 import { bytewise } from "./string.js"
-import { typedEntries, typedKeys } from "./typed-object.js"
+import { typedKeys } from "./typed-object.js"
 import type {
   AgentName,
   Category,
@@ -290,20 +294,19 @@ function buildSkillsByCategory(
 ): Map<Category, SkillId[]> {
   const categorySet = new Set(categories)
   const eligible = [...new Set(skillIds)]
-    .map((id) => ({ id, category: catalog.skills[id]?.category }))
+    .map((skillId) => ({
+      skillId,
+      category: catalog.skills[skillId]?.category,
+    }))
     .filter(
-      (entry): entry is { id: SkillId; category: Category } =>
+      (entry): entry is { skillId: SkillId; category: Category } =>
         entry.category !== undefined &&
         entry.category !== LOCAL_PSEUDO_CATEGORY &&
         // Boundary cast: `string` on the narrow catalogue shape; `has` is the runtime check.
         categorySet.has(entry.category as Category)
     )
 
-  return new Map(
-    typedEntries(groupBy(eligible, (entry) => entry.category)).map(
-      ([category, entries]) => [category, entries.map((entry) => entry.id)]
-    )
-  )
+  return skillIdsByCategory(eligible)
 }
 
 /**
@@ -334,13 +337,6 @@ function isCustomAgent(
   return !declared.has(agentName) || flaggedCustom.has(agentName)
 }
 
-function isCustomDomain(
-  domain: string,
-  declared: ReadonlySet<string>
-): boolean {
-  return !declared.has(domain)
-}
-
 /**
  * @param config Narrows SkillId/AgentName/Category/Domain to the config's skills and agents
  *               rather than the full catalogue.
@@ -367,8 +363,9 @@ export function generateConfigTypesSource(
   const agentNameLine = formatMaybeSectionedUnion(agents, (name) =>
     isCustomAgent(name, declaredAgents, flaggedCustomAgents)
   )
-  const domainLine = formatMaybeSectionedUnion(domains, (domain) =>
-    isCustomDomain(domain, declaredDomains)
+  const domainLine = formatMaybeSectionedUnion(
+    domains,
+    (domain) => !declaredDomains.has(domain)
   )
   const categoryLine = formatMaybeSectionedUnion(categories, (category) =>
     isUndeclaredCategory(category, catalog)

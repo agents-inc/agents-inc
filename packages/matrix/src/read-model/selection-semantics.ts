@@ -73,23 +73,28 @@ type JudgingSets = {
   outOfReach: ReadonlySet<string>
 }
 
-export const createSelectionSemantics = (
-  catalog: SelectionCatalogFacts
-): SelectionSemantics => {
-  const skillsById = new Map(catalog.skills.map((skill) => [skill.id, skill]))
-
+// Declared on one side, binding on both.
+const symmetricConflictsOf = (skills: readonly SelectionSkillFacts[]) => {
   const conflictIdsBySkill = new Map<string, Set<string>>()
   const noteConflict = (skillId: string, otherId: string) => {
     const held = conflictIdsBySkill.get(skillId)
     if (held) held.add(otherId)
     else conflictIdsBySkill.set(skillId, new Set([otherId]))
   }
-  for (const skill of catalog.skills) {
+  for (const skill of skills) {
     for (const otherId of skill.conflictsWith) {
       noteConflict(skill.id, otherId)
       noteConflict(otherId, skill.id)
     }
   }
+  return conflictIdsBySkill
+}
+
+export const createSelectionSemantics = (
+  catalog: SelectionCatalogFacts
+): SelectionSemantics => {
+  const skillsById = new Map(catalog.skills.map((skill) => [skill.id, skill]))
+  const conflictIdsBySkill = symmetricConflictsOf(catalog.skills)
 
   const mustHold = (skillId: string): SelectionSkillFacts => {
     const skill = skillsById.get(skillId)
