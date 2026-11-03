@@ -733,3 +733,41 @@ test.describe("the rail footer", () => {
     await expect(configure.roster.installButton).toContainText(CODEX_REFUSAL)
   })
 })
+
+// The rail is pinned to the window, so nothing in it is ever under the stuck
+// bar or the dock: reaching one of its controls has nothing to bring into view.
+test.describe("the rail footer under the keyboard", () => {
+  test.beforeEach(async ({ configure }) => {
+    await configure.chooseStack(STACKS.nextjs)
+    await configure.scrollPastThePin()
+    await expect.poll(() => configure.isBarStuck()).toBe(true)
+  })
+
+  test("Tab from the last row through Save, Share, Preview and Install leaves the catalogue where it is", async ({
+    configure,
+  }) => {
+    const { roster } = configure
+    await configure.placeCaret(roster.lastScrollerControl)
+
+    expect(
+      await configure.keysThatMoveThePage(["Tab", "Tab", "Tab", "Tab"])
+    ).toStrictEqual([])
+    await expect(roster.installButton).toBeFocused()
+  })
+
+  test("Shift+Tab from Install back to Save leaves the catalogue where it is", async ({
+    configure,
+  }) => {
+    const { roster } = configure
+    await configure.placeCaret(roster.installButton)
+
+    expect(
+      await configure.keysThatMoveThePage([
+        "Shift+Tab",
+        "Shift+Tab",
+        "Shift+Tab",
+      ])
+    ).toStrictEqual([])
+    await expect(roster.saveButton).toBeFocused()
+  })
+})

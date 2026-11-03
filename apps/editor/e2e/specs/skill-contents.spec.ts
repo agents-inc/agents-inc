@@ -173,8 +173,7 @@ test.describe("reading an added skill's contents", () => {
   })
 })
 
-// Scroll reads go through `expect.poll`, and only "moved" is asserted: the
-// browser's scroll anchoring makes exact offsets unreliable.
+// Only "moved" is asserted: scroll anchoring makes exact offsets unreliable.
 const scrollOf = (pane: Locator) =>
   pane.evaluate((node) => ({
     top: node.scrollTop,
@@ -185,12 +184,9 @@ const containing = (text: string) =>
   new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
 
 /**
- * A real SKILL.md runs to hundreds of lines, and its text holds nothing to
- * focus, so a keyboard user reads it through the pane itself: a tab stop
- * before the file list, saying which file it holds. Served long in place of
- * the fixture's few lines. Chromium already makes such a scroller a tab stop
- * on its own, so the order and the scrolling hold before the app marks it; the
- * name, and axe in a11y.spec.ts, do not.
+ * Chromium already makes a scroller holding nothing focusable a tab stop, so
+ * the order and the scrolling hold before the app marks it; the name, and axe
+ * in a11y.spec.ts, do not.
  */
 test.describe("reading a file longer than its pane from the keyboard", () => {
   const LONG_MANIFEST = [
@@ -217,8 +213,7 @@ test.describe("reading a file longer than its pane from the keyboard", () => {
 
     const contents = configure.skillContentsDialog
     await expect(contents.openPath).toHaveText(MANIFEST)
-    // Subject guard: the served file really is the long one, and outgrows the
-    // pane.
+    // Subject guard: the served file is the long one, and outgrows the pane.
     expect(await contents.body.textContent()).toBe(LONG_MANIFEST)
     await expect
       .poll(async () => (await scrollOf(contents.textPane)).room)

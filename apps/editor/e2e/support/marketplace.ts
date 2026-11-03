@@ -80,7 +80,6 @@ export const stubPrivateMarketplaceCatalog = (page: Page) =>
 export const stubMissingMarketplace = (page: Page) =>
   stubCatalogWith(page, githubNotFound)
 
-// Answered only once the spec releases it. Returns the release.
 const stubHeldCatalog = (page: Page, answer: () => Response) => {
   let release = () => {}
   const released = new Promise<void>((resolve) => {

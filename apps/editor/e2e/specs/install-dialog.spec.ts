@@ -1,8 +1,18 @@
-import { TOO_MANY } from "@workspace/api-mocks"
+import {
+  CONFIGS_URL,
+  TOO_MANY,
+  configRefusedHandlerFor,
+} from "@workspace/api-mocks"
 import {
   MARKETPLACE_CANONICAL_REF,
   MARKETPLACE_REF,
+  cliMintedPayload,
+  freshlyPickedSkill,
+  globalMintedPayload,
+  projectMintedPayload,
+  projectOwnSkill,
 } from "@workspace/api-mocks/fixtures"
+import { getResponse, http } from "msw"
 
 import { expect, test } from "../fixtures"
 import {
@@ -14,6 +24,7 @@ import {
   STACK_MEMBER_SKILL,
 } from "../support/catalog"
 import { stubMarketplaceCatalog } from "../support/marketplace"
+import { stubWith } from "../support/stub"
 import {
   OUT_OF_DATE,
   STORED_ID,
@@ -23,9 +34,13 @@ import {
   stubCreateConfig,
   stubCreateConfigRefusal,
   stubCreateConfigRefusalOnce,
+  stubCreateConfigUnreachable,
+  stubGetConfig,
 } from "../support/sharing"
 
 import type { ConfigurePage } from "../pages/configure-page"
+import type { Locator, Page } from "@playwright/test"
+import type { SeedPayload } from "@workspace/matrix"
 
 const { web } = DOMAINS
 const { name: CATEGORY, first: REACT } = EXCLUSIVE_CATEGORY
@@ -34,6 +49,25 @@ const { name: STYLING, first: TAILWIND } = MULTI_CATEGORY
 // Written out: a payload names skills by id.
 const REACT_ID = "web-framework-react"
 const TAILWIND_ID = "web-styling-tailwind"
+const HONO_ID = "api-framework-hono"
+const API_DEV = "api-developer"
+
+// Mirrored, not imported: a rendering assertion keeps its literal.
+const INIT_COMMAND = `npx agents-inc init --from ${STORED_ID}`
+const EDIT_COMMAND = `npx agents-inc edit --from ${STORED_ID}`
+const WRITES_THE_CONFIG = "It writes .agents-inc/claude/config.ts"
+const WRITES_NOTHING =
+  "Without an id, this command writes nothing and opens the editor, or, where an installation already exists, shows its dashboard, whose first option opens the editor."
+const OPENS_THE_EDITOR_OR_THE_DASHBOARD =
+  "this command opens the editor or shows the installation's dashboard"
+const SHOWS_THE_DASHBOARD =
+  "Without an id, this command writes nothing and shows the installation's dashboard, whose first option opens the editor."
+const GO_TO_THE_PROJECT = "cd ~/code/your-project"
+const PROJECT_ROOT_STEP =
+  "Go to your project root — the folder holding package.json. Project-scoped skills are written relative to it."
+const GO_HOME = "cd ~"
+const HOME_FOLDER_STEP =
+  "Go to your home folder — this link came from your global installation, and the command applies it there."
 
 // `ref` is typed; `stored` is what the install command must name.
 const ACME = {
@@ -42,12 +76,44 @@ const ACME = {
   skill: "Acme Widgets",
 } as const
 
+const react = (configure: ConfigurePage) =>
+  configure.skillIn(web, CATEGORY, REACT).root
+
 /** Distinct tops of the boxes its words were broken into. Runs in the page. */
 const linesOf = (element: HTMLElement) => {
   const words = document.createRange()
   words.selectNodeContents(element)
   const tops = [...words.getClientRects()].map((line) => Math.round(line.top))
   return new Set(tops).size
+}
+
+/** Lines each of `clauses`, found in the element's text, was broken into. Runs in the page. */
+const linesOfEach = (element: HTMLElement, clauses: string[]) => {
+  const texts: Text[] = []
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+  while (walker.nextNode()) texts.push(walker.currentNode as Text)
+
+  // A start at a node's end would add that node's line, so starts look ahead.
+  const pointAt = (at: number, edge: "start" | "end"): [Text, number] => {
+    let from = 0
+    for (const text of texts) {
+      const to = from + text.length
+      if (edge === "start" ? at < to : at <= to) return [text, at - from]
+      from = to
+    }
+    throw new Error(`no character ${at} in the element`)
+  }
+
+  const whole = texts.map((text) => text.data).join("")
+  return clauses.map((clause) => {
+    const at = whole.indexOf(clause)
+    if (at < 0) throw new Error(`"${clause}" is not in "${whole}"`)
+    const words = document.createRange()
+    words.setStart(...pointAt(at, "start"))
+    words.setEnd(...pointAt(at + clause.length, "end"))
+    const tops = [...words.getClientRects()].map((line) => Math.round(line.top))
+    return new Set(tops).size
+  })
 }
 
 test.describe("install dialog", () => {
@@ -109,8 +175,11 @@ test.describe("install dialog", () => {
     ).toBeVisible()
   })
 
+  // Located with its id: pressed before the id lands, the bare command copies.
   test("copies the full command, id included", async ({ configure, page }) => {
-    await configure.installDialog.command("npx agents-inc init").click()
+    await configure.installDialog
+      .command(`npx agents-inc init --from ${STORED_ID}`)
+      .click()
 
     await expect(configure.installDialog.root).toContainText("copied")
 
@@ -118,9 +187,12 @@ test.describe("install dialog", () => {
     expect(clipboard).toBe(`npx agents-inc init --from ${STORED_ID}`)
   })
 
-  // The block takes focus, and Enter reaches the click handler.
+  // The block takes focus, and Enter reaches the click handler. Located with
+  // its id, as above.
   test("copies from the keyboard", async ({ configure, page }) => {
-    await configure.installDialog.command("npx agents-inc init").focus()
+    await configure.installDialog
+      .command(`npx agents-inc init --from ${STORED_ID}`)
+      .focus()
     await page.keyboard.press("Enter")
 
     const clipboard = await page.evaluate(() => navigator.clipboard.readText())
@@ -166,9 +238,22 @@ test.describe("install dialog when the id cannot be minted", () => {
     await configure.roster.installButton.click()
 
     await expect(configure.installDialog.root).toContainText(
-      "id unavailable — this command starts over in the editor"
+      `id unavailable — ${OPENS_THE_EDITOR_OR_THE_DASHBOARD}`
     )
     await expect(configure.installDialog.root).not.toContainText("out of date")
+  })
+
+  test("no network says what the command will do instead", async ({
+    configure,
+    page,
+  }) => {
+    stubCreateConfigUnreachable(page)
+
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.root).toContainText(
+      `offline — ${OPENS_THE_EDITOR_OR_THE_DASHBOARD}`
+    )
   })
 
   // Opening on a new selection mints, so the dialog meets the write limit too.
@@ -186,6 +271,52 @@ test.describe("install dialog when the id cannot be minted", () => {
     await expect(configure.installDialog.root).not.toContainText(
       "id unavailable"
     )
+  })
+})
+
+// The provider's part makes the note too long for one line at this width.
+test.describe("install dialog on Codex when the id cannot be minted", () => {
+  test.use({ permissions: ["clipboard-read", "clipboard-write"] })
+
+  const REFUSED = `id unavailable — ${OPENS_THE_EDITOR_OR_THE_DASHBOARD}`
+  const PROVIDER_NEEDS_THE_ID = "a provider needs --from"
+
+  test.beforeEach(async ({ configure, page }) => {
+    stubCreateConfigRefusal(page, STORE_UNAVAILABLE)
+    await configure.provider.choose("codex")
+    await configure.roster.installButton.click()
+    await expect(configure.installDialog.root).toContainText(
+      `${REFUSED} · ${PROVIDER_NEEDS_THE_ID}`
+    )
+  })
+
+  test("breaks the note only between its parts", async ({ configure }) => {
+    const note = configure.installDialog.root.locator("p", {
+      hasText: PROVIDER_NEEDS_THE_ID,
+    })
+
+    const lines = await note.evaluate(linesOfEach, [
+      REFUSED,
+      PROVIDER_NEEDS_THE_ID,
+    ])
+
+    expect(lines).toStrictEqual([1, 1])
+  })
+
+  test("keeps the trust note where it was when the command is copied", async ({
+    configure,
+  }) => {
+    const trustNote = configure.installDialog.root.getByText(
+      "only once the project is trusted"
+    )
+    const before = await trustNote.boundingBox()
+
+    await configure.installDialog.installCommand.click()
+    await expect(
+      configure.installDialog.root.getByText("copied", { exact: true })
+    ).toBeVisible()
+
+    expect(await trustNote.boundingBox()).toStrictEqual(before)
   })
 })
 
@@ -341,6 +472,110 @@ test.describe("install dialog, where ejected skills go", () => {
   })
 })
 
+test.describe("install dialog, what step 02 says the command does", () => {
+  test("says nothing of plugins once every skill is ejected", async ({
+    configure,
+    page,
+  }) => {
+    stubCreateConfig(page)
+    await configure.skillIn(web, CATEGORY, REACT).toggle()
+    await configure.skillIn(web, CATEGORY, REACT).flipInstall()
+
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.root).toContainText(
+      "It writes .agents-inc/claude/config.ts and sub-agent front-matter, and ejects 1 skill into ~/.claude/skills/. Global skills land in ~/.claude."
+    )
+  })
+
+  // The control: the clause stays while any skill is a plugin.
+  test("links the rest as plugins while any skill is one", async ({
+    configure,
+    page,
+  }) => {
+    stubCreateConfig(page)
+    await configure.skillIn(web, CATEGORY, REACT).toggle()
+    await configure.skillIn(web, STYLING, TAILWIND).toggle()
+    await configure.skillIn(web, STYLING, TAILWIND).flipInstall()
+
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.root).toContainText(
+      "It writes .agents-inc/claude/config.ts and sub-agent front-matter, ejects 1 skill into ~/.claude/skills/, and links the rest as plugins. Global skills land in ~/.claude."
+    )
+  })
+
+  test("says nothing of plugins when no skill is selected", async ({
+    configure,
+    page,
+  }) => {
+    stubCreateConfig(page)
+    await configure.roster.agentButton("web", "developer").click()
+
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.root).toContainText(WRITES_THE_CONFIG)
+    await expect(configure.installDialog.root).not.toContainText("as plugins")
+  })
+
+  for (const [ending, stub, said] of [
+    [
+      "a stale page",
+      (page: Page) => stubCreateConfigRefusal(page, OUT_OF_DATE),
+      "out of date",
+    ],
+    [
+      "a refused store",
+      (page: Page) => stubCreateConfigRefusal(page, STORE_UNAVAILABLE),
+      "id unavailable",
+    ],
+    [
+      "the rate limit",
+      (page: Page) => stubCreateConfigRefusal(page, TOO_MANY),
+      "rate limit reached",
+    ],
+    ["no network", stubCreateConfigUnreachable, "offline"],
+  ] as const) {
+    test(`says the bare command writes nothing after ${ending}`, async ({
+      configure,
+      page,
+    }) => {
+      stub(page)
+
+      await configure.roster.installButton.click()
+      await expect(configure.installDialog.root).toContainText(said)
+
+      await expect(configure.installDialog.root).toContainText(WRITES_NOTHING)
+      await expect(configure.installDialog.root).not.toContainText(
+        WRITES_THE_CONFIG
+      )
+    })
+  }
+
+  // The bare command is on screen, and copyable, until the id lands.
+  test("says the bare command writes nothing until the id lands", async ({
+    configure,
+    page,
+  }) => {
+    stubCreateConfig(page)
+    const release = holdCreateConfig(page)
+
+    await configure.roster.installButton.click()
+    await expect(configure.installDialog.root).toContainText(
+      "preparing your id"
+    )
+    await expect(configure.installDialog.root).toContainText(WRITES_NOTHING)
+
+    release()
+
+    await expect(configure.installDialog.installCommand).toHaveText(
+      INIT_COMMAND
+    )
+    await expect(configure.installDialog.root).toContainText(WRITES_THE_CONFIG)
+    await expect(configure.installDialog.root).not.toContainText(WRITES_NOTHING)
+  })
+})
+
 // The header names the seated marketplace, which the CLI installs from.
 test.describe("install dialog on a loaded marketplace", () => {
   test.beforeEach(({ page }) => {
@@ -470,6 +705,365 @@ test.describe("install dialog, opened again", () => {
     release()
     await expect(configure.installDialog.command(MINTED_COMMAND)).toBeVisible()
   })
+
+  test("says nothing of a refusal that arrives after it closed", async ({
+    configure,
+    page,
+  }) => {
+    stubCreateConfig(page)
+    const release = holdCreateConfig(page)
+    let refuse!: () => void
+    const refusing = new Promise<void>((resolve) => (refuse = resolve))
+    stubWith(page, [
+      http.post(
+        CONFIGS_URL,
+        async ({ request }) => {
+          await refusing
+          return getResponse(
+            [configRefusedHandlerFor(STORE_UNAVAILABLE)],
+            request
+          )
+        },
+        { once: true }
+      ),
+    ])
+    await configure.skillIn(web, CATEGORY, REACT).toggle()
+    await configure.roster.installButton.click()
+    await expect(configure.installDialog.root).toContainText(
+      "preparing your id"
+    )
+
+    // Awaited: a refusal still in flight would pass the negative below unseen.
+    await configure.installDialog.close()
+    const refused = page.waitForResponse(
+      (response) =>
+        response.url() === CONFIGS_URL &&
+        response.status() === STORE_UNAVAILABLE
+    )
+    refuse()
+    await (await refused).finished()
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.root).toContainText(
+      "preparing your id"
+    )
+    await expect(configure.installDialog.root).not.toContainText(
+      "id unavailable"
+    )
+    release()
+    await expect(configure.installDialog.command(MINTED_COMMAND)).toBeVisible()
+  })
+})
+
+// `init --from` refuses where an installation exists, and a bare `edit` run
+// inside a project marks its link as minted there.
+test.describe("install dialog for a link a project minted", () => {
+  test.use({ permissions: ["clipboard-read", "clipboard-write"] })
+
+  const LINK_ID = "ProjMnt1"
+
+  // React in the global install; Hono and the API developer the project's own.
+  const projectLink = () =>
+    projectMintedPayload(
+      {
+        [REACT_ID]: freshlyPickedSkill(REACT_ID),
+        [HONO_ID]: projectOwnSkill([API_DEV]),
+      },
+      [API_DEV]
+    )
+
+  const arriveAt = async (
+    page: Page,
+    payload: SeedPayload,
+    selected: Locator
+  ) => {
+    stubGetConfig(page, LINK_ID, payload)
+    await page.goto(`/?fromId=${LINK_ID}`)
+    await expect(selected).toHaveAttribute("aria-pressed", "true")
+  }
+
+  test("offers edit --from, which applies it to the installation", async ({
+    configure,
+    page,
+  }) => {
+    await arriveAt(page, projectLink(), react(configure))
+
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.installCommand).toHaveText(
+      EDIT_COMMAND
+    )
+  })
+
+  // Located with its id: pressed before the id lands, the bare command copies.
+  test("copies edit --from", async ({ configure, page }) => {
+    await arriveAt(page, projectLink(), react(configure))
+    await configure.roster.installButton.click()
+    await expect(configure.installDialog.command(STORED_ID)).toBeVisible()
+
+    await configure.installDialog.installCommand.click()
+
+    await expect(configure.installDialog.root).toContainText("copied")
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      EDIT_COMMAND
+    )
+  })
+
+  test("names edit --from to a screen reader", async ({ configure, page }) => {
+    await arriveAt(page, projectLink(), react(configure))
+
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.installCommand).toHaveAccessibleName(
+      `Copy ${EDIT_COMMAND}`
+    )
+  })
+
+  // The project is still installed once another stack replaces the link's
+  // own entries, though the address no longer names the link.
+  test("still offers edit --from once another stack is chosen", async ({
+    configure,
+    page,
+  }) => {
+    await arriveAt(page, projectLink(), react(configure))
+    await configure.chooseStack(STACKS.nextjs)
+    await configure.stackSwitchDialog.confirm()
+    await expect(configure.stackSwitchDialog.root).toBeHidden()
+
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.installCommand).toHaveText(
+      EDIT_COMMAND
+    )
+  })
+
+  // Minted inside a project, so a project is installed there, even with
+  // nothing global for the editor to hold.
+  test("offers edit --from when the project holds nothing globally", async ({
+    configure,
+    page,
+  }) => {
+    await arriveAt(
+      page,
+      projectMintedPayload({ [HONO_ID]: projectOwnSkill([API_DEV]) }, [
+        API_DEV,
+      ]),
+      configure.skill("Hono").root
+    )
+
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.installCommand).toHaveText(
+      EDIT_COMMAND
+    )
+  })
+
+  // Every entry global: Codex has no plugin at project scope.
+  test("names Codex after the id on Codex", async ({ configure, page }) => {
+    await arriveAt(
+      page,
+      projectMintedPayload({ [REACT_ID]: freshlyPickedSkill(REACT_ID) }),
+      react(configure)
+    )
+    await configure.provider.choose("codex")
+
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.installCommand).toHaveText(
+      `${EDIT_COMMAND} --provider codex`
+    )
+  })
+
+  // The control: only a link the global installation minted sends the reader home.
+  test("still sends the reader to the project root first", async ({
+    configure,
+    page,
+  }) => {
+    await arriveAt(page, projectLink(), react(configure))
+
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.folderCommand).toHaveText(
+      GO_TO_THE_PROJECT
+    )
+    await expect(configure.installDialog.root).toContainText(PROJECT_ROOT_STEP)
+  })
+
+  // Run in that project, a bare `init` meets its installation.
+  test("says the bare command shows the installation's dashboard", async ({
+    configure,
+    page,
+  }) => {
+    await arriveAt(page, projectLink(), react(configure))
+    stubCreateConfigRefusal(page, STORE_UNAVAILABLE)
+
+    await configure.roster.installButton.click()
+    await expect(configure.installDialog.root).toContainText("id unavailable")
+
+    await expect(configure.installDialog.installCommand).toHaveText(
+      "npx agents-inc init"
+    )
+    await expect(configure.installDialog.root).toContainText(
+      SHOWS_THE_DASHBOARD
+    )
+    await expect(configure.installDialog.root).not.toContainText(WRITES_NOTHING)
+  })
+
+  for (const [ending, stub, note] of [
+    [
+      "a refused store",
+      (page: Page) => stubCreateConfigRefusal(page, STORE_UNAVAILABLE),
+      "id unavailable — this command shows the installation's dashboard",
+    ],
+    [
+      "no network",
+      stubCreateConfigUnreachable,
+      "offline — this command shows the installation's dashboard",
+    ],
+  ] as const) {
+    test(`notes the bare command shows the dashboard after ${ending}`, async ({
+      configure,
+      page,
+    }) => {
+      await arriveAt(page, projectLink(), react(configure))
+      stub(page)
+
+      await configure.roster.installButton.click()
+
+      await expect(configure.installDialog.root).toContainText(note)
+      await expect(configure.installDialog.root).not.toContainText(
+        OPENS_THE_EDITOR_OR_THE_DASHBOARD
+      )
+    })
+  }
+
+  // The control: the same entries, as `share` mints them for someone else.
+  test("offers init --from for a link share minted", async ({
+    configure,
+    page,
+  }) => {
+    await arriveAt(
+      page,
+      cliMintedPayload({ [REACT_ID]: freshlyPickedSkill(REACT_ID) }),
+      react(configure)
+    )
+
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.installCommand).toHaveText(
+      INIT_COMMAND
+    )
+    await expect(configure.installDialog.folderCommand).toHaveText(
+      GO_TO_THE_PROJECT
+    )
+  })
+})
+
+// A bare `edit` at home, or in a folder with no installation of its own, mints
+// from the global installation, where `init --from` refuses too.
+test.describe("install dialog for a link the global installation minted", () => {
+  const LINK_ID = "HomeMnt1"
+
+  test.beforeEach(async ({ configure, page }) => {
+    stubGetConfig(
+      page,
+      LINK_ID,
+      globalMintedPayload({ [REACT_ID]: freshlyPickedSkill(REACT_ID) })
+    )
+    await page.goto(`/?fromId=${LINK_ID}`)
+    await expect(react(configure)).toHaveAttribute("aria-pressed", "true")
+  })
+
+  test("offers edit --from, which applies it to the global installation", async ({
+    configure,
+  }) => {
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.installCommand).toHaveText(
+      EDIT_COMMAND
+    )
+  })
+
+  // Run from a project holding an installation, `edit --from` would apply it
+  // to that project's instead.
+  test("sends the reader to the home folder first", async ({ configure }) => {
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.folderCommand).toHaveText(GO_HOME)
+    await expect(configure.installDialog.root).toContainText(HOME_FOLDER_STEP)
+    await expect(configure.installDialog.root).not.toContainText("project root")
+  })
+
+  // The global installation is still there once another stack is chosen.
+  test("still offers edit --from once another stack is chosen", async ({
+    configure,
+  }) => {
+    await configure.chooseStack(STACKS.nextjs)
+    await configure.stackSwitchDialog.confirm()
+    await expect(configure.stackSwitchDialog.root).toBeHidden()
+
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.installCommand).toHaveText(
+      EDIT_COMMAND
+    )
+  })
+
+  test("names Codex after the id on Codex", async ({ configure }) => {
+    await configure.provider.choose("codex")
+
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.installCommand).toHaveText(
+      `${EDIT_COMMAND} --provider codex`
+    )
+  })
+
+  // Run at home, `edit --from` would replace the global installation with
+  // the visitor's own selection.
+  test("offers init --from once the visitor leaves for their own editor", async ({
+    configure,
+  }) => {
+    await configure.editorLink.click()
+    await expect(react(configure)).toHaveAttribute("aria-pressed", "false")
+
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.installCommand).toHaveText(
+      INIT_COMMAND
+    )
+    await expect(configure.installDialog.folderCommand).toHaveText(
+      GO_TO_THE_PROJECT
+    )
+    await expect(configure.installDialog.root).toContainText(PROJECT_ROOT_STEP)
+  })
+
+  // From a project with no installation, a bare `init` meets the global one.
+  for (const [ending, stub, said] of [
+    [
+      "a refused store",
+      (page: Page) => stubCreateConfigRefusal(page, STORE_UNAVAILABLE),
+      "id unavailable",
+    ],
+    ["no network", stubCreateConfigUnreachable, "offline"],
+  ] as const) {
+    test(`says the bare command opens the editor or the dashboard after ${ending}`, async ({
+      configure,
+      page,
+    }) => {
+      stub(page)
+
+      await configure.roster.installButton.click()
+
+      await expect(configure.installDialog.installCommand).toHaveText(
+        "npx agents-inc init"
+      )
+      await expect(configure.installDialog.root).toContainText(WRITES_NOTHING)
+      await expect(configure.installDialog.root).toContainText(
+        `${said} — ${OPENS_THE_EDITOR_OR_THE_DASHBOARD}`
+      )
+    })
+  }
 })
 
 test("the install dialog names the public marketplace when none is loaded", async ({

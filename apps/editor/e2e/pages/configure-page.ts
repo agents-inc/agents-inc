@@ -102,6 +102,21 @@ type Stroke = { colour: string; width: number; inset: number }
 // the bar unstuck for the spec to fail on.
 const MAX_TAB_STEPS = 200
 
+const FRAMES_AROUND_A_KEY = 6
+
+// Pinning is raised from a scroll listener, a frame after the scroll.
+const FRAMES_UNTIL_THE_PIN_SETTLES = 2
+
+// The window scrolls in whole pixels, so anything past one is the page moving.
+const STEADY_SCROLL_PX = 1
+
+type Frame = { scrollY: number; stuck: boolean }
+
+const furthestShift = (frames: Frame[], start: number) =>
+  frames
+    .map(({ scrollY }) => Math.round(scrollY - start))
+    .reduce((far, shift) => (Math.abs(shift) > Math.abs(far) ? shift : far), 0)
+
 /**
  * The focused control, named, and how far `cover` hides it or its `ring-1`
  * focus ring (drawn a pixel outside its box) — or `null`. A control inside the
@@ -162,6 +177,10 @@ export class ConfigurePage {
   // The same node through the navigation landmark: "inside the rail" is a
   // claim of its own.
   readonly railMarketplaceSection: Locator
+  // The two lines the marketplace button draws: its word and, once one is
+  // loaded, the marketplace's name.
+  readonly marketplaceLabel: Locator
+  readonly marketplaceName: Locator
   // Scoped to `main` because a dialog's status line is an alert too.
   readonly importNotice: Locator
   // By slot: it is an alert inside `main`, as `importNotice` is.
@@ -233,6 +252,12 @@ export class ConfigurePage {
     this.railMarketplaceSection = page
       .getByRole("navigation")
       .locator(MARKETPLACE_SECTION)
+    this.marketplaceLabel = this.marketplaceButton.getByText("Marketplace", {
+      exact: true,
+    })
+    this.marketplaceName = this.marketplaceButton.locator(
+      '[data-slot="marketplace-name"]'
+    )
     this.importNotice = page.locator("main").getByRole("alert")
     this.adoptionNotice = page.locator('[data-slot="adoption-notice"]')
     this.stackLoadFailure = page.getByText(STACK_NOT_LOADED)
@@ -465,6 +490,12 @@ export class ConfigurePage {
     await this.searchInput.fill(term)
   }
 
+  // Key by key, as a person types: `fill` sets the whole value at once, so it
+  // never shows what one keystroke does to the field.
+  async typeSearch(term: string) {
+    await this.searchInput.pressSequentially(term)
+  }
+
   domain(label: string): Locator {
     return this.page.getByRole("region", { name: `${label} skills` })
   }
@@ -659,6 +690,79 @@ export class ConfigurePage {
 
   async scrollY() {
     return this.page.evaluate(() => window.scrollY)
+  }
+
+  // Without the scroll a focus call brings, so only the keys under test can
+  // move the page.
+  async placeCaret(control: Locator) {
+    await control.evaluate((node) => node.focus({ preventScroll: true }))
+  }
+
+  // Each frame's scroll and pin, so a jump undone a frame later still shows.
+  private framesFrom(count: number) {
+    return this.page.evaluate(async (frames) => {
+      const seen: Frame[] = []
+      for (let frame = 0; frame < frames; frame++) {
+        await new Promise((resolve) => requestAnimationFrame(resolve))
+        seen.push({
+          scrollY: window.scrollY,
+          stuck: document.documentElement.hasAttribute("data-bar-stuck"),
+        })
+      }
+      return seen
+    }, count)
+  }
+
+  /**
+   * Presses `key`, watching every frame from before the press until the pin
+   * settles: the furthest the page got from `start`, and whether the bar
+   * stayed stuck throughout.
+   */
+  async pressWatchingThePage(key: string, start: number) {
+    // Armed before the key, so the frames it lands in are among those seen.
+    const around = this.framesFrom(FRAMES_AROUND_A_KEY)
+    await this.page.keyboard.press(key)
+    const frames = [
+      ...(await around),
+      ...(await this.framesFrom(FRAMES_UNTIL_THE_PIN_SETTLES)),
+    ]
+    const shift = furthestShift(frames, start)
+
+    return {
+      shift,
+      moved: Math.abs(shift) > STEADY_SCROLL_PX,
+      stuckThroughout: frames.every(({ stuck }) => stuck),
+    }
+  }
+
+  async focusedName() {
+    return this.page.evaluate(() => {
+      const focused = document.activeElement
+      return focused instanceof HTMLElement
+        ? (focused.getAttribute("aria-label") ??
+            focused.innerText.replace(/\s+/g, " ").trim())
+        : (focused?.tagName ?? "nothing")
+    })
+  }
+
+  /**
+   * Each of `keys`, pressed in turn, that moves the page from where the first
+   * found it, named by the control it left the caret on.
+   */
+  async keysThatMoveThePage(keys: readonly string[]) {
+    const start = await this.scrollY()
+    const moved: string[] = []
+
+    for (const key of keys) {
+      const { shift, moved: pageMoved } = await this.pressWatchingThePage(
+        key,
+        start
+      )
+      if (pageMoved)
+        moved.push(`${key} onto ${await this.focusedName()}: ${shift}px`)
+    }
+
+    return moved
   }
 
   // Measured, because the steps above the bar decide where it pins.

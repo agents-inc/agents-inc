@@ -1,15 +1,33 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { build, type Plugin } from "vite"
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+} from "vitest"
 
 import { spaFallbackShell } from "./spa-fallback-shell"
 
 const BUDGET_FAILURE = "First paint is 513.0 KB gzipped"
 
 const NO_SHELL = "spa-fallback-shell: no index.html"
+
+const OVERWRITES_PROJECT_PAGE =
+  "spa-fallback-shell: the fallback page would overwrite index.html"
 
 const overBudget = (): Plugin => ({
   name: "over-budget",
@@ -24,10 +42,32 @@ const failureOf = (built: Promise<unknown>): Promise<string> =>
     (error: unknown) => String(error)
   )
 
+const temporaryFolder = () => {
+  const folder = mkdtempSync(join(tmpdir(), "spa-fallback-shell-"))
+  onTestFinished(() => rmSync(folder, { recursive: true, force: true }))
+  return folder
+}
+
+const withFile = (folder: string, name: string) => {
+  mkdirSync(folder, { recursive: true })
+  writeFileSync(join(folder, name), "kept\n")
+  return join(folder, name)
+}
+
+const filesIn = (folder: string) =>
+  Object.fromEntries(
+    readdirSync(folder, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map(({ name }) => [name, readFileSync(join(folder, name), "utf8")])
+  )
+
 describe("the fallback-page step of a build served from a prefix", () => {
   let root: string
 
-  const buildEditor = (plugins: Plugin[], input?: string) =>
+  const buildEditor = (
+    plugins: Plugin[],
+    { input, outDir = "dist/editor" }: { input?: string; outDir?: string } = {}
+  ) =>
     build({
       root,
       configFile: false,
@@ -35,7 +75,7 @@ describe("the fallback-page step of a build served from a prefix", () => {
       base: "/editor/",
       plugins,
       build: {
-        outDir: "dist/editor",
+        outDir,
         ...(input !== undefined && { rolldownOptions: { input } }),
       },
     })
@@ -71,9 +111,40 @@ describe("the fallback-page step of a build served from a prefix", () => {
 
   it("fails a successful build that wrote no index.html", async () => {
     const failure = await failureOf(
-      buildEditor([spaFallbackShell()], join(root, "main.js"))
+      buildEditor([spaFallbackShell()], { input: join(root, "main.js") })
     )
 
     expect(failure).toContain(NO_SHELL)
+  })
+
+  it("clears what an earlier build left in the uploaded folder", async () => {
+    const stale = withFile(join(root, "dist", "old-release"), "chunk.js")
+
+    await buildEditor([spaFallbackShell()])
+
+    expect(existsSync(stale)).toBe(false)
+  })
+
+  it("refuses an output at the project's root, naming the index.html it would overwrite, and changes no project file", async () => {
+    withFile(root, "notes.md")
+    const before = filesIn(root)
+
+    const failure = await failureOf(
+      buildEditor([spaFallbackShell()], { outDir: "build" })
+    )
+
+    expect(failure).toContain(OVERWRITES_PROJECT_PAGE)
+    expect(filesIn(root)).toStrictEqual(before)
+  })
+
+  it("leaves the folders beside an output built into another project's dist", async () => {
+    const elsewhere = join(temporaryFolder(), "dist")
+    const neighbour = withFile(join(elsewhere, "docs"), "index.html")
+
+    await buildEditor([spaFallbackShell()], {
+      outDir: join(elsewhere, "editor"),
+    })
+
+    expect(existsSync(neighbour)).toBe(true)
   })
 })

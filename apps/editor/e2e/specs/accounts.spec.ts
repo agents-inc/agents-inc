@@ -407,9 +407,8 @@ test.describe("signed in", () => {
   })
 })
 
-// The worker mints every row's id, so the grid tells an account's rows apart
-// whatever their names. Rows saved before it refused a held name can share
-// one, and it holds "Side project" and "Side-project" as two names.
+// Rows saved before the worker refused a held name can share one, and it
+// holds "Side project" and "Side-project" as two names.
 test.describe("an account's stacks whose names read alike", () => {
   const TWICE = "Weekend"
   const VUE_ID = "VueSav_1"
@@ -485,8 +484,7 @@ test.describe("an account's stacks whose names read alike", () => {
     await expect(accountRow(configure, "Client work")).toHaveCount(1)
   })
 
-  // The control: the same journey over names that read apart keeps every row
-  // once, so the two above fail on the names alone.
+  // The control, so the two above fail on the names alone.
   test("two under names that read apart stay one row each once another stack is saved", async ({
     page,
   }) => {
@@ -1836,7 +1834,6 @@ test.describe("an owed save whose name the account now lists", () => {
     )
   })
 
-  // The allowed case for the one above.
   test("asks at once when an added skill's contents were closed before the account landed", async ({
     page,
   }) => {
@@ -1855,8 +1852,7 @@ test.describe("an owed save whose name the account now lists", () => {
   })
 
   // A load that drops the skill closes its contents with nobody pressing
-  // Close, so nothing clears which skill was asked for. The question must not
-  // wait on a dialog that is no longer there.
+  // Close, so nothing clears which skill was asked for.
   test("asks once a catalogue load drops the added skill whose contents were open", async ({
     page,
   }) => {

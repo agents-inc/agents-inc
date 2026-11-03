@@ -4,7 +4,14 @@
  */
 
 import { copyFileSync, existsSync, readdirSync, rmSync } from "node:fs"
-import { basename, dirname, relative, resolve } from "node:path"
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  relative,
+  resolve,
+  sep,
+} from "node:path"
 
 import type { Plugin, ResolvedConfig } from "vite"
 
@@ -27,7 +34,13 @@ export function spaFallbackShell(): Plugin {
     buildStart() {
       if (!servesFromPrefix(config)) return
 
-      staleSiblingsOf(outputDirectory(config)).forEach(remove)
+      const outDir = outputDirectory(config)
+      if (isProjectRoot(dirname(outDir), config.root)) {
+        throw overwritesProjectPage()
+      }
+      if (!isInsideProject(dirname(outDir), config.root)) return
+
+      staleSiblingsOf(outDir).forEach(remove)
     },
 
     /**
@@ -62,6 +75,19 @@ function outputDirectory(config: ResolvedConfig): string {
   return resolve(config.root, config.build.outDir)
 }
 
+function isProjectRoot(path: string, root: string): boolean {
+  return relative(root, path) === ""
+}
+
+/** Vite's own rule for what a build may empty; not the root itself. */
+function isInsideProject(path: string, root: string): boolean {
+  const fromRoot = relative(root, path)
+  const escapes = fromRoot.split(sep)[0] === ".."
+
+  // Absolute only on Windows, for a folder on another drive.
+  return fromRoot !== "" && !escapes && !isAbsolute(fromRoot)
+}
+
 function staleSiblingsOf(outDir: string): string[] {
   const uploaded = dirname(outDir)
   if (!existsSync(uploaded)) return []
@@ -79,6 +105,14 @@ function noShellToCopy(built: string, root: string): Error {
   return new Error(
     `spa-fallback-shell: no ${SHELL} at ${within(root, built)} —` +
       ` the Worker's single-page-application fallback has nothing to serve`
+  )
+}
+
+function overwritesProjectPage(): Error {
+  return new Error(
+    `spa-fallback-shell: the fallback page would overwrite ${SHELL} —` +
+      ` it is written one folder above the output,` +
+      ` so build into a nested folder such as dist/editor`
   )
 }
 

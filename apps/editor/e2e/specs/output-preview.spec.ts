@@ -557,8 +557,7 @@ test.describe("the content pane", () => {
   })
 })
 
-// Scroll reads go through `expect.poll`, and only "moved" is asserted: the
-// browser's scroll anchoring makes exact offsets unreliable.
+// Only "moved" is asserted: scroll anchoring makes exact offsets unreliable.
 const scrollOf = (pane: Locator) =>
   pane.evaluate((node) => ({
     top: node.scrollTop,
@@ -569,11 +568,9 @@ const containing = (text: string) =>
   new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
 
 /**
- * A file longer than its pane is read by scrolling, so a keyboard user needs
- * the pane itself: its rows are text, with nothing in them to focus. It sits
- * between the tree and Close, and says which file it holds. Chromium already
- * makes such a scroller a tab stop on its own, so the order and the scrolling
- * hold before the app marks it; the name, and axe in a11y.spec.ts, do not.
+ * Chromium already makes a scroller holding nothing focusable a tab stop, so
+ * the order and the scrolling hold before the app marks it; the name, and axe
+ * in a11y.spec.ts, do not.
  */
 test.describe("the content pane, from the keyboard", () => {
   test.beforeEach(async ({ configure }) => {
@@ -586,8 +583,7 @@ test.describe("the content pane, from the keyboard", () => {
       `${GLOBAL_DEVELOPER_PATH} · ${NEW}`
     )
 
-    // Subject guard: a sub-agent's markdown outgrows the pane, or nothing here
-    // has anything to scroll.
+    // Subject guard: a pane that fits has nothing to scroll.
     await expect
       .poll(async () => (await scrollOf(preview.contentPane)).room)
       .toBeGreaterThan(0)
@@ -651,7 +647,6 @@ test.describe("the content pane, from the keyboard", () => {
       .toBeGreaterThan(stepped)
   })
 
-  /** The tree's arrows are its own: scrolling the bytes picks no other file. */
   test("scrolling it from the keyboard leaves the selection where it was", async ({
     configure,
     page,

@@ -10,6 +10,10 @@ export class InstallDialog {
   readonly lists: Locator
   readonly footerNote: Locator
   readonly footerCommand: Locator
+  // Step 02's block, whatever command it holds: its text is what specs claim.
+  readonly installCommand: Locator
+  // Step 01's block: the folder the command is run from.
+  readonly folderCommand: Locator
   // Scoped to the header: both commands below also carry `agents-inc`.
   readonly header: Locator
   // The footer action. Shares its accessible name with the header ✕.
@@ -27,6 +31,10 @@ export class InstallDialog {
     this.footerCommand = this.footerNote.getByText("npx agents-inc edit", {
       exact: true,
     })
+    this.installCommand = this.root.getByRole("button", { name: /^Copy / })
+    this.folderCommand = this.root.locator(
+      '[data-slot="command-block"]:not([data-copyable])'
+    )
     this.header = this.root.locator('[data-slot="dialog-header"]')
     this.closeButton = this.root
       .locator('[data-slot="dialog-footer"]')
@@ -346,6 +354,11 @@ export class MarketplaceDialog {
 
   async load() {
     await this.loadButton.click()
+  }
+
+  // Enter in the marketplace field, the keyboard's way to Load.
+  async submit() {
+    await this.marketplaceInput.press("Enter")
   }
 
   async cancel() {

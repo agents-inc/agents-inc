@@ -51,8 +51,7 @@ export class SkillCell {
     return this.scopeGroup.getByRole("radio", { name: scope, exact: true })
   }
 
-  // Every cell of both pairs, by name: an open options panel inside the cell
-  // holds radios of its own.
+  // By name: an open options panel inside the cell holds radios of its own.
   get switches(): Locator[] {
     return [
       ...INSTALL_MODES.map((mode) => this.installCell(mode)),
@@ -60,7 +59,6 @@ export class SkillCell {
     ]
   }
 
-  // The cells of both pairs that are not on.
   get offSwitches(): Locator {
     return this.installGroup
       .locator('[aria-checked="false"]')
@@ -108,8 +106,7 @@ export class SkillCell {
     )
   }
 
-  // What the pointer can change on the •••: its own paint and its dots'.
-  // Opacity is left out, since revealing it is the cell's hover, not its own.
+  // Not opacity: revealing the ••• is the cell's hover, not its own.
   async optionsPaint() {
     return this.optionsButton.evaluate((node) => {
       const style = getComputedStyle(node)
@@ -122,7 +119,6 @@ export class SkillCell {
     })
   }
 
-  // The pointer on the cell itself, clear of the •••, which that reveals.
   async hover() {
     await this.root.hover()
   }

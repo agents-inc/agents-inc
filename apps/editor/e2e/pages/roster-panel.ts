@@ -57,6 +57,11 @@ export class RosterPanel {
     return this.scroller.locator('[data-slot="roster-band"]')
   }
 
+  // The keyboard's stop before Save.
+  get lastScrollerControl(): Locator {
+    return this.scroller.getByRole("button").last()
+  }
+
   groupOption(value: "domain" | "scope"): Locator {
     return this.groupControl.getByRole("radio", { name: value, exact: true })
   }

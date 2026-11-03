@@ -151,6 +151,35 @@ test.describe("the rail's marketplace section with a switcher in it", () => {
   })
 })
 
+// The stored ref is longer than the word above it, so the name is cut short.
+test.describe("the rail's marketplace name", () => {
+  test.beforeEach(async ({ configure, page }) => {
+    stubMarketplaceCatalog(page)
+    await loadMarketplace(configure, ACME.ref)
+    await expect(configure.skill(ACME.skill).root).toBeVisible()
+  })
+
+  test("gives the whole name to a pointer resting on it", async ({
+    configure,
+  }) => {
+    await expect(configure.marketplaceName).toHaveAttribute(
+      "title",
+      ACME.stored
+    )
+  })
+
+  test("lines up with the Marketplace label above it", async ({
+    configure,
+  }) => {
+    const label = await configure.marketplaceLabel.boundingBox()
+    const name = await configure.marketplaceName.boundingBox()
+    if (!label || !name) throw new Error("both lines must be drawn")
+
+    expect(name.x).toBeCloseTo(label.x, 0)
+    expect(name.x + name.width).toBeCloseTo(label.x + label.width, 0)
+  })
+})
+
 test.describe("marketplace dialog", () => {
   test("the rail's marketplace section opens it", async ({ configure }) => {
     await configure.marketplaceButton.click()
@@ -198,6 +227,15 @@ test.describe("loading a marketplace", () => {
     await expect(configure.skill(ACME.skill).root).toBeVisible()
 
     expect(requests).toHaveLength(1)
+  })
+
+  test("Enter in the marketplace field loads it", async ({ configure }) => {
+    await configure.marketplaceButton.click()
+    await configure.marketplaceDialog.fill(ACME.ref)
+    await configure.marketplaceDialog.submit()
+
+    await expect(configure.skill(ACME.skill).root).toBeVisible()
+    await expect(configure.marketplaceDialog.root).toBeHidden()
   })
 
   // Asserted as the domain-prefix set, not a count.

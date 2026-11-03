@@ -2,12 +2,16 @@ import { expect, test } from "../fixtures"
 import {
   DOMAINS,
   EXCLUSIVE_CATEGORY,
+  MULTI_CATEGORY,
   STACKS,
   STACK_MEMBER_SKILL,
 } from "../support/catalog"
 
 const { web, api } = DOMAINS
 const NO_MATCH_QUERY = "zzzznotaskill"
+// Two words, as a skill's name holds them and backwards.
+const SPACED_QUERY = MULTI_CATEGORY.first.toLowerCase()
+const REVERSED_QUERY = SPACED_QUERY.split(" ").reverse().join(" ")
 const SCROLLED = 1200
 
 // The query and the `all | selected` pair are the only things that take a
@@ -27,6 +31,22 @@ test.describe("filtering", () => {
 
     await expect.poll(() => configure.skillCells.count()).toBeLessThan(before)
     await expect(configure.skill(STACK_MEMBER_SKILL).root.first()).toBeVisible()
+  })
+
+  test("a space typed into the search stays in it", async ({ configure }) => {
+    await configure.typeSearch(SPACED_QUERY)
+
+    await expect(configure.searchInput).toHaveValue(SPACED_QUERY)
+  })
+
+  test("search finds a skill by each of its words, in any order", async ({
+    configure,
+  }) => {
+    await configure.search(REVERSED_QUERY)
+
+    await expect(
+      configure.skillIn(web, MULTI_CATEGORY.name, MULTI_CATEGORY.first).root
+    ).toBeVisible()
   })
 
   test("a query with no matches shows the empty state", async ({

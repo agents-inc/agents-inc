@@ -98,7 +98,6 @@ export class Composer {
     }))
   }
 
-  /** Measured, as `fieldBox` is; `room` is how far the list can scroll. */
   async proposalBodyScroll() {
     return this.proposalBody.evaluate((node) => ({
       top: node.scrollTop,

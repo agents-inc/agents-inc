@@ -2,6 +2,7 @@ import {
   cliMintedPayload,
   cliMintedStackPayload,
   freshlyPickedSkill,
+  globalMintedPayload,
   projectMintedPayload,
   projectOwnSkill,
 } from "@workspace/api-mocks/fixtures"
@@ -28,6 +29,7 @@ const LINK_ID = "ProjMnt1"
 const API_LINK_ID = "ProjApi1"
 const STACK_LINK_ID = "ProjStk1"
 const HOME_LINK_ID = "HomeMnt1"
+const SHARE_LINK_ID = "ShrMnt01"
 const SHARED_LINK_ID = "EdShare1"
 
 const REACT_ID = "web-framework-react"
@@ -333,7 +335,8 @@ test.describe("a link a bare edit minted inside a project", () => {
     )
   })
 
-  // Only a bare `edit` run in a project marks a link; Share is the editor's own.
+  // Only a bare `edit` run in a project marks a link `fromProject`; Share is
+  // the editor's own.
   test("shares a link that opens with a skill picked here free to switch off", async ({
     configure,
     page,
@@ -406,35 +409,46 @@ test.describe("a project's link the grid recognises as a stack", () => {
   })
 })
 
-// The same global entries, minted where a run can change them.
-test.describe("a link minted anywhere but a project", () => {
-  test.beforeEach(async ({ configure, page }) => {
-    stubGetConfig(
-      page,
-      HOME_LINK_ID,
-      cliMintedPayload({ [REACT_ID]: freshlyPickedSkill(REACT_ID) })
-    )
-    await page.goto(`/?fromId=${HOME_LINK_ID}`)
-    await expect(react(configure).root).toHaveAttribute("aria-pressed", "true")
+// The same global entries, minted where a run can change them: by `share`,
+// for someone else, and by a bare `edit` in the global installation.
+for (const [made, linkId, mint] of [
+  ["by share", SHARE_LINK_ID, cliMintedPayload],
+  ["in the global installation", HOME_LINK_ID, globalMintedPayload],
+] as const) {
+  test.describe(`a link minted ${made}`, () => {
+    test.beforeEach(async ({ configure, page }) => {
+      stubGetConfig(
+        page,
+        linkId,
+        mint({ [REACT_ID]: freshlyPickedSkill(REACT_ID) })
+      )
+      await page.goto(`/?fromId=${linkId}`)
+      await expect(react(configure).root).toHaveAttribute(
+        "aria-pressed",
+        "true"
+      )
+    })
+
+    test("leaves its global skill free to switch off", async ({
+      configure,
+    }) => {
+      const free = react(configure)
+      await expect(free.root).not.toHaveAttribute("aria-disabled")
+
+      await free.toggle()
+
+      await expect(free.root).toHaveAttribute("aria-pressed", "false")
+    })
+
+    test("leaves its global sub-agent free to switch off", async ({
+      configure,
+    }) => {
+      const card = configure.subAgents.card("Web", "Developer")
+      await expect(card).not.toHaveAttribute("aria-disabled")
+
+      await configure.subAgents.toggle("Web", "Developer")
+
+      await expect(card).toHaveAttribute("aria-pressed", "false")
+    })
   })
-
-  test("leaves its global skill free to switch off", async ({ configure }) => {
-    const free = react(configure)
-    await expect(free.root).not.toHaveAttribute("aria-disabled")
-
-    await free.toggle()
-
-    await expect(free.root).toHaveAttribute("aria-pressed", "false")
-  })
-
-  test("leaves its global sub-agent free to switch off", async ({
-    configure,
-  }) => {
-    const card = configure.subAgents.card("Web", "Developer")
-    await expect(card).not.toHaveAttribute("aria-disabled")
-
-    await configure.subAgents.toggle("Web", "Developer")
-
-    await expect(card).toHaveAttribute("aria-pressed", "false")
-  })
-})
+}

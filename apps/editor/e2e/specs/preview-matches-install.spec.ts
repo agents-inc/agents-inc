@@ -22,9 +22,9 @@ import type {
 
 /**
  * The preview against a real `init --from <id>` of the same id: the file set,
- * then every byte. Not compared, each a gap the preview names: `<computed at
- * install time>` lines (shape only), the global `projects` list, and the files
- * of a skill ejected out of the marketplace.
+ * then every byte. Not compared: `<computed at install time>` lines (shape
+ * only), the global `projects` list, and the files of a skill ejected out of
+ * the marketplace.
  */
 
 type Crossing = { marketplace: BuiltMarketplace; standIns: StandIns }
@@ -288,8 +288,8 @@ const escapeForPattern = (text: string) =>
 const PROJECTS_LIST = /^[ \t]*projects: \[[^\]]*\],\n/m
 
 /**
- * The installed file in the terms the preview can be held to: the gaps it
- * names taken out, and each line it draws with a placeholder answered by the
+ * The installed file in the terms the preview can be held to: the `projects`
+ * list taken out, and each line it draws with a placeholder answered by the
  * installed line of the same shape. Anything else that differs is left to
  * differ.
  */

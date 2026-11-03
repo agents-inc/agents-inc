@@ -141,8 +141,6 @@ test.describe("the dialogs", () => {
     expect(await audit(configure)).toStrictEqual([])
   })
 
-  // A laptop-height window, where the skills and agents lists outgrow the
-  // dialog and the row holding both scrolls.
   test("install, in a window too short for its lists", async ({
     configure,
     page,
@@ -179,8 +177,6 @@ test.describe("the dialogs", () => {
     expect(await audit(configure)).toStrictEqual([])
   })
 
-  // An added skill's SKILL.md, long enough that its pane scrolls, as a real
-  // one does. Served in place of the fixture's few lines.
   test("skill contents, on a file longer than its pane", async ({
     configure,
     page,
@@ -260,8 +256,6 @@ test.describe("the composer", () => {
     expect(await audit(configure)).toStrictEqual([])
   })
 
-  // Every skill in the catalogue, so the list outgrows the block's cap and
-  // scrolls.
   test("with a proposal longer than its block", async ({ page }) => {
     stubSignedIn(page)
     stubCompose(page, Object.keys(MATRIX.skills))

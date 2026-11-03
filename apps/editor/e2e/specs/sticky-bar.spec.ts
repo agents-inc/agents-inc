@@ -41,17 +41,11 @@ const STUCK_BAND_DESIGN_PX = 70
 const STUCK_BLOCK_PADDING_DESIGN_PX = 16
 const STUCK_BLOCK_NARROWING = 6
 
-// The window scrolls in whole pixels, so anything past one is the page moving.
-const STEADY_SCROLL_PX = 1
-
-// Pinning is raised from a scroll listener, a frame after the scroll.
-const FRAMES_UNTIL_THE_PIN_SETTLES = 2
-
-// From just before a key to a few frames after it lands.
-const FRAMES_AROUND_A_KEY = 6
-
 // More stops than the bar holds, so a walk that misses its far end still ends.
 const MAX_BAR_STOPS = 20
+
+// A one-letter query, so the caret has somewhere to move.
+const CARET_ROOM = "e"
 
 const placeholderColorOf = (locator: Locator) =>
   locator.evaluate((node) => getComputedStyle(node, "::placeholder").color)
@@ -189,25 +183,6 @@ const tabRun = (configure: ConfigurePage) =>
     }
   })
 
-// Without the scroll a focus call brings, so only the keys under test can move
-// the page.
-const placeCaret = (control: Locator) =>
-  control.evaluate((node) => node.focus({ preventScroll: true }))
-
-// Each frame's scroll and pin, so a jump undone a frame later still shows.
-const framesFrom = (configure: ConfigurePage, frames: number) =>
-  configure.page.evaluate(async (count) => {
-    const seen: { scrollY: number; stuck: boolean }[] = []
-    for (let frame = 0; frame < count; frame++) {
-      await new Promise((resolve) => requestAnimationFrame(resolve))
-      seen.push({
-        scrollY: window.scrollY,
-        stuck: document.documentElement.hasAttribute("data-bar-stuck"),
-      })
-    }
-    return seen
-  }, frames)
-
 const caretIn = (bar: Locator) =>
   bar.evaluate((node) => {
     const focused = document.activeElement
@@ -223,17 +198,6 @@ const caretIn = (bar: Locator) =>
 const holdsTheCaret = (control: Locator) =>
   control.evaluate((node) => node === document.activeElement)
 
-// The shift furthest from where the walk began, in either direction.
-const furthestShift = (frames: { scrollY: number }[], start: number) =>
-  frames
-    .map(({ scrollY }) => Math.round(scrollY - start))
-    .reduce((far, shift) => (Math.abs(shift) > Math.abs(far) ? shift : far), 0)
-
-/**
- * Every stop of a walk across the stuck bar, up to `farEnd`, that moved the
- * page or released the pin in any frame, or left the bar, so a failure names
- * the control and the distance.
- */
 const stopsThatMoveThePage = async (
   configure: ConfigurePage,
   key: "Tab" | "Shift+Tab",
@@ -243,19 +207,16 @@ const stopsThatMoveThePage = async (
   const moved: string[] = []
 
   for (let stop = 1; stop <= MAX_BAR_STOPS; stop++) {
-    // Armed before the key, so the frames it lands in are among those seen.
-    const around = framesFrom(configure, FRAMES_AROUND_A_KEY)
-    await configure.page.keyboard.press(key)
-    const frames = [
-      ...(await around),
-      ...(await framesFrom(configure, FRAMES_UNTIL_THE_PIN_SETTLES)),
-    ]
+    const {
+      shift,
+      moved: pageMoved,
+      stuckThroughout,
+    } = await configure.pressWatchingThePage(key, start)
     const caret = await caretIn(configure.filterBar)
 
-    const shift = furthestShift(frames, start)
     const faults = [
-      ...(Math.abs(shift) > STEADY_SCROLL_PX ? [`page moved ${shift}px`] : []),
-      ...(frames.every(({ stuck }) => stuck) ? [] : ["bar released"]),
+      ...(pageMoved ? [`page moved ${shift}px`] : []),
+      ...(stuckThroughout ? [] : ["bar released"]),
       ...(caret.inBar ? [] : ["caret left the bar"]),
     ]
     if (faults.length > 0)
@@ -499,9 +460,7 @@ test.describe("sticky filter bar", () => {
   })
 })
 
-// A control in the pinned bar is on screen wherever the page is, so moving the
-// caret between them has nothing to bring into view. A stack is applied so the
-// bar draws its `all | selected` pair too.
+// A stack is applied so the bar draws its `all | selected` pair too.
 test.describe("the keyboard inside the stuck bar", () => {
   test.beforeEach(async ({ configure }) => {
     await configure.chooseStack(STACKS.nextjs)
@@ -512,7 +471,7 @@ test.describe("the keyboard inside the stuck bar", () => {
     configure,
   }) => {
     const lastTab = configure.domainTabs.getByRole("button").last()
-    await placeCaret(configure.searchInput)
+    await configure.placeCaret(configure.searchInput)
 
     expect(await stopsThatMoveThePage(configure, "Tab", lastTab)).toStrictEqual(
       []
@@ -523,7 +482,7 @@ test.describe("the keyboard inside the stuck bar", () => {
   test("Shift+Tab back across them leaves the page where it is", async ({
     configure,
   }) => {
-    await placeCaret(configure.domainTabs.getByRole("button").last())
+    await configure.placeCaret(configure.domainTabs.getByRole("button").last())
 
     expect(
       await stopsThatMoveThePage(configure, "Shift+Tab", configure.searchInput)
@@ -531,13 +490,45 @@ test.describe("the keyboard inside the stuck bar", () => {
     await expect(configure.searchInput).toBeFocused()
   })
 
-  // What the clearance is for: a control the bar hides is brought out from
-  // under it when the keyboard lands on it.
+  // A space filters nothing, so the page under the bar stays as it was. A key
+  // that filters changes it, and the browser's scroll anchoring moves the page
+  // for that.
+  test("a keystroke in its search that filters nothing leaves the page where it is", async ({
+    configure,
+  }) => {
+    const cells = await configure.skillCells.count()
+    await configure.placeCaret(configure.searchInput)
+
+    expect(await configure.keysThatMoveThePage([" ", " "])).toStrictEqual([])
+    await expect(configure.skillCells).toHaveCount(cells)
+    await expect(configure.searchInput).toBeFocused()
+  })
+
+  // The query filters before the bar sticks again, so only the caret moves
+  // under the keys.
+  test("moving the caret in its search leaves the page where it is", async ({
+    configure,
+  }) => {
+    await configure.search(CARET_ROOM)
+    await stick(configure)
+    await configure.placeCaret(configure.searchInput)
+
+    expect(
+      await configure.keysThatMoveThePage([
+        "ArrowLeft",
+        "ArrowRight",
+        "Home",
+        "End",
+      ])
+    ).toStrictEqual([])
+    await expect(configure.searchInput).toBeFocused()
+  })
+
   test("a Shift+Tab onto a control under it brings that control into view", async ({
     configure,
   }) => {
     const control = configure.skill(STACK_MEMBER_SKILL).root
-    await placeCaret(control)
+    await configure.placeCaret(control)
     await configure.page.keyboard.press("Tab")
     await expect(control).not.toBeFocused()
 

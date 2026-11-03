@@ -26,7 +26,7 @@ import {
 import { DOMAINS, EXCLUSIVE_CATEGORY, MULTI_CATEGORY } from "../support/catalog"
 
 import type { SkillCell } from "../pages/skill-cell"
-import type { Page } from "@playwright/test"
+import type { Locator, Page } from "@playwright/test"
 
 // A sentence in, a proposal out that changes nothing until applied. No modes
 // and no starter chips: the absence assertions below defend that.
@@ -691,7 +691,6 @@ test.describe("counting what a proposal changes", () => {
     await expect(composer.proposalHeader).toHaveText(endsWithCount(TWO_CHANGES))
   })
 
-  // Two ids, one row: the count is of what the reader can see.
   test("counts the rows it draws, not every id the model named", async ({
     page,
   }) => {
@@ -809,13 +808,10 @@ test.describe("where the keyboard goes when a proposal leaves", () => {
 })
 
 /**
- * The block is capped and its list scrolls, and the rows hold nothing to focus,
- * so a keyboard user scrolls the list itself: a named tab stop before Discard.
- * Every skill in the catalogue is proposed, so the list outgrows the cap. Only
- * "moved" is asserted: scroll anchoring makes exact offsets unreliable.
- * Chromium already makes such a scroller a tab stop on its own, so the order
- * and the scrolling hold before the app marks it; the name, and axe in
- * a11y.spec.ts, do not.
+ * Only "moved" is asserted: scroll anchoring makes exact offsets unreliable.
+ * Chromium already makes a scroller holding nothing focusable a tab stop, so
+ * the order and the scrolling hold before the app marks it; the name, and axe
+ * in a11y.spec.ts, do not.
  */
 test.describe("a proposal longer than its block", () => {
   test.beforeEach(async ({ page }) => {
@@ -1063,5 +1059,135 @@ test.describe("the composer's geometry", () => {
     expect(grown.client).toBeGreaterThan(short.client)
     expect(stillCapped.client).toBe(capped.client)
     expect(capped.scroll).toBeGreaterThan(capped.client)
+  })
+})
+
+const TYPED = "Add Prisma"
+
+// The dock is pinned to the window, so nothing in it is ever out of view:
+// typing in it or reaching one of its controls has nothing to bring into view.
+test.describe("the keyboard in the docked composer", () => {
+  test("typing leaves the page where it is", async ({ configure }) => {
+    const { composer } = configure
+    await configure.placeCaret(composer.field)
+
+    expect(await configure.keysThatMoveThePage([...TYPED])).toStrictEqual([])
+    expect(await composer.draft()).toBe(TYPED)
+  })
+
+  test("Tab from the field onto Send leaves the page where it is", async ({
+    configure,
+  }) => {
+    const { composer } = configure
+    await composer.type(SENTENCE)
+
+    expect(await configure.keysThatMoveThePage(["Tab"])).toStrictEqual([])
+    await expect(composer.sendButton).toBeFocused()
+  })
+
+  test("Shift+Tab from Send back to the field leaves the page where it is", async ({
+    configure,
+  }) => {
+    const { composer } = configure
+    await composer.type(SENTENCE)
+    await configure.placeCaret(composer.sendButton)
+
+    expect(await configure.keysThatMoveThePage(["Shift+Tab"])).toStrictEqual([])
+    await expect(composer.field).toBeFocused()
+  })
+
+  test("Shift+Tab from the field onto Discard leaves the page where it is", async ({
+    configure,
+  }) => {
+    const { composer } = configure
+    await composer.type(SENTENCE)
+    await composer.send()
+    await expect(composer.applyButton).toBeDisabled()
+    await configure.placeCaret(composer.field)
+
+    expect(await configure.keysThatMoveThePage(["Shift+Tab"])).toStrictEqual([])
+    await expect(composer.discardButton).toBeFocused()
+  })
+})
+
+// Folded, so the catalogue alone sets the column's height.
+const STEPS_ABOVE_THE_CATALOGUE = [
+  "choose your provider",
+  "then your stack",
+  "then your sub-agents",
+] as const
+const CATALOGUE_STEP = "then pick your skills"
+
+const MATCHES_NOTHING = "zzzz-matches-nothing"
+
+const foldSteps = async (
+  configure: ConfigurePage,
+  titles: readonly string[]
+) => {
+  for (const title of titles) {
+    await configure.stepTitle(title).click()
+    await expect(configure.stepTitle(title)).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    )
+  }
+}
+
+const windowHeight = (configure: ConfigurePage) => {
+  const viewport = configure.page.viewportSize()
+  if (!viewport) throw new Error("the page must have a viewport")
+  return viewport.height
+}
+
+// Subject guard: what the column ends on, with the dock under it, leaves the
+// window room to spare.
+const roomBelowTheColumn = async (
+  configure: ConfigurePage,
+  columnEnd: Locator
+) => {
+  const end = await columnEnd.boundingBox()
+  const dock = await configure.composer.dock.boundingBox()
+  if (!end || !dock)
+    throw new Error("the column's end and the dock must be drawn")
+
+  return windowHeight(configure) - (end.y + end.height + dock.height)
+}
+
+// Positive while the dock floats over an empty strip.
+const dockAboveTheWindowFoot = async (configure: ConfigurePage) => {
+  const dock = await configure.composer.dock.boundingBox()
+  if (!dock) throw new Error("the dock must be drawn")
+
+  return windowHeight(configure) - (dock.y + dock.height)
+}
+
+test.describe("a column shorter than the window", () => {
+  test("keeps the dock on the window's foot when no skill matches", async ({
+    configure,
+  }) => {
+    await foldSteps(configure, STEPS_ABOVE_THE_CATALOGUE)
+    await configure.search(MATCHES_NOTHING)
+    await expect(configure.emptyState).toBeVisible()
+    expect(
+      await roomBelowTheColumn(configure, configure.emptyState)
+    ).toBeGreaterThan(0)
+
+    await configure.scrollToBottom()
+
+    expect(await dockAboveTheWindowFoot(configure)).toBeCloseTo(0, 0)
+  })
+
+  test("keeps the dock on the window's foot with every step folded", async ({
+    configure,
+  }) => {
+    await foldSteps(configure, [...STEPS_ABOVE_THE_CATALOGUE, CATALOGUE_STEP])
+    await expect(configure.filterBar).toHaveCount(0)
+    expect(
+      await roomBelowTheColumn(configure, configure.stepHinge(CATALOGUE_STEP))
+    ).toBeGreaterThan(0)
+
+    await configure.scrollToBottom()
+
+    expect(await dockAboveTheWindowFoot(configure)).toBeCloseTo(0, 0)
   })
 })

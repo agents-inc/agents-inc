@@ -271,7 +271,8 @@ test.describe("the command the app prints", () => {
   }) => {
     await configure.provider.choose("codex")
     await configure.roster.installButton.click()
-    await configure.installDialog.command(BARE_COMMAND).click()
+    // Located with its id: pressed before the id lands, the bare text copies.
+    await configure.installDialog.command(CODEX_COMMAND).click()
 
     await expect(configure.installDialog.root).toContainText("copied")
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(

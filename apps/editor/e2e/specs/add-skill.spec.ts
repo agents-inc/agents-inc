@@ -30,6 +30,12 @@ const CATEGORY = `${DOMAINS.web.toLowerCase()} · ${EXCLUSIVE_CATEGORY.name.toLo
 // A term no entry's name or description holds, so the filter empties the list.
 const UNMATCHED_TERM = "no-such-skill-anywhere"
 
+// A name of hyphen-joined words, searched as those words spaced and backwards.
+const HYPHENATED = SKILL_INDEX.skills.find(
+  (entry) => entry.name.split("-").length > 2
+)!
+const SPACED_TERM = HYPHENATED.name.split("-").reverse().join(" ")
+
 test.describe("add skill dialog", () => {
   test.beforeEach(({ page }) => {
     stubSkillIndex(page)
@@ -67,6 +73,17 @@ test.describe("add skill dialog", () => {
 
     await expect(dialog.result(FIRST_NAME)).toBeVisible()
     await expect(dialog.result(SECOND_NAME)).toBeHidden()
+  })
+
+  test("a term of several words finds a skill holding each of them", async ({
+    configure,
+  }) => {
+    const dialog = configure.addSkillDialog
+    await configure.addSkillButton.click()
+    await dialog.search(SPACED_TERM)
+
+    await expect(dialog.result(HYPHENATED.name)).toBeVisible()
+    await expect(dialog.result(FIRST_NAME)).toBeHidden()
   })
 
   test("a term nothing matches says so rather than showing an empty pane", async ({

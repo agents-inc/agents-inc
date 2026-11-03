@@ -207,8 +207,6 @@ const theClash = (configure: ConfigurePage) => ({
   sveltekit: configure.skillIn(web, blockedCategory, SVELTEKIT),
 })
 
-// The ••• and both switches read as the cell does: disabled to the eye and to
-// assistive tech while the clash stands, live again once it goes.
 test.describe("a ruled-out cell's own controls", () => {
   test("its ••• reads as disabled while the clash stands", async ({
     configure,
@@ -257,7 +255,6 @@ test.describe("a ruled-out cell's own controls", () => {
     )
   })
 
-  // Shown, as on any cell under the pointer, but offering no press.
   test("its ••• still shows on hover, and the pointer changes nothing on it", async ({
     configure,
   }) => {
@@ -291,7 +288,6 @@ test.describe("a ruled-out cell's own controls", () => {
     for (const cell of sveltekit.switches) await expect(cell).toBeEnabled()
   })
 
-  // Past the ••• come the cell's pairs, until the clash takes them out.
   test("its switches leave the tab order while the clash stands", async ({
     configure,
     page,
@@ -310,7 +306,6 @@ test.describe("a ruled-out cell's own controls", () => {
     await expect(inTheCell).toHaveCount(0)
   })
 
-  // The paint every refused switch takes, as Codex's refused PROJECT does.
   test("its switches take the unavailable paint, and the pointer changes nothing on them", async ({
     configure,
   }) => {
@@ -369,8 +364,6 @@ const pressFromTheKeyboard = async (target: Locator) => {
   await target.page().keyboard.press("Space")
 }
 
-// Nothing stays editable on a ruled-out skill, so the clash closes its panel
-// as a press outside does, whatever made the choice.
 test.describe("a skill's open options as the selection changes", () => {
   test("close when a choice from the keyboard rules the skill out", async ({
     configure,
