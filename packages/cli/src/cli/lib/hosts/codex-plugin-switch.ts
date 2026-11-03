@@ -28,7 +28,6 @@ export class PluginsLeftSwitchedOnError extends Error {
   }
 }
 
-/** Thrown when a step failed after adding plugins it then could not switch back off. */
 export class FailedLeavingPluginsSwitchedOnError extends Error {
   constructor(
     readonly failure: unknown,
@@ -95,7 +94,6 @@ function switchLineOf(lines: readonly string[], pluginKey: string): number {
   return lines.findIndex((line, at) => at > header && at < end && SWITCH.test(line));
 }
 
-/** The next table's header, or the end of the file when this table is the last. */
 function endOfTable(lines: readonly string[], header: number): number {
   const nextTable = lines.findIndex((line, at) => at > header && opensATable(line));
   return nextTable === NOT_FOUND ? lines.length : nextTable;

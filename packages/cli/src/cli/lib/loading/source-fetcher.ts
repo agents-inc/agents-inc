@@ -21,6 +21,7 @@ import {
   marketplaceManifestPath,
 } from "../../consts";
 import { getErrorMessage } from "../../utils/errors";
+import { parseJsonOrUndefined } from "../../utils/json";
 import {
   ensureDir,
   directoryExists,
@@ -153,10 +154,9 @@ const METHOD_NOT_ALLOWED = 405;
 type RefusalPosture = "stop" | "keep" | "pass over";
 
 /**
- * How this load takes a refusal. A load that must reach the marketplace stops on every one. Owner
- * rulings, 2026-10-24, for the rest: a 5xx, or a 405 refusing the HEAD the check asks with, keeps the
- * copy; any other 4xx stops a load in `stoppingOnARefusal` and is passed over by every other. Any
- * other status is no refusal they name.
+ * How this load takes a refusal. A load that must reach the marketplace stops on every one. For the
+ * rest: a 5xx, or a 405 refusing the HEAD the check asks with, keeps the copy; any other 4xx stops a
+ * load in `stoppingOnARefusal` and is passed over by every other. Any other status is no refusal.
  */
 function postureOn(status: number): RefusalPosture | undefined {
   if (mustAnswer()) return "stop";
@@ -224,12 +224,7 @@ async function fetchFromLocalSource(source: string, subdir?: string): Promise<Fe
 
   verbose(`Using local marketplace: ${absolutePath}`);
 
-  return {
-    path: absolutePath,
-    fromCache: false,
-    unreachable: false,
-    source,
-  };
+  return currentCopyAt(absolutePath, source);
 }
 
 /** Replicates giget's cache path, `{root}/{provider}/{repo}`; undefined for a non-git source. */
@@ -292,6 +287,11 @@ async function fetchFromRemoteSource(source: string, subdir?: string): Promise<F
     : downloadFreshCopy(cacheDir, source, fullSource);
 }
 
+/** No saved copy stood in for the source, so this one is current. */
+function currentCopyAt(dir: string, source: string): FetchResult {
+  return { path: dir, fromCache: false, unreachable: false, source };
+}
+
 function readSavedCopy(cacheDir: string, fullSource: string, verdict: CopyKept): FetchResult {
   verbose(`Using cached marketplace: ${cacheDir}`);
   return {
@@ -304,7 +304,7 @@ function readSavedCopy(cacheDir: string, fullSource: string, verdict: CopyKept):
 
 /**
  * Staged beside the saved copy, so a download that fails leaves the copy and its record as they
- * were, standing in or stopping the load as what the run learned of the marketplace says.
+ * were.
  */
 async function refreshSavedCopy(
   cacheDir: string,
@@ -330,7 +330,7 @@ async function refreshSavedCopy(
     await moveIntoPlace(cacheDir, staged);
     await recordFetchedCopy(cacheDir, download.result, download.savedTarball);
     settleForThisRun(cacheDir, "current");
-    return { path: cacheDir, fromCache: false, unreachable: false, source: fullSource };
+    return currentCopyAt(cacheDir, fullSource);
   } catch (error) {
     throw createDetailedFetchError(error, source);
   } finally {
@@ -362,7 +362,6 @@ async function downloadUnlessItFails(
   }
 }
 
-/** giget's error for a download the marketplace answered with an error status. */
 const GIGET_DOWNLOAD_REFUSED = /^Failed to download \S+: (?<status>\d{3}) (?<statusText>.*)$/;
 
 /** The status is in giget's message only: its error carries no response. */
@@ -421,12 +420,7 @@ async function downloadFreshCopy(
     await recordFetchedCopy(cacheDir, result, savedTarball);
     settleForThisRun(cacheDir, "current");
 
-    return {
-      path: result.dir,
-      fromCache: false,
-      unreachable: false,
-      source: fullSource,
-    };
+    return currentCopyAt(result.dir, fullSource);
   } catch (error) {
     throw createDetailedFetchError(error, source);
   }
@@ -434,9 +428,7 @@ async function downloadFreshCopy(
 
 /**
  * giget answers a failed download with the tarball it saved, saying nothing, so the marketplace is
- * asked before that tarball is kept. Under the ETag it was saved with it is the marketplace's
- * current content; otherwise it stands in, said as a saved copy is, or the refusal that stops the
- * load comes back to keep none of it.
+ * asked before that tarball is kept.
  */
 async function verdictOnSavedTarball(
   result: DownloadTemplateResult,
@@ -453,7 +445,6 @@ async function verdictOnSavedTarball(
   return "outdated";
 }
 
-/** A copy stands in, said as `postureOn` says, or the refusal that stops the load comes back. */
 function verdictOnUnanswered(
   unanswered: Unanswered,
   source: string,
@@ -510,7 +501,7 @@ async function downloadAnsweredFor(
     if (differed) differingCopiesReplaced.add(source);
     settleForThisRun(cacheDir, "current");
 
-    return { path: cacheDir, fromCache: false, unreachable: false, source: fullSource };
+    return currentCopyAt(cacheDir, fullSource);
   } catch (error) {
     if (error instanceof MarketplaceUnreachableError) throw error;
     throw createDetailedFetchError(error, source);
@@ -978,8 +969,7 @@ function settleForThisRun(cacheDir: string, verdict: CopyKept): void {
 
 /**
  * Warns about an unreachable source, or a refusal kept over, here, where the verdict is memoised:
- * once per run. Every load asks, an ETag recorded or not; one that must reach the marketplace throws
- * when it goes unanswered.
+ * once per run.
  */
 async function classifyCachedCopy(cacheDir: string, source: string): Promise<CacheVerdict> {
   const record = await readFetchRecord(cacheDir);
@@ -1128,14 +1118,6 @@ function tarballOf(result: DownloadTemplateResult): string | undefined {
 
 function fetchRecord(tar: string, etag: string | undefined): SourceRevalidation {
   return { tar, ...(etag !== undefined && { etag }) };
-}
-
-function parseJsonOrUndefined(raw: string): unknown {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return undefined;
-  }
 }
 
 function createDetailedFetchError(error: unknown, source: string): Error {

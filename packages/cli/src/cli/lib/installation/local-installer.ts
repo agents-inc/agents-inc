@@ -23,8 +23,7 @@ import {
 import { loadProjectConfigFromDir } from "../configuration/project-config";
 import { inheritedGlobalProvider } from "./install-layout";
 import { type SourceLoadResult } from "../loading";
-import { loadStackById, stackNotOfferedMessage } from "../stacks";
-import { buildSkillRefsFromConfig } from "../resolver";
+import { loadStackById, resolveAgentConfigToSkills, stackNotOfferedMessage } from "../stacks";
 import { generateProjectConfigFromSkills, buildStackProperty } from "../configuration";
 import {
   isActiveAt,
@@ -32,6 +31,7 @@ import {
   effectivelyExcludedSkillIds,
 } from "../configuration/scope-predicates";
 import { verbose } from "../../utils/logger";
+import { plural } from "../../utils/string";
 import { typedFromEntries } from "../../utils/typed-object";
 import { DEFAULT_PLUGIN_NAME } from "../../consts";
 
@@ -44,14 +44,6 @@ function resolveStackProperty(
   assigned: InstallSelection["assignedStack"],
 ): ProjectConfig["stack"] {
   return generated === undefined ? undefined : assigned;
-}
-
-/** The link's own description wins over the stack it applies, whose words are the fallback. */
-function resolveDescription(
-  loadedStack: Stack | null,
-  shared: InstallSelection["description"],
-): string | undefined {
-  return shared ?? loadedStack?.description;
 }
 
 /** At `$HOME` the basename is the account name, so the global config takes the product name. */
@@ -109,7 +101,7 @@ function withSelectionCuration(
   loadedStack: Stack | null,
 ): ProjectConfig {
   const stack = resolveStackProperty(generated.stack, selection.assignedStack);
-  const description = resolveDescription(loadedStack, selection.description);
+  const description = selection.description ?? loadedStack?.description;
 
   return {
     ...generated,
@@ -192,7 +184,7 @@ function generatorOptionsFor(
 }
 
 function stackSizeForLog(stack: ProjectConfig["stack"]): string {
-  return stack ? `${Object.keys(stack).length} agents` : "UNDEFINED";
+  return stack ? plural(Object.keys(stack).length, "agent") : "UNDEFINED";
 }
 
 function setConfigMetadata(
@@ -201,23 +193,14 @@ function setConfigMetadata(
   sourceResult: SourceLoadResult,
   sourceFlag?: string,
 ): ProjectConfig {
-  const result = { ...config };
+  const marketplace = sourceFlag || sourceResult.sourceConfig.source;
 
-  if (selection.selectedDomains.length > 0) {
-    result.selectedDomains = selection.selectedDomains;
-  }
-
-  if (sourceFlag) {
-    result.marketplace = sourceFlag;
-  } else if (sourceResult.sourceConfig.source) {
-    result.marketplace = sourceResult.sourceConfig.source;
-  }
-
-  if (sourceResult.marketplace) {
-    result.marketplaceName = sourceResult.marketplace;
-  }
-
-  return result;
+  return {
+    ...config,
+    ...(selection.selectedDomains.length > 0 ? { selectedDomains: selection.selectedDomains } : {}),
+    ...(marketplace ? { marketplace } : {}),
+    ...(sourceResult.marketplace ? { marketplaceName: sourceResult.marketplace } : {}),
+  };
 }
 
 export async function buildAndMergeConfig(
@@ -277,7 +260,7 @@ export function buildCompileAgents(
     const agentStack = config.stack?.[agentConfig.name];
     if (!agentStack) return tuning;
 
-    const filteredRefs = buildSkillRefsFromConfig(agentStack)
+    const filteredRefs = resolveAgentConfigToSkills(agentStack)
       .filter((ref) => compilesInto(ref, agentConfig))
       .map(withItsOrigin);
     return { ...tuning, skills: filteredRefs };

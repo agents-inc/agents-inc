@@ -1,4 +1,4 @@
-import { isDeepEqual } from "remeda";
+import { isDeepEqual, partition } from "remeda";
 import { EXTRACTED_FIELDS } from "@workspace/compile/config-source";
 import { isRecord } from "../../utils/type-guards.js";
 import type { AgentName, ProjectConfig, SkillId } from "../../types";
@@ -31,14 +31,17 @@ export type GlobalChangeSet = {
   projectsChanged: boolean;
 };
 
-export const NO_CHANGES: GlobalChangeSet = {
-  skills: { added: [], removed: [], sourceChanged: [], otherChanged: [] },
-  agents: { added: [], removed: [], changed: [] },
-  stackChanged: false,
-  selectedDomainsChanged: false,
-  scalarsChanged: [],
-  projectsChanged: false,
-};
+/** Fresh per call, so no two change sets share a list. */
+export function noChanges(): GlobalChangeSet {
+  return {
+    skills: { added: [], removed: [], sourceChanged: [], otherChanged: [] },
+    agents: { added: [], removed: [], changed: [] },
+    stackChanged: false,
+    selectedDomainsChanged: false,
+    scalarsChanged: [],
+    projectsChanged: false,
+  };
+}
 
 const extractedFields: ReadonlySet<string> = new Set(EXTRACTED_FIELDS);
 
@@ -104,19 +107,18 @@ function diffSkills(
   const before = skillsById(prev);
   const after = skillsById(next);
 
-  const added = [...after.keys()].filter((id) => !before.has(id));
-  const removed = [...before.keys()].filter((id) => !after.has(id));
+  const [originMoved, otherwiseChanged] = partition(changedEntries(before, after), movedOrigin);
 
-  const sourceChanged: SkillId[] = [];
-  const otherChanged: SkillId[] = [];
-  for (const [id, afterEntry] of after) {
-    const beforeEntry = before.get(id);
-    if (!beforeEntry || isDeepEqual(beforeEntry, afterEntry)) continue;
-    if (beforeEntry.origin !== afterEntry.origin) sourceChanged.push(id);
-    else otherChanged.push(id);
-  }
+  return {
+    added: [...after.keys()].filter((id) => !before.has(id)),
+    removed: [...before.keys()].filter((id) => !after.has(id)),
+    sourceChanged: originMoved.map(({ key }) => key),
+    otherChanged: otherwiseChanged.map(({ key }) => key),
+  };
+}
 
-  return { added, removed, sourceChanged, otherChanged };
+function movedOrigin({ before, after }: ChangedEntry<SkillId, SkillConfig>): boolean {
+  return before.origin !== after.origin;
 }
 
 function diffAgents(
@@ -129,11 +131,22 @@ function diffAgents(
   return {
     added: [...after.keys()].filter((name) => !before.has(name)),
     removed: [...before.keys()].filter((name) => !after.has(name)),
-    changed: [...after.keys()].filter((name) => {
-      const beforeEntry = before.get(name);
-      return beforeEntry !== undefined && !isDeepEqual(beforeEntry, after.get(name));
-    }),
+    changed: changedEntries(before, after).map(({ key }) => key),
   };
+}
+
+type ChangedEntry<Key, Entry> = { key: Key; before: Entry; after: Entry };
+
+/** Entries both sides hold that differ, in `after`'s order. */
+function changedEntries<Key, Entry>(
+  before: ReadonlyMap<Key, Entry>,
+  after: ReadonlyMap<Key, Entry>,
+): ChangedEntry<Key, Entry>[] {
+  return [...after].flatMap(([key, afterEntry]) => {
+    const beforeEntry = before.get(key);
+    if (beforeEntry === undefined || isDeepEqual(beforeEntry, afterEntry)) return [];
+    return [{ key, before: beforeEntry, after: afterEntry }];
+  });
 }
 
 /** `prev` is undefined when no global config exists yet; every field then reads as changed. */
@@ -185,7 +198,7 @@ const TIER_CONSEQUENCES = {
   T2: { needsDeps: true, regeneratesTypes: false, propagates: true },
   T3: { needsDeps: false, regeneratesTypes: false, propagates: false },
   T4: { needsDeps: false, regeneratesTypes: false, propagates: false },
-} satisfies Record<ConsequenceTier, TierConsequences>;
+} as const satisfies Record<ConsequenceTier, TierConsequences>;
 
 export function tierNeedsDeps(tier: ConsequenceTier): boolean {
   return TIER_CONSEQUENCES[tier].needsDeps;

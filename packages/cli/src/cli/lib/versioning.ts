@@ -31,30 +31,27 @@ export async function computeFileHash(filePath: string): Promise<string> {
 }
 
 export async function computeSkillFolderHash(skillPath: string): Promise<string> {
-  const contents: string[] = [];
+  const entries = await Promise.all([
+    ...SKILL_CONTENT_FILES.map((fileName) => contentFileEntries(skillPath, fileName)),
+    ...SKILL_CONTENT_DIRS.map((dirName) => contentDirEntries(skillPath, dirName)),
+  ]);
+  return computeStringHash(entries.flat().join("\n---\n"));
+}
 
-  for (const fileName of SKILL_CONTENT_FILES) {
-    const filePath = path.join(skillPath, fileName);
-    if (await fileExists(filePath)) {
-      const content = await readFile(filePath);
-      contents.push(`${fileName}:${content}`);
-    }
-  }
+async function contentFileEntries(skillPath: string, fileName: string): Promise<string[]> {
+  const filePath = path.join(skillPath, fileName);
+  if (!(await fileExists(filePath))) return [];
+  return [`${fileName}:${await readFile(filePath)}`];
+}
 
-  for (const dirName of SKILL_CONTENT_DIRS) {
-    const dirPath = path.join(skillPath, dirName);
-    if (await fileExists(dirPath)) {
-      const files = await glob("**/*", dirPath);
-      for (const file of files.sort()) {
-        const filePath = path.join(dirPath, file);
-        const content = await readFile(filePath);
-        contents.push(`${dirName}/${file}:${content}`);
-      }
-    }
-  }
+async function contentDirEntries(skillPath: string, dirName: string): Promise<string[]> {
+  const dirPath = path.join(skillPath, dirName);
+  if (!(await fileExists(dirPath))) return [];
 
-  const combined = contents.join("\n---\n");
-  return computeStringHash(combined);
+  const files = (await glob("**/*", dirPath)).toSorted();
+  return Promise.all(
+    files.map(async (file) => `${dirName}/${file}:${await readFile(path.join(dirPath, file))}`),
+  );
 }
 
 const CONTENT_HASH_FILE = ".content-hash";

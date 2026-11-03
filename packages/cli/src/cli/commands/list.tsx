@@ -1,10 +1,10 @@
 import React, { useEffect } from "react";
 
-import { Box, Text, useApp } from "ink";
+import { Box, useApp } from "ink";
 import { render } from "../components/render.js";
 
 import { BaseCommand } from "../base-command.js";
-import { CLI_INVOKE_COMMAND, CLI_COLORS, DEFAULT_BRANDING } from "../consts.js";
+import { CLI_INVOKE_COMMAND, DEFAULT_BRANDING } from "../consts.js";
 import { chooseProviderForThisRun } from "../lib/installation/install-layout.js";
 import {
   otherInstallationsInThisScope,
@@ -20,6 +20,7 @@ import {
 import { loadProjectConfig } from "../lib/configuration/project-config.js";
 import { computeScopeDiff, type SkillDiffRow } from "../lib/configuration/scope-diff.js";
 import { getSkillEntryDisplayName } from "../lib/matrix/matrix-provider.js";
+import { HeaderRow } from "../components/common/header-row.js";
 import { SkillAgentSummary } from "../components/common/skill-agent-summary.js";
 import type { AgentScopeConfig, ProjectConfig, SkillConfig, SkillScope } from "../types/config.js";
 
@@ -31,18 +32,6 @@ type ListViewProps = {
 };
 
 type ActiveRoster = Pick<ListViewProps, "skillConfigs" | "agentConfigs">;
-
-/** The label never shrinks: a value too long for the line wraps beside it instead. */
-const HeaderRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <Box flexDirection="row" columnGap={1}>
-    <Box flexShrink={0}>
-      <Text color={CLI_COLORS.WARNING} bold>
-        {label}
-      </Text>
-    </Box>
-    <Text color={CLI_COLORS.NEUTRAL}>{value}</Text>
-  </Box>
-);
 
 const ListView: React.FC<ListViewProps> = ({ mode, source, skillConfigs, agentConfigs }) => {
   const { exit } = useApp();

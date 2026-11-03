@@ -1,5 +1,6 @@
 import { MATRIX_VERSION } from "@workspace/matrix";
 import { SEED_VERSION, seedModelSchema } from "@workspace/matrix/seed";
+import { partition, unique } from "remeda";
 
 import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE } from "../../consts.js";
 import { isScopePairCompatible } from "../configuration/config-generator.js";
@@ -14,6 +15,7 @@ import type {
 } from "../../types/config.js";
 import type { ModelName } from "../../types/matrix.js";
 import type { SkillId } from "../../types/skills.js";
+import type { StackAgentConfig } from "../../types/stacks.js";
 import type {
   SeedAgent,
   SeedLoadState,
@@ -28,6 +30,8 @@ type StackReading = {
   assignments: Map<SkillId, SeedAssignments>;
   unwritable: string[];
 };
+
+type StackRow = { agent: string; id: SkillId; preloaded: boolean | undefined; writable: boolean };
 
 /** A tombstone describes something not installed, so it has nothing to say on the wire. */
 export function isInstalled(entry: { excluded?: boolean }): boolean {
@@ -129,29 +133,43 @@ function readStack(
   skillScopes: Map<SkillId, SkillScope>,
   agentScopes: Map<string, SkillScope>,
 ): StackReading {
-  const assignments = new Map<SkillId, SeedAssignments>();
-  const unwritable: string[] = [];
+  const rows = typedEntries(stack ?? {}).flatMap(([agent, agentStack]) =>
+    installedRowsOf(agent, agentStack, agentScopes.get(agent), skillScopes),
+  );
+  const [writable, unwritable] = partition(rows, (row) => row.writable);
 
-  for (const [agent, agentStack] of typedEntries(stack ?? {})) {
-    const agentScope = agentScopes.get(agent);
-    if (agentScope === undefined) continue;
+  return {
+    assignments: assignmentsBySkill(writable),
+    unwritable: unwritable.map((row) => unwritablePairMessage(row.id, row.agent)),
+  };
+}
 
-    for (const { id, preloaded } of typedValues(agentStack).flat()) {
+/** A scope is recorded only for an installed entry, so a missing one drops the row. */
+function installedRowsOf(
+  agent: string,
+  agentStack: StackAgentConfig,
+  agentScope: SkillScope | undefined,
+  skillScopes: Map<SkillId, SkillScope>,
+): StackRow[] {
+  if (agentScope === undefined) return [];
+
+  return typedValues(agentStack)
+    .flat()
+    .flatMap(({ id, preloaded }) => {
       const skillScope = skillScopes.get(id);
-      if (skillScope === undefined) continue;
+      if (skillScope === undefined) return [];
 
-      if (!isScopePairCompatible(skillScope, agentScope)) {
-        unwritable.push(unwritablePairMessage(id, agent));
-        continue;
-      }
+      return [{ agent, id, preloaded, writable: isScopePairCompatible(skillScope, agentScope) }];
+    });
+}
 
-      const forSkill = assignments.get(id) ?? {};
-      forSkill[agent] = seedLoadState(preloaded);
-      assignments.set(id, forSkill);
-    }
-  }
+function assignmentsBySkill(rows: readonly StackRow[]): Map<SkillId, SeedAssignments> {
+  const assignmentsOf = (id: SkillId): SeedAssignments =>
+    Object.fromEntries(
+      rows.filter((row) => row.id === id).map((row) => [row.agent, seedLoadState(row.preloaded)]),
+    );
 
-  return { assignments, unwritable };
+  return new Map(unique(rows.map((row) => row.id)).map((id) => [id, assignmentsOf(id)]));
 }
 
 function toSeedSkill(skill: SkillConfig, assignments: SeedAssignments | undefined): SeedSkill {

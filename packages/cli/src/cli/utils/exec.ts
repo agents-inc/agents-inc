@@ -19,20 +19,26 @@ function namesADirectoryOnThisMachine(source: string): boolean {
 // eslint-disable-next-line no-control-regex -- matching control characters is this pattern's job
 const CONTROL_CHAR_PATTERN = /[\x00-\x08\x0E-\x1F\x7F]/u;
 
+function refuseEmptyOverlongOrControlCharacters(
+  value: string,
+  label: string,
+  maxLength: number,
+): void {
+  if (!value || value.trim().length === 0) {
+    throw new Error(`${label} must not be empty.`);
+  }
+
+  if (value.length > maxLength) {
+    throw new Error(`${label} is too long (${value.length} characters, max ${maxLength}).`);
+  }
+
+  if (CONTROL_CHAR_PATTERN.test(value)) {
+    throw new Error(`${label} contains invalid control characters.`);
+  }
+}
+
 export function validatePluginPath(pluginPath: string): void {
-  if (!pluginPath || pluginPath.trim().length === 0) {
-    throw new Error("Plugin path must not be empty.");
-  }
-
-  if (pluginPath.length > MAX_PLUGIN_PATH_LENGTH) {
-    throw new Error(
-      `Plugin path is too long (${pluginPath.length} characters, max ${MAX_PLUGIN_PATH_LENGTH}).`,
-    );
-  }
-
-  if (CONTROL_CHAR_PATTERN.test(pluginPath)) {
-    throw new Error("Plugin path contains invalid control characters.");
-  }
+  refuseEmptyOverlongOrControlCharacters(pluginPath, "Plugin path", MAX_PLUGIN_PATH_LENGTH);
 
   if (!SAFE_PLUGIN_PATH_PATTERN.test(pluginPath)) {
     throw new Error(
@@ -47,19 +53,7 @@ export function validatePluginPath(pluginPath: string): void {
  * argv-array spawn has no shell to re-read it.
  */
 export function validateMarketplaceSource(source: string): void {
-  if (!source || source.trim().length === 0) {
-    throw new Error("Marketplace must not be empty.");
-  }
-
-  if (source.length > MAX_MARKETPLACE_SOURCE_LENGTH) {
-    throw new Error(
-      `Marketplace is too long (${source.length} characters, max ${MAX_MARKETPLACE_SOURCE_LENGTH}).`,
-    );
-  }
-
-  if (CONTROL_CHAR_PATTERN.test(source)) {
-    throw new Error("Marketplace contains invalid control characters.");
-  }
+  refuseEmptyOverlongOrControlCharacters(source, "Marketplace", MAX_MARKETPLACE_SOURCE_LENGTH);
 
   if (namesADirectoryOnThisMachine(source)) return;
 
@@ -72,19 +66,7 @@ export function validateMarketplaceSource(source: string): void {
 }
 
 export function validatePluginName(pluginName: string): void {
-  if (!pluginName || pluginName.trim().length === 0) {
-    throw new Error("Plugin name must not be empty.");
-  }
-
-  if (pluginName.length > MAX_PLUGIN_NAME_LENGTH) {
-    throw new Error(
-      `Plugin name is too long (${pluginName.length} characters, max ${MAX_PLUGIN_NAME_LENGTH}).`,
-    );
-  }
-
-  if (CONTROL_CHAR_PATTERN.test(pluginName)) {
-    throw new Error("Plugin name contains invalid control characters.");
-  }
+  refuseEmptyOverlongOrControlCharacters(pluginName, "Plugin name", MAX_PLUGIN_NAME_LENGTH);
 
   if (!SAFE_NAME_PATTERN.test(pluginName)) {
     throw new Error(

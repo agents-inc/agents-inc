@@ -8,6 +8,7 @@ import { GlobalPairWriteViolation } from "../config-gate/gate-token.js";
 import { providerInUse, sourceFolderInUse } from "../installation/install-layout";
 import { isHomeDirectory } from "../installation/is-home-directory";
 import { fileExists, writeFile } from "../../utils/fs";
+import { toPosixPath } from "../../utils/posix-path";
 import { verbose } from "../../utils/logger";
 import { typedKeys } from "../../utils/typed-object";
 import {
@@ -35,8 +36,7 @@ async function getGlobalConfigTypesPath(provider: Provider): Promise<string | nu
 function computeGlobalTypesImportPath(projectDir: string, provider: Provider): string {
   const projectSourceDir = sourceFolderInUse(projectDir, provider).dir;
   const globalSourceDir = sourceFolderInUse(globalInstallRoot(), provider).dir;
-  const relativePath = path.relative(projectSourceDir, globalSourceDir);
-  return relativePath.split(path.sep).join("/");
+  return toPosixPath(path.relative(projectSourceDir, globalSourceDir));
 }
 
 export type ConfigTypesBackgroundData = {

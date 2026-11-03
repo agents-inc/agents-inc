@@ -203,8 +203,10 @@ export async function validateSource(
 async function pairSkillFiles(
   skillsDir: string,
 ): Promise<{ pairIssues: SourceValidationIssue[]; validMetadataFiles: string[] }> {
-  const skillMdFiles = await glob(`**/${STANDARD_FILES.SKILL_MD}`, skillsDir);
-  const metadataFiles = await glob(`**/${STANDARD_FILES.METADATA_YAML}`, skillsDir);
+  const [skillMdFiles, metadataFiles] = await Promise.all([
+    glob(`**/${STANDARD_FILES.SKILL_MD}`, skillsDir),
+    glob(`**/${STANDARD_FILES.METADATA_YAML}`, skillsDir),
+  ]);
 
   const skillMdDirs = new Set(skillMdFiles.map((f) => path.dirname(f)));
   const metadataDirs = new Set(metadataFiles.map((f) => path.dirname(f)));
@@ -292,7 +294,6 @@ async function checkCrossReferences(
   }
 }
 
-/** The stacks or rules file a failed load names by its throw's type, as `doctor` files it. */
 function fileThatFailedToLoad(
   error: unknown,
   resolvedPath: string,
@@ -317,11 +318,7 @@ function configThatFailedToLoad(error: unknown): string | undefined {
   return undefined;
 }
 
-/**
- * No valid manifest: the manifest's finding, at the reader's severity. A refused name: this
- * marketplace's error, since nothing installs. A stacks or rules file that failed: a warning
- * naming it. Anything else: a warning against the categories file. Read off the throw's type.
- */
+/** A refused name is this marketplace's error, since nothing installs. */
 function matrixLoadFailure(
   error: unknown,
   reader: MarketplaceReader,
@@ -443,7 +440,6 @@ async function validateAgents(resolvedPath: string): Promise<SourceValidationIss
   });
 }
 
-/** Runtime-loads each config file and validates its default export; absent files are skipped. */
 async function validateConfigFiles(
   resolvedPath: string,
   stacksRelFile: string,
@@ -466,13 +462,9 @@ type YamlFileScan = {
 };
 
 async function validateYamlFiles(scan: YamlFileScan): Promise<SourceValidationIssue[]> {
-  const issues: SourceValidationIssue[] = [];
   const files = await glob(scan.pattern, scan.baseDir);
-
-  for (const relFile of files) {
-    issues.push(...(await validateYamlFile(scan, relFile)));
-  }
-  return issues;
+  const issuesPerFile = await Promise.all(files.map((relFile) => validateYamlFile(scan, relFile)));
+  return issuesPerFile.flat();
 }
 
 async function validateYamlFile(

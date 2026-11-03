@@ -203,7 +203,7 @@ export function mergeMatrixWithSkills(
   const synthesizedCategories = withUndeclaredCategoriesSynthesized(categories, skills);
   const unresolvedSlugs = collectUnresolvedSlugs(relationships, slugMap.slugToId);
 
-  const merged: MergedSkillsMatrix = {
+  return {
     version: DEFAULT_VERSION,
     categories: synthesizedCategories,
     skills: resolvedSkills,
@@ -212,8 +212,6 @@ export function mergeMatrixWithSkills(
     ...(unresolvedSlugs.length > 0 && { unresolvedSlugs }),
     generatedAt: new Date().toISOString(),
   };
-
-  return merged;
 }
 
 /** A placeholder for each category a skill names that no definition declares. */

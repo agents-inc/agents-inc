@@ -12,7 +12,7 @@ export {
 // No config writers here: writing config.ts goes through `config-gate` only.
 export { buildAndMergeConfig, buildAgentScopeMap, refuseUnofferedStack } from "./local-installer";
 
-export { isHomeDirectory } from "./is-home-directory";
+export { isHomeDirectory, scopeAt } from "./is-home-directory";
 export { installBaseDir, resolveInstallPaths } from "./install-base-dir";
 
 export { detectInstallations } from "./detect-installations";

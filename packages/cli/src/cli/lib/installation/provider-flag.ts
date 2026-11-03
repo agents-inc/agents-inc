@@ -116,10 +116,6 @@ export async function refuseAnAmbiguousInstallation(
   onAmbiguous(ambiguousInstallation(subject, providers, scopeRoot));
 }
 
-/**
- * A project config declaring nothing, with no installation of the project's own beside it: a run
- * here has no project installation to work on, which it says first.
- */
 export async function holdsOnlyAConfigDeclaringNothing(cwd: string): Promise<boolean> {
   if (!(await holdsAConfigDeclaringNothing(cwd))) return false;
 
@@ -127,8 +123,8 @@ export async function holdsOnlyAConfigDeclaringNothing(cwd: string): Promise<boo
 }
 
 /**
- * Whether HOME holds an installation a run could work on: the one `named`, else any. A config there
- * declaring nothing is none, as the commands' own read holds, though the roster counts it.
+ * A config at HOME declaring nothing is none, as the commands' own read holds, though the roster
+ * counts it.
  */
 export async function homeHoldsAnInstallationFor(
   cwd: string,

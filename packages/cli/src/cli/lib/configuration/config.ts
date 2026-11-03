@@ -6,6 +6,7 @@ import { DEFAULT_SOURCE } from "@workspace/compile";
 import { fileExists, readFileOptional } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
 import { getErrorMessage } from "../../utils/errors";
+import { parseJsonOrUndefined } from "../../utils/json";
 import { inertLine } from "../../utils/string";
 import {
   DEFAULT_BRANDING,
@@ -31,7 +32,7 @@ import {
   providerInUse,
 } from "../installation/install-layout";
 import { initProviderToNameAt, providerToNameAt } from "../installation/provider-to-name";
-import { isHomeDirectory } from "../installation/is-home-directory";
+import { isHomeDirectory, scopeAt } from "../installation/is-home-directory";
 import type { ScopeKind } from "../installation/source-scopes";
 
 export { DEFAULT_SOURCE };
@@ -206,7 +207,7 @@ export async function loadSourceRepoConfig(
 export async function loadProjectSourceConfig(
   projectDir: string,
 ): Promise<Partial<ProjectConfig> | null> {
-  return loadSourceConfig(projectDir, isHomeDirectory(projectDir) ? "global" : "project");
+  return loadSourceConfig(projectDir, scopeAt(projectDir));
 }
 
 /** `provider` names the installation where the home holds two; the default is the one in use. */
@@ -836,14 +837,7 @@ export async function isPublicCatalogueCheckout(basePath: string): Promise<boole
 
 /** The `name` a package.json declares, or null when there is none to read. */
 function declaredPackageName(raw: string): string | null {
-  let json: unknown;
-  try {
-    json = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-
-  const parsed = packageIdentitySchema.safeParse(json);
+  const parsed = packageIdentitySchema.safeParse(parseJsonOrUndefined(raw));
   return parsed.success ? parsed.data.name : null;
 }
 

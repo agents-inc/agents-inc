@@ -33,7 +33,6 @@ export class ConfigDefaultExportError extends Error {
   }
 }
 
-/** The config did not evaluate: a syntax error, an unresolved import, or a throw while it ran. */
 export class ConfigEvaluationError extends Error {
   constructor(
     readonly configPath: string,

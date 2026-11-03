@@ -7,6 +7,7 @@ import { agentCodec, agentsDir, claudeStateFile } from "../installation/install-
 import { isHomeDirectory } from "../installation/is-home-directory.js";
 import { fileExists, glob, readFile, readFileOptional } from "../../utils/fs.js";
 import { extractFrontmatter } from "../../utils/frontmatter.js";
+import { parseJsonOrUndefined } from "../../utils/json.js";
 import type { Provider } from "../../consts.js";
 
 /**
@@ -100,19 +101,11 @@ async function trustRecord(): Promise<TrustRecord> {
   const stateFile = claudeStateFile();
   if (!(await fileExists(stateFile))) return () => false;
 
-  const state = claudeStateSchema.safeParse(parsedOrUndefined(await readFile(stateFile)));
+  const state = claudeStateSchema.safeParse(parseJsonOrUndefined(await readFile(stateFile)));
   if (!state.success) return () => false;
 
   const { projects } = state.data;
   return (folder) => trustedProjectSchema.safeParse(projects[folder]).success;
-}
-
-function parsedOrUndefined(json: string): unknown {
-  try {
-    return JSON.parse(json);
-  } catch {
-    return undefined;
-  }
 }
 
 function foldersUpTo(folder: string, top?: string): string[] {

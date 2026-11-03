@@ -1,3 +1,5 @@
+import { isExclusiveCategory } from "@workspace/compile";
+
 import { warn } from "../../utils/logger";
 import { LOCAL_PSEUDO_CATEGORY } from "../../consts";
 import type {
@@ -93,16 +95,22 @@ function relationRefs(skill: ResolvedSkill): Array<{ field: string; ref: SkillId
 function checkSkillRelationRefs(matrix: MergedSkillsMatrix): MatrixHealthIssue[] {
   return typedEntries<SkillId, ResolvedSkill>(matrix.skills).flatMap(([skillId, skill]) =>
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
-    skill === undefined
-      ? []
-      : relationRefs(skill)
-          .filter(({ ref }) => !matrix.skills[ref])
-          .map(({ field, ref }) => ({
-            severity: "warning" as const,
-            finding: "skill-unresolved-relation-ref",
-            details: `Skill '${skillId}' has unresolved reference '${ref}' in '${field}'`,
-          })),
+    skill === undefined ? [] : unresolvedRelationIssues(matrix, skillId, skill),
   );
+}
+
+function unresolvedRelationIssues(
+  matrix: MergedSkillsMatrix,
+  skillId: SkillId,
+  skill: ResolvedSkill,
+): MatrixHealthIssue[] {
+  return relationRefs(skill)
+    .filter(({ ref }) => !matrix.skills[ref])
+    .map(({ field, ref }) => ({
+      severity: "warning" as const,
+      finding: "skill-unresolved-relation-ref",
+      details: `Skill '${skillId}' has unresolved reference '${ref}' in '${field}'`,
+    }));
 }
 
 /** An `error`: the source's defect. `source-validator` downgrades it for consumers. */
@@ -114,12 +122,9 @@ function checkUnresolvedRuleSlugs(matrix: MergedSkillsMatrix): MatrixHealthIssue
   }));
 }
 
-function isExclusiveCategory(matrix: MergedSkillsMatrix, category: CategoryPath): boolean {
-  // "local" is a pseudo-category with no definition in matrix.categories — never a fence
-  if (category === LOCAL_PSEUDO_CATEGORY) return false;
-
-  const definition = matrix.categories[category];
-  return definition !== undefined && definition.exclusive;
+// "local" is a pseudo-category with no definition in matrix.categories — never a fence
+function fencesByCategory(matrix: MergedSkillsMatrix, category: CategoryPath): boolean {
+  return category !== LOCAL_PSEUDO_CATEGORY && isExclusiveCategory(matrix, category);
 }
 
 /** The one definition of fenced that the runtime check and the manifest test share. */
@@ -127,7 +132,7 @@ export function isFencedByMatrix(matrix: MergedSkillsMatrix, skillId: SkillId): 
   const skill = matrix.skills[skillId];
   if (skill === undefined) return false;
 
-  return skill.requires.length > 0 || isExclusiveCategory(matrix, skill.category);
+  return skill.requires.length > 0 || fencesByCategory(matrix, skill.category);
 }
 
 /** Runtime lookup: the manifest is total over built-ins, but a matrix may carry source skills. */
@@ -143,18 +148,17 @@ function fenceDescription(skill: ResolvedSkill): string {
 /** A `universal` verdict contradicts a `requires` rule or exclusive category; pending exempt. */
 function checkAuditVerdictContradictions(matrix: MergedSkillsMatrix): MatrixHealthIssue[] {
   return typedEntries<SkillId, ResolvedSkill>(matrix.skills)
-    .filter(([skillId, skill]) => {
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
-      if (skill === undefined || auditVerdictsPendingApply[skillId]) return false;
-      const audit = auditEntryFor(skillId);
-
-      return audit?.verdict === "universal" && isFencedByMatrix(matrix, skillId);
-    })
+    .filter(([skillId]) => contradictsItsAudit(matrix, skillId))
     .map(([skillId, skill]) => ({
       severity: "error" as const,
       finding: "audit-verdict-contradiction",
       details: `Skill '${skillId}' is audited 'universal' but ${fenceDescription(skill)}`,
     }));
+}
+
+function contradictsItsAudit(matrix: MergedSkillsMatrix, skillId: SkillId): boolean {
+  if (auditVerdictsPendingApply[skillId]) return false;
+  return auditEntryFor(skillId)?.verdict === "universal" && isFencedByMatrix(matrix, skillId);
 }
 
 /** Built-in ids only: marketplace and local skills are outside the manifest by construction. */

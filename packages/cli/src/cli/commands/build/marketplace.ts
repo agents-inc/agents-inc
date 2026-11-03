@@ -256,11 +256,7 @@ export default class BuildMarketplace extends BaseCommand {
     this.log("Scanning plugins...");
 
     const marketplace = await generateMarketplace(pluginsDir, {
-      name: identity.name,
-      version: identity.version,
-      description: identity.description,
-      ownerName: identity.ownerName,
-      ...(identity.ownerEmail !== undefined && { ownerEmail: identity.ownerEmail }),
+      ...identity,
       pluginRoot: `./${pluginsDirFlag}`,
     });
 

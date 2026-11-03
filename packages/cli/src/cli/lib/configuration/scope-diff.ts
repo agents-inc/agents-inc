@@ -52,20 +52,16 @@ type RosterDiff<Entry> = Record<SkillScope, ScopeEntries<Entry>>;
  * project scope. Slot checks count tombstones; removal and `~` read the active baseline only.
  */
 export function computeScopeDiff(input: ScopeDiffInput): ScopeDiff {
-  const { currentSkills, currentAgents, installedSkillConfigs, installedAgentConfigs, isInitMode } =
-    input;
+  const { currentSkills, currentAgents, isInitMode } = input;
+  const installedSkills = input.installedSkillConfigs ?? [];
+  const installedAgents = input.installedAgentConfigs ?? [];
   const overwritten = input.overwrittenSkillIds ?? NOTHING;
   const changed = input.changedAgentNames ?? NOTHING;
 
-  const skills = diffRoster(currentSkills, installedSkillConfigs, (skill) => skill.id, isInitMode);
-  const agents = diffRoster(
-    currentAgents,
-    installedAgentConfigs,
-    (agent) => agent.name,
-    isInitMode,
-  );
-  const skillRow = skillRowClassifier(installedSkillConfigs, overwritten);
-  const agentRow = agentRowClassifier(installedAgentConfigs, changed);
+  const skills = diffRoster(currentSkills, installedSkills, (skill) => skill.id, isInitMode);
+  const agents = diffRoster(currentAgents, installedAgents, (agent) => agent.name, isInitMode);
+  const skillRow = skillRowClassifier(installedSkills, overwritten);
+  const agentRow = agentRowClassifier(installedAgents, changed);
 
   const projectSkillRows = rowsOf(skills.project, skillRow, toRemovedSkillRow);
   const globalSkillRows = rowsOf(skills.global, skillRow, toRemovedSkillRow);
@@ -81,12 +77,12 @@ export function computeScopeDiff(input: ScopeDiffInput): ScopeDiff {
 
 function diffRoster<Entry extends ScopedEntry>(
   current: Entry[],
-  installed: Entry[] | null,
+  installed: Entry[],
   identityOf: (entry: Entry) => string,
   isInitMode: boolean,
 ): RosterDiff<Entry> {
   // The installs the baseline actually records; tombstones are not installs.
-  const activeBaseline = (installed ?? []).filter((entry) => !entry.excluded);
+  const activeBaseline = installed.filter((entry) => !entry.excluded);
   const vacated = vacatedInstalls(activeBaseline, current, identityOf);
   const projectEntries = current.filter((entry) => isActiveAt(entry, "project"));
   const claimedByProject = new Set(projectEntries.map(identityOf));
@@ -141,19 +137,15 @@ export function formatScopeTag(scope: SkillScope): "[G]" | "[P]" {
 }
 
 function skillRowClassifier(
-  installed: SkillConfig[] | null,
+  installed: SkillConfig[],
   overwritten: ReadonlySet<SkillId>,
 ): (skill: SkillConfig) => SkillDiffRow {
-  const installedSlots = installed
-    ? new Set(installed.map((skill) => slotKey(skill.id, skill.scope)))
-    : null;
-  const installedOriginBySlot = installed
-    ? new Map(
-        installed
-          .filter((skill) => !skill.excluded)
-          .map((skill) => [slotKey(skill.id, skill.scope), skill.origin]),
-      )
-    : null;
+  const installedSlots = new Set(installed.map((skill) => slotKey(skill.id, skill.scope)));
+  const installedOriginBySlot = new Map(
+    installed
+      .filter((skill) => !skill.excluded)
+      .map((skill) => [slotKey(skill.id, skill.scope), skill.origin]),
+  );
   return (skill) => ({
     id: skill.id,
     source: skill.origin,
@@ -167,12 +159,10 @@ function recordedNameOf(skill: SkillConfig): Pick<SkillDiffRow, "displayName"> {
 }
 
 function agentRowClassifier(
-  installed: AgentScopeConfig[] | null,
+  installed: AgentScopeConfig[],
   changed: ReadonlySet<AgentName>,
 ): (agent: AgentScopeConfig) => AgentDiffRow {
-  const installedSlots = installed
-    ? new Set(installed.map((agent) => slotKey(agent.name, agent.scope)))
-    : null;
+  const installedSlots = new Set(installed.map((agent) => slotKey(agent.name, agent.scope)));
   return (agent) => ({ name: agent.name, status: agentStatus(agent, installedSlots, changed) });
 }
 
@@ -182,27 +172,26 @@ function agentRowClassifier(
  */
 function skillStatus(
   skill: SkillConfig,
-  installedSlots: Set<string> | null,
-  installedOriginBySlot: Map<string, string> | null,
+  installedSlots: ReadonlySet<string>,
+  installedOriginBySlot: ReadonlyMap<string, string>,
   overwritten: ReadonlySet<SkillId>,
 ): SkillDiffRow["status"] {
   const slot = slotKey(skill.id, skill.scope);
-  if (installedSlots === null || !installedSlots.has(slot)) return "added";
+  if (!installedSlots.has(slot)) return "added";
   if (!skill.excluded && overwritten.has(skill.id)) return "overwritten";
 
-  const installedOrigin = installedOriginBySlot?.get(slot);
-  const modeChanged = installedOrigin != null && installedOrigin !== skill.origin;
+  const installedOrigin = installedOriginBySlot.get(slot);
+  const modeChanged = installedOrigin !== undefined && installedOrigin !== skill.origin;
   return modeChanged ? "mode-changed" : "unchanged";
 }
 
 /** A mask is never the sub-agent that changes: its active half is. */
 function agentStatus(
   agent: AgentScopeConfig,
-  installedSlots: Set<string> | null,
+  installedSlots: ReadonlySet<string>,
   changed: ReadonlySet<AgentName>,
 ): AgentDiffRow["status"] {
-  const isNew = installedSlots === null || !installedSlots.has(slotKey(agent.name, agent.scope));
-  if (isNew) return "added";
+  if (!installedSlots.has(slotKey(agent.name, agent.scope))) return "added";
   return !agent.excluded && changed.has(agent.name) ? "changed" : "unchanged";
 }
 

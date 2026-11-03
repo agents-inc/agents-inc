@@ -21,6 +21,7 @@ import {
 import type { AgentName } from "../../types/agents.js";
 import type { SkillScope } from "../../types/config.js";
 import { isHomeDirectory } from "./is-home-directory.js";
+import { toPosixPath } from "../../utils/posix-path.js";
 
 /**
  * Where each (provider, scope) keeps its agents-inc source (`.agents-inc/<provider>/`) and the
@@ -81,10 +82,7 @@ export function forgetTheProviderChosenForThisRun(): void {
   providerChosenForThisRun = undefined;
 }
 
-/**
- * A project config declaring no skill and no sub-agent is not an installation (owner, 2026-10-24).
- * The one definition: the roster, the listing, `doctor` and the marketplace read all ask it.
- */
+/** A project config declaring no skill and no sub-agent is not an installation. */
 export function declaresNoContent(config: {
   skills: readonly unknown[];
   agents: readonly unknown[];
@@ -133,16 +131,42 @@ export function providerInUse(root: string | undefined): Provider {
   return providerOnDisk(root);
 }
 
+/** Process state for the reason {@link providerChosenForThisRun} is. */
+let projectBeingInstalled: string | undefined;
+
 /**
- * The provider of the global installation `projectDir` inherits: `own`, where the project holds an
- * installation of it, whether or not the home holds one too, since another provider's global never
- * reaches it; the home's own read where the project holds none.
+ * While `install` runs, `projectDir` reads as holding its installation, so a read before its
+ * config is written answers as one after does.
+ */
+export async function whileInstallingInto<T>(
+  projectDir: string,
+  install: () => Promise<T>,
+): Promise<T> {
+  projectBeingInstalled = path.resolve(projectDir);
+  try {
+    return await install();
+  } finally {
+    projectBeingInstalled = undefined;
+  }
+}
+
+/**
+ * `own` where the project holds an installation of it or is being given one, whether or not the
+ * home holds one too, since another provider's global never reaches it.
  */
 export function inheritedGlobalProvider(
   projectDir: string,
   own: Provider = providerInUse(projectDir),
 ): Provider {
-  return holdsAnInstallation(projectDir, own) ? own : providerInUse(os.homedir());
+  return holdsOrIsGettingAnInstallation(projectDir, own) ? own : providerInUse(os.homedir());
+}
+
+function holdsOrIsGettingAnInstallation(projectDir: string, provider: Provider): boolean {
+  return isBeingInstalled(projectDir) || holdsAnInstallation(projectDir, provider);
+}
+
+function isBeingInstalled(projectDir: string): boolean {
+  return path.resolve(projectDir) === projectBeingInstalled;
 }
 
 /** The provider `projectDir` reads at `scope`: at global, that of the installation it inherits. */
@@ -387,7 +411,7 @@ function pathUnder(root: string, dir: string): string | null {
   const escapes = relative === ".." || relative.startsWith(`..${path.sep}`);
 
   if (relative === "" || escapes || path.isAbsolute(relative)) return null;
-  return relative.split(path.sep).join("/");
+  return toPosixPath(relative);
 }
 
 /** A root does not count as being under itself. */

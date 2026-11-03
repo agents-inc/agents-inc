@@ -2,13 +2,14 @@ import os from "os";
 import path from "path";
 import type { z } from "zod";
 import { fileExists } from "../../utils/fs";
-import { verbose, warn } from "../../utils/logger";
+import { verbose, warnOnce } from "../../utils/logger";
 import { getErrorMessage } from "../../utils/errors";
 import type { Provider } from "../../consts";
 import type { ProjectConfig, ValidationResult } from "../../types";
 import { normalizeStackRecord } from "../stacks/stacks-loader";
 import { projectConfigLoaderSchema } from "../schemas";
 import { formatZodErrors } from "../schema-validator";
+import { resultFrom } from "../validation-result";
 import { getProjectConfigPath } from "../installation/install-base-dir";
 import {
   declaresNoContent,
@@ -16,7 +17,7 @@ import {
   providerInUse,
 } from "../installation/install-layout";
 import { initProviderToNameAt, providerToNameAt } from "../installation/provider-to-name";
-import { isHomeDirectory } from "../installation/is-home-directory";
+import { isHomeDirectory, scopeAt } from "../installation/is-home-directory";
 import type { ScopeKind } from "../installation/source-scopes";
 import { loadConfig, NO_VALID_DEFAULT_EXPORT } from "./config-loader";
 
@@ -46,7 +47,7 @@ export class ConfigLoadError extends Error {
   ) {
     super(`Config at '${configPath}' could not be loaded: ${reason}`);
     this.name = "ConfigLoadError";
-    this.scope = isHomeDirectory(scopeRoot) ? "global" : "project";
+    this.scope = scopeAt(scopeRoot);
     this.providerToName = providerToNameAt(scopeRoot, provider);
     this.initProviderToName = initProviderToNameAt(scopeRoot, provider);
   }
@@ -79,7 +80,7 @@ export async function loadProjectConfigAt(
   projectDir: string,
   provider: Provider,
 ): Promise<LoadedProjectConfig | null> {
-  const scope = isHomeDirectory(projectDir) ? "global" : "project";
+  const scope = scopeAt(projectDir);
   const scopeLabel = scope === "project" ? "Project" : "Global";
 
   if (!(await fileExists(configPath))) {
@@ -145,14 +146,15 @@ function asProjectConfig(parsed: ParsedProjectConfig, projectDir: string): Proje
   } as ProjectConfig;
 }
 
+/** Once per run: a command loads the same config several times. */
 function warnOfDefaultedFields(parsed: ParsedProjectConfig, configPath: string): void {
   if (parsed.name === undefined) {
-    warn(
+    warnOnce(
       `Project config at '${configPath}' is missing required 'name' field — defaulting to directory name`,
     );
   }
   if (parsed.skills === undefined) {
-    warn(`Project config at '${configPath}' is missing 'skills' array — defaulting to empty`);
+    warnOnce(`Project config at '${configPath}' is missing 'skills' array — defaulting to empty`);
   }
 }
 
@@ -223,13 +225,11 @@ export async function loadConfigInPlay(projectDir: string): Promise<LoadedProjec
 /** On top of the lenient schema, a usable config also needs `name` and `agents`. */
 export function validateProjectConfig(config: unknown): ValidationResult {
   const result = projectConfigLoaderSchema.safeParse(config);
-  if (!result.success) {
-    return { valid: false, errors: formatZodErrors(result.error), warnings: [] };
-  }
+  if (!result.success) return resultFrom(formatZodErrors(result.error), []);
 
   const errors = [
     ...(result.data.name ? [] : ["name is required and must be a string"]),
     ...(result.data.agents ? [] : ["agents is required and must be an array"]),
   ];
-  return { valid: errors.length === 0, errors, warnings: [] };
+  return resultFrom(errors, []);
 }

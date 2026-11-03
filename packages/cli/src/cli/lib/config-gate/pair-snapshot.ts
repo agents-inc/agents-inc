@@ -72,8 +72,8 @@ async function restorePair(
 }
 
 /**
- * A half that was absent is removed again; an unreadable one has nothing to put back. One that
- * still reads the same is left alone, so the half whose write was refused is not written again.
+ * An unreadable half has nothing to put back. One that still reads the same is left alone, so the
+ * half whose write was refused is not written again.
  */
 async function restoreHalf(filePath: string, before: HalfContents): Promise<void> {
   if ((await readHalf(filePath)) === before) return;

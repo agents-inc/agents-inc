@@ -34,27 +34,34 @@ async function readAgentFiles(
   agent: AgentConfig,
   projectRoot: string,
 ): Promise<AgentFiles> {
+  const { agentDir, categoryDir } = agentSourceDirs(name, agent, projectRoot);
+
+  const [identity, playbook, criticalRequirementsTop, criticalReminders, output] =
+    await Promise.all([
+      readFile(path.join(agentDir, STANDARD_FILES.IDENTITY_MD)),
+      readFile(path.join(agentDir, STANDARD_FILES.PLAYBOOK_MD)),
+      readFileOptional(path.join(agentDir, STANDARD_FILES.CRITICAL_REQUIREMENTS_MD), ""),
+      readFileOptional(path.join(agentDir, STANDARD_FILES.CRITICAL_REMINDERS_MD), ""),
+      readOutputPartial(agentDir, categoryDir),
+    ]);
+
+  return { identity, playbook, output, criticalRequirementsTop, criticalReminders };
+}
+
+function agentSourceDirs(
+  name: AgentName,
+  agent: AgentConfig,
+  projectRoot: string,
+): { agentDir: string; categoryDir: string } {
   const agentSourceRoot = agent.sourceRoot || projectRoot;
   const agentBaseDir = agent.agentBaseDir || DIRS.agents;
   const agentPath = agent.path || name;
-  const agentDir = path.join(agentSourceRoot, agentBaseDir, agentPath);
-
-  const identity = await readFile(path.join(agentDir, STANDARD_FILES.IDENTITY_MD));
-  const playbook = await readFile(path.join(agentDir, STANDARD_FILES.PLAYBOOK_MD));
-  const criticalRequirementsTop = await readFileOptional(
-    path.join(agentDir, STANDARD_FILES.CRITICAL_REQUIREMENTS_MD),
-    "",
-  );
-  const criticalReminders = await readFileOptional(
-    path.join(agentDir, STANDARD_FILES.CRITICAL_REMINDERS_MD),
-    "",
-  );
-
   const category = agentPath.split("/")[0] || name;
-  const categoryDir = path.join(agentSourceRoot, agentBaseDir, category);
-  const output = await readOutputPartial(agentDir, categoryDir);
 
-  return { identity, playbook, output, criticalRequirementsTop, criticalReminders };
+  return {
+    agentDir: path.join(agentSourceRoot, agentBaseDir, agentPath),
+    categoryDir: path.join(agentSourceRoot, agentBaseDir, category),
+  };
 }
 
 /** The agent's own `output.md`, or its category's where the agent's is absent or empty. */
@@ -74,35 +81,35 @@ export async function createLiquidEngine(
   // One read for both: template overrides and source folder must name one installation.
   provider: Provider = providerInUse(projectDir),
 ): Promise<Liquid> {
-  const roots: string[] = [];
-
-  if (projectDir) {
-    const srcTemplatesDir = path.join(
-      sourceFolderInUse(projectDir, provider).dir,
-      STANDARD_DIRS.AGENTS,
-      path.basename(DIRS.templates),
-    );
-    if (await directoryExists(srcTemplatesDir)) {
-      roots.push(srcTemplatesDir);
-      verbose(`Using local templates from: ${srcTemplatesDir}`);
-    }
-
-    const legacyTemplatesDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.TEMPLATES);
-    if (await directoryExists(legacyTemplatesDir)) {
-      roots.push(legacyTemplatesDir);
-      verbose(`Using legacy templates from: ${legacyTemplatesDir}`);
-    }
-  }
-
-  roots.push(path.join(PROJECT_ROOT, DIRS.templates));
+  const overrideRoots = projectDir ? await templateOverrideRoots(projectDir, provider) : [];
 
   return new Liquid({
-    root: roots,
+    root: [...overrideRoots, path.join(PROJECT_ROOT, DIRS.templates)],
     extname: ".liquid",
     strictVariables: false,
     strictFilters: true,
     globals: { sourceFolder: sourceFolderName(projectDir, provider) },
   });
+}
+
+async function templateOverrideRoots(projectDir: string, provider: Provider): Promise<string[]> {
+  const sourceTemplatesDir = path.join(
+    sourceFolderInUse(projectDir, provider).dir,
+    STANDARD_DIRS.AGENTS,
+    path.basename(DIRS.templates),
+  );
+  const legacyTemplatesDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.TEMPLATES);
+  const [hasSourceTemplates, hasLegacyTemplates] = await Promise.all([
+    directoryExists(sourceTemplatesDir),
+    directoryExists(legacyTemplatesDir),
+  ]);
+
+  if (hasSourceTemplates) verbose(`Using local templates from: ${sourceTemplatesDir}`);
+  if (hasLegacyTemplates) verbose(`Using legacy templates from: ${legacyTemplatesDir}`);
+  return [
+    ...(hasSourceTemplates ? [sourceTemplatesDir] : []),
+    ...(hasLegacyTemplates ? [legacyTemplatesDir] : []),
+  ];
 }
 
 /** Both hosts render from one template context; only the wrapper differs (markdown or TOML). */
@@ -115,14 +122,16 @@ export async function compileAgentForHost(
 ): Promise<string> {
   verbose(`Compiling agent: ${name} (${provider})`);
 
-  const files = await readAgentFiles(name, agent, fallbackRoot);
+  const [files, version] = await Promise.all([
+    readAgentFiles(name, agent, fallbackRoot),
+    cliVersion(),
+  ]);
 
   // Each skill's own `source` decides `${id}:${id}` versus a bare id; no `source` means bare.
   const data = buildAgentTemplateContext(name, agent, files, (skill) => ({
     ...skill,
     ...pluginRefFor(skill),
   }));
-  const version = await cliVersion();
 
   switch (provider) {
     case "claude":

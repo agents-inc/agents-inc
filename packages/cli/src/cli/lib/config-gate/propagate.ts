@@ -46,6 +46,7 @@ import { getErrorMessage } from "../../utils/errors";
 import { verbose } from "../../utils/logger";
 import { typedEntries, typedKeys } from "../../utils/typed-object";
 import { LOCAL_PSEUDO_CATEGORY } from "../../consts";
+import { isExclusiveCategory } from "@workspace/compile";
 import { addSessionToGlobal, type ResolvedGlobalConfig } from "@workspace/compile/global-config";
 
 export { mergeGlobalConfigs } from "@workspace/compile/global-config";
@@ -128,11 +129,6 @@ function categoryOfSkill(id: SkillId, matrix: MergedSkillsMatrix): Category | un
   return category;
 }
 
-/** From the merged matrix, so source overrides count; an undeclared category is not exclusive. */
-function isExclusiveCategory(category: Category, matrix: MergedSkillsMatrix): boolean {
-  return matrix.categories[category]?.exclusive === true;
-}
-
 /** Categories occupied by an active project-scoped skill, per the merged matrix. */
 function activeProjectCategories(
   projectOwnedSkills: SkillConfig[],
@@ -156,7 +152,7 @@ function buildProjectCollisionTest(
   );
   const occupiedExclusiveCategories = new Set(
     [...activeProjectCategories(projectOwnedSkills, matrix)].filter((category) =>
-      isExclusiveCategory(category, matrix),
+      isExclusiveCategory(matrix, category),
     ),
   );
 
@@ -401,8 +397,8 @@ function refuseAWriteOutsideTheInstallation(projectDir: string, provider: Provid
 }
 
 /**
- * The installation a fan-out rewrites. A config declaring nothing is none: it is the user's file
- * (owner, 2026-10-24), so it is passed over as a project holding nothing is.
+ * The installation a fan-out rewrites. A config declaring nothing is none: it is the user's file,
+ * so it is passed over as a project holding nothing is.
  */
 async function installationToRewrite(projectPath: string): Promise<LoadedProjectConfig | null> {
   const loaded = await loadInstalledConfig(projectPath);
@@ -446,21 +442,11 @@ export async function propagateGlobalChangesToProjects(
   options: PropagationOptions = {},
 ): Promise<PropagationResult> {
   const projects = globalConfig.projects ?? [];
-  const result: PropagationResult = {
-    updated: [],
-    unreadable: [],
-    gone: [],
-    notOurs: [],
-    failed: [],
-  };
+  const result = nothingPropagated();
   if (projects.length === 0) return result;
 
-  const currentNormalized = currentProjectDir ? normalizeProjectPath(currentProjectDir) : null;
-
   // Sequential: each propagation seats its project's catalogue in the module-wide singleton.
-  for (const projectPath of projects) {
-    if (currentNormalized && projectPath === currentNormalized) continue;
-
+  for (const projectPath of projectsBesides(projects, currentProjectDir)) {
     const outcome = await propagateToRegisteredProject(
       projectPath,
       provider,
@@ -472,6 +458,20 @@ export async function propagateGlobalChangesToProjects(
   }
 
   return result;
+}
+
+/** Fresh per call, since a fan-out pushes into its lists. */
+export function nothingPropagated(): PropagationResult {
+  return { updated: [], unreadable: [], gone: [], notOurs: [], failed: [] };
+}
+
+function projectsBesides(
+  projects: readonly string[],
+  currentProjectDir?: string,
+): readonly string[] {
+  if (!currentProjectDir) return projects;
+  const current = normalizeProjectPath(currentProjectDir);
+  return projects.filter((projectPath) => projectPath !== current);
 }
 
 /** No skip reason stops the fan-out. Installation presence is asked first, of every provider. */
@@ -535,7 +535,7 @@ async function wouldBeRewritten(projectPath: string, provider: Provider): Promis
 
 /**
  * Every provider whose installation is at `projectPath`, this fan-out's or another's, by the roster:
- * a config declaring nothing is none (owner, 2026-10-24). Asked before `providerInUse` reads the
+ * a config declaring nothing is none. Asked before `providerInUse` reads the
  * project, since that read counts such a config until the roster has recorded it.
  */
 async function providersInstalledAt(projectPath: string): Promise<Provider[]> {

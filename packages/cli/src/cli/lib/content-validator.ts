@@ -34,7 +34,12 @@ import {
 import { splitMetadataValidationIssues, validateSkillMetadata } from "./schemas.js";
 import { readForkedFromMetadata } from "./skills/index.js";
 import { isSourceRepo, validateSource, type MarketplaceReader } from "./source-validator.js";
-import { invalidResult, mergeValidationResults, validResult } from "./validation-result.js";
+import {
+  invalidResult,
+  mergeValidationResults,
+  resultFrom,
+  validResult,
+} from "./validation-result.js";
 import { scopeLabel } from "../utils/messages.js";
 import { plural } from "../utils/string.js";
 import type { ValidationResult } from "../types/index.js";
@@ -56,17 +61,16 @@ export type ContentValidation = {
   notes: string[];
 };
 
-const NOTHING_VALIDATED: ContentValidation = { count: 0, issues: [], notes: [] };
+function nothingValidated(): ContentValidation {
+  return { count: 0, issues: [], notes: [] };
+}
 
 function mergeValidations(parts: ContentValidation[]): ContentValidation {
-  return parts.reduce(
-    (acc, part) => ({
-      count: acc.count + part.count,
-      issues: [...acc.issues, ...part.issues],
-      notes: [...acc.notes, ...part.notes],
-    }),
-    NOTHING_VALIDATED,
-  );
+  return {
+    count: parts.reduce((sum, part) => sum + part.count, 0),
+    issues: parts.flatMap((part) => part.issues),
+    notes: parts.flatMap((part) => part.notes),
+  };
 }
 
 function displayDir(absolutePath: string): string {
@@ -83,6 +87,15 @@ function toIssues(file: string, result: ValidationResult): ContentIssue[] {
     ...result.errors.map((message) => ({ severity: "error" as const, file, message })),
     ...result.warnings.map((message) => ({ severity: "warning" as const, file, message })),
   ];
+}
+
+async function entryIssues(
+  dir: string,
+  name: string,
+  validate: (entryPath: string) => Promise<ValidationResult>,
+): Promise<ContentIssue[]> {
+  const entryPath = path.join(dir, name);
+  return toIssues(displayDir(entryPath), await validate(entryPath));
 }
 
 const CONFIG_UNREADABLE = "exists but could not be loaded";
@@ -186,7 +199,7 @@ export async function validateInstalledPlugins(projectDir: string): Promise<Cont
 }
 
 async function validatePluginsDirectory(pluginsDir: string): Promise<ContentValidation> {
-  if (!(await directoryExists(pluginsDir))) return NOTHING_VALIDATED;
+  if (!(await directoryExists(pluginsDir))) return nothingValidated();
 
   if (await fileExists(getInstalledPluginsRegistryPath(pluginsDir))) {
     const registryValidation = await validateRegistryPlugins(pluginsDir);
@@ -194,7 +207,7 @@ async function validatePluginsDirectory(pluginsDir: string): Promise<ContentVali
   }
 
   const pluginDirs = await listPluginDirNames(pluginsDir);
-  if (pluginDirs.length === 0) return NOTHING_VALIDATED;
+  if (pluginDirs.length === 0) return nothingValidated();
 
   const { results } = await validateAllPlugins(pluginsDir);
 
@@ -330,20 +343,17 @@ async function validateSkillsDirectory(
   skillsDir: string,
   configuredIds: ReadonlySet<string>,
 ): Promise<ContentValidation> {
-  if (!(await directoryExists(skillsDir))) return NOTHING_VALIDATED;
+  if (!(await directoryExists(skillsDir))) return nothingValidated();
 
   const skillDirs = await listDirectories(skillsDir);
-  if (skillDirs.length === 0) return NOTHING_VALIDATED;
+  if (skillDirs.length === 0) return nothingValidated();
 
   const [ours, foreign] = await partitionByVerdict(skillDirs, (name) =>
     isOurSkillDirectory(skillsDir, name, configuredIds),
   );
 
   const results = await Promise.all(
-    ours.map(async (name) => {
-      const skillDir = path.join(skillsDir, name);
-      return toIssues(displayDir(skillDir), await validateInstalledSkill(skillDir));
-    }),
+    ours.map((name) => entryIssues(skillsDir, name, validateInstalledSkill)),
   );
 
   return {
@@ -374,16 +384,13 @@ function foreignSkillNote(skillsDir: string, name: string): string {
 }
 
 async function validateAgentsDirectory(agentsDir: string): Promise<ContentValidation> {
-  if (!(await directoryExists(agentsDir))) return NOTHING_VALIDATED;
+  if (!(await directoryExists(agentsDir))) return nothingValidated();
 
   const agentFiles = await listAgentMdFiles(agentsDir);
-  if (agentFiles.length === 0) return NOTHING_VALIDATED;
+  if (agentFiles.length === 0) return nothingValidated();
 
   const results = await Promise.all(
-    agentFiles.map(async (fileName) => {
-      const agentPath = path.join(agentsDir, fileName);
-      return toIssues(displayDir(agentPath), await validateAgentFrontmatter(agentPath));
-    }),
+    agentFiles.map((fileName) => entryIssues(agentsDir, fileName, validateAgentFrontmatter)),
   );
 
   return { count: agentFiles.length, issues: results.flat(), notes: [] };
@@ -423,9 +430,8 @@ async function validateInstalledSkillMetadata(metadataPath: string): Promise<Val
   }
 
   const { errors, warnings } = splitMetadataValidationIssues(result.error, metadata);
-  return {
-    valid: errors.length === 0,
-    errors: errors.map((e) => `${STANDARD_FILES.METADATA_YAML}: ${e}`),
-    warnings: warnings.map((w) => `${STANDARD_FILES.METADATA_YAML}: ${w}`),
-  };
+  return resultFrom(
+    errors.map((e) => `${STANDARD_FILES.METADATA_YAML}: ${e}`),
+    warnings.map((w) => `${STANDARD_FILES.METADATA_YAML}: ${w}`),
+  );
 }

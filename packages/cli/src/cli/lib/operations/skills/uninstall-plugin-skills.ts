@@ -7,7 +7,7 @@ import type { SkillId } from "../../../types/index.js";
 import type { SkillConfig, SkillScope } from "../../../types/config.js";
 
 /** The safe default: a project removal cannot take a plugin from every project under one HOME. */
-const SCOPE_OF_AN_UNRECORDED_SKILL: SkillScope = "project";
+export const SCOPE_OF_AN_UNRECORDED_SKILL: SkillScope = "project";
 
 export type PluginUninstallResult = {
   /** Only plugins the host reported `removed`; an already-absent plugin is not listed. */
@@ -60,7 +60,6 @@ export function pluginRefsOf(
   return [buildMarketplacePluginRef(skillId, origin), marketplaceRef];
 }
 
-/** `absent` passes the ask to the next name; a throw is a real failure and ends it. */
 export async function removeUnderFirstNameHeld(
   host: PluginHost,
   pluginRefs: string[],

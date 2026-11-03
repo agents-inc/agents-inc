@@ -56,7 +56,6 @@ export async function copyLocalSkills(
   };
 }
 
-/** Every skill folder at both scopes, as a full path. */
 export async function skillFoldersAt(projectDir: string): Promise<ReadonlySet<string>> {
   const skillsDirs = [
     resolveInstallPaths(projectDir, "project").skillsDir,

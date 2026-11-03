@@ -6,6 +6,7 @@ import { z } from "zod";
 import { SEED_API_URL } from "../../consts.js";
 import { arrivedAsText, jsonBodyOrUndefined, SEED_USER_AGENT } from "./fetch-seed.js";
 import { CLI_INVOKE_COMMAND } from "../../consts.js";
+import { parseJsonOrUndefined } from "../../utils/json.js";
 import { plural, truncateText } from "../../utils/string.js";
 
 import type { SeedPayload } from "@workspace/matrix/seed";
@@ -128,14 +129,6 @@ async function refusalBody(response: Response): Promise<string | undefined> {
   }
 }
 
-function jsonOf(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-}
-
 function explanationOf(response: Response, body: string | undefined): string | undefined {
   if (body === undefined) return undefined;
 
@@ -145,10 +138,10 @@ function explanationOf(response: Response, body: string | undefined): string | u
 }
 
 function schemaIssuesIn(body: string): string | undefined {
-  const refusal = refusalSchema.safeParse(jsonOf(body));
+  const refusal = refusalSchema.safeParse(parseJsonOrUndefined(body));
   if (!refusal.success) return undefined;
 
-  const issues = refusedIssuesSchema.safeParse(jsonOf(refusal.data.error.message));
+  const issues = refusedIssuesSchema.safeParse(parseJsonOrUndefined(refusal.data.error.message));
   if (!issues.success) return undefined;
 
   return issues.data.map(sentenceOf).join("; ");

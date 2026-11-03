@@ -1,5 +1,4 @@
 import { readdir } from "fs/promises";
-import type { Dirent } from "fs";
 
 import { DEFAULT_PLUGIN_NAME, type Provider } from "../../consts";
 import { loadProjectConfig } from "../configuration";
@@ -30,6 +29,7 @@ export type InstallationInfo = {
   agentCount: number;
   configPath: string;
   agentDirs: string[];
+  marketplace?: string;
 };
 
 export async function getInstallationInfo(): Promise<InstallationInfo | null> {
@@ -48,6 +48,7 @@ export async function getInstallationInfo(): Promise<InstallationInfo | null> {
     agentCount: sumCounts(agentDirCounts),
     configPath: installation.configPath,
     agentDirs: agentDirCounts.filter(hasEntries).map((scopeCount) => scopeCount.dir),
+    ...(loaded?.config.marketplace !== undefined && { marketplace: loaded.config.marketplace }),
   };
 }
 
@@ -103,10 +104,9 @@ async function describeInstallation(
   cwd: string,
 ): Promise<ProviderInstallation> {
   const scopes: SkillScope[] = scope === "global" ? ["global"] : ["global", "project"];
-  const { extension } = agentCodec(provider);
   const counts = await Promise.all(
     scopes.map((agentScope) =>
-      countDirEntries(agentsDir(provider, agentScope, cwd), isCompiledAgentFileIn(extension)),
+      countCompiledAgentsIn(agentsDir(provider, agentScope, cwd), provider),
     ),
   );
 
@@ -147,27 +147,21 @@ async function countCompiledAgentsPerScope(
   installation: Installation,
   scopes: SkillScope[],
 ): Promise<ScopeCount[]> {
-  return Promise.all(
-    scopes.map(async (scope) => {
-      // Each scope's own installation, at global the inherited one, in its own agent format.
-      const provider = providerAtScope(installation.projectDir, scope);
-      const dir = agentsDir(provider, scope, installation.projectDir);
-      return {
-        dir,
-        count: await countDirEntries(dir, isCompiledAgentFileIn(agentCodec(provider).extension)),
-      };
-    }),
-  );
+  return Promise.all(scopes.map((scope) => countCompiledAgentsAt(installation.projectDir, scope)));
 }
 
-function isCompiledAgentFileIn(extension: string): (entry: Dirent) => boolean {
-  return (entry) => entry.isFile() && entry.name.endsWith(extension);
+/** Each scope's own installation, at global the inherited one, in its own agent format. */
+async function countCompiledAgentsAt(projectDir: string, scope: SkillScope): Promise<ScopeCount> {
+  const provider = providerAtScope(projectDir, scope);
+  const dir = agentsDir(provider, scope, projectDir);
+  return { dir, count: await countCompiledAgentsIn(dir, provider) };
 }
 
-async function countDirEntries(dir: string, pred: (entry: Dirent) => boolean): Promise<number> {
+async function countCompiledAgentsIn(dir: string, provider: Provider): Promise<number> {
+  const { extension } = agentCodec(provider);
   try {
     const entries = await readdir(dir, { withFileTypes: true });
-    return entries.filter(pred).length;
+    return entries.filter((entry) => entry.isFile() && entry.name.endsWith(extension)).length;
   } catch {
     return 0;
   }
@@ -180,9 +174,11 @@ export function formatInstallationDisplay(
 ): string {
   const namedSkillLines = skillLines.map((line) => `\n    ${line}`).join("");
   const agentDirLines = info.agentDirs.map((dir) => `\n  Agents:  ${dir}`).join("");
+  const marketplaceLine =
+    info.marketplace === undefined ? "" : `\n  Marketplace: ${info.marketplace}`;
 
   return `Installation: ${info.name}
-  Mode:    ${INSTALL_MODE_LABELS[info.mode]}
+  Mode:    ${INSTALL_MODE_LABELS[info.mode]}${marketplaceLine}
   Skills:  ${info.skillCount}${namedSkillLines}
   Agents:  ${info.agentCount}
   Config:  ${info.configPath}${agentDirLines}`;

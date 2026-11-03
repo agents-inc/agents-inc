@@ -6,11 +6,13 @@ import { loadProjectConfigFromDir } from "../configuration/project-config.js";
 import { isActiveAt } from "../configuration/scope-predicates.js";
 import { namedByActiveEntries } from "../configuration/scope-diff.js";
 import { providerInUse } from "../installation/install-layout.js";
+import { providerToNameAt } from "../installation/provider-to-name.js";
 import { getCategoryDomain, matrix } from "../matrix/matrix-provider.js";
-import { orderDomains } from "@workspace/compile";
-import { addedToGlobalSubAgents } from "../../utils/messages.js";
+import { isExclusiveCategory, orderDomains } from "@workspace/compile";
+import { addedToGlobalSubAgents, keptAsInstalledGlobally } from "../../utils/messages.js";
 import { typedEntries, typedValues } from "../../utils/typed-object.js";
 
+import type { Provider } from "../../consts.js";
 import type { InstallSelection } from "@workspace/compile/seed-to-config";
 import type { NamedBy } from "../configuration/scope-diff.js";
 import type { AgentName } from "../../types/agents.js";
@@ -52,11 +54,6 @@ export type ReconcileOptions = {
   unplaceable: ReadonlySet<string>;
 };
 
-const NOTHING_KEPT: KeptFromRoundTrip = {
-  authoredSkillIds: [],
-  unplaceableSkillIds: [],
-};
-
 /**
  * Puts back skills written here and ids this catalogue cannot place. Restored into the result,
  * not excused at the writer, because the removal diff drives deletion; rows and domain come too.
@@ -73,7 +70,11 @@ export function reconcileSharedConfig(options: ReconcileOptions): ReconciledShar
 }
 
 function nothingToReconcile(decoded: InstallSelection): ReconciledSharedConfig {
-  return { result: decoded, kept: NOTHING_KEPT, unassigned: [] };
+  return {
+    result: decoded,
+    kept: { authoredSkillIds: [], unplaceableSkillIds: [] },
+    unassigned: [],
+  };
 }
 
 /** A tombstone is neither: nothing is installed, so nothing needs protecting. */
@@ -206,21 +207,26 @@ export type HeldGlobal = {
   joined: JoinedAgent[];
 };
 
-const NO_GLOBAL_ENTRIES: Entries = { skillIds: [], agentNames: [] };
+/** The run from home that changes what a project run keeps, where home would take it. */
+export type RunFromHome = { id: string | undefined; provider: Provider | undefined };
+
+export function runFromHomeFor(
+  decoded: InstallSelection,
+  id: string,
+  projectDir: string,
+): RunFromHome {
+  return {
+    id: installsAtHome(decoded) ? id : undefined,
+    provider: providerToNameAt(os.homedir(), providerInUse(projectDir)),
+  };
+}
 
 /** A project `--from` only adds to the global install: every global entry it holds stays as held. */
 export function holdInstalledGlobal(
   decoded: InstallSelection,
   installed: InstalledGlobal | null,
 ): HeldGlobal {
-  if (!installed) {
-    return {
-      result: decoded,
-      installed: NO_GLOBAL_ENTRIES,
-      keptAsInstalled: NO_GLOBAL_ENTRIES,
-      joined: [],
-    };
-  }
+  if (!installed) return nothingHeld(decoded);
 
   const heldSkills = activeGlobalById(installed.skills, (skill) => skill.id);
   const heldAgents = activeGlobalById(installed.agents, (agent) => agent.name);
@@ -250,6 +256,15 @@ export function holdInstalledGlobal(
       }),
     },
     joined,
+  };
+}
+
+function nothingHeld(decoded: InstallSelection): HeldGlobal {
+  return {
+    result: decoded,
+    installed: { skillIds: [], agentNames: [] },
+    keptAsInstalled: { skillIds: [], agentNames: [] },
+    joined: [],
   };
 }
 
@@ -408,14 +423,10 @@ function rowIds(agentStack: StackAgentConfig | undefined): SkillId[] {
   );
 }
 
-/** An undeclared category is not exclusive (see `propagate.ts`). */
 function filledExclusiveCategories(agentStack: StackAgentConfig | undefined): Set<Category> {
-  const isExclusive = (category: Category): boolean =>
-    matrix.categories[category]?.exclusive === true;
-
   return new Set(
     typedEntries<Category, SkillAssignment[]>(agentStack ?? {})
-      .filter(([category, rows]) => rows.length > 0 && isExclusive(category))
+      .filter(([category, rows]) => rows.length > 0 && isExclusiveCategory(matrix, category))
       .map(([category]) => category),
   );
 }
@@ -513,6 +524,26 @@ export function panelRowEntries(held: HeldGlobal): NamedBy {
 export function joinedStatement(held: HeldGlobal): string[] {
   if (held.joined.length === 0) return [];
   return [addedToGlobalSubAgents(held.joined, panelRowEntries(held))];
+}
+
+/** A revised carried skill is held whole, so the global install's entry names it. */
+export function keptAsInstalledStatement(
+  held: HeldGlobal,
+  revisedCarried: SkillId[],
+  runFromHome: RunFromHome,
+): string[] {
+  const skillIds = [...held.keptAsInstalled.skillIds, ...revisedCarried];
+  const { agentNames } = held.keptAsInstalled;
+  if (skillIds.length === 0 && agentNames.length === 0) return [];
+  return [
+    keptAsInstalledGlobally(
+      skillIds,
+      agentNames,
+      runFromHome.id,
+      runFromHome.provider,
+      panelRowEntries(held),
+    ),
+  ];
 }
 
 /** Split by kind: skill and sub-agent scopes are independent, so a refusal names each. */

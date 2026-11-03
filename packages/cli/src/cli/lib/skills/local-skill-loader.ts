@@ -4,15 +4,9 @@ import { verbose, warn } from "../../utils/logger";
 import { plural } from "../../utils/string";
 import { LOCAL_PSEUDO_CATEGORY, STANDARD_FILES, type Provider } from "../../consts";
 import { namesPlaceholderCategory, parseFrontmatter, readSkillMetadata } from "../loading";
-import { isHomeDirectory } from "../installation/is-home-directory";
+import { scopeAt } from "../installation/is-home-directory";
 import { providerInUse, skillsDir, skillsPathPrefix } from "../installation/install-layout";
-import type {
-  CategoryPath,
-  Domain,
-  ExtractedSkillMetadata,
-  SkillScope,
-  SkillSlug,
-} from "../../types";
+import type { CategoryPath, Domain, ExtractedSkillMetadata, SkillSlug } from "../../types";
 import { LOCAL_DEFAULTS, METADATA_KEYS } from "../metadata-keys";
 
 export type LocalRawMetadata = {
@@ -35,7 +29,7 @@ type CopiedInSkills = { dir: string; pathPrefix: string };
 
 /** Where `provider`'s installation at `root` copies skills in; home is the global installation. */
 function copiedInSkillsAt(root: string, provider: Provider): CopiedInSkills {
-  const scope: SkillScope = isHomeDirectory(root) ? "global" : "project";
+  const scope = scopeAt(root);
 
   return {
     dir: skillsDir(provider, scope, root),

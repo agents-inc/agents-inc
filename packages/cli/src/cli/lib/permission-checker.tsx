@@ -12,6 +12,7 @@ import {
 } from "./installation/install-layout.js";
 import { fileExists, readFileSafe } from "../utils/fs";
 import { warn } from "../utils/logger";
+import { toPosixPath } from "../utils/posix-path";
 import { settingsFileSchema } from "./schemas";
 
 type SettingsFile = z.infer<typeof settingsFileSchema>;
@@ -47,7 +48,7 @@ async function loadPermissions(files: readonly string[]): Promise<PermissionConf
 
 /** Relative to the project and POSIX-separated: a name shown to a person, not a path to open. */
 function asUserWritesIt(projectRoot: string, file: string): string {
-  return path.relative(projectRoot, file).split(path.sep).join("/");
+  return toPosixPath(path.relative(projectRoot, file));
 }
 
 /** `null` for a host whose permission model this release cannot advise on. */

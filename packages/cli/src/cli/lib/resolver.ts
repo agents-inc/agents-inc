@@ -7,11 +7,9 @@ import type {
   Skill,
   SkillDefinitionMap,
   SkillReference,
-  StackAgentConfig,
 } from "../types";
 import { verbose } from "../utils/logger";
 import { typedEntries, typedFromEntries, typedKeys } from "../utils/typed-object";
-import { resolveAgentConfigToSkills } from "./stacks/stacks-loader";
 
 function resolveSkillReference(ref: SkillReference, skills: SkillDefinitionMap): Skill | null {
   const definition = skills[ref.id];
@@ -31,10 +29,6 @@ function resolveSkillReferences(skillRefs: SkillReference[], skills: SkillDefini
   return skillRefs
     .map((ref) => resolveSkillReference(ref, skills))
     .filter((skill): skill is Skill => skill !== null);
-}
-
-export function buildSkillRefsFromConfig(agentStack: StackAgentConfig): SkillReference[] {
-  return resolveAgentConfigToSkills(agentStack);
 }
 
 /** Throws when the compile config names an agent no scanned directory defines. */

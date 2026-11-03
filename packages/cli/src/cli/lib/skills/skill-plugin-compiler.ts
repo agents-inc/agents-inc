@@ -11,37 +11,21 @@ import {
   isPathWithin,
 } from "../../utils/fs";
 import { log, verbose, warn } from "../../utils/logger";
-import {
-  clearEarlierBuild,
-  generateSkillPluginManifest,
-  holdsContentNoBuildMade,
-  writePluginManifest,
-  getPluginManifestPath,
-} from "../plugins";
+import { generateSkillPluginManifest } from "../plugins";
+import { rebuildPlugin, refuseContentNoBuildMade } from "../plugins/earlier-build";
 import { parseFrontmatter } from "../loading";
-import {
-  computeShippedHash,
-  computeSkillFolderHash,
-  readEarlierBuild,
-  versionAfterRebuild,
-  writeContentHash,
-} from "../versioning";
+import { computeSkillFolderHash } from "../versioning";
 import type { PluginManifest, SkillFrontmatter } from "../../types";
 import { formatZodIssues, skillMetadataLoaderSchema } from "../schemas";
 import type { z } from "zod";
-
-type SkillMetadata = z.infer<typeof skillMetadataLoaderSchema>;
-import {
-  DEFAULT_BRANDING,
-  DEFAULT_VERSION,
-  PLUGIN_MANIFEST_DIR,
-  PLUGIN_MANIFEST_FILE,
-  STANDARD_DIRS,
-  STANDARD_FILES,
-} from "../../consts";
+import { DEFAULT_BRANDING, STANDARD_DIRS, STANDARD_FILES } from "../../consts";
 import { stripYamlSchemaComment } from "../../utils/yaml-schema";
 import { plural } from "../../utils/string";
 import { SKILL_CONTENT_FILES, SKILL_CONTENT_DIRS } from "../metadata-keys";
+
+type SkillMetadata = z.infer<typeof skillMetadataLoaderSchema>;
+
+type SkillMdToBuild = { skillMdContent: string; frontmatter: SkillFrontmatter };
 
 type SkillPluginOptions = {
   skillPath: string;
@@ -91,11 +75,7 @@ async function assertClearable(
       `${skill} would be built into ${pluginDir}, which holds its own source, so building it would overwrite that source. Build into an output directory outside the skills directory. ${file}`,
     );
   }
-  if (await holdsContentNoBuildMade(pluginDir)) {
-    throw new Error(
-      `${skill} would be built into ${pluginDir}, which holds no ${path.join(PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE)} and is not empty, so no earlier build made it and a rebuild would delete what it holds. Move its contents out, or build into another output directory. ${file}`,
-    );
-  }
+  await refuseContentNoBuildMade(pluginDir, skill, file);
 }
 
 /**
@@ -180,9 +160,7 @@ async function writeSkillFiles(
 }
 
 /** A plugin is built from the skill's SKILL.md, so one that is absent or unparseable refuses. */
-async function readSkillMdToBuild(
-  skillPath: string,
-): Promise<{ skillMdContent: string; frontmatter: SkillFrontmatter }> {
+async function readSkillMdToBuild(skillPath: string): Promise<SkillMdToBuild> {
   const dirBasename = path.basename(skillPath);
 
   const skillMdPath = path.join(skillPath, STANDARD_FILES.SKILL_MD);
@@ -206,39 +184,12 @@ async function readSkillMdToBuild(
   return { skillMdContent, frontmatter };
 }
 
-export async function compileSkillPlugin(
-  options: SkillPluginOptions,
-): Promise<CompiledSkillPlugin> {
-  const { skillPath, outputDir, skillName: overrideName } = options;
-  const { skillMdContent, frontmatter } = await readSkillMdToBuild(skillPath);
-
-  const skillName = overrideName ?? sanitizeSkillName(frontmatter.name);
-  const pluginDir = path.join(outputDir, skillName);
-  await assertClearable(pluginDir, skillPath, skillName);
-
-  verbose(`Compiling skill plugin: ${skillName} from ${skillPath}`);
-
-  const metadata = await readPluginSkillMetadata(skillPath);
-  const manifestAt = (version: string): PluginManifest =>
-    generateSkillPluginManifest({
-      skillName,
-      description: frontmatter.description,
-      ...(metadata?.author !== undefined && { author: metadata.author }),
-      ...(metadata?.category !== undefined && { category: metadata.category }),
-      version,
-    });
-
-  // Read before the clear: what the earlier build shipped decides whether the version moves.
-  const earlierBuild = await readEarlierBuild(pluginDir, getPluginManifestPath);
-  await clearEarlierBuild(pluginDir);
-
-  // At the earlier build's version, so the version alone cannot set the two builds apart; and
-  // first, so a build that stops halfway leaves a folder the next build may clear.
-  await writePluginManifest(pluginDir, manifestAt(earlierBuild?.version ?? DEFAULT_VERSION));
-
-  // Nothing reads it back. Every plugin built so far ships it, so dropping it would bump them all.
-  await writeContentHash(pluginDir, await computeSkillFolderHash(skillPath), getPluginManifestPath);
-
+async function writePluginContents(
+  pluginDir: string,
+  skillName: string,
+  skillPath: string,
+  { skillMdContent, frontmatter }: SkillMdToBuild,
+): Promise<void> {
   await writeSkillFiles(
     skillPath,
     path.join(pluginDir, STANDARD_DIRS.SKILLS, skillName),
@@ -248,11 +199,34 @@ export async function compileSkillPlugin(
   const readme = generateReadme(skillName, frontmatter);
   await writeFile(path.join(pluginDir, STANDARD_FILES.README_MD), readme);
   verbose("  Generated README.md");
+}
 
-  const manifest = manifestAt(
-    versionAfterRebuild(earlierBuild, await computeShippedHash(pluginDir)),
-  );
-  await writePluginManifest(pluginDir, manifest);
+export async function compileSkillPlugin(
+  options: SkillPluginOptions,
+): Promise<CompiledSkillPlugin> {
+  const { skillPath, outputDir, skillName: overrideName } = options;
+  const skillMd = await readSkillMdToBuild(skillPath);
+  const { frontmatter } = skillMd;
+
+  const skillName = overrideName ?? sanitizeSkillName(frontmatter.name);
+  const pluginDir = path.join(outputDir, skillName);
+  await assertClearable(pluginDir, skillPath, skillName);
+
+  verbose(`Compiling skill plugin: ${skillName} from ${skillPath}`);
+
+  const metadata = await readPluginSkillMetadata(skillPath);
+  const manifest = await rebuildPlugin(pluginDir, {
+    manifestAt: (version) =>
+      generateSkillPluginManifest({
+        skillName,
+        description: frontmatter.description,
+        ...(metadata?.author !== undefined && { author: metadata.author }),
+        ...(metadata?.category !== undefined && { category: metadata.category }),
+        version,
+      }),
+    computeContentHash: () => computeSkillFolderHash(skillPath),
+    writeContents: () => writePluginContents(pluginDir, skillName, skillPath, skillMd),
+  });
   verbose(`  Wrote plugin.json for ${skillName} (v${manifest.version})`);
 
   return {
