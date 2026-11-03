@@ -7,22 +7,16 @@
  * needs `astro build`. A broken read refuses.
  */
 
-import {
-  createReadStream,
-  existsSync,
-  readdirSync,
-  readFileSync,
-  statSync,
-} from "node:fs"
-import { createServer } from "node:http"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
 import type { Server } from "node:http"
-import { extname, join, normalize } from "node:path"
-import { fileURLToPath } from "node:url"
+import { join } from "node:path"
 import { gunzipSync } from "node:zlib"
 import { chromium } from "playwright"
 import type { Page } from "playwright"
 
-const DIST = fileURLToPath(new URL("../dist/", import.meta.url))
+import { reportChecks } from "./check-report"
+import type { Check } from "./check-report"
+import { createDistServer, DIST, htmlFilesUnder } from "./dist-server"
 
 const PAGEFIND_DIR = "pagefind/"
 
@@ -44,23 +38,11 @@ const NOT_FOUND_PAGE = "/404.html"
 
 const SEARCH_FROM = "/docs/"
 
-/** Each term with the page a reader searching it is looking for. */
 const SEARCHES = [
   { term: "uninstall", finds: "/docs/reference/commands/" },
   { term: "doctor", finds: "/docs/troubleshooting/" },
   { term: "edit --from", finds: "/docs/guides/editing-config/" },
 ] as const
-
-const MIME: Record<string, string> = {
-  ".html": "text/html",
-  ".css": "text/css",
-  ".js": "text/javascript",
-  ".json": "application/json",
-  ".svg": "image/svg+xml",
-  ".woff2": "font/woff2",
-}
-
-const OFFENCES_LISTED = 5
 
 type Search = { term: string; finds: string; urls: string[] }
 
@@ -70,19 +52,21 @@ type PagefindBundle = {
   }>
 }
 
-type Check = { holds: string; offences: string[] }
-
 async function main(): Promise<never> {
   const indexed = readIndex()
   const built = readBuiltPages()
   const searches = await searchTheBuiltSite()
 
-  return exitWith([
-    noReleasePageIsIndexed(indexed, built),
-    everyOtherPageIsIndexed(indexed, built),
-    noSearchFindsAReleasePage(searches),
-    everySearchFindsItsPage(searches),
-  ])
+  return reportChecks(
+    "search index",
+    [
+      noReleasePageIsIndexed(indexed, built),
+      everyOtherPageIsIndexed(indexed, built),
+      noSearchFindsAReleasePage(searches),
+      everySearchFindsItsPage(searches),
+    ],
+    "A Starlight page leaves the\nindex when its data sets `pagefind: false`, which drops the indexing marker from its <main>."
+  )
 }
 
 function noReleasePageIsIndexed(indexed: string[], built: string[]): Check {
@@ -139,7 +123,6 @@ function everySearchFindsItsPage(searches: Search[]): Check {
   }
 }
 
-/** The site path of every page in the index, as Pagefind recorded it. */
 function readIndex(): string[] {
   if (!existsSync(DIST))
     refuse(`dist/ not found at ${DIST} — run \`astro build\` first`)
@@ -193,10 +176,9 @@ function urlOfFragment(file: string): string {
   return fragment.url
 }
 
-/** The site path of every page in dist/, as a link to it is written. */
 function readBuiltPages(): string[] {
-  const pages = readdirSync(DIST, { recursive: true, encoding: "utf8" })
-    .filter((file) => file.endsWith(".html") && !file.startsWith(PAGEFIND_DIR))
+  const pages = htmlFilesUnder(DIST)
+    .filter((file) => !file.startsWith(PAGEFIND_DIR))
     .map((file) => `/${file.replace(/(^|\/)index\.html$/, "$1")}`)
   if (pages.length === 0) refuse(`dist/ holds no page`)
   return pages
@@ -223,7 +205,7 @@ async function searchTheBuiltSite(): Promise<Search[]> {
   }
 }
 
-/** Every result Pagefind finds, not only those the box loads at once. Order is not read. */
+/** Every result, not only those the box loads at once. */
 function search(page: Page, term: string): Promise<string[]> {
   return page.evaluate(
     async ({ bundle, term }) => {
@@ -239,26 +221,8 @@ function search(page: Page, term: string): Promise<string[]> {
 
 /** Not `file://`: the bundle fetches its index by absolute path. */
 async function serveDist(): Promise<{ server: Server; origin: string }> {
-  const server = createServer((request, response) => {
-    const path = normalize(decodeURI((request.url ?? "/").split("?")[0] ?? "/"))
-    const candidate = join(DIST, path)
-    const file =
-      existsSync(candidate) && statSync(candidate).isDirectory()
-        ? join(candidate, "index.html")
-        : candidate
-
-    if (!existsSync(file)) {
-      response.writeHead(404).end()
-      return
-    }
-
-    response.writeHead(200, {
-      "content-type": MIME[extname(file)] ?? "application/octet-stream",
-    })
-    createReadStream(file).pipe(response)
-  })
-
-  // Port 0: the system picks a free one, so a second run beside this one cannot collide.
+  const server = createDistServer()
+  // Port 0, so a second run beside this one cannot collide.
   await new Promise<void>((resolve) =>
     server.listen(0, "127.0.0.1", () => resolve())
   )
@@ -272,29 +236,6 @@ async function serveDist(): Promise<{ server: Server; origin: string }> {
 
 function isReleasePage(path: string): boolean {
   return path.startsWith(RELEASES_PATH)
-}
-
-function exitWith(checks: Check[]): never {
-  const failed = checks.filter((check) => check.offences.length > 0)
-  for (const { holds, offences } of checks) {
-    if (offences.length === 0) {
-      console.log(`search index: holds: ${holds}`)
-      continue
-    }
-    console.error(`search index: FAILS (${offences.length}): ${holds}`)
-    for (const offence of offences.slice(0, OFFENCES_LISTED))
-      console.error(`  · ${offence}`)
-    if (offences.length > OFFENCES_LISTED) {
-      console.error(`  · and ${offences.length - OFFENCES_LISTED} more`)
-    }
-  }
-
-  if (failed.length === 0) process.exit(0)
-  console.error(
-    `\nsearch index: ${failed.length} of ${checks.length} checks fail. A Starlight page leaves the` +
-      `\nindex when its data sets \`pagefind: false\`, which drops the indexing marker from its <main>.`
-  )
-  process.exit(1)
 }
 
 function refuse(reason: string): never {

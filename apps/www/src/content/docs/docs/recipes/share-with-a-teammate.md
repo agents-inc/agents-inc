@@ -18,7 +18,7 @@ npx agents-inc share
 ```
 
 ```
-Sharing 12 skill(s) across 4 sub-agent(s)...
+Sharing 12 skills across 4 sub-agents...
 ✓ Shared as <id>
   Install it:  npx agents-inc init --from <id>
   Open it:     https://agentsinc.sh/editor/?fromId=<id>

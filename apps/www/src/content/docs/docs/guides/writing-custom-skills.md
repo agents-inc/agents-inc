@@ -51,8 +51,9 @@ skills/{skill-name}/
 ```
 
 Both files are required — the loader validates the pair and `npx agents-inc doctor` reports either
-one missing. On Claude, the `skill-summoner` sub-agent can help you author and refine skills;
-Codex installations leave it out.
+one missing. A skill whose `slug` the public catalogue does not carry also needs `custom: true` in
+its `metadata.yaml`, or `doctor` refuses the slug. On Claude, the `skill-summoner` sub-agent can
+help you author and refine skills; Codex installations leave it out.
 
 ## Sub-agents
 

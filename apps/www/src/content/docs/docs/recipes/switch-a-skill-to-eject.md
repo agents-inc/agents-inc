@@ -18,7 +18,7 @@ npx agents-inc edit              # publishes this installation and opens it at a
 npx agents-inc edit --from <id>  # applies what you changed there
 ```
 
-`edit` prints `init --from <id>` beside the link, but that command is greenfield-only and refuses a directory that already carries an installation. `edit --from <id>` is the one that comes back.
+`edit` prints the `edit --from <id>` that comes back beside the link.
 
 The files land at `.claude/skills/<skill-id>/` — `SKILL.md` and `metadata.yaml`, plus whatever else that skill ships. Edit them and run `npx agents-inc compile`.
 

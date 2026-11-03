@@ -39,24 +39,24 @@ The terminal-size gate never bites in CI. It reads `process.stdout.columns` and 
 
 ## Exit codes
 
-| Code | Means                                                              |
-| ---- | ------------------------------------------------------------------ |
-| `0`  | the command completed                                              |
-| `1`  | it refused or aborted; nothing landed, and the run can be repeated |
-| `2`  | bad arguments or flags                                             |
-| `4`  | cancelled — a declined confirmation                                |
-| `5`  | the run landed and part of it did not                              |
+| Code | Means                                                                                                                    |
+| ---- | ------------------------------------------------------------------------------------------------------------------------ |
+| `0`  | the command completed                                                                                                    |
+| `1`  | it refused or aborted; nothing landed, though `update` may already have moved other plugins, and the run can be repeated |
+| `2`  | bad arguments or flags                                                                                                   |
+| `4`  | cancelled — a declined confirmation                                                                                      |
+| `5`  | the run landed and part of it did not                                                                                    |
 
-**Code 5 is the one to special-case.** `init`, `edit` and `eject` raise it at the end of a run that completed. The output names each failure and the single command that finishes it, so repeating the whole thing is the wrong response:
+**Code 5 is the one to special-case.** `init`, `edit`, `eject` and `update` raise it at the end of a run that completed. The output names each failure and what finishes it, so repeating the whole thing is the wrong response:
 
 ```
-Completed with 1 failure(s) — the changes above landed, these did not:
+Completed with 1 failure — the changes above landed, these did not:
 ```
 
 ## Four places the exit code isn't enough
 
-- **`compile` exits 0 with unresolved skills.** Grep standard error for `is configured but was not found`.
-- **`eject` exits 0 when the copy was skipped** and still prints `✓ Eject complete!`. Grep for `already exist at`, or check the destination directory.
+- **`compile` exits 0 with unresolved skills.** Grep standard error for `agents will be compiled without it`.
+- **`eject` exits 0 when the copy was skipped** and still prints `✓ Eject complete!`. Grep for `already exist at` and `stays as it is`, or check the destination directory.
 - **`search` exits 0 with no matches** — it's a warning, not a failure. Check standard output for `Found `.
 - **`doctor` exits 1 for a missing config as well as a broken one.** If "not installed yet" is an acceptable state for your job, match on `config.ts not found` rather than on the code. The exception is a marketplace repository with nothing installed — the operational checks stand down, so that message never prints and a clean run exits 0.
 

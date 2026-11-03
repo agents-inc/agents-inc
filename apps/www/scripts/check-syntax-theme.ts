@@ -6,14 +6,18 @@
  * caches output, so clear `dist .astro node_modules/.astro` if in doubt.
  */
 
-import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
-import { fileURLToPath } from "node:url"
 
 import { inkRampSyntaxTheme } from "@workspace/ui/lib/syntax-theme"
 
+import { DIST, htmlFilesUnder } from "./dist-server"
+import { isNonNull } from "./is-non-null"
+import { driftBetween } from "./membership-drift"
+import type { Drift } from "./membership-drift"
+
 // Only /docs carries code blocks.
-const DIST_DOCS = fileURLToPath(new URL("../dist/docs/", import.meta.url))
+const DIST_DOCS = join(DIST, "docs/")
 const DIST_DOCS_LABEL = "dist/docs/"
 
 const THEME_MODULE = "@workspace/ui/lib/syntax-theme"
@@ -45,15 +49,9 @@ const TOKEN_COLOUR = /--0:(#[0-9A-Fa-f]{6})/g
 
 const ITALIC_TOKEN = /--0:(#[0-9A-Fa-f]{6});--0fs:italic/g
 
-type Drift = {
-  claim: string
-  namedButAbsent: string[]
-  presentButUnnamed: string[]
-}
-
 function main(): never {
   const drift = [renderedColoursAreTheTheme(), italicIsTheThemes()].filter(
-    isDrift
+    isNonNull
   )
 
   return exitWith(drift)
@@ -67,8 +65,8 @@ function renderedColoursAreTheTheme(): Drift | null {
 
   return driftBetween(
     `the built pages must render the token colours ${THEME_MODULE} exports and no others`,
-    TOKEN_COLOURS.filter((hex) => !rendered.includes(hex)),
-    rendered.filter((hex) => !TOKEN_COLOURS.includes(hex))
+    rendered,
+    TOKEN_COLOURS
   )
 }
 
@@ -77,8 +75,8 @@ function italicIsTheThemes(): Drift | null {
 
   return driftBetween(
     `only the colours ${THEME_MODULE} sets italic may render italic`,
-    ITALIC_COLOURS.filter((hex) => !italic.includes(hex)),
-    italic.filter((hex) => !ITALIC_COLOURS.includes(hex))
+    italic,
+    ITALIC_COLOURS
   )
 }
 
@@ -97,25 +95,10 @@ function builtPages(): string[] {
     refuse(`${DIST_DOCS_LABEL} is not there — run \`astro build\` first`)
   }
 
-  const pages = readdirSync(DIST_DOCS, { recursive: true, encoding: "utf8" })
-    .filter((entry) => entry.endsWith(".html"))
-    .map((entry) => join(DIST_DOCS, entry))
+  const pages = htmlFilesUnder(DIST_DOCS).map((entry) => join(DIST_DOCS, entry))
 
   if (pages.length === 0) refuse(`${DIST_DOCS_LABEL} holds no built page`)
   return pages
-}
-
-function driftBetween(
-  claim: string,
-  namedButAbsent: string[],
-  presentButUnnamed: string[]
-): Drift | null {
-  if (namedButAbsent.length === 0 && presentButUnnamed.length === 0) return null
-  return { claim, namedButAbsent, presentButUnnamed }
-}
-
-function isDrift(verdict: Drift | null): verdict is Drift {
-  return verdict !== null
 }
 
 function exitWith(drift: Drift[]): never {

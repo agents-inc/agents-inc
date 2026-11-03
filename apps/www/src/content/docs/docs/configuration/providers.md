@@ -88,7 +88,7 @@ trust_level = "trusted"
 
 **Four ways this fails, and every one of them is silent** — no warning from Codex, anywhere: no entry at all; `trust_level = "untrusted"`, which beats any permissive sandbox flag; a trailing slash on the path; and the entry written inside the project's own `.codex/config.toml`, which Codex refuses as self-authorisation.
 
-So `init`, `edit` and `compile` **write it for you** and print exactly what they wrote: your project, the file and the line. The rest of your configuration is left as it was. If you have already set `trust_level` for that directory to anything else, `"untrusted"` included, it is left as you set it and the install says so.
+So `init`, `edit` and `compile` **write it for you** and print exactly what they wrote: your project, the file and the line. `uninstall` takes it out again and says so, even if you trusted the folder yourself before installing. The rest of your configuration is left as it was, and a `config.toml` left with nothing in it is deleted. If you have already set `trust_level` for that directory to anything else, `"untrusted"` included, it is left as you set it and the install says so.
 
 **An untrusted Codex project install is half live, which is worse than dead.** Skills at `.agents/skills` reach the model with no trust entry and no configuration file at all, while sub-agents, plugin enablement and hooks are ignored in silence. `doctor` does not check project trust — the line `init`, `edit` and `compile` print is the only notice.
 
@@ -128,7 +128,7 @@ Plainly, because these are the limits most likely to be met the hard way.
 npx agents-inc doctor
 ```
 
-The `Layout` row says which folder each scope is on. `Placements Offered` carries the two states in which no other command will act on this installation: a configuration asking for a cell its provider does not offer, and a scope holding an installation of each provider. It reports both rather than refusing, because those are exactly the states you need to be able to look at.
+The `Layout` row says which folder each scope is on. Two states stop every other command acting on this installation, and `doctor` reports both rather than refusing, because those are exactly the states you need to be able to look at: `Placements Offered` names a configuration asking for a cell its provider does not offer, and an `Installations` row, printed first, names a scope holding an installation of each provider.
 
 ## Related
 

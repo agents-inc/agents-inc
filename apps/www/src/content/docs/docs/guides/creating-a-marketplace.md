@@ -84,7 +84,7 @@ is npm-scoped.
 `build marketplace` refuses to write a `marketplace.json` if either rule is broken:
 
 ```
-Marketplace 'acme' ships 2 skill id(s) outside its own namespace.
+Marketplace 'acme' ships 2 skill ids outside its own namespace.
 Every skill id must begin with the marketplace's name:
   api-framework-hono -> acme-api-framework-hono
   web-framework-react -> acme-web-framework-react

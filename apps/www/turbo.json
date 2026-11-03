@@ -10,7 +10,7 @@
     // `build`, not `^build`: the checks read this workspace's own dist/.
     "test": {
       "dependsOn": ["build"],
-      // Three checks read CLI files this site does not depend on, so turbo
+      // Some checks read CLI files this site does not depend on, so turbo
       // must be told or a CLI-only change replays from cache.
       // `$TURBO_DEFAULT$` stays because naming inputs replaces the default set.
       "inputs": [

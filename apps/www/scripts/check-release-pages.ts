@@ -3,7 +3,7 @@
  * under packages/cli/changelogs/, at /docs/releases/<version>/, and no other;
  * each page's title is its notes' opening heading and its body the rest, word
  * for word; the sidebar's Releases group lists every release, newest first;
- * the sidebar no longer stands in for the section with GitHub's releases page;
+ * no sidebar link stands in for the section with GitHub's releases page;
  * and no link on a release page points at a site path nothing was built at.
  * Words, not markup: formatting, punctuation and link targets may differ, a
  * dropped, added or reordered word may not. Reads the notes and dist/, so
@@ -18,13 +18,15 @@ import { fromMarkdown } from "mdast-util-from-markdown"
 import { gfmFromMarkdown } from "mdast-util-gfm"
 import { gfm } from "micromark-extension-gfm"
 
+import { reportChecks } from "./check-report"
+import type { Check } from "./check-report"
+import { DIST } from "./dist-server"
+
 const NOTES_DIR = fileURLToPath(
   new URL("../../../packages/cli/changelogs/", import.meta.url)
 )
 
 const NOTES_LABEL = "packages/cli/changelogs/"
-
-const DIST = fileURLToPath(new URL("../dist/", import.meta.url))
 
 // The version verbatim: a slugger drops the dots, and a page is named for its release.
 const RELEASES_PATH = "/docs/releases/"
@@ -34,8 +36,6 @@ const RELEASES_GROUP = "Releases"
 // Every page carries the whole sidebar; this one is built whatever else changes.
 const SIDEBAR_PAGE = "docs/index.html"
 
-// Written out rather than read from CHANGELOG_URL, so deleting the constant
-// cannot take this check's subject with it.
 const GITHUB_RELEASES = "https://github.com/agents-inc/agents-inc/releases"
 
 const STAND_IN_LABEL = "Changelog"
@@ -145,12 +145,9 @@ const MARKDOWN_BLOCKS = new Set([
   "thematicBreak",
 ])
 
-// Links a reader follows off the site, or within the page.
 const NOT_A_SITE_PATH = /^(?:[a-z][a-z\d+.-]*:|\/\/|#)/i
 
 const SITE_ORIGIN = "https://agentsinc.sh"
-
-const OFFENCES_LISTED = 5
 
 const CONTEXT_WORDS = 8
 
@@ -185,28 +182,30 @@ type Sidebar = {
   releases: ReleaseLink[] | undefined
 }
 
-type Check = { holds: string; offences: string[] }
-
 function main(): never {
   const releases = readNotes().sort(newestFirst)
   const sidebar = readSidebar()
   holdTheControls(releases, sidebar)
 
-  return exitWith([
-    everyNotesFileHasAPage(releases),
-    noPageWithoutNotes(releases),
-    everyPageReadsAsItsNotes(releases),
-    theSidebarListsEveryReleaseNewestFirst(releases, sidebar),
-    theGithubStandInIsGone(sidebar),
-    noReleasePageLinksNowhere(releases),
-  ])
+  return reportChecks(
+    "release pages",
+    [
+      everyNotesFileHasAPage(releases),
+      noPageWithoutNotes(releases),
+      everyPageReadsAsItsNotes(releases),
+      theSidebarListsEveryReleaseNewestFirst(releases, sidebar),
+      theGithubStandInIsGone(sidebar),
+      noReleasePageLinksNowhere(releases),
+    ],
+    `The section is built from\n${NOTES_LABEL} when the site builds; a page is never written by hand.`
+  )
 }
 
 function everyNotesFileHasAPage(releases: Release[]): Check {
   return {
     holds: `every notes file under ${NOTES_LABEL} has a page at ${RELEASES_PATH}<version>/`,
     offences: releases
-      .filter((release) => !existsSync(join(DIST, pageFileOf(release.version))))
+      .filter((release) => !hasBuiltPage(release))
       .map(
         ({ version }) =>
           `${version} has no page: dist/${pageFileOf(version)} was not built`
@@ -235,9 +234,7 @@ function noPageWithoutNotes(releases: Release[]): Check {
 }
 
 function everyPageReadsAsItsNotes(releases: Release[]): Check {
-  const built = releases.filter((release) =>
-    existsSync(join(DIST, pageFileOf(release.version)))
-  )
+  const built = releases.filter(hasBuiltPage)
   const holds =
     "every release page's title is its notes' heading and its body the rest of its notes, word for word"
   if (built.length === 0) {
@@ -253,13 +250,7 @@ function everyPageReadsAsItsNotes(releases: Release[]): Check {
 function mismatchesOf(release: Release): string[] {
   const where = `${RELEASES_PATH}${release.version}/`
   const page = readBuiltPage(pageFileOf(release.version))
-  const [title, ...otherTitles] = page.titles
-  const titleProblem =
-    title === undefined
-      ? "has no <h1>"
-      : otherTitles.length > 0
-        ? `has ${page.titles.length} <h1> elements; the notes' heading is its one title`
-        : describeDifference(release.heading, title, "heading")
+  const titleProblem = titleProblemOf(release.heading, page.titles)
   const bodyProblem =
     page.body === undefined
       ? "has no Markdown content element"
@@ -268,6 +259,19 @@ function mismatchesOf(release: Release): string[] {
   return [titleProblem, bodyProblem]
     .filter((problem) => problem !== undefined)
     .map((problem) => `${where} ${problem}`)
+}
+
+function titleProblemOf(
+  heading: string[],
+  titles: string[][]
+): string | undefined {
+  const [title, ...otherTitles] = titles
+  if (title === undefined) return "has no <h1>"
+  if (otherTitles.length > 0) {
+    return `has ${titles.length} <h1> elements; the notes' heading is its one title`
+  }
+
+  return describeDifference(heading, title, "heading")
 }
 
 function theSidebarListsEveryReleaseNewestFirst(
@@ -290,9 +294,6 @@ function theSidebarListsEveryReleaseNewestFirst(
   const strays = sidebar.releases.filter(
     ({ version }) => !expected.includes(version)
   )
-  const misplaced = expected.findIndex(
-    (version, index) => listed[index] !== version
-  )
   const mislabelled = sidebar.releases.filter(
     ({ version, label }) => !label.includes(version)
   )
@@ -305,10 +306,8 @@ function theSidebarListsEveryReleaseNewestFirst(
         ({ href, label }) =>
           `"${label}" (${href}) is listed and names no notes file`
       ),
-      ...(missing.length === 0 && strays.length === 0 && misplaced !== -1
-        ? [
-            `the order breaks at entry ${misplaced + 1}: expected ${expected[misplaced]}, found ${listed[misplaced] ?? "(nothing)"}`,
-          ]
+      ...(missing.length === 0 && strays.length === 0
+        ? orderBreaks(expected, listed)
         : []),
       ...mislabelled.map(
         ({ href, label }) =>
@@ -316,6 +315,17 @@ function theSidebarListsEveryReleaseNewestFirst(
       ),
     ],
   }
+}
+
+function orderBreaks(expected: string[], listed: string[]): string[] {
+  const misplaced = expected.findIndex(
+    (version, index) => listed[index] !== version
+  )
+  if (misplaced === -1) return []
+
+  return [
+    `the order breaks at entry ${misplaced + 1}: expected ${expected[misplaced]}, found ${listed[misplaced] ?? "(nothing)"}`,
+  ]
 }
 
 function theGithubStandInIsGone(sidebar: Sidebar): Check {
@@ -358,9 +368,7 @@ function standInProblems(href: string, links: SidebarLink[]): string[] {
 }
 
 function noReleasePageLinksNowhere(releases: Release[]): Check {
-  const built = releases.filter((release) =>
-    existsSync(join(DIST, pageFileOf(release.version)))
-  )
+  const built = releases.filter(hasBuiltPage)
   const holds =
     "no link on a release page points at a site path nothing was built at"
   if (built.length === 0) {
@@ -385,24 +393,30 @@ function noReleasePageLinksNowhere(releases: Release[]): Check {
     }
   }
 
-  return {
-    holds,
-    offences: pages.flatMap(({ release, hrefs }) => {
-      const at = `${RELEASES_PATH}${release.version}/`
-      return hrefs
-        .filter((href) => {
-          const path = sitePathOf(href, at)
-          return path !== undefined && builtFileFor(path) === undefined
-        })
-        .map(
-          (href) =>
-            `${at} links ${href}, and nothing was built at ${sitePathOf(href, at) ?? href}`
-        )
-    }),
-  }
+  return { holds, offences: pages.flatMap(deadLinksOn) }
 }
 
-/** The comparison must accept a page against its own source and refuse it against another's. */
+function deadLinksOn({
+  release,
+  hrefs,
+}: {
+  release: Release
+  hrefs: string[]
+}): string[] {
+  const at = `${RELEASES_PATH}${release.version}/`
+  return hrefs
+    .filter((href) => leadsNowhere(href, at))
+    .map(
+      (href) =>
+        `${at} links ${href}, and nothing was built at ${sitePathOf(href, at) ?? href}`
+    )
+}
+
+function leadsNowhere(href: string, from: string): boolean {
+  const path = sitePathOf(href, from)
+  return path !== undefined && builtFileFor(path) === undefined
+}
+
 function holdTheControls(releases: Release[], sidebar: Sidebar): void {
   const page = readBuiltPage(CONTROL.page)
   const own = readDocsSource(CONTROL.source)
@@ -509,13 +523,7 @@ function readSidebar(): Sidebar {
   if (sidebar === undefined)
     refuse(`dist/${SIDEBAR_PAGE} holds no sidebar element`)
 
-  const groups = [...sidebar.matchAll(DETAILS_START)].map((match) => {
-    const inner = innerOf(sidebar, "details", match.index) ?? ""
-    return {
-      label: collapse(textOfHtml(SUMMARY.exec(inner)?.[1] ?? "")),
-      inner,
-    }
-  })
+  const groups = groupsIn(sidebar)
   const links = anchorsIn(sidebar)
   if (groups.length === 0 || links.length === 0) {
     refuse(
@@ -530,11 +538,25 @@ function readSidebar(): Sidebar {
     releases:
       releasesGroup === undefined
         ? undefined
-        : anchorsIn(releasesGroup.inner).flatMap(({ href, label }) => {
-            const version = versionLinkedBy(href)
-            return version === undefined ? [] : [{ href, label, version }]
-          }),
+        : releaseLinksIn(releasesGroup.inner),
   }
+}
+
+function groupsIn(sidebar: string): { label: string; inner: string }[] {
+  return [...sidebar.matchAll(DETAILS_START)].map((match) => {
+    const inner = innerOf(sidebar, "details", match.index) ?? ""
+    return {
+      label: collapse(textOfHtml(SUMMARY.exec(inner)?.[1] ?? "")),
+      inner,
+    }
+  })
+}
+
+function releaseLinksIn(group: string): ReleaseLink[] {
+  return anchorsIn(group).flatMap(({ href, label }) => {
+    const version = versionLinkedBy(href)
+    return version === undefined ? [] : [{ href, label, version }]
+  })
 }
 
 function readBuiltPage(relative: string): BuiltPage {
@@ -561,7 +583,6 @@ function readBuiltPage(relative: string): BuiltPage {
   }
 }
 
-/** The inner HTML of the element whose start tag begins at `start`, nesting counted. */
 function innerOf(
   html: string,
   name: string,
@@ -612,11 +633,7 @@ function parseMarkdown(source: string): MarkdownNode[] {
   }).children
 }
 
-/**
- * What a reader is shown: text and code as written, raw HTML as written (a page
- * that swallows it as markup has dropped words), and a link's text without its
- * target.
- */
+/** Raw HTML counts as text: a page that swallows it as markup has dropped words. */
 function visibleText(node: MarkdownNode): string {
   const own =
     node.value ??
@@ -657,22 +674,26 @@ function collapse(text: string): string {
   return text.replace(/\s+/g, " ").trim()
 }
 
-/** Where two word sequences part, with a few words of each side; undefined when they agree. */
 function describeDifference(
   expected: string[],
   found: string[],
   part: string
 ): string | undefined {
-  const parted = expected.findIndex((word, index) => found[index] !== word)
-  const at =
-    parted !== -1
-      ? parted
-      : expected.length === found.length
-        ? -1
-        : expected.length
-  if (at === -1) return undefined
+  const at = firstDifferenceAt(expected, found)
+  if (at === undefined) return undefined
 
   return `differs from its ${part} at word ${at + 1} of ${expected.length}: the source reads "${excerpt(expected, at)}", the page "${excerpt(found, at)}"`
+}
+
+function firstDifferenceAt(
+  expected: string[],
+  found: string[]
+): number | undefined {
+  const parted = expected.findIndex((word, index) => found[index] !== word)
+  if (parted !== -1) return parted
+  if (expected.length === found.length) return undefined
+
+  return expected.length
 }
 
 function excerpt(words: string[], at: number): string {
@@ -687,7 +708,6 @@ function versionLinkedBy(href: string): string | undefined {
   return NOTES_FILE.test(`${version}.md`) ? version : undefined
 }
 
-/** The site path an href opens from the page at `from`; undefined when it leaves the site. */
 function sitePathOf(href: string, from: string): string | undefined {
   if (NOT_A_SITE_PATH.test(href)) return undefined
   const url = new URL(href, `${SITE_ORIGIN}${from}`)
@@ -711,35 +731,16 @@ function trailingSlashless(path: string): string {
   return path.replace(/\/+$/, "")
 }
 
+function hasBuiltPage(release: Release): boolean {
+  return existsSync(join(DIST, pageFileOf(release.version)))
+}
+
 function pageFileOf(version: string): string {
   return `${RELEASES_PATH.slice(1)}${version}/index.html`
 }
 
 function newestFirst(a: Release, b: Release): number {
   return b.rank[0] - a.rank[0] || b.rank[1] - a.rank[1] || b.rank[2] - a.rank[2]
-}
-
-function exitWith(checks: Check[]): never {
-  const failed = checks.filter((check) => check.offences.length > 0)
-  for (const { holds, offences } of checks) {
-    if (offences.length === 0) {
-      console.log(`release pages: holds: ${holds}`)
-      continue
-    }
-    console.error(`release pages: FAILS (${offences.length}): ${holds}`)
-    for (const offence of offences.slice(0, OFFENCES_LISTED))
-      console.error(`  · ${offence}`)
-    if (offences.length > OFFENCES_LISTED) {
-      console.error(`  · and ${offences.length - OFFENCES_LISTED} more`)
-    }
-  }
-
-  if (failed.length === 0) process.exit(0)
-  console.error(
-    `\nrelease pages: ${failed.length} of ${checks.length} checks fail. The section is built from` +
-      `\n${NOTES_LABEL} when the site builds; a page is never written by hand.`
-  )
-  process.exit(1)
 }
 
 /** An empty or broken read is the defect, not a pass. */

@@ -131,8 +131,9 @@ configuration from a directory with nothing in it would publish whatever the
 machine happens to have installed globally.
 
 Everything that can fail locally fails before anything is published: an empty
-pipe, text that is not JSON, and JSON the store will not accept are three
-different mistakes and each says which. It also refuses to run if standard input
+pipe, text that is not JSON, JSON the store will not accept, and a skill carried
+under an id that does not start with `external-`, which every install refuses,
+are different mistakes and each says which. It also refuses to run if standard input
 is a terminal, because that means nothing was piped.
 
 Then either install it or open it:

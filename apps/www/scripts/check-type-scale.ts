@@ -4,15 +4,13 @@
  * contrast or spacing. Reads `dist/`, so needs `astro build`.
  */
 
-import { createServer } from "node:http"
 import type { Server } from "node:http"
-import { createReadStream, existsSync, statSync } from "node:fs"
-import { extname, join, normalize } from "node:path"
-import { fileURLToPath } from "node:url"
+import { existsSync } from "node:fs"
 import { chromium } from "playwright"
 import type { Page } from "playwright"
 
-const DIST = fileURLToPath(new URL("../dist/", import.meta.url))
+import { reportFailures } from "./check-report"
+import { createDistServer, DIST, listening, visit } from "./dist-server"
 
 const PORT = 4319
 
@@ -35,17 +33,18 @@ const HEADINGS_IN_CONTENT = "main :is(h1, h2, h3, h4)"
 /** What counts as "the text it heads". */
 const RUNNING_TEXT = ["P", "UL", "OL"]
 
-const MIME: Record<string, string> = {
-  ".html": "text/html",
-  ".css": "text/css",
-  ".js": "text/javascript",
-  ".json": "application/json",
-  ".svg": "image/svg+xml",
-  ".woff2": "font/woff2",
-  ".ico": "image/x-icon",
+type Failure = string
+
+type SharedRole = (typeof SHARED_ROLES)[number]
+
+type Inversion = {
+  tag: string
+  text: string
+  headingPx: number
+  bodyPx: number
 }
 
-type Failure = string
+type RoleSizes = { notFoundPx: number | null; docsPx: number | null }
 
 async function main(): Promise<void> {
   if (!existsSync(DIST)) {
@@ -72,51 +71,9 @@ async function headingsSmallerThanTheirBody(page: Page): Promise<Failure[]> {
   const failures: Failure[] = []
 
   for (const path of PAGES) {
-    await visit(page, path)
-    const inversions = await page.evaluate(
-      ({ selector, runningText }) => {
-        const sizeOf = (element: Element) =>
-          parseFloat(getComputedStyle(element).fontSize)
-
-        // Climb past Starlight's `.sl-heading-wrapper` to the following text.
-        const textAfter = (heading: Element): Element | null => {
-          let node: Element | null = heading
-          while (node !== null && node.nextElementSibling === null)
-            node = node.parentElement
-          let next = node === null ? null : node.nextElementSibling
-          while (next !== null && !runningText.includes(next.tagName)) {
-            next = next.nextElementSibling
-          }
-          return next
-        }
-
-        const found = []
-        for (const heading of document.querySelectorAll(selector)) {
-          const body = textAfter(heading)
-          if (body === null) continue
-
-          const headingPx = sizeOf(heading)
-          const bodyPx = sizeOf(body)
-          if (headingPx > bodyPx) continue
-
-          found.push({
-            tag: heading.tagName,
-            text: heading.textContent.trim().slice(0, 40),
-            headingPx,
-            bodyPx,
-          })
-        }
-        return found
-      },
-      { selector: HEADINGS_IN_CONTENT, runningText: RUNNING_TEXT }
-    )
-
-    for (const found of inversions) {
-      failures.push(
-        `${path} — ${found.tag} "${found.text}" renders at ${found.headingPx}px, ` +
-          `not larger than the ${found.bodyPx}px text it heads.`
-      )
-    }
+    await visit(page, PORT, path)
+    const inversions = await headingInversionsOn(page)
+    failures.push(...inversions.map((found) => describeInversion(path, found)))
   }
 
   return failures
@@ -125,83 +82,107 @@ async function headingsSmallerThanTheirBody(page: Page): Promise<Failure[]> {
 async function rolesTheTwoHalvesDisagreeOn(page: Page): Promise<Failure[]> {
   const failures: Failure[] = []
 
-  for (const { role, notFound, docs } of SHARED_ROLES) {
-    await visit(page, NOT_FOUND)
-    const notFoundPx = await fontSizeOf(page, notFound)
-    await visit(page, "/docs/why/")
-    const docsPx = await fontSizeOf(page, docs)
-
-    if (notFoundPx === null)
-      failures.push(`${NOT_FOUND} has no ${role} matching \`${notFound}\`.`)
-    if (docsPx === null)
-      failures.push(`documentation has no ${role} matching \`${docs}\`.`)
-    if (notFoundPx === null || docsPx === null) continue
-
-    if (notFoundPx !== docsPx) {
-      failures.push(
-        `${role} is ${notFoundPx}px on ${NOT_FOUND} and ${docsPx}px on /docs — ` +
-          `the two halves are setting one role at two sizes.`
-      )
-    }
+  for (const shared of SHARED_ROLES) {
+    const notFoundPx = await fontSizeAt(page, NOT_FOUND, shared.notFound)
+    const docsPx = await fontSizeAt(page, "/docs/why/", shared.docs)
+    failures.push(...roleFailures(shared, { notFoundPx, docsPx }))
   }
 
   return failures
 }
 
-async function fontSizeOf(
+function headingInversionsOn(page: Page): Promise<Inversion[]> {
+  return page.evaluate(
+    ({ selector, runningText }) => {
+      const sizeOf = (element: Element) =>
+        parseFloat(getComputedStyle(element).fontSize)
+
+      // Climb past Starlight's `.sl-heading-wrapper` to the following text.
+      const textAfter = (heading: Element): Element | null => {
+        let node: Element | null = heading
+        while (node !== null && node.nextElementSibling === null)
+          node = node.parentElement
+        let next = node === null ? null : node.nextElementSibling
+        while (next !== null && !runningText.includes(next.tagName)) {
+          next = next.nextElementSibling
+        }
+        return next
+      }
+
+      const found: Inversion[] = []
+      for (const heading of document.querySelectorAll(selector)) {
+        const body = textAfter(heading)
+        if (body === null) continue
+
+        const headingPx = sizeOf(heading)
+        const bodyPx = sizeOf(body)
+        if (headingPx > bodyPx) continue
+
+        found.push({
+          tag: heading.tagName,
+          text: heading.textContent.trim().slice(0, 40),
+          headingPx,
+          bodyPx,
+        })
+      }
+      return found
+    },
+    { selector: HEADINGS_IN_CONTENT, runningText: RUNNING_TEXT }
+  )
+}
+
+function describeInversion(path: string, found: Inversion): Failure {
+  return (
+    `${path} — ${found.tag} "${found.text}" renders at ${found.headingPx}px, ` +
+    `not larger than the ${found.bodyPx}px text it heads.`
+  )
+}
+
+function roleFailures(
+  { role, notFound, docs }: SharedRole,
+  { notFoundPx, docsPx }: RoleSizes
+): Failure[] {
+  if (notFoundPx !== null && docsPx !== null) {
+    return notFoundPx === docsPx
+      ? []
+      : [
+          `${role} is ${notFoundPx}px on ${NOT_FOUND} and ${docsPx}px on /docs — ` +
+            `the two halves are setting one role at two sizes.`,
+        ]
+  }
+
+  return [
+    ...(notFoundPx === null
+      ? [`${NOT_FOUND} has no ${role} matching \`${notFound}\`.`]
+      : []),
+    ...(docsPx === null
+      ? [`documentation has no ${role} matching \`${docs}\`.`]
+      : []),
+  ]
+}
+
+async function fontSizeAt(
   page: Page,
+  path: string,
   selector: string
 ): Promise<number | null> {
+  await visit(page, PORT, path)
   return page.evaluate((s) => {
     const el = document.querySelector(s)
     return el ? parseFloat(getComputedStyle(el).fontSize) : null
   }, selector)
 }
 
-async function visit(page: Page, path: string): Promise<void> {
-  await page.goto(`http://localhost:${PORT}${path}`, {
-    waitUntil: "networkidle",
-  })
-}
-
 /** Not `file://`: absolute asset paths would resolve against the filesystem root, unstyled. */
 function serveDist(): Promise<Server> {
-  const server = createServer((request, response) => {
-    const path = normalize(decodeURI((request.url ?? "/").split("?")[0]!))
-    const candidate = join(DIST, path)
-    const file =
-      existsSync(candidate) && statSync(candidate).isDirectory()
-        ? join(candidate, "index.html")
-        : candidate
-
-    if (!existsSync(file)) {
-      response.writeHead(404).end()
-      return
-    }
-
-    response.writeHead(200, {
-      "content-type": MIME[extname(file)] ?? "application/octet-stream",
-    })
-    createReadStream(file).pipe(response)
-  })
-
-  return new Promise((resolve) => server.listen(PORT, () => resolve(server)))
+  return listening(createDistServer(), PORT)
 }
 
 function exitWith(failures: Failure[]): never {
-  if (failures.length === 0) {
-    console.log(
-      `type scale: ${PAGES.length} pages, ${SHARED_ROLES.length} shared roles, all agree`
-    )
-    process.exit(0)
-  }
-
-  console.error(`type scale: ${failures.length} failure(s)\n`)
-  for (const failure of failures) console.error(`  · ${failure}`)
-  console.error(
-    "\nThe site's prose sizes are defined once, in src/styles/site.css."
-  )
-  process.exit(1)
+  return reportFailures("type scale", failures, {
+    passed: `${PAGES.length} pages, ${SHARED_ROLES.length} shared roles, all agree`,
+    remedy: "The site's prose sizes are defined once, in src/styles/site.css.",
+  })
 }
 
 await main()

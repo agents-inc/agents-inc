@@ -1,17 +1,17 @@
 /**
  * Holds that the apex is the editor: the build ships no page at `/`, its
  * `_redirects` sends `/` to the site's `EDITOR_URL` permanently, and no built
- * page links to `/`, which is only a redirect now. Rules are parsed as
+ * page links to `/`, which is only a redirect. Rules are parsed as
  * Cloudflare's asset router reads them. Reads `dist/`, so needs `astro build`.
  */
 
-import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
-import { fileURLToPath } from "node:url"
 
 import { EDITOR_URL } from "../src/lib/links"
-
-const DIST = fileURLToPath(new URL("../dist/", import.meta.url))
+import { reportFailures } from "./check-report"
+import { DIST, htmlFilesUnder } from "./dist-server"
+import { isNonNull } from "./is-non-null"
 
 const REDIRECTS_LABEL = "dist/_redirects"
 
@@ -36,7 +36,7 @@ function main(): never {
   if (!existsSync(DIST))
     refuse(`dist/ not found at ${DIST} — run \`astro build\` first`)
 
-  const pages = builtPages()
+  const pages = htmlFilesUnder(DIST)
   if (pages.length === 0) refuse("dist/ holds no HTML page")
 
   return exitWith([
@@ -57,7 +57,7 @@ function theApexRedirectsToTheEditor(rules: Rule[]): Failure[] {
   if (apex === undefined)
     return [`${REDIRECTS_LABEL} has no rule for ${ROOT_PATH}.`]
 
-  return [wrongDestination(apex), wrongStatus(apex)].filter(isFailure)
+  return [wrongDestination(apex), wrongStatus(apex)].filter(isNonNull)
 }
 
 function wrongDestination(apex: Rule): Failure | null {
@@ -108,29 +108,13 @@ function ruleOf(line: string): Rule {
   return { from, to, status }
 }
 
-function builtPages(): string[] {
-  return readdirSync(DIST, { recursive: true, encoding: "utf8" }).filter(
-    (entry) => entry.endsWith(".html")
-  )
-}
-
-function isFailure(verdict: Failure | null): verdict is Failure {
-  return verdict !== null
-}
-
 function exitWith(failures: Failure[]): never {
-  if (failures.length === 0) {
-    console.log(
-      `apex redirect: no page at ${ROOT_PATH}, ${ROOT_PATH} moves permanently to ${EDITOR_URL}, ` +
-        `and none of the built pages links to ${ROOT_PATH}`
-    )
-    process.exit(0)
-  }
-
-  console.error(`apex redirect: ${failures.length} failure(s)\n`)
-  for (const failure of failures) console.error(`  · ${failure}`)
-  console.error("\nThe rule is declared in apps/www/public/_redirects.")
-  process.exit(1)
+  return reportFailures("apex redirect", failures, {
+    passed:
+      `no page at ${ROOT_PATH}, ${ROOT_PATH} moves permanently to ${EDITOR_URL}, ` +
+      `and none of the built pages links to ${ROOT_PATH}`,
+    remedy: "The rule is declared in apps/www/public/_redirects.",
+  })
 }
 
 /** An empty read is the defect, not a pass. */

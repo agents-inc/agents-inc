@@ -11,6 +11,10 @@ import { fileURLToPath } from "node:url"
 
 import ts from "typescript"
 
+import { isNonNull } from "./is-non-null"
+import { driftBetween } from "./membership-drift"
+import type { Drift } from "./membership-drift"
+
 // oclif's `pattern` strategy: every module here is a command.
 const COMMANDS_DIR = fileURLToPath(
   new URL("../../../packages/cli/src/cli/commands/", import.meta.url)
@@ -60,12 +64,6 @@ type Command = { id: string; aliases: string[]; flags: string[] }
 
 type MatrixRow = { command: string; aliases: string[]; flags: string[] }
 
-type Drift = {
-  claim: string
-  namedButAbsent: string[]
-  presentButUnnamed: string[]
-}
-
 function main(): void {
   const commands = readCommands()
   const rows = readMatrixRows()
@@ -73,7 +71,7 @@ function main(): void {
   const drift = [
     driftBetween("the command roster", rosterOf(commands), rosterNamedBy(rows)),
     driftBetween("each command's flags", flagsOf(commands), flagsNamedBy(rows)),
-  ].filter(isDrift)
+  ].filter(isNonNull)
 
   exitWith(drift, commands)
 }
@@ -226,10 +224,11 @@ function flagOptionsOf(
 }
 
 function flagNameOf(name: ts.PropertyName, modulePath: string): string {
-  if (ts.isIdentifier(name) || ts.isStringLiteral(name)) return name.text
-
-  refuse(
-    `a visible flag in ${modulePath} is keyed by an expression, so it has no readable name`
+  return (
+    nameOf(name) ??
+    refuse(
+      `a visible flag in ${modulePath} is keyed by an expression, so it has no readable name`
+    )
   )
 }
 
@@ -413,12 +412,8 @@ function cellAt(cells: string[], index: number, column: string): string {
 /** Every backticked span, value placeholder removed: `search <query>` names `search`. */
 function namesIn(cell: string): string[] {
   return [...cell.matchAll(CODE_SPAN)]
-    .map((span) => withoutValuePlaceholder(span[1] ?? ""))
+    .map((span) => (span[1] ?? "").replace(VALUE_PLACEHOLDER, "").trim())
     .filter((name) => name.length > 0)
-}
-
-function withoutValuePlaceholder(span: string): string {
-  return span.replace(VALUE_PLACEHOLDER, "").trim()
 }
 
 function rosterOf(commands: Command[]): string[] {
@@ -440,22 +435,6 @@ function flagsNamedBy(rows: MatrixRow[]): string[] {
   return rows.flatMap((row) =>
     row.flags.map((flag) => `${row.command} ${flag}`)
   )
-}
-
-function driftBetween(
-  claim: string,
-  held: string[],
-  named: string[]
-): Drift | null {
-  const namedButAbsent = named.filter((member) => !held.includes(member))
-  const presentButUnnamed = held.filter((member) => !named.includes(member))
-  if (namedButAbsent.length === 0 && presentButUnnamed.length === 0) return null
-
-  return { claim, namedButAbsent, presentButUnnamed }
-}
-
-function isDrift(verdict: Drift | null): verdict is Drift {
-  return verdict !== null
 }
 
 function exitWith(drift: Drift[], commands: Command[]): never {

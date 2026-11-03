@@ -8,12 +8,19 @@
 import { createServer } from "node:http"
 import type { Server } from "node:http"
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs"
-import { extname, join, normalize } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright"
 import type { Page } from "playwright"
 
-const DIST = fileURLToPath(new URL("../dist/", import.meta.url))
+import { reportFailures } from "./check-report"
+import {
+  contentTypeOf,
+  DIST,
+  distFileOf,
+  listening,
+  requestPath,
+  visit,
+} from "./dist-server"
 
 const PORT = 4320
 
@@ -22,21 +29,11 @@ const COLD_PAGES = ["/404.html", "/docs/quickstart/"]
 const NAVIGATE_FROM = "/docs/quickstart/"
 const NAVIGATE_TO = "/docs/why/"
 
-const MIME: Record<string, string> = {
-  ".html": "text/html",
-  ".css": "text/css",
-  ".js": "text/javascript",
-  ".json": "application/json",
-  ".svg": "image/svg+xml",
-  ".woff2": "font/woff2",
-  ".woff": "font/woff",
-  ".ico": "image/x-icon",
-}
-
 const IS_FONT = /\.woff2?($|\?)/
 
 type Failure = string
 type HeaderRule = { pattern: RegExp; headers: [string, string][] }
+type FontTransfer = { file: string; bytes: number }
 
 async function main(): Promise<void> {
   if (!existsSync(DIST)) {
@@ -66,58 +63,27 @@ async function fontsPreloadedWherePagesUseThem(page: Page): Promise<Failure[]> {
   const failures: Failure[] = []
 
   for (const path of COLD_PAGES) {
-    const requested: string[] = []
-    const collect = (url: string) => {
-      if (IS_FONT.test(url)) requested.push(fileOf(url))
-    }
-    const listener = (request: { url(): string }) => collect(request.url())
-    page.on("request", listener)
-
-    await page.context().clearCookies()
-    await visit(page, path)
-    await page.evaluate(() => document.fonts.ready)
-    page.off("request", listener)
-
-    const preloaded = await page.evaluate(() =>
-      [
-        ...document.querySelectorAll<HTMLLinkElement>(
-          'link[rel="preload"][as="font"]'
-        ),
-      ].map((link) => link.href.split("/").pop() ?? "")
-    )
-
-    if (requested.length === 0) {
-      failures.push(
-        `${path} requested no webfont at all — the check cannot tell whether ` +
-          `the preloads are right, and this page should be using Inter.`
-      )
-      continue
-    }
-
-    for (const file of new Set(requested)) {
-      if (preloaded.includes(file)) continue
-      failures.push(
-        `${path} downloads ${file} but does not preload it — the browser ` +
-          `cannot discover it until site.css has parsed.`
-      )
-    }
+    const requested = await fontsRequestedOnColdVisit(page, path)
+    const preloaded = await fontsPreloadedOn(page)
+    failures.push(...preloadFailures(path, requested, preloaded))
   }
 
   return failures
+}
+
+async function fontsRefetchedOnNavigation(page: Page): Promise<Failure[]> {
+  await visitUntilFontsLoad(page, NAVIGATE_FROM)
+  await visitUntilFontsLoad(page, NAVIGATE_TO)
+
+  return refetchFailures(await fontsFetchedOverTheWire(page))
 }
 
 /**
  * Measured with Resource Timing, not request events: Playwright reports cache
  * hits as requests too. A zero `transferSize` is a cache hit.
  */
-async function fontsRefetchedOnNavigation(page: Page): Promise<Failure[]> {
-  await visit(page, NAVIGATE_FROM)
-  await page.evaluate(() => document.fonts.ready)
-
-  await visit(page, NAVIGATE_TO)
-  await page.evaluate(() => document.fonts.ready)
-
-  const overTheWire = await page.evaluate(() =>
+function fontsFetchedOverTheWire(page: Page): Promise<FontTransfer[]> {
+  return page.evaluate(() =>
     performance
       .getEntriesByType("resource")
       .filter(
@@ -130,7 +96,58 @@ async function fontsRefetchedOnNavigation(page: Page): Promise<Failure[]> {
         bytes: entry.transferSize,
       }))
   )
+}
 
+async function fontsRequestedOnColdVisit(
+  page: Page,
+  path: string
+): Promise<string[]> {
+  const requested: string[] = []
+  const listener = (request: { url(): string }) => {
+    const url = request.url()
+    if (IS_FONT.test(url)) requested.push(fileOf(url))
+  }
+
+  page.on("request", listener)
+  await page.context().clearCookies()
+  await visitUntilFontsLoad(page, path)
+  page.off("request", listener)
+
+  return requested
+}
+
+function fontsPreloadedOn(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    [
+      ...document.querySelectorAll<HTMLLinkElement>(
+        'link[rel="preload"][as="font"]'
+      ),
+    ].map((link) => link.href.split("/").pop() ?? "")
+  )
+}
+
+function preloadFailures(
+  path: string,
+  requested: string[],
+  preloaded: string[]
+): Failure[] {
+  if (requested.length === 0) {
+    return [
+      `${path} requested no webfont at all — the check cannot tell whether ` +
+        `the preloads are right, and this page should be using Inter.`,
+    ]
+  }
+
+  return [...new Set(requested)]
+    .filter((file) => !preloaded.includes(file))
+    .map(
+      (file) =>
+        `${path} downloads ${file} but does not preload it — the browser ` +
+        `cannot discover it until site.css has parsed.`
+    )
+}
+
+function refetchFailures(overTheWire: FontTransfer[]): Failure[] {
   if (overTheWire.length === 0) return []
 
   return [
@@ -143,10 +160,9 @@ async function fontsRefetchedOnNavigation(page: Page): Promise<Failure[]> {
 
 const fileOf = (url: string) => url.split("/").pop() ?? url
 
-async function visit(page: Page, path: string): Promise<void> {
-  await page.goto(`http://localhost:${PORT}${path}`, {
-    waitUntil: "networkidle",
-  })
+async function visitUntilFontsLoad(page: Page, path: string): Promise<void> {
+  await visit(page, PORT, path)
+  await page.evaluate(() => document.fonts.ready)
 }
 
 /**
@@ -155,10 +171,14 @@ async function visit(page: Page, path: string): Promise<void> {
  */
 function headerRules(): HeaderRule[] {
   const source = fileURLToPath(new URL("../public/_headers", import.meta.url))
-  if (!existsSync(source)) return []
+  return existsSync(source)
+    ? parseHeaderRules(readFileSync(source, "utf8"))
+    : []
+}
 
+function parseHeaderRules(source: string): HeaderRule[] {
   const rules: HeaderRule[] = []
-  for (const line of readFileSync(source, "utf8").split("\n")) {
+  for (const line of source.split("\n")) {
     if (line.trim() === "" || line.trimStart().startsWith("#")) continue
 
     if (!/^\s/.test(line)) {
@@ -186,34 +206,15 @@ const patternOf = (path: string) =>
  */
 function serveDist(rules: HeaderRule[]): Promise<Server> {
   const server = createServer((request, response) => {
-    const url = (request.url ?? "/").split("?")[0]!
-    const path = normalize(decodeURI(url))
-    const candidate = join(DIST, path)
-    const file =
-      existsSync(candidate) && statSync(candidate).isDirectory()
-        ? join(candidate, "index.html")
-        : candidate
-
-    if (!existsSync(file)) {
+    const url = requestPath(request)
+    const file = distFileOf(url)
+    if (file === null) {
       response.writeHead(404).end()
       return
     }
 
-    const stat = statSync(file)
-    const etag = `"${stat.size.toString(16)}-${stat.mtimeMs.toString(16)}"`
-
-    const headers: Record<string, string> = {
-      "content-type": MIME[extname(file)] ?? "application/octet-stream",
-      "cache-control": "public, max-age=0, must-revalidate",
-      etag,
-    }
-    for (const rule of rules) {
-      if (!rule.pattern.test(url)) continue
-      for (const [name, value] of rule.headers) {
-        headers[name.toLowerCase()] = value
-      }
-    }
-
+    const etag = etagOf(file)
+    const headers = responseHeadersFor(url, file, etag, rules)
     if (request.headers["if-none-match"] === etag) {
       response.writeHead(304, headers).end()
       return
@@ -223,25 +224,43 @@ function serveDist(rules: HeaderRule[]): Promise<Server> {
     createReadStream(file).pipe(response)
   })
 
-  return new Promise((resolve) => server.listen(PORT, () => resolve(server)))
+  return listening(server, PORT)
+}
+
+function etagOf(file: string): string {
+  const stat = statSync(file)
+  return `"${stat.size.toString(16)}-${stat.mtimeMs.toString(16)}"`
+}
+
+/** Later rules override earlier ones, header by header. */
+function responseHeadersFor(
+  url: string,
+  file: string,
+  etag: string,
+  rules: HeaderRule[]
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    "content-type": contentTypeOf(file),
+    "cache-control": "public, max-age=0, must-revalidate",
+    etag,
+  }
+  for (const rule of rules.filter((rule) => rule.pattern.test(url))) {
+    for (const [name, value] of rule.headers) {
+      headers[name.toLowerCase()] = value
+    }
+  }
+  return headers
 }
 
 function exitWith(failures: Failure[]): never {
-  if (failures.length === 0) {
-    console.log(
-      `webfont delivery: ${COLD_PAGES.length} pages preload what they use, ` +
-        `and a navigation downloads no font`
-    )
-    process.exit(0)
-  }
-
-  console.error(`webfont delivery: ${failures.length} failure(s)\n`)
-  for (const failure of failures) console.error(`  · ${failure}`)
-  console.error(
-    "\nCaching is declared in apps/www/public/_headers, and the preloads are " +
-      "in src/components/font-preloads.astro."
-  )
-  process.exit(1)
+  return reportFailures("webfont delivery", failures, {
+    passed:
+      `${COLD_PAGES.length} pages preload what they use, ` +
+      `and a navigation downloads no font`,
+    remedy:
+      "Caching is declared in apps/www/public/_headers, and the preloads are " +
+      "in src/components/font-preloads.astro.",
+  })
 }
 
 await main()

@@ -157,14 +157,13 @@ npx agents-inc edit              # opens this installation in the editor
 npx agents-inc edit --from <id>  # applies what you changed there
 ```
 
-The second command is the one to get right. The install dialog hands out
-`init --from`, and that one refuses a directory that already has an
-installation — `An installation already exists at …`. `edit --from` is the one
+The second command is the one to get right. `init --from` refuses a directory
+that already has an installation — `An installation already exists at …`. `edit --from` is the one
 that accepts a setup already in place. It states a whole roster, so whatever it
 leaves out is removed, and every removal is named before anything is written.
 
 `npx agents-inc update` refreshes the listing of every marketplace your config
-names through Claude Code's own plugin commands, and that is all it does — the
-plugins already installed keep their version, it asks nothing, and it recompiles
-nothing, because a sub-agent references a plugin skill by pointer rather than by
-copy. Ejected skills are copies you own, so it never touches them.
+names, then moves every installed plugin to its newest version, through Claude
+Code's own plugin commands. It asks nothing and recompiles nothing, because a
+sub-agent references a plugin skill by pointer rather than by copy. Ejected
+skills are copies you own, so it never touches them.

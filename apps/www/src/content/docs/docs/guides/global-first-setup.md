@@ -67,7 +67,7 @@ npx agents-inc edit                   # publishes what's installed and opens it 
 npx agents-inc edit --from Ab3xY9_Q   # applies what you changed there
 ```
 
-`edit` prints `init --from <id>` beside the link, and that is not the command to come back with. [Switch a skill to eject](/docs/recipes/switch-a-skill-to-eject) walks the round trip once, start to finish.
+[Switch a skill to eject](/docs/recipes/switch-a-skill-to-eject) walks the round trip once, start to finish.
 
 Global items **cannot be removed from a project**. The global install is shared by every project, so one project must not uninstall it for the others.
 

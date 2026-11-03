@@ -68,9 +68,9 @@ The order is the point. A file that won't parse is one finding, and every row th
 | `Skipped — the configuration that names them cannot be read` | A content row that needs `config.ts` to know what to validate.                                                                                                         |
 | `Skipped — this row would only restate the … errors above`   | One row, blocked by a content pass it reads through. The gap names which one — `marketplace`, `skill` or `plugin`, and two of them joined by `and` when both failed.   |
 | `Skipped (marketplace unreachable)`                          | `Skills Resolved` had no catalogue to resolve ids against.                                                                                                             |
-| `Skipped (config invalid)`                                   | No config was loaded. **Also printed when the config is merely absent** — that wording is misleading and the row above it (`Config Valid`) is the one that says which. |
+| `Skipped (config invalid)`                                   | A config the row reads was not loaded — for `Placements Offered`, that includes the global config it reads beside the project's own. **Also printed when the config is merely absent** — that wording is misleading and the row above it (`Config Valid`) is the one that says which. |
 
-Only two findings stand the whole layer down: a config nobody can read, and a marketplace repository with nothing installed. Every other content error is scoped to the rows that read what it's about, and the rest print real verdicts — a broken plugin registry stands down `Plugins Installed` and nothing else.
+Only two findings stand the whole layer down: a config the `Config` row cannot read, and a marketplace repository with nothing installed. Every other content error is scoped to the rows that read what it's about, and the rest print real verdicts — a broken plugin registry stands down `Plugins Installed` and nothing else.
 
 ## Configuration, source, compile, or install
 
@@ -102,6 +102,7 @@ npx agents-inc list
 ```
 Installation: global
   Mode:    Plugin
+  Marketplace: github:agents-inc/skills
   Skills:  3
     React (global)
     Zustand (global)
@@ -128,7 +129,7 @@ npx agents-inc doctor      # the whole report, not the row that failed
 
 `doctor`'s output is worth pasting whole. A row that failed often isn't the fault itself — it's the cascade of a finding two rows above it, and the layer headings and skip lines are what separate the two.
 
-Then the command you actually ran, verbatim including flags, and **its exit code** — `echo $?` straight after. The exit code isn't cosmetic here: `1` means the command refused and nothing landed, `4` means it was cancelled, and `5` means it ran to the end and part of it didn't happen. Those three ask for different things from whoever reads the report, and re-running is the wrong response to the third.
+Then the command you actually ran, verbatim including flags, and **its exit code** — `echo $?` straight after. The exit code isn't cosmetic here: `1` means the command refused and nothing landed (`update` may already have moved other plugins, and can simply be run again), `4` means it was cancelled, and `5` means it ran to the end and part of it didn't happen. Those three ask for different things from whoever reads the report, and re-running is the wrong response to the third.
 
 Last, whether the installation is global or project and whether the skills are plugin or eject mode. Issues go to [github.com/agents-inc/agents-inc](https://github.com/agents-inc/agents-inc/issues).
 

@@ -26,12 +26,12 @@ Every message below is quoted as the CLI prints it, because that's how most peop
 | `An installation already exists at …`                                      | `init --from` is greenfield-only                              | [Uninstall first](#a-shared-id-that-will-not-install)                      |
 | A sub-agent doesn't show up in Claude Code                                 | it was never compiled, or compiled at the other scope         | [Compile it](#sub-agents-that-never-appeared-in-claude-code)               |
 | Your edits to `.claude/agents/*.md` keep vanishing                         | compiled agents are build outputs                             | [Edit the partials](#hand-edits-to-a-compiled-sub-agent-keep-disappearing) |
-| `Failed to install N plugin skill(s).`                                     | the plugin install didn't happen                              | [Refresh or switch to eject](#a-plugin-install-that-failed)                |
-| `Cannot install N skill(s) as plugins — no marketplace carries them`       | a skill that exists only here                                 | [Set its Install mode to eject](#a-plugin-install-that-failed)             |
+| `Failed to install N plugin skills.`                                       | the plugin install didn't happen                              | [Refresh or switch to eject](#a-plugin-install-that-failed)                |
+| `Cannot install N skills as plugins — no marketplace carries them`         | a skill that exists only here                                 | [Set its Install mode to eject](#a-plugin-install-that-failed)             |
 | `No skills found. Run 'npx agents-inc init' …`                             | `compile` found nothing installed under the config            | [Reinstall the skills](#compile-says-there-are-no-skills)                  |
 | `✓ Eject complete!` and nothing was copied                                 | everything was already there                                  | [Pass `--force`](#an-eject-that-reports-success-and-copies-nothing)        |
 | The command prints one line and hangs                                      | the terminal is under 80×20                                   | [Resize it](#a-command-that-hangs-instead-of-starting)                     |
-| `Completed with N failure(s) — the changes above landed, these did not:`   | the run finished and part of it didn't happen                 | [Do what the indented line says](#a-command-that-finished-with-failures)   |
+| `Completed with N failures — the changes above landed, these did not:`     | the run finished and part of it didn't happen                 | [Do what the indented line says](#a-command-that-finished-with-failures)   |
 
 ## A config that will not parse
 
@@ -105,9 +105,9 @@ Two commands report this and they behave differently, which is worth knowing bef
 Warning: Skill 'no-such-skill-id' is configured but was not found — agents will be compiled without it.
 ```
 
-That's deliberate — the other agents still compile — but it means a CI step that only checks `compile`'s exit code will pass over a sub-agent that quietly lost a skill. Grep stderr for `is configured but was not found` if that matters.
+That's deliberate — the other agents still compile — but it means a CI step that only checks `compile`'s exit code will pass over a sub-agent that quietly lost a skill. Grep stderr for `agents will be compiled without it` if that matters.
 
-Applying a shared configuration reports it as a skip instead — `Skipped 2 skill(s) this catalog does not know: a, b` — and installs without them.
+Applying a shared configuration reports it as a skip instead — `Skipped 2 skills this catalog does not know: a, b` — and installs without them.
 
 The remedy depends on why the id is missing. If the marketplace has moved on, refresh it and re-pick:
 
@@ -232,17 +232,17 @@ Plugin intent is never quietly downgraded to a local copy. If a plugin install f
 
 ```
 Warning: Failed to install plugin web-framework-react: <reason>
-Error: Failed to install 1 plugin skill(s). Plugin install intent could not be honored.
+Error: Failed to install 1 plugin skill. Plugin install intent could not be honored.
 Verify the skill id matches the marketplace, run 'npx agents-inc update' to refresh the marketplace,
 or switch affected skills to eject mode.
 ```
 
-Work through those three in order. `npx agents-inc update` shells out to the Claude CLI once per configured marketplace, so it needs Claude Code on your path — without it you get `Claude CLI not found — 'npx agents-inc update' refreshes marketplaces through it. Install Claude Code first: https://claude.ai/code`. On a Codex installation it needs `codex` instead, and the same line names the Codex CLI.
+Work through those three in order. `npx agents-inc update` shells out to the Claude CLI, so it needs Claude Code on your path — without it you get `Claude CLI not found — 'npx agents-inc update' refreshes marketplaces through it. Install Claude Code first: https://claude.ai/code`. On a Codex installation it needs `codex` instead, and the same line names the Codex CLI.
 
 **A skill no marketplace carries is refused earlier and differently**, because refreshing a marketplace is impossible advice for a skill you wrote yourself:
 
 ```
-Cannot install 1 skill(s) as plugins — no marketplace carries them: my-own-skill.
+Cannot install 1 skill as a plugin — no marketplace carries it: my-own-skill.
 A skill that exists only in this project can only be installed as a local copy.
 Set its Install mode to eject in the editor, or publish it to a marketplace first.
 ```
@@ -273,11 +273,13 @@ Warning: Skills already exist at /home/me/project/.claude/skills. Use --force to
 ✓ Eject complete!
 ```
 
-**The exit code is 0 either way**, so a script can't tell "ejected" from "skipped" by status alone — grep stderr for `already exist at`, or check the destination.
+**The exit code is 0 either way**, so a script can't tell "ejected" from "skipped" by status alone — grep stderr for `already exist at` and `stays as it is`, or check the destination.
 
 ```bash
 npx agents-inc eject skills --force
 ```
+
+`--force` doesn't reach a skill with a copy of your own outside the destination, in this project or in the global installation. `eject` leaves that copy as it is and names it: `Skipped <id>: its local copy at <folder> stays as it is, even with --force.`
 
 Each eject type has its own destination — partials to `agents/` in the source folder the installation is on (`.agents-inc/claude/` or `.agents-inc/codex/`), templates to `agents/_templates/` under that, skills to `.claude/skills/` — and `--output/-o` replaces all three at once, writing directly into the directory you name with no nesting under it; `eject all` keeps the templates inside the partials, in `_templates/`.
 
@@ -286,14 +288,14 @@ Each eject type has its own destination — partials to `agents/` in the source 
 Exit code 5, and it means something no other code does: the run reached the end, the changes it reports landed, and part of it didn't happen.
 
 ```
-Completed with 1 failure(s) — the changes above landed, these did not:
-  2 sub-agent(s) did not compile: reviewer, web-developer
+Completed with 1 failure — the changes above landed, these did not:
+  2 sub-agents did not compile: reviewer, web-developer
     Run 'npx agents-inc compile' — the compiled agents on disk are stale until you do.
 ```
 
-**Do the indented line, not the command again.** Re-running would repeat work that already landed. Each failure is printed with the one command that finishes it, and the other two you'll see are `Run 'npx agents-inc doctor' to see what this installation is left holding.` and `Delete the file by hand — Claude Code loads a compiled sub-agent this project no longer configures.`
+**Do the indented line, not the command again.** Re-running would repeat work that already landed. Each failure is printed with what finishes it.
 
-Only `init`, `edit` and `eject` end this way. Everything else either completes or refuses.
+Only `init`, `edit`, `eject` and `update` end this way. Everything else either completes or refuses.
 
 ## A command that hangs instead of starting
 

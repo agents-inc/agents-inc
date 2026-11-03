@@ -6,11 +6,10 @@
  * `window.open`. Reads `dist/`, so needs `astro build`.
  */
 
-import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
-import { fileURLToPath } from "node:url"
 
-const DIST = fileURLToPath(new URL("../dist/", import.meta.url))
+import { DIST, htmlFilesUnder } from "./dist-server"
 
 // Written out rather than read from EXTERNAL_LINK_ATTRS, so weakening the
 // constant reddens this check instead of moving it.
@@ -109,9 +108,7 @@ function builtPages(): string[] {
   if (!existsSync(DIST))
     refuse(`dist/ not found at ${DIST} — run \`astro build\` first`)
 
-  const pages = readdirSync(DIST, { recursive: true, encoding: "utf8" }).filter(
-    (entry) => entry.endsWith(".html")
-  )
+  const pages = htmlFilesUnder(DIST)
   if (pages.length === 0) refuse("dist/ holds no HTML page")
   return pages
 }

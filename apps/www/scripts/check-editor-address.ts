@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url"
 import ts from "typescript"
 
 import { EDITOR_URL as SITE_EDITOR_PATH } from "../src/lib/links"
+import { isNonNull } from "./is-non-null"
 
 const CONSTS = fileURLToPath(
   new URL("../../../packages/cli/src/cli/consts.ts", import.meta.url)
@@ -94,7 +95,7 @@ function main(): void {
     driftIn("every address written on this site's own host", judged.addresses),
     driftIn("every share link written out", judged.shareLinks),
     driftIn("every link whose text names this site's host", judged.links),
-  ].filter(isDrift)
+  ].filter(isNonNull)
 
   exitWith(drift, judged)
 }
@@ -399,10 +400,6 @@ function driftIn(claim: string, written: Written[]): Drift | null {
   const offences = written.filter((one) => !one.agrees)
 
   return offences.length === 0 ? null : { claim, offences }
-}
-
-function isDrift(verdict: Drift | null): verdict is Drift {
-  return verdict !== null
 }
 
 function exitWith(drift: Drift[], judged: Judged): never {

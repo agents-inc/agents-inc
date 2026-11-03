@@ -74,7 +74,7 @@ Two differences from hand-editing are worth knowing:
 
 Install what you built with `npx agents-inc init --from <id>`, and the model and effort you set land on the matching `AgentScopeConfig` entries. See [Install and share](/docs/editor/install-and-share).
 
-**On a directory that's already installed the command is `edit --from`, not `init --from`.** `init --from` refuses one and names the path — installing a shared configuration is a fresh setup rather than a merge. So the round trip for a setup you already have is `npx agents-inc edit` out to the browser, which publishes this installation and opens it there, and `npx agents-inc edit --from <id>` back. The Install dialog only ever hands you the `init` form, because nothing in the browser knows whether you've installed.
+**On a directory that's already installed the command is `edit --from`, not `init --from`.** `init --from` refuses one and names the path — installing a shared configuration is a fresh setup rather than a merge. So the round trip for a setup you already have is `npx agents-inc edit` out to the browser, which publishes this installation and opens it there, and `npx agents-inc edit --from <id>` back.
 
 **A config pinning `model: 'inherit'` can't be shared.** Both `npx agents-inc share` and `edit` mint an id from the same reader, and both refuse it, naming the sub-agent: the shared format has no `inherit`, and dropping the field would say "keep the sub-agent's own metadata", which is a different instruction. Change the value or leave the field out.
 

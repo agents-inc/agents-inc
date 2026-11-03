@@ -78,9 +78,10 @@ current directory, publishes them as one configuration, and prints the id with
 both things you can do with it — `init --from <id>` on another machine, or
 `agentsinc.sh/editor/?fromId=<id>` in a browser.
 
-To go straight to the browser, `edit` does the same mint and prints the same
-id and destinations, then, at a terminal, opens the editor on the id, so the
-installation you are standing in becomes the selection loaded there:
+To go straight to the browser, `edit` does the same mint and prints the id with
+`edit --from <id>`, which applies it back here, in place of `init --from <id>`,
+then, at a terminal, opens the editor on the id, so the installation you are
+standing in becomes the selection loaded there:
 
 ```bash
 npx agents-inc edit
