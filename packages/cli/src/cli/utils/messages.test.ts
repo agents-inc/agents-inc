@@ -70,6 +70,7 @@ import {
 import { DEFAULT_BRANDING, PROVIDERS } from "../consts";
 import { SKILLS } from "../lib/__tests__/test-fixtures";
 import { buildSkillConfig } from "../lib/__tests__/helpers/skill-config-builders";
+import { otherThan } from "../lib/__tests__/helpers/other-providers";
 import { initializeMatrix } from "../lib/matrix/matrix-provider";
 import { FULLSTACK_TRIO_MATRIX, WEB_TRIO_MATRIX } from "../lib/__tests__/mock-data/mock-matrices";
 import type { AgentName } from "../types";
@@ -115,10 +116,9 @@ describe("the line a missing host binary produces", () => {
   it("names the provider whose binary is missing, and no other", () => {
     for (const provider of PROVIDERS) {
       const said = hostCliNotFound(provider).toLowerCase();
-      const others = PROVIDERS.filter((other) => other !== provider);
 
       expect(said, `${provider} is not named in its own message`).toContain(provider);
-      for (const other of others) {
+      for (const other of otherThan(provider)) {
         expect(said, `${provider}'s message names ${other} instead`).not.toContain(other);
       }
     }
@@ -196,8 +196,33 @@ describe("the count lines an install and a recompile end on", () => {
   });
 
   it("counts rewritten sub-agents in the singular at one, in whichever noun the caller counts", () => {
-    expect(recompileSummary(1, 6, "agent")).toBe("1 agent rewritten, 6 unchanged");
-    expect(recompileSummary(2, 0, "global agent")).toBe("2 global agents rewritten, 0 unchanged");
+    expect(
+      recompileSummary(
+        { compiled: ["pm", "web-developer", "web-tester"], rewritten: ["pm"], created: [] },
+        "agent",
+      ),
+    ).toBe("1 agent rewritten, 2 unchanged");
+    expect(
+      recompileSummary(
+        { compiled: ["pm", "web-developer"], rewritten: ["pm", "web-developer"], created: [] },
+        "global agent",
+      ),
+    ).toBe("2 global agents rewritten, 0 unchanged");
+  });
+
+  it("counts the sub-agents whose files the run created apart from those it rewrote", () => {
+    expect(
+      recompileSummary(
+        { compiled: ["pm", "web-developer", "web-tester"], rewritten: [], created: ["web-tester"] },
+        "project agent",
+      ),
+    ).toBe("0 project agents rewritten, 1 created, 2 unchanged");
+    expect(
+      recompileSummary(
+        { compiled: ["pm", "web-developer"], rewritten: ["pm"], created: ["web-developer"] },
+        "agent",
+      ),
+    ).toBe("1 agent rewritten, 1 created, 0 unchanged");
   });
 
   it("counts the registered projects a fan-out recompiled, with no count of those that came out the same", () => {
@@ -330,12 +355,16 @@ describe("the line a missing host binary produces, word for word", () => {
 
 describe("the lines a compile and an install report their counts in", () => {
   it("counts the local skills a run copied", () => {
-    expect(localSkillsCopied(3)).toBe("Copied 3 local skill(s)");
+    expect(localSkillsCopied(3)).toBe("Copied 3 local skills");
+  });
+
+  it("counts one local skill copied in the singular", () => {
+    expect(localSkillsCopied(1)).toBe("Copied 1 local skill");
   });
 
   it("names every sub-agent that did not compile, comma-separated", () => {
     expect(agentsNotCompiled([WEB_DEVELOPER, API_DEVELOPER])).toBe(
-      "2 sub-agent(s) did not compile: web-developer, api-developer",
+      "2 sub-agents did not compile: web-developer, api-developer",
     );
   });
 
@@ -347,9 +376,21 @@ describe("the lines a compile and an install report their counts in", () => {
       ]),
     ).toBe(
       [
-        "Completed with 2 failure(s) — the changes above landed, these did not:",
+        "Completed with 2 failures — the changes above landed, these did not:",
         "  the global agents were not recompiled",
         "    Recompile them.",
+        "  a stale agent file was kept",
+        "    Delete it.",
+      ].join("\n"),
+    );
+  });
+
+  it("heads a run's one failure in the singular", () => {
+    expect(
+      completedWithFailures([{ what: "a stale agent file was kept", recovery: "Delete it." }]),
+    ).toBe(
+      [
+        "Completed with 1 failure — the changes above landed, these did not:",
         "  a stale agent file was kept",
         "    Delete it.",
       ].join("\n"),
@@ -651,7 +692,13 @@ describe("the lines share prints about what a shared id can carry", () => {
 
   it("names every skill from another marketplace that a shared id leaves behind", () => {
     expect(sharedSkillsLeftBehind([REACT, HONO], {})).toBe(
-      "A shared id names one marketplace, and these skill(s) come from another, so they will not install elsewhere: React, Hono",
+      "A shared id names one marketplace, and these skills come from another, so they will not install elsewhere: React, Hono",
+    );
+  });
+
+  it("names the one skill from another marketplace that a shared id leaves behind in the singular", () => {
+    expect(sharedSkillsLeftBehind([HONO], {})).toBe(
+      "A shared id names one marketplace, and this skill comes from another, so it will not install elsewhere: Hono",
     );
   });
 
@@ -695,13 +742,13 @@ describe("the lines init --from prints about what a configuration brings", () =>
 
   it("counts and names the skills, sub-agents and carried skills it skipped or wrote", () => {
     expect(skippedSkills([REACT, HONO], [], NONE_UNLOADED)).toBe(
-      `Skipped 2 skill(s) this catalog does not know: ${REACT}, ${HONO}`,
+      `Skipped 2 skills this catalog does not know: ${REACT}, ${HONO}`,
     );
     expect(skippedUnknownAgents(["web-ghost", "api-ghost"])).toBe(
-      "Skipped 2 unknown sub-agent(s): web-ghost, api-ghost",
+      "Skipped 2 unknown sub-agents: web-ghost, api-ghost",
     );
     expect(carriedSkillsWritten([REACT, HONO], {})).toBe(
-      "Wrote 2 skill(s) this configuration carries: React, Hono",
+      "Wrote 2 skills this configuration carries: React, Hono",
     );
   });
 
@@ -732,8 +779,8 @@ describe("the lines init --from prints about what a configuration brings", () =>
       ),
     ).toBe(
       [
-        `Skipped 2 skill(s) this catalog does not know: ${REACT}, ${HONO}`,
-        `  sub-agent(s) installed without ${HONO}, carrying nothing else this catalog knows: web-developer, api-developer`,
+        `Skipped 2 skills this catalog does not know: ${REACT}, ${HONO}`,
+        `  sub-agents installed without ${HONO}, carrying nothing else this catalog knows: web-developer, api-developer`,
       ].join("\n"),
     );
   });
@@ -743,8 +790,8 @@ describe("the lines init --from prints about what a configuration brings", () =>
       skippedSkills([HONO], [{ skillId: HONO, agentNames: [WEB_DEVELOPER] }], new Set([HONO])),
     ).toBe(
       [
-        `Skipped 1 skill(s) this catalog could not load: ${HONO}`,
-        `  sub-agent(s) installed without ${HONO}, carrying nothing else this catalog knows: web-developer`,
+        `Skipped 1 skill this catalog could not load: ${HONO}`,
+        `  sub-agent installed without ${HONO}, carrying nothing else this catalog knows: web-developer`,
       ].join("\n"),
     );
   });
@@ -761,10 +808,10 @@ describe("the lines init --from prints about what a configuration brings", () =>
       ),
     ).toBe(
       [
-        `Skipped 1 skill(s) this catalog could not load: ${HONO}`,
-        `  sub-agent(s) installed without ${HONO}, carrying nothing else this catalog knows: web-developer`,
-        `Skipped 1 skill(s) this catalog does not know: ${REACT}`,
-        `  sub-agent(s) installed without ${REACT}, carrying nothing else this catalog knows: api-developer`,
+        `Skipped 1 skill this catalog could not load: ${HONO}`,
+        `  sub-agent installed without ${HONO}, carrying nothing else this catalog knows: web-developer`,
+        `Skipped 1 skill this catalog does not know: ${REACT}`,
+        `  sub-agent installed without ${REACT}, carrying nothing else this catalog knows: api-developer`,
       ].join("\n"),
     );
   });
@@ -780,11 +827,11 @@ describe("the lines init --from prints about what a configuration brings", () =>
       ),
     ).toBe(
       [
-        "Skipped 1 skill(s) this catalog does not know: web-x",
-        "  sub-agent(s) installed without web-x, carrying nothing else this catalog knows: web-developer",
+        "Skipped 1 skill this catalog does not know: web-x",
+        "  sub-agent installed without web-x, carrying nothing else this catalog knows: web-developer",
       ].join("\n"),
     );
-    expect(skippedUnknownAgents([keyWithControls])).toBe("Skipped 1 unknown sub-agent(s): web-x");
+    expect(skippedUnknownAgents([keyWithControls])).toBe("Skipped 1 unknown sub-agent: web-x");
   });
 
   it("names a configuration's own key written across lines on one line", () => {
@@ -798,12 +845,12 @@ describe("the lines init --from prints about what a configuration brings", () =>
       ),
     ).toBe(
       [
-        "Skipped 1 skill(s) this catalog does not know: web-x Nothing removed.",
-        "  sub-agent(s) installed without web-x Nothing removed., carrying nothing else this catalog knows: web-developer",
+        "Skipped 1 skill this catalog does not know: web-x Nothing removed.",
+        "  sub-agent installed without web-x Nothing removed., carrying nothing else this catalog knows: web-developer",
       ].join("\n"),
     );
     expect(skippedUnknownAgents([keyAcrossLines])).toBe(
-      "Skipped 1 unknown sub-agent(s): web-x Nothing removed.",
+      "Skipped 1 unknown sub-agent: web-x Nothing removed.",
     );
   });
 
@@ -930,7 +977,6 @@ describe("the notices under the panel about what a shared configuration keeps or
 describe("the other lines that name skills, each as the panel does", () => {
   const RECORDED_NAME = "Acme React";
   const NAMED_BY_RECORD = { [REACT]: buildSkillConfig(REACT, { displayName: RECORDED_NAME }) };
-  /** In no catalogue seated here, so only its id can name it. */
   const UNSEATED = SKILLS.zustand.id;
 
   beforeEach(() => {
@@ -939,7 +985,7 @@ describe("the other lines that name skills, each as the panel does", () => {
 
   it("names the carried skills it wrote by the name each recorded, else the catalogue's, else the id", () => {
     expect(carriedSkillsWritten([REACT, HONO, UNSEATED], NAMED_BY_RECORD)).toBe(
-      `Wrote 3 skill(s) this configuration carries: ${RECORDED_NAME}, Hono, ${UNSEATED}`,
+      `Wrote 3 skills this configuration carries: ${RECORDED_NAME}, Hono, ${UNSEATED}`,
     );
   });
 
@@ -1000,7 +1046,7 @@ describe("the other lines that name skills, each as the panel does", () => {
 
   it("names each skill a shared id leaves behind by the name it recorded, else the catalogue's, else the id", () => {
     expect(sharedSkillsLeftBehind([REACT, HONO, UNSEATED], NAMED_BY_RECORD)).toBe(
-      `A shared id names one marketplace, and these skill(s) come from another, so they will not install elsewhere: ${RECORDED_NAME}, Hono, ${UNSEATED}`,
+      `A shared id names one marketplace, and these skills come from another, so they will not install elsewhere: ${RECORDED_NAME}, Hono, ${UNSEATED}`,
     );
   });
 });

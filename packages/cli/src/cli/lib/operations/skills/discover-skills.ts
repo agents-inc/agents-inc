@@ -1,12 +1,16 @@
 import path from "path";
 
 import { discoverAllPluginSkills } from "../../plugins/index.js";
-import { isHomeDirectory } from "../../installation/is-home-directory.js";
+import { getPluginsBySwitch } from "../../plugins/plugin-discovery.js";
+import { parseMarketplacePluginRef } from "../../plugins/plugin-ref.js";
+import { scopeAt } from "../../installation/is-home-directory.js";
 import { loadSkillsFromDir, type LoadedSkills } from "../../loading/index.js";
 import { sayingEachWarningOnce, verbose } from "../../../utils/logger.js";
+import { plural } from "../../../utils/string.js";
 import { globalInstallRoot } from "../../../consts.js";
 import {
   inheritedGlobalProvider,
+  installBaseDir,
   providerAtScope,
   skillsDir,
   skillsPathPrefix,
@@ -30,7 +34,9 @@ export type DiscoveredSkills = {
   unusableMetadata: UnusableSkillMetadata[];
 };
 
-const NO_LOCAL_SKILLS: LoadedSkills = { skills: {}, unusableMetadata: [] };
+function noLocalSkills(): LoadedSkills {
+  return { skills: {}, unusableMetadata: [] };
+}
 
 /**
  * Discovers copied-in (not plugin) skills at one scope. A global scan's warnings are said once per
@@ -79,16 +85,16 @@ function mergeSkills(...skillSources: SkillDefinitionMap[]): SkillDefinitionMap 
 
 /** Merges global plugins, global copied-in, project plugins, project copied-in; project wins. */
 export async function discoverInstalledSkills(projectDir: string): Promise<DiscoveredSkills> {
-  const isGlobalProject = isHomeDirectory(projectDir);
+  const scope = scopeAt(projectDir);
+  const isGlobalProject = scope === "global";
 
   const globalPlugins = isGlobalProject ? {} : await discoverGlobalPluginSkills(projectDir);
   const globalLocal = isGlobalProject
-    ? NO_LOCAL_SKILLS
+    ? noLocalSkills()
     : await discoverGlobalLocalSkills(projectDir);
   const projectPlugins = await discoverProjectPluginSkills(projectDir);
   // At the home root both scopes are one installation, so ask the global scope only.
-  const localScope: SkillScope = isGlobalProject ? "global" : "project";
-  const projectLocal = await discoverLocalSkillsAt(projectDir, localScope);
+  const projectLocal = await discoverLocalSkillsAt(projectDir, scope);
 
   return assembleDiscoveredSkills({ globalPlugins, globalLocal, projectPlugins, projectLocal });
 }
@@ -99,7 +105,7 @@ async function discoverGlobalPluginSkills(projectDir: string): Promise<SkillDefi
     inheritedGlobalProvider(projectDir),
   );
   const count = skillCount(skills);
-  if (count > 0) verbose(`  Found ${count} skills from global plugins`);
+  if (count > 0) verbose(`  Found ${plural(count, "skill")} from global plugins`);
   return skills;
 }
 
@@ -107,21 +113,23 @@ async function discoverGlobalLocalSkills(projectDir: string): Promise<LoadedSkil
   const loaded = await discoverLocalProjectSkills(projectDir, "global");
   const count = skillCount(loaded.skills);
   if (count > 0) {
-    verbose(`  Found ${count} global local skills from ${skillsRootAt(projectDir, "global")}`);
+    verbose(
+      `  Found ${plural(count, "global local skill")} from ${skillsRootAt(projectDir, "global")}`,
+    );
   }
   return loaded;
 }
 
 async function discoverProjectPluginSkills(projectDir: string): Promise<SkillDefinitionMap> {
   const skills = await discoverAllPluginSkills(projectDir);
-  verbose(`  Found ${skillCount(skills)} skills from installed plugins`);
+  verbose(`  Found ${plural(skillCount(skills), "skill")} from installed plugins`);
   return skills;
 }
 
 async function discoverLocalSkillsAt(projectDir: string, scope: SkillScope): Promise<LoadedSkills> {
   const loaded = await discoverLocalProjectSkills(projectDir, scope);
   verbose(
-    `  Found ${skillCount(loaded.skills)} local skills from ${skillsRootAt(projectDir, scope)}`,
+    `  Found ${plural(skillCount(loaded.skills), "local skill")} from ${skillsRootAt(projectDir, scope)}`,
   );
   return loaded;
 }
@@ -156,4 +164,28 @@ function assembleDiscoveredSkills(found: SkillsByOrigin): DiscoveredSkills {
 
 function skillCount(skills: SkillDefinitionMap): number {
   return typedKeys<SkillId>(skills).length;
+}
+
+/** Skill ids whose plugin, at a scope discovery reads, is installed but switched off. */
+export async function switchedOffPluginSkillIds(projectDir: string): Promise<ReadonlySet<string>> {
+  const perScope = await Promise.all(
+    pluginScopesRead(projectDir).map((scope) => switchedOffPluginSkillIdsAt(projectDir, scope)),
+  );
+  return new Set(perScope.flat());
+}
+
+async function switchedOffPluginSkillIdsAt(
+  projectDir: string,
+  scope: SkillScope,
+): Promise<string[]> {
+  const { switchedOff } = await getPluginsBySwitch(
+    installBaseDir(projectDir, scope),
+    providerAtScope(projectDir, scope),
+  );
+  return switchedOff.map(({ pluginKey }) => parseMarketplacePluginRef(pluginKey));
+}
+
+/** At the home root both scopes are one installation, read as discovery reads it. */
+function pluginScopesRead(projectDir: string): SkillScope[] {
+  return scopeAt(projectDir) === "global" ? ["project"] : ["global", "project"];
 }

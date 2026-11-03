@@ -54,7 +54,7 @@ describe("compileAgents", () => {
   const installConfig = (agents: ReturnType<typeof buildAgentConfigs>) =>
     writeTestTsConfig(projectDir, buildProjectConfig({ agents, skills: [] }));
 
-  it("compiles the sub-agents it is asked for into the output folder, each rewritten", async () => {
+  it("compiles the sub-agents it is asked for into the output folder, each created", async () => {
     const result = await compileAgents({
       projectDir,
       sourcePath: CLI_ROOT,
@@ -64,7 +64,8 @@ describe("compileAgents", () => {
 
     expect(result).toStrictEqual({
       compiled: ["pm"],
-      rewritten: ["pm"],
+      rewritten: [],
+      created: ["pm"],
       failed: [],
       warnings: [],
     });
@@ -77,7 +78,7 @@ describe("compileAgents", () => {
     expect(await filesIn(path.join(projectDir, "agents"))).toStrictEqual(["pm.md"]);
   });
 
-  it("counts a sub-agent it left byte-identical as compiled but not rewritten", async () => {
+  it("counts a sub-agent it left byte-identical as compiled but neither rewritten nor created", async () => {
     const pass = () =>
       compileAgents({ projectDir, sourcePath: CLI_ROOT, agents: ["pm"], outputDir });
     await pass();
@@ -85,6 +86,7 @@ describe("compileAgents", () => {
     expect(await pass()).toStrictEqual({
       compiled: ["pm"],
       rewritten: [],
+      created: [],
       failed: [],
       warnings: [],
     });
@@ -104,7 +106,8 @@ describe("compileAgents", () => {
       }),
     ).toStrictEqual({
       compiled: ["web-developer"],
-      rewritten: ["web-developer"],
+      rewritten: [],
+      created: ["web-developer"],
       failed: ["pm"],
       warnings: [
         `Agent "${unknown}" not found in source definitions`,

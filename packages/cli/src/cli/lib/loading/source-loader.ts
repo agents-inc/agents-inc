@@ -40,6 +40,7 @@ import { getErrorMessage } from "../../utils/errors";
 import { fileExists } from "../../utils/fs";
 import { sayingEachWarningOnce, verbose, warn } from "../../utils/logger";
 import { marketplaceManifestMissing, marketplaceManifestUnreadable } from "../../utils/messages";
+import { plural } from "../../utils/string";
 import { isAgentName } from "../../utils/type-guards";
 import { typedEntries, typedFromEntries, typedKeys, typedValues } from "../../utils/typed-object";
 import {
@@ -149,12 +150,8 @@ async function loadCatalogue(options: SourceLoadOptions): Promise<SourceLoadResu
 
   const catalogue = await resolveBaseResult(sourceConfig, { purpose, devMode, matrixOnly });
 
-  // Read before any local merge, after which a skill's provenance is no longer legible.
-  const result: SourceLoadResult = {
-    ...catalogue,
-    marketplaceSkillIds: new Set(typedKeys<SkillId>(catalogue.matrix.skills)),
-    marketplaceSkills: { ...catalogue.matrix.skills },
-  };
+  // Before any local merge, after which a skill's provenance is no longer legible.
+  const result = withMarketplaceSkills(catalogue);
 
   const globalProvider = provider ?? inheritedGlobalProvider(resolvedProjectDir);
   result.matrix = await mergeLocalSkills(
@@ -179,6 +176,14 @@ async function loadCatalogue(options: SourceLoadOptions): Promise<SourceLoadResu
   initializeMatrix(result.matrix);
 
   return result;
+}
+
+function withMarketplaceSkills(catalogue: CatalogueRead): SourceLoadResult {
+  return {
+    ...catalogue,
+    marketplaceSkillIds: new Set(typedKeys<SkillId>(catalogue.matrix.skills)),
+    marketplaceSkills: { ...catalogue.matrix.skills },
+  };
 }
 
 /**
@@ -327,25 +332,30 @@ async function resolveBaseResult(
 ): Promise<CatalogueRead> {
   refuseReservedRecordedName(sourceConfig);
   const { source } = sourceConfig;
-  if (isDefaultSource(source) && !devMode) {
-    // Default source: BUILT_IN_MATRIX, still fetching (cached) for sourcePath unless matrixOnly.
-    const fetched = matrixOnly ? NOTHING_FETCHED : await fetchFromSource(source);
-    return {
-      matrix: copyOfBuiltInMatrix(),
-      // Checked when it was generated, so nothing in it failed to load.
-      unloadedSkillIds: new Set(),
-      sourceConfig,
-      sourcePath: fetched.path,
-      isLocal: false,
-      unreachable: fetched.unreachable,
-      ...(sourceConfig.marketplace !== undefined && { marketplace: sourceConfig.marketplace }),
-    };
-  }
+  if (isDefaultSource(source) && !devMode) return readBuiltInCatalogue(sourceConfig, matrixOnly);
 
   const isLocal = isLocalSource(source) || devMode;
   return isLocal
     ? loadFromLocal(source, sourceConfig, purpose)
     : loadFromRemote(source, sourceConfig, purpose);
+}
+
+/** `BUILT_IN_MATRIX`, still fetched (cached) for `sourcePath` unless `matrixOnly`. */
+async function readBuiltInCatalogue(
+  sourceConfig: ResolvedConfig,
+  matrixOnly: boolean,
+): Promise<CatalogueRead> {
+  const fetched = matrixOnly ? NOTHING_FETCHED : await fetchFromSource(sourceConfig.source);
+  return {
+    matrix: copyOfBuiltInMatrix(),
+    // Checked when it was generated, so nothing in it failed to load.
+    unloadedSkillIds: new Set(),
+    sourceConfig,
+    sourcePath: fetched.path,
+    isLocal: false,
+    unreachable: fetched.unreachable,
+    ...configuredLabel(sourceConfig),
+  };
 }
 
 /** The file to correct is the config that recorded the name, not the manifest. */
@@ -473,7 +483,7 @@ async function mergeDiscoveredLocalSkills(
   const discovered = await discoverLocalSkills(dir, provider);
   if (!discovered || discovered.skills.length === 0) return matrix;
   verbose(
-    `Found ${discovered.skills.length} ${label} local skill(s) in ${discovered.localSkillsPath}`,
+    `Found ${plural(discovered.skills.length, `${label} local skill`)} in ${discovered.localSkillsPath}`,
   );
   return mergeLocalSkillsIntoMatrix(matrix, discovered);
 }
@@ -488,18 +498,8 @@ async function loadFromLocal(
 
   verbose(`Loading skills from local path: ${skillsPath}`);
 
-  const { matrix, unloadedSkillIds } = await loadAndMergeFromBasePath(skillsPath, source);
-  const labels = await resolveMarketplaceLabels(skillsPath, sourceConfig, purpose);
-
-  return {
-    matrix,
-    unloadedSkillIds,
-    sourceConfig,
-    sourcePath: skillsPath,
-    isLocal: true,
-    unreachable: false,
-    ...labels,
-  };
+  const fetched = { sourcePath: skillsPath, isLocal: true, unreachable: false };
+  return readMarketplaceFolder(fetched, skillsPath, sourceConfig, purpose);
 }
 
 async function loadFromRemote(
@@ -513,18 +513,29 @@ async function loadFromRemote(
 
   verbose(`Fetched to: ${fetchResult.path}`);
 
-  const { matrix, unloadedSkillIds } = await loadAndMergeFromBasePath(fetchResult.path, source);
-  const labels = await resolveMarketplaceLabels(source, sourceConfig, purpose);
-
-  return {
-    matrix,
-    unloadedSkillIds,
-    sourceConfig,
+  const fetched = {
     sourcePath: fetchResult.path,
     isLocal: false,
     unreachable: fetchResult.unreachable,
-    ...labels,
   };
+  return readMarketplaceFolder(fetched, source, sourceConfig, purpose);
+}
+
+type FolderFetched = Pick<CatalogueRead, "sourcePath" | "isLocal" | "unreachable">;
+
+/** `manifestRoot` is what the marketplace is named from: a local folder, or a remote source. */
+async function readMarketplaceFolder(
+  fetched: FolderFetched,
+  manifestRoot: string,
+  sourceConfig: ResolvedConfig,
+  purpose: SourceLoadPurpose,
+): Promise<CatalogueRead> {
+  const { matrix, unloadedSkillIds } = await loadAndMergeFromBasePath(
+    fetched.sourcePath,
+    sourceConfig.source,
+  );
+  const labels = await resolveMarketplaceLabels(manifestRoot, sourceConfig, purpose);
+  return { matrix, unloadedSkillIds, sourceConfig, ...fetched, ...labels };
 }
 
 /** An author's load: no local merge, or the catalogue would carry one machine's skills. */
@@ -609,8 +620,9 @@ async function loadSourceCategories(basePath: string): Promise<CategoryMap | und
   if (!(await fileExists(categoriesPath))) return undefined;
 
   const categories = await loadSkillCategories(categoriesPath);
+  const count = typedKeys(categories).length;
   verbose(
-    `Loaded source categories: ${categoriesPath} (${typedKeys(categories).length} categories)`,
+    `Loaded source categories: ${categoriesPath} (${count} ${count === 1 ? "category" : "categories"})`,
   );
   return categories;
 }
@@ -626,7 +638,7 @@ async function loadSourceRules(basePath: string): Promise<SkillRulesConfig | und
 }
 
 /** Every skill id the shipped catalogue owns — the ids no other marketplace may take. */
-const CATALOGUE_SKILL_IDS: ReadonlySet<SkillId> = new Set(typedKeys(BUILT_IN_MATRIX.skills));
+export const CATALOGUE_SKILL_IDS: ReadonlySet<SkillId> = new Set(typedKeys(BUILT_IN_MATRIX.skills));
 
 /** How many colliding ids a refusal lists before summarising the rest. */
 const MAX_REPORTED_COLLISIONS = 10;
@@ -647,14 +659,18 @@ async function refuseCatalogueCollisions(
 function catalogueCollisionError(collidingIds: SkillId[], source: string): string {
   const listed = collidingIds.slice(0, MAX_REPORTED_COLLISIONS).map((id) => `  ${id}`);
   const unlisted = collidingIds.length - listed.length;
+  const shadows =
+    collidingIds.length === 1
+      ? "it would shadow the public catalogue's own skill"
+      : "these would shadow the public catalogue's own skills";
 
   return [
-    `Marketplace '${source}' ships ${collidingIds.length} skill id(s) the public catalogue ` +
+    `Marketplace '${source}' ships ${plural(collidingIds.length, "skill id")} the public catalogue ` +
       `already owns:`,
     ...listed,
     ...(unlisted > 0 ? [`  ... and ${unlisted} more`] : []),
-    `A skill id is the directory the skill installs into, so these would shadow the public ` +
-      `catalogue's own skills. Every id must carry its marketplace's name as a namespace — ` +
+    `A skill id is the directory the skill installs into, so ${shadows}. ` +
+      `Every id must carry its marketplace's name as a namespace — ` +
       `'<marketplace>-<id>'. Rename each skill and the 'name' in its SKILL.md, then re-run ` +
       `'build marketplace', which refuses the same ids before they are published.`,
   ].join("\n");
@@ -668,7 +684,7 @@ async function resolveOfferedStacks(
 ): Promise<Stack[]> {
   const sourceStacks = await loadStacks(basePath, stacksFile);
   if (sourceStacks.length > 0) {
-    verbose(`Offering the ${sourceStacks.length} stacks the source ships`);
+    verbose(`Offering the ${plural(sourceStacks.length, "stack")} the source ships`);
     return sourceStacks;
   }
 
@@ -696,7 +712,7 @@ function declaredAgentsIn(stack: Stack): { declared: AgentName[]; undeclared: st
 function undeclaredAgentsWarning(stack: Stack, undeclared: readonly string[]): string {
   const named = undeclared.map((name) => `'${name}'`).join(", ");
   return (
-    `Stack '${stack.id}' names ${undeclared.length} sub-agent(s) this CLI does not define: ` +
+    `Stack '${stack.id}' names ${plural(undeclared.length, "sub-agent")} this CLI does not define: ` +
     `${named}. Left out of the stack — a sub-agent must be one the CLI ships.`
   );
 }
@@ -705,7 +721,7 @@ function undeclaredAgentsWarning(stack: Stack, undeclared: readonly string[]): s
 function withdrawnSkillsWarning(stack: Stack, withdrawn: readonly string[]): string {
   const named = withdrawn.map((id) => `'${id}'`).join(", ");
   return (
-    `Stack '${stack.id}' names ${withdrawn.length} skill(s) this marketplace's catalogue does ` +
+    `Stack '${stack.id}' names ${plural(withdrawn.length, "skill")} this marketplace's catalogue does ` +
     `not carry: ${named}. Left out of the stack — selecting it would install nothing.`
   );
 }
@@ -726,7 +742,7 @@ export function convertStackToResolvedStack(
   if (withdrawn.length > 0) warn(withdrawnSkillsWarning(stack, withdrawn));
 
   verbose(
-    `Stack '${stack.id}' has ${allSkillIds.length} skills from ${agentConfigs.length} agents`,
+    `Stack '${stack.id}' has ${plural(allSkillIds.length, "skill")} from ${plural(agentConfigs.length, "agent")}`,
   );
 
   return {

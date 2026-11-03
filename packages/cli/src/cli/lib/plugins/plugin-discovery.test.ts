@@ -282,7 +282,7 @@ describe("plugin-discovery", () => {
         [
           `Plugin 'zustand@my-marketplace' manifest does not exist at: '${path.join("/cache/zustand", PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE)}'`,
         ],
-        ["Verified 1 plugin install paths"],
+        ["Verified 1 plugin install path"],
       ]);
     });
 

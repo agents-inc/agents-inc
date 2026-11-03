@@ -211,7 +211,7 @@ describe("share command", () => {
 
       expect(error).toBeUndefined();
       expect(stdoutChunks.join("")).toBe(
-        ["Sharing 1 skill(s) across 1 sub-agent(s)...", ...ID_LINES, ""].join("\n"),
+        ["Sharing 1 skill across 1 sub-agent...", ...ID_LINES, ""].join("\n"),
       );
     });
 
@@ -258,7 +258,7 @@ describe("share command", () => {
           `  Warning: This id names the marketplace folder ${marketplaceFolder}, so it installs only where that folder exists.`,
         ],
         [
-          "  Warning: A shared id names one marketplace, and these skill(s) come from another, so they will not install elsewhere: Hono",
+          "  Warning: A shared id names one marketplace, and this skill comes from another, so it will not install elsewhere: Hono",
         ],
       ]);
     });
@@ -273,7 +273,6 @@ describe("share command", () => {
     });
 
     describe("naming each skill it lists: the name its install recorded, else the catalogue's, else its id", () => {
-      /** In no catalogue seated here, so only its id can name it. */
       const UNSEATED = SKILLS.vitest.id;
       let callersCatalogue: MergedSkillsMatrix;
       let compilesCatalogue: ReturnType<typeof seatedCatalog>;
@@ -346,7 +345,7 @@ describe("share command", () => {
         expect(error).toBeUndefined();
         expect(warned.mock.calls).toStrictEqual([
           [
-            `  Warning: A shared id names one marketplace, and these skill(s) come from another, so they will not install elsewhere: ${RECORDED_NAME}, Hono, ${UNSEATED}`,
+            `  Warning: A shared id names one marketplace, and these skills come from another, so they will not install elsewhere: ${RECORDED_NAME}, Hono, ${UNSEATED}`,
           ],
         ]);
       });

@@ -18,6 +18,7 @@ import type {
 import { buildCompileAgents } from "../installation/local-installer";
 import { ensureDir } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
+import { plural } from "../../utils/string";
 import { typedEntries, typedFromEntries, typedKeys } from "../../utils/typed-object";
 import { createLiquidEngine } from "../compiler";
 import { loadProjectConfig, effectivelyExcludedSkillIds } from "../configuration";
@@ -46,15 +47,13 @@ export type RecompileAgentsOptions = {
 
 export type RecompileAgentsResult = {
   compiled: AgentName[];
-  /** The subset of `compiled` whose file content moved; the rest count as unchanged. */
+  /** The subset of `compiled` whose file was there and moved. */
   rewritten: AgentName[];
+  /** The subset whose file was not there; the rest of `compiled` is unchanged. */
+  created: AgentName[];
   failed: AgentName[];
   warnings: string[];
 };
-
-async function getExistingAgentNames(pluginDir: string): Promise<AgentName[]> {
-  return listCompiledAgentNames(getPluginAgentsDir(pluginDir));
-}
 
 type ResolveAgentNamesParams = {
   specifiedAgents?: AgentName[];
@@ -84,8 +83,16 @@ async function resolveAgentNames(params: ResolveAgentNamesParams): Promise<Agent
     return names;
   }
 
-  return getExistingAgentNames(pluginDir);
+  return listCompiledAgentNames(getPluginAgentsDir(pluginDir));
 }
+
+type SucceededOutcome = Extract<AgentWriteOutcome, { ok: true }>;
+
+const FILE_CHANGE_VERB: Record<SucceededOutcome["file"], string> = {
+  created: "Created",
+  rewritten: "Rewrote",
+  unchanged: "Unchanged",
+};
 
 function buildRecompileResult(
   outcomes: AgentWriteOutcome[],
@@ -93,16 +100,19 @@ function buildRecompileResult(
 ): RecompileAgentsResult {
   const [succeeded, failedOutcomes] = partition(
     outcomes,
-    (outcome): outcome is Extract<AgentWriteOutcome, { ok: true }> => outcome.ok,
+    (outcome): outcome is SucceededOutcome => outcome.ok,
   );
   succeeded.forEach((outcome) =>
     verbose(
-      `  ${outcome.rewritten ? "Rewrote" : "Unchanged"}: ${outcome.name} (${outcome.scope} -> ${outcome.targetDir})`,
+      `  ${FILE_CHANGE_VERB[outcome.file]}: ${outcome.name} (${outcome.scope} -> ${outcome.targetDir})`,
     ),
   );
+  const namesWhoseFile = (file: SucceededOutcome["file"]) =>
+    succeeded.filter((outcome) => outcome.file === file).map((outcome) => outcome.name);
   return {
     compiled: succeeded.map((outcome) => outcome.name),
-    rewritten: succeeded.filter((outcome) => outcome.rewritten).map((outcome) => outcome.name),
+    rewritten: namesWhoseFile("rewritten"),
+    created: namesWhoseFile("created"),
     failed: failedOutcomes.map((outcome) => outcome.name),
     warnings: [
       ...priorWarnings,
@@ -165,10 +175,10 @@ export async function recompileAgents(
 
   // An empty pass is not a warning: callers report it off `compiled`.
   if (agentNames.length === 0) {
-    return { compiled: [], rewritten: [], failed: [], warnings: [] };
+    return { compiled: [], rewritten: [], created: [], failed: [], warnings: [] };
   }
 
-  verbose(`Recompiling ${agentNames.length} agents in ${outputDir ?? pluginDir}`);
+  verbose(`Recompiling ${plural(agentNames.length, "agent")} in ${outputDir ?? pluginDir}`);
 
   const pluginSkills: SkillDefinitionMap =
     providedSkills ?? (await discoverAllPluginSkills(configDir, provider));

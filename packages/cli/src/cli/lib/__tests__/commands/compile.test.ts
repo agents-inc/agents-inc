@@ -169,7 +169,7 @@ describe("compile command", () => {
       const { stdout, error } = await runCliCommand(["compile"]);
 
       const output = stdout + (error?.message || "");
-      expect(output).toMatch(/\d+ project agents? rewritten, \d+ unchanged/);
+      expect(output).toContain("0 project agents rewritten, 2 created, 0 unchanged");
       expect(output).toContain("compile complete");
 
       const agentsDir = path.join(localDirs.projectDir, CLAUDE_DIR, "agents");
@@ -210,8 +210,8 @@ describe("compile command", () => {
       const output = stdout + (error?.message || "");
       expect(output).toContain("Discovered 1 local skill");
       expect(output).not.toContain("Discovered 1 local skills");
-      // A fresh source, so every agent is a genuine write.
-      expect(output).toMatch(/[1-9]\d* project agents? rewritten, 0 unchanged/);
+      // A fresh source, so every agent's file is created.
+      expect(output).toContain("0 project agents rewritten, 1 created, 0 unchanged");
     });
   });
 

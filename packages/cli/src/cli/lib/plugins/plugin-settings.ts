@@ -1,7 +1,9 @@
 import path from "path";
+import { unique } from "remeda";
 import { z } from "zod";
 import { fileExists, readFileSafe } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
+import { plural } from "../../utils/string";
 import { getErrorMessage } from "../../utils/errors";
 import { typedEntries } from "../../utils/typed-object";
 import { CLAUDE_DIR, MAX_CONFIG_FILE_SIZE, STANDARD_FILES } from "../../consts";
@@ -69,10 +71,9 @@ async function readRegisteredInstallations(
 export async function listRegisteredPluginInstalls(pluginsDir: string): Promise<ResolvedPlugin[]> {
   const installations = await readRegisteredInstallations(pluginsDir);
 
-  return typedEntries(installations).flatMap(([pluginKey, forKey]) => {
-    const uniquePaths = [...new Set(forKey.map((i) => i.installPath))];
-    return uniquePaths.map((installPath) => ({ pluginKey, installPath }));
-  });
+  return typedEntries(installations).flatMap(([pluginKey, forKey]) =>
+    unique(forKey.map((i) => i.installPath)).map((installPath) => ({ pluginKey, installPath })),
+  );
 }
 
 /** One install per plugin as seen from `projectDir`; another project's record is never returned. */
@@ -121,7 +122,7 @@ export async function getEnabledPluginKeys(projectDir: string): Promise<PluginKe
       .filter(([, enabled]) => enabled === true)
       .map(([key]) => key);
 
-    verbose(`Found ${enabledKeys.length} enabled plugins in settings.json`);
+    verbose(`Found ${plural(enabledKeys.length, "enabled plugin")} in settings.json`);
     return enabledKeys;
   } catch (error) {
     verbose(`Failed to read settings.json: ${getErrorMessage(error)}`);

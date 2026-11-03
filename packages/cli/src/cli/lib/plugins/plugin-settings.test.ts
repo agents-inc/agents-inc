@@ -390,7 +390,7 @@ describe("plugin-settings", () => {
 
       await getEnabledPluginKeys("/project");
 
-      expect(verbose).toHaveBeenCalledExactlyOnceWith("Found 1 enabled plugins in settings.json");
+      expect(verbose).toHaveBeenCalledExactlyOnceWith("Found 1 enabled plugin in settings.json");
     });
 
     it("says settings.json enables no plugins at all", async () => {

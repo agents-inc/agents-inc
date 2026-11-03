@@ -19,14 +19,16 @@ export type AgentWriteOutcome =
       ok: true;
       scope: SkillScope;
       targetDir: string;
-      /** False when the output matched the file on disk, so nothing was written. */
-      rewritten: boolean;
+      file: CompiledFileChange;
     }
   | { name: AgentName; ok: false; error: unknown };
 
-/** Skipping an identical write keeps the mtime, the only trace telling unchanged from rewritten. */
-async function holdsExactly(filePath: string, content: string): Promise<boolean> {
-  return (await fileExists(filePath)) && (await readFile(filePath)) === content;
+/** "unchanged" writes nothing: the kept mtime is the only trace telling it from "rewritten". */
+type CompiledFileChange = "created" | "rewritten" | "unchanged";
+
+async function changeTo(filePath: string, content: string): Promise<CompiledFileChange> {
+  if (!(await fileExists(filePath))) return "created";
+  return (await readFile(filePath)) === content ? "unchanged" : "rewritten";
 }
 
 /**
@@ -50,7 +52,6 @@ export async function writeCompiledAgentsByScope(params: {
   agentScopeMap?: Map<AgentName, SkillScope>;
 }): Promise<AgentWriteOutcome[]> {
   const own = params.provider ?? providerInUse(params.projectDir);
-  // `own` where the project holds an installation of it: no other provider's global reaches it.
   const inherited = inheritedGlobalProvider(params.projectDir, own);
   const hosts: Record<SkillScope, AgentHost> = {
     global: { provider: inherited, agentsDir: agentsDir(inherited, "global", params.projectDir) },
@@ -90,10 +91,10 @@ async function writeOneAgent(params: {
       params.engine,
     );
     const targetPath = path.join(host.agentsDir, fileNameFor(name, host.provider));
-    const rewritten = !(await holdsExactly(targetPath, output));
-    if (rewritten) await writeFile(targetPath, output);
+    const file = await changeTo(targetPath, output);
+    if (file !== "unchanged") await writeFile(targetPath, output);
 
-    return { name, ok: true, scope, targetDir: host.agentsDir, rewritten };
+    return { name, ok: true, scope, targetDir: host.agentsDir, file };
   } catch (error) {
     return { name, ok: false, error };
   }

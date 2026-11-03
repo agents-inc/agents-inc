@@ -1176,7 +1176,6 @@ describe("what edit --from does to plugins and saved copies", () => {
     buildSourceResult(FULLSTACK_PAIR_MATRIX, UNRESOLVABLE_SOURCE, { marketplace: MARKETPLACE });
   /** Nothing at `/test/source` names a marketplace, so resolving one fails. */
   const withoutMarketplace = () => buildSourceResult(FULLSTACK_PAIR_MATRIX, UNRESOLVABLE_SOURCE);
-  /** A project made from the acme marketplace, under a global installation made from MARKETPLACE. */
   const withProjectMarketplace = () =>
     buildSourceResult(FULLSTACK_PAIR_MATRIX, UNRESOLVABLE_SOURCE, { marketplace: "acme" });
 
@@ -1362,7 +1361,7 @@ describe("what edit --from does to plugins and saved copies", () => {
 
       expect(stdoutChunks.join("")).toContain(
         [
-          "Completed with 1 failure(s) — the changes above landed, these did not:",
+          "Completed with 1 failure — the changes above landed, these did not:",
           "  Failed to migrate plugin scope for web-framework-react: plugin ref not found",
           "    Run 'npx agents-inc doctor' to see what this installation is left holding.",
         ].join("\n"),
@@ -1538,7 +1537,7 @@ describe("what edit --from does to plugins and saved copies", () => {
 
       expect(error).toBeUndefined();
       expect(stdoutChunks.join("")).toContain("Changes:\n  - React [P]\n\n");
-      expect(stdoutChunks.join("")).toContain("\nRemoved 1 plugin(s)\n");
+      expect(stdoutChunks.join("")).toContain("\nRemoved 1 plugin\n");
       expect(uninstallSpy.mock.calls).toStrictEqual([[REACT_PLUGIN, "project", projectDir]]);
       expect(installSpy).not.toHaveBeenCalled();
       expect(await fileExists(savedCopyAt(projectDir))).toBe(true);
@@ -1554,7 +1553,7 @@ describe("what edit --from does to plugins and saved copies", () => {
       expect(stderr()).toContain(
         "Warning: Failed to uninstall plugin web-framework-react: uninstall refused",
       );
-      expect(stdoutChunks.join("")).not.toContain("Removed 0 plugin(s)");
+      expect(stdoutChunks.join("")).not.toContain("Removed 0 plugins");
     });
 
     it("warns that the project plugin stays when no marketplace is known", async () => {
@@ -1581,7 +1580,7 @@ describe("what edit --from does to plugins and saved copies", () => {
       const error = await applying(withMarketplace(), saved(["web-framework-react"], "project"));
 
       expect(error).toBeUndefined();
-      expect(stdoutChunks.join("")).toContain("\nRemoved 1 plugin(s)\n");
+      expect(stdoutChunks.join("")).toContain("\nRemoved 1 plugin\n");
       expect(uninstallSpy.mock.calls).toStrictEqual([[HONO_PLUGIN, "project", projectDir]]);
       expect(await readFile(savedCopyAt(projectDir), "utf-8")).toBe("the saved copy");
     });
@@ -1596,7 +1595,7 @@ describe("what edit --from does to plugins and saved copies", () => {
       expect(stderr()).toContain(
         "Warning: Failed to uninstall plugin api-framework-hono: uninstall refused",
       );
-      expect(stdoutChunks.join("")).not.toContain("Removed 0 plugin(s)");
+      expect(stdoutChunks.join("")).not.toContain("Removed 0 plugins");
     });
 
     it("refuses to add a plugin when no marketplace can be resolved", async () => {
@@ -1720,7 +1719,7 @@ describe("what edit --from does to plugins and saved copies", () => {
       const error = await applying(withMarketplace(), saved(["web-framework-react"], "project"));
 
       expect(error).toBeUndefined();
-      expect(stdoutChunks.join("")).toContain("\nCopied 1 local skill(s)\n");
+      expect(stdoutChunks.join("")).toContain("\nCopied 1 local skill\n");
       expect(stderr()).toContain(
         "Warning: Could not uninstall plugin for web-framework-react: uninstall refused",
       );
@@ -1736,7 +1735,7 @@ describe("what edit --from does to plugins and saved copies", () => {
         "Warning: Failed to copy web-framework-react for eject: EACCES: permission denied",
       );
       expect(error?.message).toBe(
-        "Failed to copy 1 skill(s) for eject. Eject intent could not be honored. Check that the destination skills directory is writable, then apply the same id again with 'npx agents-inc edit --from <id>' — or switch the affected skills back to plugin mode.",
+        "Failed to copy 1 skill for eject. Eject intent could not be honored. Check that the destination skills directory is writable, then apply the same id again with 'npx agents-inc edit --from <id>' — or switch the affected skills back to plugin mode.",
       );
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
       expect(uninstallSpy).not.toHaveBeenCalled();

@@ -18,6 +18,7 @@ import { createTestSkill } from "../__tests__/factories/skill-factories.js";
 import { buildProjectConfig } from "../__tests__/factories/config-factories.js";
 import { writeTestTsConfig } from "../__tests__/helpers/config-io.js";
 import { silenceConsole } from "../__tests__/helpers/silence-console.js";
+import { overrideEnv, type RestoreEnv } from "../__tests__/helpers/env-override.js";
 import { useFakeHome } from "../__tests__/helpers/isolated-home.js";
 import { firstElement } from "../__tests__/helpers/element-at.js";
 import { DEFAULT_TEST_SKILLS, COMPILE_LOCAL_SKILL } from "../__tests__/mock-data/mock-skills";
@@ -26,6 +27,7 @@ import {
   CLAUDE_DIR,
   SKILL_CATEGORIES_PATH,
   SKILL_RULES_PATH,
+  STACKS_FILE_PATH,
   STANDARD_DIRS,
   STANDARD_FILES,
 } from "../../consts";
@@ -58,13 +60,12 @@ const BUILT_IN_CATEGORY_COUNT = Object.keys(defaultCategories).length;
 describe("the report a marketplace load gives", () => {
   const consoleSpies = silenceConsole(["log", "warn"]);
   let fakeHome: string;
-  let savedHome: string | undefined;
+  let restoreHome: RestoreEnv;
   let dirs: TestDirs | undefined;
 
   beforeEach(async () => {
     fakeHome = await createTempDir("cc-loader-reports-home-");
-    savedHome = process.env.HOME;
-    process.env.HOME = fakeHome;
+    restoreHome = overrideEnv("HOME", fakeHome);
     vi.spyOn(os, "homedir").mockReturnValue(fakeHome);
     delete process.env[SOURCE_ENV_VAR];
     setVerbose(true);
@@ -73,8 +74,7 @@ describe("the report a marketplace load gives", () => {
   afterEach(async () => {
     setVerbose(false);
     vi.mocked(os.homedir).mockRestore();
-    if (savedHome === undefined) delete process.env.HOME;
-    else process.env.HOME = savedHome;
+    restoreHome();
     await cleanupTestSource(dirs);
     dirs = undefined;
     await cleanupTempDir(fakeHome);
@@ -109,13 +109,28 @@ describe("the report a marketplace load gives", () => {
     said(`Matrix merged: CLI (${BUILT_IN_CATEGORY_COUNT} categories) + source`);
     said(`Skills from source: ${path.join(sourceDir, "src", STANDARD_DIRS.SKILLS)}`);
     said(`Using marketplace name from marketplace.json: ${TEST_MARKETPLACE_NAME}`);
-    said("Offering the 1 stacks the source ships");
-    said(`Stack '${ONE_AGENT_STACK.id}' has 1 skills from 1 agents`);
+    said(`Loaded 1 stack from ${path.join(sourceDir, STACKS_FILE_PATH)}`);
+    said("Offering the 1 stack the source ships");
+    said(`Stack '${ONE_AGENT_STACK.id}' has 1 skill from 1 agent`);
     said(
-      `Found 1 project local skill(s) in ${path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS)}`,
+      `Found 1 project local skill in ${path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS)}`,
     );
     said(`Added local skill: ${LOCAL_SKILL.id} (category: ${LOCAL_SKILL.category})`);
     said(`Added local category: ${LOCAL_SKILL.category} (domain: ${LOCAL_SKILL.domain})`);
+  });
+
+  it("counts a source's one category in the singular", async () => {
+    dirs = await createTestSource({ skills: [firstElement(SOURCE_SKILLS)] });
+
+    await loadSkillsMatrixFromSource({
+      sourceFlag: dirs.sourceDir,
+      projectDir: dirs.projectDir,
+      skipExtraSources: true,
+    });
+
+    said(
+      `Loaded source categories: ${path.join(dirs.sourceDir, SKILL_CATEGORIES_PATH)} (1 category)`,
+    );
   });
 
   it("leaves the matrix it hands on holding the local skills merged after the catalogue", async () => {
@@ -223,7 +238,7 @@ describe("the report a marketplace load gives", () => {
       skipExtraSources: true,
     });
 
-    neverSaid(`Found 0 project local skill(s) in ${localSkillsDir}`);
+    neverSaid(`Found 0 project local skills in ${localSkillsDir}`);
   });
 
   it("tags each loaded skill with its marketplace unless the extra sources are skipped", async () => {
@@ -251,13 +266,12 @@ describe("the local skills a load finds in the home directory", () => {
   const consoleSpies = silenceConsole(["log", "warn"]);
   let homeDirs: TestDirs;
   let sourceDirs: TestDirs;
-  let savedHome: string | undefined;
+  let restoreHome: RestoreEnv;
 
   beforeEach(async () => {
     homeDirs = await createTestSource({ skills: SOURCE_SKILLS, localSkills: [LOCAL_SKILL] });
     sourceDirs = await createTestSource({ skills: SOURCE_SKILLS });
-    savedHome = process.env.HOME;
-    process.env.HOME = homeDirs.projectDir;
+    restoreHome = overrideEnv("HOME", homeDirs.projectDir);
     vi.spyOn(os, "homedir").mockReturnValue(homeDirs.projectDir);
     delete process.env[SOURCE_ENV_VAR];
     setVerbose(true);
@@ -266,8 +280,7 @@ describe("the local skills a load finds in the home directory", () => {
   afterEach(async () => {
     setVerbose(false);
     vi.mocked(os.homedir).mockRestore();
-    if (savedHome === undefined) delete process.env.HOME;
-    else process.env.HOME = savedHome;
+    restoreHome();
     await cleanupTestSource(homeDirs);
     await cleanupTestSource(sourceDirs);
   });
@@ -281,7 +294,7 @@ describe("the local skills a load finds in the home directory", () => {
 
     expect(Object.keys(result.matrix.skills)).toContain(LOCAL_SKILL.id);
     expect(consoleSpies.log).toHaveBeenCalledWith(
-      `  Found 1 global local skill(s) in ${path.join(homeDirs.projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS)}`,
+      `  Found 1 global local skill in ${path.join(homeDirs.projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS)}`,
     );
   });
 
@@ -295,10 +308,10 @@ describe("the local skills a load finds in the home directory", () => {
     });
 
     expect(consoleSpies.log).toHaveBeenCalledWith(
-      `  Found 1 project local skill(s) in ${homeSkillsDir}`,
+      `  Found 1 project local skill in ${homeSkillsDir}`,
     );
     expect(consoleSpies.log).not.toHaveBeenCalledWith(
-      `  Found 1 global local skill(s) in ${homeSkillsDir}`,
+      `  Found 1 global local skill in ${homeSkillsDir}`,
     );
   });
 });

@@ -18,7 +18,11 @@ const hook: Hook<"init"> = async function (options) {
   // Before any path is read: `providerInUse` cannot load a config, so the roster records which
   // of the project's declare nothing.
   const projectHoldsOne = await projectHoldsAnInstallation(process.cwd());
-  sayTheRetiredSourceFolderIsIgnored(process.cwd(), providerNamedIn(options.argv), projectHoldsOne);
+  sayTheRetiredSourceFolderIsIgnored(
+    process.cwd(),
+    providerNamedIn(options.argv),
+    projectHoldsOne || installsTheProject(options.id, options.argv),
+  );
 
   // A named command runs as named; no command is the dashboard.
   if (options.id !== undefined) return;
@@ -54,21 +58,32 @@ const hook: Hook<"init"> = async function (options) {
 function sayTheRetiredSourceFolderIsIgnored(
   cwd: string,
   named: Provider | undefined,
-  projectHoldsOne: boolean,
+  projectHasOne: boolean,
 ): void {
   for (const root of rootsHoldingTheRetiredSourceFolder(cwd)) {
-    const provider = named ?? providerReadIn(root, cwd, projectHoldsOne);
+    const provider = named ?? providerReadIn(root, cwd, projectHasOne);
     process.stderr.write(`${retiredSourceFolderIgnored(root, provider)}\n`);
   }
 }
 
 /**
  * A run naming no provider reads a project with its own tool, and HOME with the project's, as it
- * reads HOME's config; a project holding no installation leaves the run on HOME's own.
+ * reads HOME's config; a project holding no installation, and getting none, leaves the run on
+ * HOME's own.
  */
-function providerReadIn(root: string, cwd: string, projectHoldsOne: boolean): Provider {
+function providerReadIn(root: string, cwd: string, projectHasOne: boolean): Provider {
   if (!isHomeDirectory(root)) return providerInUse(root);
-  return providerInUse(projectHoldsOne ? cwd : root);
+  return providerInUse(projectHasOne ? cwd : root);
+}
+
+const INIT_COMMAND = "init";
+const FROM_FLAG = "--from";
+const UI_FLAG = "--ui";
+
+/** `init --from` installs the project unless `--ui` sends it to the editor instead. */
+function installsTheProject(id: string | undefined, argv: readonly string[]): boolean {
+  if (id !== INIT_COMMAND || argv.includes(UI_FLAG)) return false;
+  return argv.some((token) => token === FROM_FLAG || token.startsWith(`${FROM_FLAG}=`));
 }
 
 /** A project config declaring nothing is not an installation, so it is not counted here. */

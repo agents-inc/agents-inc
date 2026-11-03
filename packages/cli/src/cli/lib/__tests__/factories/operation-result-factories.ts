@@ -34,6 +34,7 @@ export function buildCompilationResult(overrides?: Partial<CompilationResult>): 
   return {
     compiled: [],
     rewritten: [],
+    created: [],
     failed: [],
     warnings: [],
     ...overrides,

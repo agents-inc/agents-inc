@@ -60,7 +60,8 @@ async function recompileOutcomeFor(
     const result = await recompileRegisteredProjectAgents(dir);
     if (result.failed.length > 0) return { kind: "failed", warnings: result.warnings };
 
-    const changed = result.rewritten.length > 0 || pairsRewritten.has(dir);
+    const changed =
+      result.rewritten.length > 0 || result.created.length > 0 || pairsRewritten.has(dir);
     return { kind: changed ? "rewritten" : "unchanged" };
   } catch (error) {
     return {

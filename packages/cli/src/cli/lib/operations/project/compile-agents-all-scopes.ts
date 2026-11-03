@@ -67,6 +67,7 @@ function mergeCompilationResults(...results: CompilationResult[]): CompilationRe
   return {
     compiled: results.flatMap((r) => r.compiled),
     rewritten: results.flatMap((r) => r.rewritten),
+    created: results.flatMap((r) => r.created),
     failed: results.flatMap((r) => r.failed),
     warnings: results.flatMap((r) => r.warnings),
   };

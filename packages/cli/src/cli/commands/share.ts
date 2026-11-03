@@ -3,30 +3,24 @@ import { Flags } from "@oclif/core";
 import { BaseCommand } from "../base-command.js";
 import { isLocalSource } from "../lib/configuration/config.js";
 import { EXIT_CODES } from "../lib/exit-codes.js";
-import { unofferablePlacementsFound } from "../lib/hosts/configured-placements.js";
 import {
   seedPayloadForInstallation,
   type InstallationPayload,
 } from "../lib/seed/installation-payload.js";
-import { publishSeedConfig } from "../lib/seed/publish-seed.js";
 import {
   readPipedPayload,
   STDIN_IS_A_TERMINAL,
   type PipedPayload,
 } from "../lib/seed/read-piped-payload.js";
-import {
-  providerFlag,
-  providerNamedBy,
-  refuseAnAmbiguousInstallation,
-} from "../lib/installation/provider-flag.js";
+import { providerFlag, providerNamedBy } from "../lib/installation/provider-flag.js";
 import { warn } from "../utils/logger.js";
 import { readAllOf } from "../utils/read-stream.js";
 import {
-  sharedConfigDestinations,
   sharedIdNamesAFolder,
   sharedSkillsLeftBehind,
   shareRefusesEjectedSkills,
 } from "../utils/messages.js";
+import { plural } from "../utils/string.js";
 import { typedEntries } from "../utils/typed-object.js";
 import type { SkillId } from "../types/index.js";
 import type { SeedPayload, SeedSkill } from "@workspace/matrix/seed";
@@ -85,32 +79,16 @@ export default class Share extends BaseCommand {
     // A piped payload never reads this directory, so its state must not refuse it.
     if (!flags.stdin) {
       const namedProvider = providerNamedBy(flags.provider);
-      await this.sayWhenTheGlobalInstallationStandsIn(namedProvider);
-      await refuseAnAmbiguousInstallation(process.cwd(), "share", namedProvider, (message) =>
-        this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
-      );
-      await this.ensureConfigReadable(process.cwd());
-      await this.refuseUnofferablePlacements(process.cwd());
+      await this.checkTheInstallationBeforeActing(process.cwd(), "share", namedProvider);
     }
 
     const { payload, caveats } = flags.stdin
       ? await this.payloadFromPipe()
       : await this.payloadFromInstallation();
 
-    const published = await publishSeedConfig(payload);
-    if (!published.ok) {
-      this.error(published.error, { exit: EXIT_CODES.ERROR });
-    }
-
-    this.reportShared(published.id);
+    await this.publishSharedConfigOrFail(payload);
     // Not `this.warn`: oclif hard-wraps, which breaks the folder paths caveats name.
     for (const caveat of caveats) warn(caveat);
-  }
-
-  /** A placement the host cannot fill was never installed here, so the id would misdescribe it. */
-  private async refuseUnofferablePlacements(cwd: string): Promise<void> {
-    const [finding] = await unofferablePlacementsFound(cwd);
-    if (finding !== undefined) this.error(finding, { exit: EXIT_CODES.ERROR });
   }
 
   private async payloadFromInstallation(): Promise<ShareablePayload> {
@@ -120,7 +98,9 @@ export default class Share extends BaseCommand {
     }
 
     this.refuseEjectedSkills(prepared);
-    this.log(`Sharing ${prepared.skills} skill(s) across ${prepared.agents} sub-agent(s)...`);
+    this.log(
+      `Sharing ${plural(prepared.skills, "skill")} across ${plural(prepared.agents, "sub-agent")}...`,
+    );
 
     return { payload: prepared.payload, caveats: caveatsAbout(prepared) };
   }
@@ -145,12 +125,5 @@ export default class Share extends BaseCommand {
     }
 
     return { payload: read.payload, caveats: [] };
-  }
-
-  private reportShared(id: string): void {
-    this.logSuccess(`Shared as ${id}`);
-    for (const destination of sharedConfigDestinations(id)) {
-      this.log(destination);
-    }
   }
 }

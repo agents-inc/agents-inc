@@ -7,6 +7,7 @@ export function buildRecompileAgentsResult(
   return {
     compiled: [],
     rewritten: [],
+    created: [],
     failed: [],
     warnings: [],
     ...overrides,

@@ -17,12 +17,12 @@ import {
   ConfigLoadError,
   effectivelyExcludedSkillIds,
   isActiveAt,
-  loadProjectConfig,
   loadInstalledConfig,
   resolveSource,
+  type LoadedProjectConfig,
 } from "../lib/configuration";
 import { getStackSkillIds, resolveAgentConfigToSkills } from "../lib/stacks";
-import { loadSkillsMatrixFromSource, type UnusableSkillMetadata } from "../lib/loading";
+import { loadSkillsMatrixFromSource } from "../lib/loading";
 import { STANDARD_FILES } from "../consts";
 import { EXIT_CODES } from "../lib/exit-codes";
 import { getErrorMessage } from "../utils/errors";
@@ -36,18 +36,17 @@ import {
   recompileSummary,
   registeredProjectUpdateFailed,
   scopeBlockedStackAssignment,
-  skillMetadataUnusableDetail,
   skillMetadataUnusableError,
 } from "../utils/messages";
 import { reconcileTypesFromDisk, type GateReport } from "../lib/config-gate/index.js";
 import { namedByActiveEntries } from "../lib/configuration/scope-diff.js";
-import { unofferablePlacementsFound } from "../lib/hosts/configured-placements.js";
-import { providerInUse } from "../lib/installation/install-layout.js";
+import { switchedOffPluginSkillIds } from "../lib/operations/skills/discover-skills.js";
 import {
-  providerFlag,
-  providerNamedBy,
-  refuseAnAmbiguousInstallation,
-} from "../lib/installation/provider-flag.js";
+  hostCompilesAgent,
+  providerAtScope,
+  providerInUse,
+} from "../lib/installation/install-layout.js";
+import { providerFlag, providerNamedBy } from "../lib/installation/provider-flag.js";
 import { hostCompileNotices } from "../lib/hosts/host-compile-notices.js";
 import type { Installation } from "../lib/installation";
 import type { SkillScope } from "../types/config";
@@ -89,9 +88,7 @@ export default class Compile extends BaseCommand {
 
     await this.sayWhenTheGlobalInstallationStandsIn(namedProvider);
     // First: `providerInUse` below picks by roster order when a scope holds both providers.
-    await refuseAnAmbiguousInstallation(cwd, "compile", namedProvider, (message) =>
-      this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
-    );
+    await this.refuseAnAmbiguousInstallation(cwd, "compile", namedProvider);
     await this.ensureConfigReadable(cwd);
     const installations = await this.detectInstallations(cwd);
     await this.refuseUnofferablePlacements(cwd);
@@ -134,22 +131,13 @@ export default class Compile extends BaseCommand {
     return installations;
   }
 
-  /**
-   * Re-checked here because config.ts names no provider, so a copied installation folder can hold
-   * a configuration its host never vetted at install.
-   */
-  private async refuseUnofferablePlacements(cwd: string): Promise<void> {
-    const [finding] = await unofferablePlacementsFound(cwd);
-    if (finding !== undefined) this.error(finding, { exit: EXIT_CODES.ERROR });
-  }
-
   /** No `--marketplace`: an installation recompiles against the marketplace config.ts recorded. */
   private async resolveAndLogSource(projectDir: string): Promise<void> {
     this.log(STATUS_MESSAGES.RESOLVING_SOURCE);
     try {
       // ABORT on an unreadable config (already refused earlier by `detectInstallations`).
       const sourceConfig = await resolveSource({ caller: "stored", projectDir });
-      this.log(`Marketplace: ${sourceConfig.sourceOrigin}`);
+      this.log(`Marketplace setting from: ${sourceConfig.sourceOrigin}`);
     } catch (error) {
       this.log(ERROR_MESSAGES.FAILED_RESOLVE_SOURCE);
       this.handleError(error);
@@ -192,38 +180,30 @@ export default class Compile extends BaseCommand {
     this.log(STATUS_MESSAGES.DISCOVERING_SKILLS);
     const result = await discoverInstalledSkills(projectDir);
     if (result.unusableMetadata.length > 0) {
-      this.refuseUnusableSkillMetadata(result.unusableMetadata);
+      this.refuseUnusableSkillMetadata(result.unusableMetadata, skillMetadataUnusableError);
     }
     if (result.totalSkillCount === 0) return result;
     this.log(formatDiscoveryMessage(result));
     return result;
   }
 
-  /** Detail is logged, not raised: oclif hard-wraps error text, which breaks copyable paths. */
-  private refuseUnusableSkillMetadata(entries: UnusableSkillMetadata[]): never {
-    for (const entry of entries) {
-      this.log(skillMetadataUnusableDetail(entry));
-    }
-    this.error(skillMetadataUnusableError(entries), { exit: EXIT_CODES.ERROR });
-  }
-
   /** The resolver drops a missing stack skill silently except at verbose level. */
   private async warnUnresolvedStackSkills(
     projectDir: string,
+    loaded: LoadedProjectConfig | null,
     allSkills: SkillDefinitionMap,
   ): Promise<void> {
-    const loaded = await loadProjectConfig(projectDir);
     if (!loaded?.config.stack) return;
 
     const excludedIds = effectivelyExcludedSkillIds(loaded.config.skills);
     const unresolved = getStackSkillIds(loaded.config.stack).filter(
       (id) => !excludedIds.has(id) && !(id in allSkills),
     );
+    if (unresolved.length === 0) return;
 
+    const switchedOff = await switchedOffPluginSkillIds(projectDir);
     for (const id of unresolved) {
-      this.warn(
-        `Skill '${id}' is configured but was not found — agents will be compiled without it.`,
-      );
+      this.warn(unresolvedSkillWarning(id, switchedOff));
     }
   }
 
@@ -231,8 +211,7 @@ export default class Compile extends BaseCommand {
    * A hand-edited config.ts can give a global sub-agent a project-scoped skill, which the compile
    * filter silently drops on every run.
    */
-  private async warnScopeDroppedStackPairs(projectDir: string): Promise<void> {
-    const loaded = await loadProjectConfig(projectDir);
+  private warnScopeDroppedStackPairs(loaded: LoadedProjectConfig | null): void {
     if (!loaded?.config.stack) return;
 
     const namedBy = namedByActiveEntries(loaded.config.skills);
@@ -242,13 +221,10 @@ export default class Compile extends BaseCommand {
   }
 
   /** Points at global-scope agents so "No agents to recompile" doesn't read as a silent no-op. */
-  private async hintGlobalScopedAgents(projectDir: string): Promise<void> {
-    const loaded = await loadInstalledConfig(projectDir);
+  private hintGlobalScopedAgents(loaded: LoadedProjectConfig | null, projectDir: string): void {
     if (!loaded) return;
 
-    const globalAgentCount = loaded.config.agents.filter((agent) =>
-      isActiveAt(agent, "global"),
-    ).length;
+    const globalAgentCount = countCompiledGlobalAgents(loaded.config, projectDir);
     if (globalAgentCount === 0) return;
 
     this.log(globalScopedAgentsHint(globalAgentCount));
@@ -281,6 +257,7 @@ export default class Compile extends BaseCommand {
     pass: CompilePass,
     cwd: string,
     seatedMatrix: MergedSkillsMatrix | null,
+    loaded: LoadedProjectConfig | null,
   ): Promise<void> {
     if (!seatedMatrix) {
       this.warn(
@@ -288,17 +265,15 @@ export default class Compile extends BaseCommand {
       );
       return;
     }
+    if (!loaded) {
+      verbose(
+        `No config found at ${pass.projectDir} — skipping ${STANDARD_FILES.CONFIG_TYPES_TS} refresh`,
+      );
+      return;
+    }
 
     let report: GateReport;
     try {
-      const loaded = await loadInstalledConfig(pass.projectDir);
-      if (!loaded) {
-        verbose(
-          `No config found at ${pass.projectDir} — skipping ${STANDARD_FILES.CONFIG_TYPES_TS} refresh`,
-        );
-        return;
-      }
-
       // A global pass's fan-out must not reach back into the invoking directory.
       report = await reconcileTypesFromDisk(
         pass.projectDir,
@@ -330,14 +305,15 @@ export default class Compile extends BaseCommand {
 
     const seatedMatrix = await this.seatMatrixForPass(projectDir);
     const { allSkills, totalSkillCount } = await this.discoverAllSkills(projectDir);
-    const compiles = await this.announceWhetherPassCompiles(pass, totalSkillCount);
+    // One read serves the pass: nothing in it writes config.ts before the type refresh.
+    const loaded = await loadInstalledConfig(projectDir);
     // A skipped pass is a refused run, which writes nothing, config-types.ts included.
-    if (!compiles) return false;
+    if (!this.announceWhetherPassCompiles(pass, totalSkillCount, loaded)) return false;
 
-    await this.warnUnresolvedStackSkills(projectDir, allSkills);
-    await this.warnScopeDroppedStackPairs(projectDir);
-    await this.recompilePassAgents(pass, allSkills);
-    await this.refreshConfigTypes(pass, cwd, seatedMatrix);
+    await this.warnUnresolvedStackSkills(projectDir, loaded, allSkills);
+    this.warnScopeDroppedStackPairs(loaded);
+    await this.recompilePassAgents(pass, allSkills, loaded);
+    await this.refreshConfigTypes(pass, cwd, seatedMatrix, loaded);
 
     this.log("");
     this.logSuccess(`${pass.label} compile complete!`);
@@ -355,14 +331,15 @@ export default class Compile extends BaseCommand {
   }
 
   /** A pass with no skills still compiles when its config declares base agents only. */
-  private async announceWhetherPassCompiles(
+  private announceWhetherPassCompiles(
     pass: CompilePass,
     totalSkillCount: number,
-  ): Promise<boolean> {
+    loaded: LoadedProjectConfig | null,
+  ): boolean {
     if (totalSkillCount > 0) return true;
 
     const passName = pass.label.toLowerCase();
-    if (await declaresOnlyBaseAgents(pass)) {
+    if (declaresOnlyBaseAgents(pass, loaded)) {
       this.log(`No skills configured for ${passName} pass, compiling base agents`);
       return true;
     }
@@ -371,7 +348,11 @@ export default class Compile extends BaseCommand {
     return false;
   }
 
-  private async recompilePassAgents(pass: CompilePass, skills: SkillDefinitionMap): Promise<void> {
+  private async recompilePassAgents(
+    pass: CompilePass,
+    skills: SkillDefinitionMap,
+    loaded: LoadedProjectConfig | null,
+  ): Promise<void> {
     const { projectDir, installation, sourcePath, scopeFilter } = pass;
 
     this.log(STATUS_MESSAGES.RECOMPILING_AGENTS);
@@ -384,22 +365,20 @@ export default class Compile extends BaseCommand {
         outputDir: installation.agentsDir,
         ...(scopeFilter !== undefined && { scopeFilter }),
       });
-      await this.reportRecompile(recompileResult, pass);
+      this.reportRecompile(recompileResult, pass, loaded);
     } catch (error) {
       this.log(ERROR_MESSAGES.FAILED_COMPILE_AGENTS);
       this.handleError(error);
     }
   }
 
-  private async reportRecompile(
-    { compiled, rewritten, failed, warnings }: CompilationResult,
+  private reportRecompile(
+    result: CompilationResult,
     { label, projectDir }: CompilePass,
-  ): Promise<void> {
-    const summary = recompileSummary(
-      rewritten.length,
-      compiled.length - rewritten.length,
-      `${label.toLowerCase()} agent`,
-    );
+    loaded: LoadedProjectConfig | null,
+  ): void {
+    const { compiled, failed, warnings } = result;
+    const summary = recompileSummary(result, `${label.toLowerCase()} agent`);
 
     if (failed.length > 0) {
       this.log(`${summary} (${failed.length} failed)`);
@@ -411,7 +390,7 @@ export default class Compile extends BaseCommand {
     } else {
       this.log(INFO_MESSAGES.NO_AGENTS_TO_RECOMPILE);
       if (label === "Project") {
-        await this.hintGlobalScopedAgents(projectDir);
+        this.hintGlobalScopedAgents(loaded, projectDir);
       }
     }
 
@@ -478,8 +457,7 @@ function rootThisRunCompiled(installations: BothInstallations, cwd: string): str
  * A skill-less pass still compiles a config of base agents only. One that declares skills none of
  * which are on disk lost them, and is skipped rather than recompiled without them.
  */
-async function declaresOnlyBaseAgents(pass: CompilePass): Promise<boolean> {
-  const loaded = await loadInstalledConfig(pass.projectDir);
+function declaresOnlyBaseAgents(pass: CompilePass, loaded: LoadedProjectConfig | null): boolean {
   if (!loaded) return false;
 
   const { skills, agents } = loaded.config;
@@ -488,6 +466,14 @@ async function declaresOnlyBaseAgents(pass: CompilePass): Promise<boolean> {
     pass.scopeFilter === undefined ? !agent.excluded : isActiveAt(agent, pass.scopeFilter),
   );
   return !declaresASkill && compilesAnAgent;
+}
+
+/** Codex leaves some sub-agents out: a global one counts only if the global host compiles it. */
+function countCompiledGlobalAgents(config: ProjectConfig, projectDir: string): number {
+  const globalHost = providerAtScope(projectDir, "global");
+  return config.agents.filter(
+    (agent) => isActiveAt(agent, "global") && hostCompilesAgent(globalHost, agent.name),
+  ).length;
 }
 
 /** Project-scoped skills a global sub-agent's stack names, grouped by skill. */
@@ -511,6 +497,12 @@ function findScopeDroppedStackPairs(config: ProjectConfig): [SkillId, AgentName[
 function stackAssignsSkill(agentStack: StackAgentConfig | undefined, skillId: SkillId): boolean {
   if (!agentStack) return false;
   return resolveAgentConfigToSkills(agentStack).some((ref) => ref.id === skillId);
+}
+
+/** A switched-off plugin is installed, so "not found" would send the user looking for it. */
+function unresolvedSkillWarning(id: SkillId, switchedOff: ReadonlySet<string>): string {
+  const why = switchedOff.has(id) ? "its plugin is switched off" : "was not found";
+  return `Skill '${id}' is configured but ${why} — agents will be compiled without it.`;
 }
 
 function formatDiscoveryMessage(result: DiscoveredSkills): string {

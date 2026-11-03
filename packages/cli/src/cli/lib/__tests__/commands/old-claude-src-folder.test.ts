@@ -1,5 +1,5 @@
 import path from "path";
-import { mkdir } from "fs/promises";
+import { mkdir, readFile } from "fs/promises";
 import { storedConfigHandlerFor } from "@workspace/api-mocks";
 import { configMockServer } from "@workspace/api-mocks/node";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -8,7 +8,7 @@ import { runCliCommand } from "../helpers/cli-runner.js";
 import { useMockWorker } from "../helpers/mock-worker.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { writeTestTsConfig } from "../helpers/config-io.js";
-import { fileExists } from "../test-fs-utils";
+import { directoryExists, fileExists } from "../test-fs-utils";
 import { buildProjectConfig } from "../factories/config-factories.js";
 import { buildSeedPayload, buildSeedSkill } from "../factories/seed-factories.js";
 import {
@@ -481,7 +481,7 @@ describe("an old .claude-src folder", () => {
   });
 
   /** The run without the old folder is the same command in roots of its own, since it installs. */
-  describe("on the init --from run that names the provider it installs", () => {
+  describe("on an init --from run", () => {
     // Ahead of the worker's listen, so yoga's wasm is loaded before it can intercept that fetch and
     // print to the stderr this row pins, which a retry would otherwise absorb. The finding:
     // 2026-10-22-a-command-spec-asserting-stderr-exactly-fails-its-first-attempt-when-it-is-the-first-ink-render-in-its-worker
@@ -570,6 +570,98 @@ describe("an old .claude-src folder", () => {
           without.stderr,
         ].join(""),
       );
+    });
+
+    describe("naming no provider, in a project holding none under a home directory holding a Codex installation", () => {
+      function initFrom(...extra: string[]) {
+        return runCliCommand([
+          "init",
+          "--from",
+          SEED_ID,
+          "--marketplace",
+          dirs.sourceDir,
+          ...extra,
+        ]);
+      }
+
+      async function underACodexHome(home: string): Promise<string> {
+        await installIn([home], CODEX_FOLDER);
+        return readFile(path.join(home, CODEX_FOLDER, "config.ts"), "utf-8");
+      }
+
+      it("names in each root the Claude folder the run installs into there, HOME's line first, and the run prints what it prints without one", async () => {
+        const twin = await setupIsolatedHome("cc-old-source-folder-twin-");
+        await underACodexHome(twin.fakeHome);
+        const without = await initFrom();
+        await twin.cleanup();
+        const homeCodexConfig = await underACodexHome(fakeHome);
+        await oldFolderIn([projectDir, fakeHome]);
+
+        const withOld = await initFrom();
+
+        expect(without.error).toBeUndefined();
+        expect(without.stderr, "a run with no old folder names none").not.toContain(
+          OLD_SOURCE_FOLDER,
+        );
+        expect(withOld.error).toBeUndefined();
+        expect(
+          await fileExists(path.join(fakeHome, CLAUDE_FOLDER, "config.ts")),
+          "subject guard: the run installed HOME on the Claude folder",
+        ).toBe(true);
+        expect(
+          await fileExists(path.join(projectDir, CLAUDE_FOLDER, "config.ts")),
+          "subject guard: the run installed the project on the Claude folder",
+        ).toBe(true);
+        expect(
+          await readFile(path.join(fakeHome, CODEX_FOLDER, "config.ts"), "utf-8"),
+          "HOME's Codex installation is left as it was",
+        ).toBe(homeCodexConfig);
+        expect(
+          await directoryExists(path.join(projectDir, CODEX_FOLDER)),
+          "the project holds no Codex folder",
+        ).toBe(false);
+        expect(
+          withOld.stderr,
+          "stderr opens with one line per root, HOME's first, each naming the Claude folder the run installs into there, then is what it is without the old folder",
+        ).toBe(
+          [
+            ignoredLine(HOME_SHORTHAND, CLAUDE_FOLDER),
+            ignoredLine(projectDir, CLAUDE_FOLDER),
+            without.stderr,
+          ].join(""),
+        );
+      });
+
+      it("names HOME's Codex folder on the --ui run, which opens the editor and installs nothing", async () => {
+        const homeCodexConfig = await underACodexHome(fakeHome);
+        const without = await initFrom("--ui");
+        await oldFolderIn([projectDir, fakeHome]);
+
+        const withOld = await initFrom("--ui");
+
+        expect(without.error).toBeUndefined();
+        expect(without.stdout, "the run opened the editor on the id").toContain(SEED_ID);
+        expect(withOld.error).toBeUndefined();
+        expect(withOld.stdout, "stdout is what it is without the old folder").toBe(without.stdout);
+        expect(
+          await readFile(path.join(fakeHome, CODEX_FOLDER, "config.ts"), "utf-8"),
+          "HOME's Codex installation is left as it was",
+        ).toBe(homeCodexConfig);
+        expect(
+          await directoryExists(path.join(fakeHome, CLAUDE_FOLDER)),
+          "the run installed nothing in HOME",
+        ).toBe(false);
+        expect(
+          withOld.stderr,
+          "HOME's line names HOME's own folder, as for any run over a project holding no installation, and the project's names the folder a new installation would take",
+        ).toBe(
+          [
+            ignoredLine(HOME_SHORTHAND, CODEX_FOLDER),
+            ignoredLine(projectDir, CLAUDE_FOLDER),
+            without.stderr,
+          ].join(""),
+        );
+      });
     });
   });
 });

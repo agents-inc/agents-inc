@@ -18,6 +18,7 @@ import type { UnusableSkillMetadata } from "../lib/loading/index.js";
 import type { ScopeKind } from "../lib/installation/source-scopes.js";
 import type { ConfigLoadError } from "../lib/configuration/project-config.js";
 import type { JoinedAgent, UnassignedRow } from "../lib/seed/seed-apply.js";
+import type { CompilationResult } from "../lib/operations/project/compile-agents.js";
 import type { AgentChange, NamedBy, SettingChange } from "../lib/configuration/scope-diff.js";
 import { getSkillEntryDisplayName } from "../lib/matrix/matrix-provider.js";
 import type { SkippedSkillAgents } from "@workspace/compile/seed-to-config";
@@ -99,10 +100,7 @@ export const INFO_MESSAGES = {
   CONFIG_TYPES_REFRESHED: `Refreshed ${STANDARD_FILES.CONFIG_TYPES_TS}`,
   EJECTED_SKILLS_USER_OWNED: `Ejected skills are yours to own — '${CLI_INVOKE_COMMAND} update' does not change them.`,
   NO_PLUGIN_MARKETPLACES: "No plugin marketplaces are configured — nothing to refresh.",
-  /**
-   * The owner's words (2026-10-24), on stderr before the command's own output. The lines after it
-   * are each true of a run this one is not (owner, 2026-10-26: "A line worded for each").
-   */
+  /** The owner's words, on stderr before the command's own output. */
   GLOBAL_INSTALLATION_STANDS_IN:
     "This project's config declares nothing, so this works on your global installation.",
   NO_GLOBAL_INSTALLATION_STANDS_IN:
@@ -118,7 +116,7 @@ export const INFO_MESSAGES = {
   /** Under doctor's marketplace row, when its download replaced a saved copy whose files differed. */
   SAVED_COPY_REPLACED: "The saved copy differed from the marketplace and has been replaced",
   /** Printed under the destination already named, so it names files only. */
-  AGENT_PARTIALS_CUSTOMIZABLE: `Each sub-agent directory there holds ${AGENT_PARTIAL_FILES.join(", ")} — edit those to customize that sub-agent.`,
+  AGENT_PARTIALS_CUSTOMIZABLE: `Each sub-agent directory there holds up to ${plural(AGENT_PARTIAL_FILES.length, "partial")} (${AGENT_PARTIAL_FILES.join(", ")}) — edit those to customize that sub-agent.`,
 } as const;
 
 export function notInstalledHere(brandingName: string): string {
@@ -131,16 +129,21 @@ export function pluginsInstalled(count: number): string {
 
 /** No destination: the copies are split between project and home by each skill's scope. */
 export function localSkillsCopied(count: number): string {
-  return `Copied ${count} local skill(s)`;
+  return `Copied ${plural(count, "local skill")}`;
 }
 
 /** `subject` is singular, pluralised against `rewritten`. */
-export function recompileSummary(rewritten: number, unchanged: number, subject: string): string {
-  return `${plural(rewritten, subject)} rewritten, ${unchanged} unchanged`;
+export function recompileSummary(
+  { compiled, rewritten, created }: Pick<CompilationResult, "compiled" | "rewritten" | "created">,
+  subject: string,
+): string {
+  const unchanged = compiled.length - rewritten.length - created.length;
+  const createdPart = created.length > 0 ? `, ${created.length} created` : "";
+  return `${plural(rewritten.length, subject)} rewritten${createdPart}, ${unchanged} unchanged`;
 }
 
 export function agentsNotCompiled(agentNames: readonly AgentName[]): string {
-  return `${agentNames.length} sub-agent(s) did not compile: ${agentNames.join(", ")}`;
+  return `${plural(agentNames.length, "sub-agent")} did not compile: ${agentNames.join(", ")}`;
 }
 
 export type IncompleteWork = {
@@ -159,7 +162,7 @@ export const INCOMPLETE_WORK_RECOVERY = {
 /** Restates warnings already printed: it is what explains a non-zero exit from a finished run. */
 export function completedWithFailures(failures: readonly IncompleteWork[]): string {
   return [
-    `Completed with ${failures.length} failure(s) — the changes above landed, these did not:`,
+    `Completed with ${plural(failures.length, "failure")} — the changes above landed, these did not:`,
     ...failures.flatMap(failureLines),
   ].join("\n");
 }
@@ -216,6 +219,14 @@ export function codexPluginLeftSwitchedOn(
   reason: string,
 ): string {
   return `Codex switched plugin ${pluginKey} back on when it was updated, and it could not be switched off again in ${configFile}: ${reason}. To switch it off, set enabled = false in that file, in the table it already has for ${pluginKey}.`;
+}
+
+export function pluginNotSwitchedBackOff(pluginKey: string): string {
+  return `Could not switch plugin ${pluginKey} back off after Codex switched it on`;
+}
+
+export function switchItOffIn(configFile: string): string {
+  return `Set enabled = false in its existing table in ${configFile}.`;
 }
 
 export function pluginsLeftSwitchedOn(pluginKeys: readonly string[]): string {
@@ -354,11 +365,21 @@ export function editorSkillMetadataUnusableError(entries: UnusableSkillMetadata[
 const SHARED_CONFIG_GREENFIELD_HINT =
   "installing a shared configuration is a fresh setup, not a merge";
 
+/** A share's recipient installs the id into a folder of their own. */
 export function sharedConfigDestinations(id: string): string[] {
+  return [`  Install it:  ${CLI_INVOKE_COMMAND} init --from ${id}`, openItLine(id)];
+}
+
+/** Minted from the installation in play, which `init --from` refuses to install over. */
+export function appliedBackDestinations(id: string, provider: ProviderToName): string[] {
   return [
-    `  Install it:  ${CLI_INVOKE_COMMAND} init --from ${id}`,
-    `  Open it:     ${editorConfigUrl(id)}`,
+    `  Apply it:    ${CLI_INVOKE_COMMAND} edit --from ${id}${providerArgument(provider)}`,
+    openItLine(id),
   ];
+}
+
+function openItLine(id: string): string {
+  return `  Open it:     ${editorConfigUrl(id)}`;
 }
 
 export function applySharedConfigHere(
@@ -387,7 +408,9 @@ export function sharedIdNamesAFolder(folder: string): string {
 }
 
 export function sharedSkillsLeftBehind(skillIds: readonly SkillId[], namedBy: NamedBy): string {
-  return `A shared id names one marketplace, and these skill(s) come from another, so they will not install elsewhere: ${skillNames(skillIds, namedBy)}`;
+  const [subject, pronoun] =
+    skillIds.length === 1 ? ["this skill comes", "it"] : ["these skills come", "they"];
+  return `A shared id names one marketplace, and ${subject} from another, so ${pronoun} will not install elsewhere: ${skillNames(skillIds, namedBy)}`;
 }
 
 export function sharedConfigExistingInstall(
@@ -459,7 +482,7 @@ function skippedFor(
   if (skillIds.length === 0) return [];
 
   return [
-    `Skipped ${skillIds.length} skill(s) this catalog ${cause}: ${unknownKeys(skillIds)}`,
+    `Skipped ${plural(skillIds.length, "skill")} this catalog ${cause}: ${unknownKeys(skillIds)}`,
     ...installedWithout
       .filter(({ skillId }) => skillIds.includes(skillId))
       .map(subAgentsInstalledWithout),
@@ -467,15 +490,16 @@ function skippedFor(
 }
 
 function subAgentsInstalledWithout({ skillId, agentNames }: SkippedSkillAgents): string {
-  return `  sub-agent(s) installed without ${unknownKeys([skillId])}, carrying nothing else this catalog knows: ${agentNames.join(", ")}`;
+  const subject = agentNames.length === 1 ? "sub-agent" : "sub-agents";
+  return `  ${subject} installed without ${unknownKeys([skillId])}, carrying nothing else this catalog knows: ${agentNames.join(", ")}`;
 }
 
 export function skippedUnknownAgents(agentNames: readonly string[]): string {
-  return `Skipped ${agentNames.length} unknown sub-agent(s): ${unknownKeys(agentNames)}`;
+  return `Skipped ${plural(agentNames.length, "unknown sub-agent")}: ${unknownKeys(agentNames)}`;
 }
 
 export function carriedSkillsWritten(skillIds: readonly SkillId[], namedBy: NamedBy): string {
-  return `Wrote ${skillIds.length} skill(s) this configuration carries: ${skillNames(skillIds, namedBy)}`;
+  return `Wrote ${plural(skillIds.length, "skill")} this configuration carries: ${skillNames(skillIds, namedBy)}`;
 }
 
 /** Follows the error, so the "Copied" line above it is not read as still true. */
@@ -485,6 +509,14 @@ export function copiedSkillsRemovedAfterRefusedSave(count: number): string {
 
 export function carriedSkillsRemovedAfterRefusedSave(count: number): string {
   return `Removed the ${plural(count, "skill")} this configuration carried, since the configuration could not be saved`;
+}
+
+export function marketplaceRemovedAfterRefusedSave(marketplace: string): string {
+  return `Removed the marketplace "${marketplace}" it registered, since the configuration could not be saved`;
+}
+
+export function pluginKeptAfterRefusedSave(pluginRef: string): string {
+  return `Kept the plugin "${pluginRef}" it installed, since it could not tell whether the plugin was there before this run`;
 }
 
 export const SHARED_CONFIG_APPLY = {

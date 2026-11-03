@@ -409,7 +409,7 @@ describe("multi-source-loader — what the tagging pass says and adds", () => {
 
     await loadSkillsFromAllSources(matrix, DEFAULT_SOURCE_CONFIG, "/tmp/test");
 
-    expect(verbose).toHaveBeenCalledWith("Tagged 1 local skills with local source");
+    expect(verbose).toHaveBeenCalledWith("Tagged 1 local skill with local source");
   });
 
   it("says no plugin skill was found, and tags none, when no plugin is installed", async () => {
@@ -419,7 +419,7 @@ describe("multi-source-loader — what the tagging pass says and adds", () => {
 
     expect(verbose).toHaveBeenCalledWith("No plugin skills discovered from settings.json");
     expect(verbose).not.toHaveBeenCalledWith("Tagged 0 plugin-installed skills");
-    expect(verbose).not.toHaveBeenCalledWith("Found 0 global plugin skill(s)");
+    expect(verbose).not.toHaveBeenCalledWith("Found 0 global plugin skills");
   });
 
   it("marks a skill installed as a plugin from the home directory, and says so", async () => {
@@ -431,8 +431,8 @@ describe("multi-source-loader — what the tagging pass says and adds", () => {
     expect(matrix.skills["web-framework-react"]?.availableSources).toStrictEqual([
       { name: "agents-inc", type: "public", installed: true, installMode: "plugin", primary: true },
     ]);
-    expect(verbose).toHaveBeenCalledWith("Found 1 global plugin skill(s)");
-    expect(verbose).toHaveBeenCalledWith("Tagged 1 plugin-installed skills");
+    expect(verbose).toHaveBeenCalledWith("Found 1 global plugin skill");
+    expect(verbose).toHaveBeenCalledWith("Tagged 1 plugin-installed skill");
     expect(verbose).not.toHaveBeenCalledWith("No plugin skills discovered from settings.json");
   });
 
@@ -445,8 +445,8 @@ describe("multi-source-loader — what the tagging pass says and adds", () => {
     expect(matrix.skills["web-framework-react"]?.availableSources).toStrictEqual([
       { name: "agents-inc", type: "public", installed: true, installMode: "plugin", primary: true },
     ]);
-    expect(verbose).toHaveBeenCalledWith("Tagged 1 plugin-installed skills");
-    expect(verbose).not.toHaveBeenCalledWith("Found 1 global plugin skill(s)");
+    expect(verbose).toHaveBeenCalledWith("Tagged 1 plugin-installed skill");
+    expect(verbose).not.toHaveBeenCalledWith("Found 1 global plugin skill");
   });
 
   it("says how many project plugin skills it tagged, and never that none were found", async () => {
@@ -457,7 +457,7 @@ describe("multi-source-loader — what the tagging pass says and adds", () => {
 
     await loadSkillsFromAllSources(matrix, DEFAULT_SOURCE_CONFIG, "/tmp/test");
 
-    expect(verbose).toHaveBeenCalledWith("Tagged 1 plugin-installed skills");
+    expect(verbose).toHaveBeenCalledWith("Tagged 1 plugin-installed skill");
     expect(verbose).not.toHaveBeenCalledWith("No plugin skills discovered from settings.json");
   });
 

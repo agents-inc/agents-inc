@@ -1,6 +1,6 @@
 import os from "os";
 import path from "path";
-import { readFile } from "fs/promises";
+import { readFile, writeFile } from "fs/promises";
 import type { Liquid } from "liquidjs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -77,7 +77,7 @@ describe("writeCompiledAgentsByScope", () => {
         ok: true,
         scope: "project",
         targetDir: projectAgentsDir(),
-        rewritten: true,
+        file: "created",
       },
     ]);
     expect(await fileExists(path.join(projectAgentsDir(), `${PROJECT_AGENT}.md`))).toBe(true);
@@ -110,12 +110,31 @@ describe("writeCompiledAgentsByScope", () => {
         ok: true,
         scope: "global",
         targetDir: globalAgentsDir(),
-        rewritten: true,
+        file: "created",
       },
     ]);
     expect(await directoryExists(globalAgentsDir())).toBe(true);
     expect(await fileExists(path.join(globalAgentsDir(), `${GLOBAL_AGENT}.md`))).toBe(true);
     expect(await fileExists(path.join(projectAgentsDir(), `${GLOBAL_AGENT}.md`))).toBe(false);
+  });
+
+  it("tells a file it created from one it rewrote and one it left as it was", async () => {
+    const agents = { [PROJECT_AGENT]: createMockAgentConfig(PROJECT_AGENT) };
+    const written = (file: string) => [
+      { name: PROJECT_AGENT, ok: true, scope: "project", targetDir: projectAgentsDir(), file },
+    ];
+
+    expect(await writeAgents(agents), "the file was not there before").toStrictEqual(
+      written("created"),
+    );
+    expect(await writeAgents(agents), "the file already held this output").toStrictEqual(
+      written("unchanged"),
+    );
+
+    await writeFile(path.join(projectAgentsDir(), `${PROJECT_AGENT}.md`), "a stale compile");
+    expect(await writeAgents(agents), "the file was there, holding something else").toStrictEqual(
+      written("rewritten"),
+    );
   });
 
   it("writes each agent to its own scope's directory in a mixed-scope pass", async () => {

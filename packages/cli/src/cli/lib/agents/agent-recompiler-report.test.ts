@@ -91,7 +91,7 @@ describe("recompileAgents reports", () => {
   it("says how many sub-agents it recompiles into the plugin", async () => {
     await recompileAgents({ pluginDir: testDirs.pluginDir, sourcePath: CLI_ROOT, agents: ["pm"] });
 
-    expect(verbose).toHaveBeenCalledWith(`Recompiling 1 agents in ${testDirs.pluginDir}`);
+    expect(verbose).toHaveBeenCalledWith(`Recompiling 1 agent in ${testDirs.pluginDir}`);
   });
 
   it("says nothing about an empty pass", async () => {
@@ -100,21 +100,23 @@ describe("recompileAgents reports", () => {
     expect(verbose).not.toHaveBeenCalledWith(expect.stringContaining("Recompiling"));
   });
 
-  it("counts a sub-agent rewritten once, and unchanged on an identical second pass", async () => {
+  it("counts a sub-agent created once, and unchanged on an identical second pass", async () => {
     const pass = () =>
       recompileAgents({ pluginDir: testDirs.pluginDir, sourcePath: CLI_ROOT, agents: ["pm"] });
 
     expect(await pass()).toStrictEqual({
       compiled: ["pm"],
-      rewritten: ["pm"],
+      rewritten: [],
+      created: ["pm"],
       failed: [],
       warnings: [],
     });
-    expect(verbose).toHaveBeenCalledWith(`  Rewrote: pm (project -> ${testDirs.agentsDir})`);
+    expect(verbose).toHaveBeenCalledWith(`  Created: pm (project -> ${testDirs.agentsDir})`);
 
     expect(await pass()).toStrictEqual({
       compiled: ["pm"],
       rewritten: [],
+      created: [],
       failed: [],
       warnings: [],
     });
@@ -133,6 +135,7 @@ describe("recompileAgents reports", () => {
     ).toStrictEqual({
       compiled: [],
       rewritten: [],
+      created: [],
       failed: ["pm"],
       warnings: ["Failed to compile pm: EISDIR: illegal operation on a directory, read"],
     });
@@ -148,7 +151,14 @@ describe("recompileAgents reports", () => {
       agents: ["pm"],
     });
 
-    expect(result.rewritten).toStrictEqual(["pm"]);
+    expect(result).toStrictEqual({
+      compiled: ["pm"],
+      rewritten: ["pm"],
+      created: [],
+      failed: [],
+      warnings: [],
+    });
+    expect(verbose).toHaveBeenCalledWith(`  Rewrote: pm (project -> ${testDirs.agentsDir})`);
     expect(await readFile(compiledPath, "utf-8")).not.toBe("a stale compile");
   });
 

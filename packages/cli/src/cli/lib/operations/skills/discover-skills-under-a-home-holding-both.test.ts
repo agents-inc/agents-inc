@@ -30,6 +30,7 @@ import { createMockMatrix } from "../../__tests__/factories/matrix-factories.js"
 import { writeTestTsConfig } from "../../__tests__/helpers/config-io.js";
 import { writeTestPluginManifest, writeTestSkill } from "../../__tests__/helpers/disk-writers.js";
 import { useFakeHome } from "../../__tests__/helpers/isolated-home.js";
+import { otherThan } from "../../__tests__/helpers/other-providers.js";
 import { silenceConsole } from "../../__tests__/helpers/silence-console.js";
 import { cleanupTempDir, createTempDir } from "../../__tests__/test-fs-utils.js";
 import { SKILLS } from "../../__tests__/test-fixtures.js";
@@ -38,13 +39,8 @@ import type { SkillId } from "../../../types/index.js";
 import { typedKeys } from "../../../utils/typed-object.js";
 
 /**
- * A project under a home holding a Claude and a Codex global installation inherits only its own
- * provider's: the global skills it discovers, copied in and plugin alike, are that installation's.
  * Each global holds skills the other does not, so which one was read is visible. Claude is the
- * control, being also the provider a home holding both would otherwise be read as. Under a home
- * holding only the other provider's, the project inherits no global installation at all.
- *
- * CLI-984, CLI-991.
+ * control, being also the provider a home holding both would otherwise be read as.
  */
 
 const GLOBAL_COPIED_IN = {
@@ -59,10 +55,6 @@ const GLOBAL_PLUGIN = {
 
 /** Copied into the project, so a discovery that read nothing at all is not taken for the answer. */
 const PROJECT_COPIED_IN = SKILLS.drizzle.id;
-
-function otherThan(provider: Provider): Provider[] {
-  return PROVIDERS.filter((candidate) => candidate !== provider);
-}
 
 describe("discoverInstalledSkills in a project under a home holding a Claude and a Codex global installation", () => {
   const consoleSpies = silenceConsole(["log"]);
@@ -95,7 +87,6 @@ describe("discoverInstalledSkills in a project under a home holding a Claude and
     for (const atHome of PROVIDERS) await installTheGlobalOf(atHome);
   }
 
-  /** The home `uninstall --provider <provider>` leaves there: the other provider's global alone. */
   async function installOnlyTheOtherAtHomeThenTheProjectOn(provider: Provider): Promise<void> {
     await writeTestTsConfig(projectDir, buildProjectConfig(), sourceDirName(provider));
     await writeTestSkill(skillsDir(provider, "project", projectDir), PROJECT_COPIED_IN);
@@ -139,7 +130,7 @@ describe("discoverInstalledSkills in a project under a home holding a Claude and
       });
       expect(unusableMetadata).toStrictEqual([]);
       expect(consoleSpies.log).toHaveBeenCalledWith(
-        `    Found 1 global local skills from ${skillsDir(provider, "global", home.dir)}`,
+        `    Found 1 global local skill from ${skillsDir(provider, "global", home.dir)}`,
       );
     },
   );
@@ -163,11 +154,11 @@ describe("discoverInstalledSkills in a project under a home holding a Claude and
       });
       expect(unusableMetadata).toStrictEqual([]);
       expect(consoleSpies.log).toHaveBeenCalledWith(
-        `    Found 1 local skills from ${skillsDir(provider, "project", projectDir)}`,
+        `    Found 1 local skill from ${skillsDir(provider, "project", projectDir)}`,
       );
       for (const other of otherThan(provider)) {
         expect(consoleSpies.log).not.toHaveBeenCalledWith(
-          `    Found 1 global local skills from ${skillsDir(other, "global", home.dir)}`,
+          `    Found 1 global local skill from ${skillsDir(other, "global", home.dir)}`,
         );
       }
     },

@@ -21,8 +21,10 @@ export type CompileAgentsOptions = {
 
 export type CompilationResult = {
   compiled: AgentName[];
-  /** The subset of `compiled` whose file this pass actually wrote. */
+  /** The subset of `compiled` whose file was there and moved. */
   rewritten: AgentName[];
+  /** The subset whose file was not there; the rest of `compiled` is unchanged. */
+  created: AgentName[];
   failed: AgentName[];
   warnings: string[];
 };
@@ -47,6 +49,7 @@ export async function compileAgents(options: CompileAgentsOptions): Promise<Comp
   return {
     compiled: recompileResult.compiled,
     rewritten: recompileResult.rewritten,
+    created: recompileResult.created,
     failed: recompileResult.failed,
     warnings: recompileResult.warnings,
   };

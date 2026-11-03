@@ -610,7 +610,7 @@ describe("marketplace-generator", () => {
       await generateMarketplace(pluginsDir, TEST_MARKETPLACE_OPTIONS);
 
       expect(consoleSpies.log).toHaveBeenCalledWith(`  Scanning plugins directory: ${pluginsDir}`);
-      expect(consoleSpies.log).toHaveBeenCalledWith("  Found 1 plugin manifests");
+      expect(consoleSpies.log).toHaveBeenCalledWith("  Found 1 plugin manifest");
       expect(consoleSpies.log).toHaveBeenCalledWith("    [OK] web-said-a");
     });
 
@@ -667,7 +667,7 @@ describe("marketplace-generator", () => {
         ),
       ).toBe(
         [
-          "Marketplace 'acme' ships 2 skill id(s) outside its own namespace. Every skill id must begin with the marketplace's name:",
+          "Marketplace 'acme' ships 2 skill ids outside its own namespace. Every skill id must begin with the marketplace's name:",
           "  web-framework-react -> acme-web-framework-react",
           "  api-framework-hono -> acme-api-framework-hono",
           "Rename each skill directory and the 'name' in its SKILL.md, re-run 'build plugins', then build the marketplace again.",

@@ -102,10 +102,10 @@ describe("discoverInstalledSkills", () => {
       unusableMetadata: [],
     });
     const said = (line: string) => expect(consoleSpies.log).toHaveBeenCalledWith(`    ${line}`);
-    said("Found 1 skills from global plugins");
-    said(`Found 1 global local skills from ${globalSkillsDir()}`);
-    said("Found 1 skills from installed plugins");
-    said(`Found 1 local skills from ${projectSkillsDir()}`);
+    said("Found 1 skill from global plugins");
+    said(`Found 1 global local skill from ${globalSkillsDir()}`);
+    said("Found 1 skill from installed plugins");
+    said(`Found 1 local skill from ${projectSkillsDir()}`);
   });
 
   it("says nothing about the global scope when it holds no skills", async () => {

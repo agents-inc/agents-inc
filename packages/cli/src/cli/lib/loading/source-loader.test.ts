@@ -95,6 +95,7 @@ import { firstElement } from "../__tests__/helpers/element-at.js";
 import { matchedAsWritten } from "../__tests__/helpers/matched-as-written.js";
 import { typedEntries, typedKeys, typedValues } from "../../utils/typed-object";
 import { buildSkillConfigs } from "../__tests__/helpers/skill-config-builders.js";
+import { overrideEnv, type RestoreEnv } from "../__tests__/helpers/env-override.js";
 
 /** In its own namespace: a custom marketplace shipping a catalogue id is refused whole. */
 const FIXTURE_SKILLS = inTestMarketplace([...DEFAULT_TEST_SKILLS, ...EXTRA_DOMAIN_TEST_SKILLS]);
@@ -290,19 +291,17 @@ afterAll(async () => {
  * `os.homedir()` at startup.
  */
 let fakeHome: string;
-let savedHome: string | undefined;
+let restoreHome: RestoreEnv;
 
 beforeEach(async () => {
   fakeHome = await createTempDir("cc-source-loader-home-");
-  savedHome = process.env.HOME;
-  process.env.HOME = fakeHome;
+  restoreHome = overrideEnv("HOME", fakeHome);
   vi.spyOn(os, "homedir").mockReturnValue(fakeHome);
 });
 
 afterEach(async () => {
   vi.mocked(os.homedir).mockRestore();
-  if (savedHome === undefined) delete process.env.HOME;
-  else process.env.HOME = savedHome;
+  restoreHome();
   projectRootOverride.value = undefined;
   await cleanupTempDir(fakeHome);
 });
@@ -1517,7 +1516,7 @@ describe("convertStackToResolvedStack", () => {
       "api-developer": {},
     });
     expect(warnings).toStrictEqual([
-      "Stack 'handed' names 1 skill(s) this marketplace's catalogue does not carry: 'api-framework-hono'. " +
+      "Stack 'handed' names 1 skill this marketplace's catalogue does not carry: 'api-framework-hono'. " +
         "Left out of the stack — selecting it would install nothing.",
     ]);
   });
@@ -1697,7 +1696,7 @@ describe("convertStackToResolvedStack", () => {
     const { warnings } = convertStackWithWarnings(stack, catalogue);
 
     expect(warnings).toStrictEqual([
-      "Stack 'part-declared' names 1 sub-agent(s) this CLI does not define: 'frontend-dev'. " +
+      "Stack 'part-declared' names 1 sub-agent this CLI does not define: 'frontend-dev'. " +
         "Left out of the stack — a sub-agent must be one the CLI ships.",
     ]);
   });
@@ -1752,7 +1751,7 @@ describe("convertStackToResolvedStack", () => {
     const { warnings } = convertStackWithWarnings(stack, catalogue);
 
     expect(warnings).toStrictEqual([
-      "Stack 'two-undeclared' names 2 sub-agent(s) this CLI does not define: 'frontend-dev', 'backend-dev'. " +
+      "Stack 'two-undeclared' names 2 sub-agents this CLI does not define: 'frontend-dev', 'backend-dev'. " +
         "Left out of the stack — a sub-agent must be one the CLI ships.",
     ]);
   });
@@ -1773,7 +1772,7 @@ describe("convertStackToResolvedStack", () => {
     const { warnings } = convertStackWithWarnings(stack, catalogue);
 
     expect(warnings).toStrictEqual([
-      "Stack 'two-withdrawn' names 2 skill(s) this marketplace's catalogue does not carry: 'web-styling-tailwind', 'web-testing-vitest'. " +
+      "Stack 'two-withdrawn' names 2 skills this marketplace's catalogue does not carry: 'web-styling-tailwind', 'web-testing-vitest'. " +
         "Left out of the stack — selecting it would install nothing.",
     ]);
   });
@@ -2249,7 +2248,6 @@ function customSkillDeclaring(category: string): LocalSkillDiscoveryResult {
   };
 }
 
-/** The same skill copied in under `root`, for a load to discover; answers its metadata.yaml. */
 async function copyInCustomSkillDeclaring(root: string, category: string): Promise<string> {
   const skillDir = path.join(root, CLAUDE_DIR, STANDARD_DIRS.SKILLS, CUSTOM_LOCAL_SKILL_DIR);
   const metadataYaml = path.join(skillDir, STANDARD_FILES.METADATA_YAML);
@@ -2509,7 +2507,7 @@ describe("source-loader public catalogue collision guard", () => {
     const refusal = await refusalLoading(sourceDirs.sourceDir, tempDir);
 
     expect(refusal).toContain(
-      `Marketplace '${sourceDirs.sourceDir}' ships 12 skill id(s) the public catalogue already owns:\n`,
+      `Marketplace '${sourceDirs.sourceDir}' ships 12 skill ids the public catalogue already owns:\n`,
     );
     // Ten of the twelve, in whatever order the skills were read, then the count of the rest.
     expect(refusal).toMatch(
@@ -2528,12 +2526,23 @@ describe("source-loader public catalogue collision guard", () => {
     const refusal = await refusalLoading(sourceDirs.sourceDir, tempDir);
 
     expect(refusal).toContain(
-      `Marketplace '${sourceDirs.sourceDir}' ships 2 skill id(s) the public catalogue already owns:\n`,
+      `Marketplace '${sourceDirs.sourceDir}' ships 2 skill ids the public catalogue already owns:\n`,
     );
     for (const id of CATALOGUE_OWNED_IDS) expect(refusal).toContain(`\n  ${id}\n`);
     expect(refusal).not.toContain("... and");
     // The last id is followed by the remedy itself, with no line between them.
     expect(refusal).toMatch(/\n {2}\S+\nA skill id is the directory the skill installs into/);
+  });
+
+  it("speaks of a single colliding id in the singular", async () => {
+    const colliding = firstElement(skillsUnderCatalogueIds());
+    sourceDirs = await createTestSource({ skills: [colliding] });
+
+    const refusal = await refusalLoading(sourceDirs.sourceDir, tempDir);
+
+    expect(refusal).toContain(
+      `Marketplace '${sourceDirs.sourceDir}' ships 1 skill id the public catalogue already owns:\n  ${colliding.id}\nA skill id is the directory the skill installs into, so it would shadow the public catalogue's own skill. Every id must carry its marketplace's name as a namespace — '<marketplace>-<id>'. Rename each skill and the 'name' in its SKILL.md, then re-run 'build marketplace', which refuses the same ids before they are published.`,
+    );
   });
 
   it("loads a marketplace whose skill ids all carry its own namespace", async () => {

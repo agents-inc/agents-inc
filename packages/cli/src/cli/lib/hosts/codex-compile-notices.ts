@@ -5,6 +5,7 @@ import {
 
 import { codexProjectTrustMessage, trustCodexProject } from "./codex-project-trust.js";
 import { agentCodec, agentsDir } from "../installation/install-layout.js";
+import { isHomeDirectory } from "../installation/is-home-directory.js";
 import { glob } from "../../utils/fs.js";
 import type { Provider } from "../../consts.js";
 
@@ -30,7 +31,10 @@ async function trustNotice(projectDir: string): Promise<string[]> {
   return said === undefined ? [] : [said];
 }
 
+/** The home folder is the global scope, whose roles Codex reads without a trust entry. */
 async function holdsProjectRoles(projectDir: string): Promise<boolean> {
+  if (isHomeDirectory(projectDir)) return false;
+
   const roles = await glob(agentCodec("codex").listGlob, agentsDir("codex", "project", projectDir));
 
   return roles.length > 0;

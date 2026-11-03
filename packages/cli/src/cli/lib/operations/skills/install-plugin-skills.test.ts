@@ -139,7 +139,13 @@ describe("plugin skills no marketplace carries", () => {
 
   it("names every such skill in its refusal, and the two ways out", () => {
     expect(unbackedPluginInstallError(["web-framework-react", "web-state-zustand"])).toBe(
-      "Cannot install 2 skill(s) as plugins — no marketplace carries them: web-framework-react, web-state-zustand. A skill that exists only in this project can only be installed as a local copy. Set its Install mode to eject in the editor, or publish it to a marketplace first.",
+      "Cannot install 2 skills as plugins — no marketplace carries them: web-framework-react, web-state-zustand. A skill that exists only in this project can only be installed as a local copy. Set its Install mode to eject in the editor, or publish it to a marketplace first.",
+    );
+  });
+
+  it("speaks of one skill in the singular", () => {
+    expect(unbackedPluginInstallError(["web-framework-react"])).toBe(
+      "Cannot install 1 skill as a plugin — no marketplace carries it: web-framework-react. A skill that exists only in this project can only be installed as a local copy. Set its Install mode to eject in the editor, or publish it to a marketplace first.",
     );
   });
 });

@@ -534,7 +534,7 @@ describe("mode-migrator, what it says", () => {
 
   it("explains a failed eject copy and the two ways out", () => {
     expect(ejectCopyFailureError(2)).toBe(
-      "Failed to copy 2 skill(s) for eject. Eject intent could not be honored. Check that the destination skills directory is writable, then apply the same id again with 'npx agents-inc edit --from <id>' — or switch the affected skills back to plugin mode.",
+      "Failed to copy 2 skills for eject. Eject intent could not be honored. Check that the destination skills directory is writable, then apply the same id again with 'npx agents-inc edit --from <id>' — or switch the affected skills back to plugin mode.",
     );
   });
 

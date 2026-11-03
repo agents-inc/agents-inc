@@ -12,6 +12,7 @@ import type {
   SkillSourceType,
 } from "../../types";
 import { verbose } from "../../utils/logger";
+import { plural } from "../../utils/string";
 import { typedEntries, typedKeys } from "../../utils/typed-object";
 import { isDefaultSource, type ResolvedConfig } from "../configuration";
 import { discoverAllPluginSkills } from "../plugins";
@@ -98,7 +99,7 @@ function tagLocalSkills(matrix: MergedSkillsMatrix): void {
     count++;
   }
 
-  verbose(`Tagged ${count} local skills with local source`);
+  verbose(`Tagged ${plural(count, "local skill")} with local source`);
 }
 
 async function tagPluginSkills(
@@ -120,7 +121,7 @@ async function tagPluginSkills(
     markInstalledAsPlugin(skill, primarySourceName, primarySourceType);
   }
 
-  verbose(`Tagged ${allPluginSkillIds.length} plugin-installed skills`);
+  verbose(`Tagged ${plural(allPluginSkillIds.length, "plugin-installed skill")}`);
 }
 
 /** Uses the skill's own marketplace entry, so a seated global skill keeps its own label. */
@@ -155,7 +156,7 @@ async function collectPluginSkillIds(projectDir: string): Promise<SkillId[]> {
     : await pluginSkillIdsIn(os.homedir(), inheritedGlobalProvider(projectDir));
 
   if (globalSkillIds.length > 0) {
-    verbose(`Found ${globalSkillIds.length} global plugin skill(s)`);
+    verbose(`Found ${plural(globalSkillIds.length, "global plugin skill")}`);
     return unique([...projectSkillIds, ...globalSkillIds]);
   }
 

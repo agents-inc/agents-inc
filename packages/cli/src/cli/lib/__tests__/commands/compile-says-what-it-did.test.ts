@@ -113,7 +113,7 @@ describe("what compile says", () => {
     expect(stdout).toBe(
       [
         "Resolving marketplace...",
-        "Marketplace: default",
+        "Marketplace setting from: default",
         "Loading agent partials...",
         "Agent partials loaded",
         "",
@@ -122,7 +122,7 @@ describe("what compile says", () => {
         "Discovering skills...",
         "Discovered 1 local skill",
         "Recompiling agents...",
-        "2 project agents rewritten, 0 unchanged",
+        "0 project agents rewritten, 2 created, 0 unchanged",
         "Refreshed config-types.ts",
         "",
         "✓ Project compile complete!",
@@ -163,7 +163,7 @@ describe("what compile says", () => {
     );
     expect(stdout).toContain(
       [
-        "2 project agents rewritten, 0 unchanged",
+        "0 project agents rewritten, 2 created, 0 unchanged",
         "    Compiled: web-developer, api-developer",
       ].join("\n"),
     );
@@ -425,44 +425,90 @@ describe("what compile says", () => {
     ).toStrictEqual(before);
   });
 
+  const PLUGIN_KEY = "web-framework-react@acme";
+
+  /** A plugin carrying one skill, written where Claude would have installed it. */
+  async function pluginAt(installPath: string): Promise<string> {
+    await writeTestPluginManifest(installPath, { name: "web-framework-react", version: "1.0.0" });
+    const skillDir = path.join(installPath, "skills", "web-framework-react");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(
+      path.join(skillDir, STANDARD_FILES.SKILL_MD),
+      renderSkillMd("web-framework-react"),
+    );
+    return installPath;
+  }
+
+  async function switchPluginIn(root: string, enabled: boolean): Promise<void> {
+    await mkdir(path.join(root, CLAUDE_DIR), { recursive: true });
+    await writeFile(
+      path.join(root, CLAUDE_DIR, "settings.json"),
+      renderEnabledPluginsSettings({ [PLUGIN_KEY]: enabled }),
+    );
+  }
+
+  async function registerInstalls(installs: readonly unknown[]): Promise<void> {
+    const pluginsRoot = path.join(fakeHome, CLAUDE_DIR, PLUGINS_SUBDIR);
+    await mkdir(pluginsRoot, { recursive: true });
+    await writeFile(
+      path.join(pluginsRoot, "installed_plugins.json"),
+      renderInstalledPluginsRegistry({ [PLUGIN_KEY]: installs }),
+    );
+  }
+
+  const userInstallPath = () => path.join(tempDir, "cache", "user", "web-framework-react");
+
+  describe("its warning for a stack skill whose Claude plugin it cannot use", () => {
+    const reactInWebDevelopersStack = () =>
+      buildProjectConfig({
+        agents: buildAgentConfigs(["web-developer"]),
+        skills: [buildSkillConfig("web-framework-react", { origin: "acme" })],
+        stack: {
+          "web-developer": { "web-framework": [{ id: "web-framework-react", preloaded: false }] },
+        },
+      });
+
+    it("says the skill was not found when its plugin is set to false, which Claude cannot tell from never switched on", async () => {
+      const installedAt = await installProject(reactInWebDevelopersStack());
+      await registerInstalls([buildUserPluginInstallation(await pluginAt(userInstallPath()))]);
+      await switchPluginIn(fakeHome, false);
+      const homeBefore = await homeNow();
+
+      const { stderr } = await runCliCommand(["compile"]);
+
+      expect(flattenCliOutput(stderr)).toBe(
+        "Warning: Skill 'web-framework-react' is configured but was not found — agents will be compiled without it.",
+      );
+      expect(await skillsCarriedBy(installedAt, "web-developer")).toStrictEqual({
+        preloadedRefs: [],
+        dynamicEntries: [],
+      });
+      expect(await homeNow(), "the plugin is left as the user set it").toStrictEqual(homeBefore);
+    });
+
+    it("says the skill was not found when its plugin is switched on for the user but gone from disk", async () => {
+      const installedAt = await installProject(reactInWebDevelopersStack());
+      await registerInstalls([buildUserPluginInstallation(userInstallPath())]);
+      await switchPluginIn(fakeHome, true);
+      const homeBefore = await homeNow();
+
+      const { stderr } = await runCliCommand(["compile"]);
+
+      expect(flattenCliOutput(stderr)).toBe(
+        "Warning: Skill 'web-framework-react' is configured but was not found — agents will be compiled without it.",
+      );
+      expect(await skillsCarriedBy(installedAt, "web-developer")).toStrictEqual({
+        preloadedRefs: [],
+        dynamicEntries: [],
+      });
+      expect(await homeNow(), "the plugin is left as the user set it").toStrictEqual(homeBefore);
+    });
+  });
+
   describe("its count of the skills it discovered", () => {
-    const PLUGIN_KEY = "web-framework-react@acme";
-
-    /** A plugin carrying one skill, written where Claude would have installed it. */
-    async function pluginAt(installPath: string): Promise<string> {
-      await writeTestPluginManifest(installPath, { name: "web-framework-react", version: "1.0.0" });
-      const skillDir = path.join(installPath, "skills", "web-framework-react");
-      await mkdir(skillDir, { recursive: true });
-      await writeFile(
-        path.join(skillDir, STANDARD_FILES.SKILL_MD),
-        renderSkillMd("web-framework-react"),
-      );
-      return installPath;
-    }
-
-    async function enablePluginIn(root: string): Promise<void> {
-      await mkdir(path.join(root, CLAUDE_DIR), { recursive: true });
-      await writeFile(
-        path.join(root, CLAUDE_DIR, "settings.json"),
-        renderEnabledPluginsSettings({ [PLUGIN_KEY]: true }),
-      );
-    }
-
-    async function registerInstalls(installs: readonly unknown[]): Promise<void> {
-      const pluginsRoot = path.join(fakeHome, CLAUDE_DIR, PLUGINS_SUBDIR);
-      await mkdir(pluginsRoot, { recursive: true });
-      await writeFile(
-        path.join(pluginsRoot, "installed_plugins.json"),
-        renderInstalledPluginsRegistry({ [PLUGIN_KEY]: installs }),
-      );
-    }
-
     async function installReactPluginGlobally(): Promise<void> {
-      const userInstall = await pluginAt(
-        path.join(tempDir, "cache", "user", "web-framework-react"),
-      );
-      await registerInstalls([buildUserPluginInstallation(userInstall)]);
-      await enablePluginIn(fakeHome);
+      await registerInstalls([buildUserPluginInstallation(await pluginAt(userInstallPath()))]);
+      await switchPluginIn(fakeHome, true);
     }
 
     it("splits the count into plugin and local skills when both are installed", async () => {
@@ -500,9 +546,7 @@ describe("what compile says", () => {
 
     it("counts a plugin installed at both scopes once", async () => {
       const installedAt = await installProject(buildTestProjectConfig(["web-developer"], []));
-      const userInstall = await pluginAt(
-        path.join(tempDir, "cache", "user", "web-framework-react"),
-      );
+      const userInstall = await pluginAt(userInstallPath());
       const projectInstall = await pluginAt(
         path.join(tempDir, "cache", "project", "web-framework-react"),
       );
@@ -510,8 +554,8 @@ describe("what compile says", () => {
         buildUserPluginInstallation(userInstall),
         buildProjectPluginInstallation(projectInstall, installedAt),
       ]);
-      await enablePluginIn(fakeHome);
-      await enablePluginIn(installedAt);
+      await switchPluginIn(fakeHome, true);
+      await switchPluginIn(installedAt, true);
       const before = await allButCompileOutputsAt(installedAt);
 
       const { stdout } = await runCliCommand(["compile"]);
@@ -552,7 +596,7 @@ describe("what compile says", () => {
           "Discovering skills...",
           "No skills configured for project pass, compiling base agents",
           "Recompiling agents...",
-          "1 project agent rewritten, 0 unchanged",
+          "0 project agents rewritten, 1 created, 0 unchanged",
         ].join("\n"),
       );
       expect(
@@ -575,7 +619,7 @@ describe("what compile says", () => {
       expect(stdout).toBe(
         [
           "Resolving marketplace...",
-          "Marketplace: default",
+          "Marketplace setting from: default",
           "Loading agent partials...",
           "Agent partials loaded",
           "",
@@ -767,7 +811,7 @@ describe("what compile says", () => {
       expect(stdout).toBe(
         [
           "Resolving marketplace...",
-          "Marketplace: default",
+          "Marketplace setting from: default",
           "Loading agent partials...",
           "Agent partials loaded",
           "",
@@ -776,7 +820,7 @@ describe("what compile says", () => {
           "Discovering skills...",
           "No skills configured for global pass, compiling base agents",
           "Recompiling agents...",
-          "1 global agent rewritten, 0 unchanged",
+          "0 global agents rewritten, 1 created, 0 unchanged",
           "Refreshed config-types.ts",
           "Registered projects: 1 recompiled",
           "",
@@ -839,7 +883,12 @@ describe("what compile says", () => {
 
       expect(error).toBeUndefined();
       expect(stdout).toContain(
-        ["1 global agent rewritten, 0 unchanged", "Refreshed config-types.ts", "", "✓"].join("\n"),
+        [
+          "0 global agents rewritten, 1 created, 0 unchanged",
+          "Refreshed config-types.ts",
+          "",
+          "✓",
+        ].join("\n"),
       );
       expect(stderr).toBe("");
       expect(await afterCompileAt(fakeHome)).toStrictEqual({
@@ -876,7 +925,7 @@ describe("what compile says", () => {
           "Discovering skills...",
           "No skills configured for global pass, compiling base agents",
           "Recompiling agents...",
-          "1 global agent rewritten, 0 unchanged",
+          "0 global agents rewritten, 1 created, 0 unchanged",
         ].join("\n"),
       );
       expect(

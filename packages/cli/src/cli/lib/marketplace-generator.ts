@@ -11,6 +11,7 @@ import {
 } from "../consts";
 import { writeFile, glob, ensureDir } from "../utils/fs";
 import { verbose, warn } from "../utils/logger";
+import { plural } from "../utils/string";
 import type { Marketplace, MarketplacePlugin, PluginManifest } from "../types";
 // Not the `./plugins` barrel, which reaches the loader back through plugin discovery.
 import { readPluginManifest } from "./plugins/plugin-finder";
@@ -64,26 +65,9 @@ export async function generateMarketplace(
   verbose(`Scanning plugins directory: ${pluginsDir}`);
 
   const manifestFiles = await glob(`**/${PLUGIN_MANIFEST_PATH}`, pluginsDir);
-  verbose(`Found ${manifestFiles.length} plugin manifests`);
+  verbose(`Found ${plural(manifestFiles.length, "plugin manifest")}`);
 
-  const plugins: MarketplacePlugin[] = [];
-  const rootWithoutDotSlash = options.pluginRoot.replace(/^\.\//, "");
-
-  for (const manifestFile of manifestFiles) {
-    const pluginDirName = pluginDirNameOf(manifestFile);
-    const pluginDir = path.join(pluginsDir, pluginDirName);
-
-    const manifest = await readPluginManifest(pluginDir);
-    if (!manifest) {
-      warn(`Could not read plugin manifest: '${manifestFile}'`);
-      continue;
-    }
-
-    const plugin = convertManifestToMarketplacePlugin(manifest, rootWithoutDotSlash, pluginDirName);
-    plugins.push(plugin);
-    verbose(`  [OK] ${plugin.name}`);
-  }
-
+  const plugins = await readMarketplacePlugins(pluginsDir, manifestFiles, options.pluginRoot);
   const sortedPlugins = sortBy(plugins, (p) => p.name);
 
   // Field order matters: the object is serialized verbatim into marketplace.json.
@@ -101,6 +85,31 @@ export async function generateMarketplace(
     plugins: sortedPlugins,
     ...(options.description ? { description: options.description } : {}),
   };
+}
+
+/** In turn, since each manifest read logs and an unreadable one warns in scan order. */
+async function readMarketplacePlugins(
+  pluginsDir: string,
+  manifestFiles: string[],
+  pluginRoot: string,
+): Promise<MarketplacePlugin[]> {
+  const rootWithoutDotSlash = pluginRoot.replace(/^\.\//, "");
+  const plugins: MarketplacePlugin[] = [];
+
+  for (const manifestFile of manifestFiles) {
+    const pluginDirName = pluginDirNameOf(manifestFile);
+    const manifest = await readPluginManifest(path.join(pluginsDir, pluginDirName));
+    if (!manifest) {
+      warn(`Could not read plugin manifest: '${manifestFile}'`);
+      continue;
+    }
+
+    const plugin = convertManifestToMarketplacePlugin(manifest, rootWithoutDotSlash, pluginDirName);
+    plugins.push(plugin);
+    verbose(`  [OK] ${plugin.name}`);
+  }
+
+  return plugins;
 }
 
 /** The first segment of a manifest's path under the plugins directory. */
@@ -174,7 +183,7 @@ function namespaceViolationError(foreignIds: string[], marketplaceName: string):
   const unlisted = foreignIds.length - listed.length;
 
   return [
-    `Marketplace '${marketplaceName}' ships ${foreignIds.length} skill id(s) outside its own ` +
+    `Marketplace '${marketplaceName}' ships ${plural(foreignIds.length, "skill id")} outside its own ` +
       `namespace. Every skill id must begin with the marketplace's name:`,
     ...listed,
     ...(unlisted > 0 ? [`  ... and ${unlisted} more`] : []),

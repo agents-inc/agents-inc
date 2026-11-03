@@ -16,6 +16,7 @@ import { renderAgentMd } from "../../__tests__/content-generators.js";
 import { CLI_ROOT } from "../../__tests__/helpers/cli-runner.js";
 import { writeTestTsConfig } from "../../__tests__/helpers/config-io.js";
 import { useFakeHome } from "../../__tests__/helpers/isolated-home.js";
+import { otherThan } from "../../__tests__/helpers/other-providers.js";
 import { EMPTY_MATRIX } from "../../__tests__/mock-data/mock-matrices.js";
 import { cleanupTempDir, createTempDir, directoryExists } from "../../__tests__/test-fs-utils.js";
 
@@ -123,14 +124,15 @@ describe("compileAgentsAllScopes", () => {
 
         expect(result).toStrictEqual({
           compiled: [ownGlobalAgent, "web-developer"],
-          rewritten: [ownGlobalAgent, "web-developer"],
+          rewritten: [],
+          created: [ownGlobalAgent, "web-developer"],
           failed: [],
           warnings: [],
         });
         expect(await filesIn(agentsDir(provider, "global", home.dir))).toStrictEqual([
           roleFile(provider, ownGlobalAgent),
         ]);
-        for (const other of PROVIDERS.filter((atHome) => atHome !== provider)) {
+        for (const other of otherThan(provider)) {
           expect(
             await filesIn(agentsDir(other, "global", home.dir)),
             `nothing is compiled into the ${other} global installation`,
@@ -151,7 +153,8 @@ describe("compileAgentsAllScopes", () => {
 
     expect(result).toStrictEqual({
       compiled: ["pm", "web-developer"],
-      rewritten: ["pm", "web-developer"],
+      rewritten: [],
+      created: ["pm", "web-developer"],
       failed: [],
       warnings: [],
     });

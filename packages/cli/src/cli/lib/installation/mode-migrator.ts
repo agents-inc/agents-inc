@@ -41,7 +41,7 @@ export type MigrationResult = {
 };
 
 export function ejectCopyFailureError(failedCount: number): string {
-  return `Failed to copy ${failedCount} skill(s) for eject. Eject intent could not be honored. Check that the destination skills directory is writable, then apply the same id again with '${CLI_INVOKE_COMMAND} edit --from <id>' — or switch the affected skills back to plugin mode.`;
+  return `Failed to copy ${plural(failedCount, "skill")} for eject. Eject intent could not be honored. Check that the destination skills directory is writable, then apply the same id again with '${CLI_INVOKE_COMMAND} edit --from <id>' — or switch the affected skills back to plugin mode.`;
 }
 
 /** The global plugin keeps serving every other project, so nothing switches: a copy is added. */

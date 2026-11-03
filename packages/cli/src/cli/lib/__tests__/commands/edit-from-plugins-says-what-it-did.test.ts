@@ -192,10 +192,10 @@ describe("what edit --from says of plugins", () => {
         `  ~ React (${TEST_MARKETPLACE_NAME} → Eject)`,
         "  ~ web-developer (agent: skills reassigned)",
         "",
-        "Switching 1 skill(s) to Eject (local copy)",
-        "Copied 1 local skill(s)",
-        "Removed 1 plugin(s)",
-        "1 agent rewritten, 0 unchanged",
+        "Switching 1 skill to Eject (local copy)",
+        "Copied 1 local skill",
+        "Removed 1 plugin",
+        "0 agents rewritten, 1 created, 0 unchanged",
       ].join("\n"),
     );
     expect(
@@ -485,7 +485,7 @@ describe("what edit --from says of plugins", () => {
         "Changes:",
         `  ~ React (Eject → ${TEST_MARKETPLACE_NAME})`,
         "",
-        "Switching 1 skill(s) to Plugin (native install)",
+        "Switching 1 skill to Plugin (native install)",
         "Installing skill plugins...",
         `  Installed ${REACT}@${TEST_MARKETPLACE_NAME}`,
         "Installed 1 skill plugin",
@@ -547,7 +547,7 @@ describe("what edit --from says of plugins", () => {
 
     expect(error).toBeUndefined();
     expect(stdout).toContain(`  Installed ${HONO}@${TEST_MARKETPLACE_NAME}\n`);
-    expect(stdout).toContain("\nCopied 1 local skill(s)\n");
+    expect(stdout).toContain("\nCopied 1 local skill\n");
     expect(await fileExists(skillFile(VITEST))).toBe(true);
     expect(await fileExists(skillFile(HONO))).toBe(false);
     expect(
@@ -674,7 +674,7 @@ describe("what edit --from says of plugins", () => {
 
     expect(error).toBeUndefined();
     expect(stdout).toContain("\nCopying 1 skill into this project (the global plugin stays)\n");
-    expect(stdout).not.toContain("Switching 1 skill(s) to Eject (local copy)");
+    expect(stdout).not.toContain("Switching 1 skill to Eject (local copy)");
     expect(
       await configuredSkills(projectDir),
       "the project adds its own copy of React and holds the global plugin's entry, masked",
@@ -707,10 +707,10 @@ describe("what edit --from says of plugins", () => {
     expect(stdout).toContain(
       [
         "",
-        "Switching 1 skill(s) to Eject (local copy)",
+        "Switching 1 skill to Eject (local copy)",
         "Copying 1 skill into this project (the global plugin stays)",
-        "Copied 2 local skill(s)",
-        "1 agent rewritten, 0 unchanged",
+        "Copied 2 local skills",
+        "0 agents rewritten, 1 created, 0 unchanged",
       ].join("\n"),
     );
     expect(
@@ -774,7 +774,7 @@ describe("what edit --from says of plugins", () => {
     expect(stdout).toContain(
       "\nInstalling 1 skill as a plugin in this project (the global copy stays)\n",
     );
-    expect(stdout).not.toContain("Switching 1 skill(s) to Plugin (native install)");
+    expect(stdout).not.toContain("Switching 1 skill to Plugin (native install)");
     expect(await directoryExists(globalReactCopy())).toBe(true);
     // Subject guard for the absence below: the confirm was painted.
     expect(stdout).toContain("Apply this configuration?");
@@ -834,7 +834,7 @@ describe("what edit --from says of plugins", () => {
     expect(stdout).toContain(
       [
         "",
-        "Switching 1 skill(s) to Plugin (native install)",
+        "Switching 1 skill to Plugin (native install)",
         "Installing 1 skill as a plugin in this project (the global copy stays)",
         "Installing skill plugins...",
       ].join("\n"),

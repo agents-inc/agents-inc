@@ -2,9 +2,11 @@ import type { SkillDefinitionMap } from "../../types";
 import { getErrorMessage } from "../../utils/errors";
 import { fileExists } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
+import { plural } from "../../utils/string";
 import { typedEntries } from "../../utils/typed-object";
 import type { Provider } from "../../consts";
 import { hostFor } from "../hosts/host-for.js";
+import type { HostPlugin } from "../hosts/plugin-host.js";
 import { providerInUse } from "../installation/install-layout.js";
 import { loadPluginSkills } from "../loading";
 import { getPluginManifestPath } from "./plugin-finder";
@@ -19,21 +21,57 @@ export async function getVerifiedPluginInstallPaths(
   projectDir: string,
   provider: Provider = providerInUse(projectDir),
 ): Promise<ResolvedPlugin[]> {
-  let enabled: ResolvedPlugin[];
+  return (await getPluginsBySwitch(projectDir, provider)).enabled;
+}
+
+/** A switched-off plugin is named whatever its disk holds: it is left out either way. */
+export type PluginsBySwitch = { enabled: ResolvedPlugin[]; switchedOff: ResolvedPlugin[] };
+
+/** As {@link getVerifiedPluginInstallPaths}, beside the plugins Codex records as switched off. */
+export async function getPluginsBySwitch(
+  projectDir: string,
+  provider: Provider = providerInUse(projectDir),
+): Promise<PluginsBySwitch> {
+  const installed = await listInstalledPlugins(projectDir, provider);
+  if (installed === null) return { enabled: [], switchedOff: [] };
+
+  return {
+    enabled: await verifiedOnDisk(installed.filter((plugin) => plugin.enabled).map(toResolved)),
+    switchedOff: switchedOffPlugins(installed, provider),
+  };
+}
+
+/** Claude's listing cannot tell a plugin set to false from one never switched on for the project. */
+function switchedOffPlugins(
+  installed: readonly HostPlugin[],
+  provider: Provider,
+): ResolvedPlugin[] {
+  if (provider !== "codex") return [];
+  return installed.filter((plugin) => !plugin.enabled).map(toResolved);
+}
+
+/** Null where the host cannot list its plugins, so no "verified" count follows the failure. */
+async function listInstalledPlugins(
+  projectDir: string,
+  provider: Provider,
+): Promise<HostPlugin[] | null> {
   try {
-    const installed = await hostFor(provider).listPlugins(projectDir);
-    enabled = installed
-      .filter((plugin) => plugin.enabled)
-      .map(({ pluginKey, installPath }) => ({ pluginKey, installPath }));
+    return await hostFor(provider).listPlugins(projectDir);
   } catch (error) {
     verbose(`Failed to list installed plugins: ${getErrorMessage(error)}`);
-    return [];
+    return null;
   }
+}
 
-  const onDisk = await Promise.all(enabled.map(hasManifestOnDisk));
-  const verified = enabled.filter((_, index) => onDisk[index] === true);
+function toResolved({ pluginKey, installPath }: HostPlugin): ResolvedPlugin {
+  return { pluginKey, installPath };
+}
 
-  verbose(`Verified ${verified.length} plugin install paths`);
+async function verifiedOnDisk(plugins: ResolvedPlugin[]): Promise<ResolvedPlugin[]> {
+  const onDisk = await Promise.all(plugins.map(hasManifestOnDisk));
+  const verified = plugins.filter((_, index) => onDisk[index] === true);
+
+  verbose(`Verified ${plural(verified.length, "plugin install path")}`);
   return verified;
 }
 

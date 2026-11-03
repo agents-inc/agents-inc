@@ -2,7 +2,7 @@ import path from "path";
 import { flatMap, groupBy, mapValues, partition, pipe, unique, uniqueBy } from "remeda";
 import { getErrorMessage } from "../../utils/errors";
 import { verbose, warn } from "../../utils/logger";
-import { inAnEnglishList, inertLine } from "../../utils/string";
+import { inAnEnglishList, inertLine, plural } from "../../utils/string";
 import { matrix } from "../matrix/matrix-provider";
 import type {
   AgentName,
@@ -28,16 +28,17 @@ const stacksCache = new Map<string, Stack[]>();
  * becomes `preloaded: false`.
  */
 export function normalizeAgentConfig(agentConfig: Record<string, unknown>): StackAgentConfig {
+  return mapValues(agentConfig, (value) =>
+    (Array.isArray(value) ? value : [value]).map(toSkillAssignment),
+  );
+}
+
+function toSkillAssignment(item: unknown): SkillAssignment {
   // Boundary casts: Zod-parsed config is loose until normalized here.
-  return mapValues(agentConfig, (value) => {
-    const items = Array.isArray(value) ? value : [value];
-    return items.map((item): SkillAssignment => {
-      if (typeof item === "string") return { id: item as SkillId, preloaded: false };
-      if (isSkillAssignment(item)) return item;
-      warn(`Malformed skill assignment in stack data: ${JSON.stringify(item)}`);
-      return item as SkillAssignment;
-    });
-  });
+  if (typeof item === "string") return { id: item as SkillId, preloaded: false };
+  if (isSkillAssignment(item)) return item;
+  warn(`Malformed skill assignment in stack data: ${JSON.stringify(item)}`);
+  return item as SkillAssignment;
 }
 
 /** `undefined` for an id the matrix lacks or a skill in the `local` pseudo-category. */
@@ -138,7 +139,7 @@ export async function loadStacks(configDir: string, stacksFile?: string): Promis
     }));
 
     stacksCache.set(cacheKey, stacks);
-    verbose(`Loaded ${stacks.length} stacks from ${stacksPath}`);
+    verbose(`Loaded ${plural(stacks.length, "stack")} from ${stacksPath}`);
 
     return stacks;
   } catch (error) {
