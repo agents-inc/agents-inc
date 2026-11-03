@@ -93,3 +93,5 @@ Each is buildable today or is not something CLI-1006 needs.
   `droppedNotice`, `share`'s left-behind warning, the per-marketplace saved slots).
 - `init.tsx` builds CLI-1001's "plugins this run newly installed" list from one marketplace.
 - A link whose marketplace is the empty string (CLI-916-917 researcher, rows E1 and E2).
+- A stack from another marketplace is refused with text about built-in stacks (CLI-1019, r44/resume-1102/CLI-1019/found-elsewhere.md [30]).
+- `list` over-counts sub-agents in a two-marketplace setup (row 26a; not checked with one marketplace; found-elsewhere.md [29]).
