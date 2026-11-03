@@ -19,7 +19,7 @@
   },
   "//smol-toml": "A devDependency: only the spec parses TOML, to hold the hand-written role files against a real parser.",
   "devDependencies": {
-    "@types/node": "^24",
+    "@types/node": "^26",
     "@workspace/eslint-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
     "@workspace/vitest-config": "workspace:*",
