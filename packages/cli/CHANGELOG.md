@@ -7,6 +7,71 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.177.0] - 2026-11-04
+
+**A refused `init --from` takes back every file, folder and marketplace registration it created and left empty, `uninstall` leaves what the global installation still holds and removes the trust and empty files its install added, `doctor`'s tip for a missing skill names only ways out that work, `edit` hands out the link it mints as `edit --from`, a switched-off Codex plugin left switched on exits 5, and `build plugins --agents-dir` is removed**
+
+- CLI-1079: `build plugins` no longer builds agent plugins, and its `--agents-dir` (`-a`) flag is gone; either spelling exits 2 and writes nothing.
+- CLI-1016: `init --from`, `edit --from` and `update` exit 5, not 1, when a Codex plugin you switched off is left switched on, naming the `enabled = false` fix.
+- CLI-1058: a link `edit` or `edit --ui` mints from an installation is handed out as `edit --from <id>`; `share` keeps `init --from`.
+- CLI-1078: `doctor`'s tip for a missing ejected skill names both ways out, `edit` to take it out and `eject skills` to bring it back.
+- CLI-1095: the tip names only ways out that work.
+- CLI-1098: with skills missing in both places, `doctor` gives the project's tip, then the home folder's.
+- CLI-1099: a missing project skill the marketplace no longer publishes gets only the `edit` take-out.
+- CLI-1102: so does a missing global skill the marketplace no longer publishes.
+- CLI-1107: `doctor` reads the marketplace's own skill list to judge what it still publishes, not the loaded one.
+- CLI-1108: from a project, a tip to run a command in your home folder names `--provider` exactly when home holds more than one installation.
+- CLI-1026: `compile` and `doctor` say a Codex plugin you switched off is switched off, not missing.
+- CLI-1029: `doctor` fails Codex's Config Valid row for a global Codex config that cannot be loaded, and exits 1.
+- CLI-1085: `compile` and `edit --from` count a sub-agent file the run created as created.
+- CLI-1028: in a Claude project under a home holding Codex, `init --from` reads Claude's global installation at every step.
+- CLI-1030: a refused `init --from` leaves no blank global config and no empty folder it created.
+- CLI-1035: a refused `init --from` removes the marketplace it registered with Claude, and says so.
+- CLI-1048: on Codex too.
+- CLI-1047: it deletes the Claude settings files it created and left empty.
+- CLI-1077: and Claude's empty plugin registry and marketplaces folder, when it created them.
+- CLI-1076: on Codex it leaves `$CODEX_HOME` as it found it, and a Codex project uninstall removes what it emptied.
+- CLI-1074: it keeps a plugin it cannot tell it held, and says so.
+- CLI-1087: and that plugin's marketplace, so the plugin stays on Claude.
+- CLI-1088: Codex's can-not-list warnings no longer say it treats the list as empty.
+- CLI-1031: a project `uninstall` leaves a plugin the global installation still holds.
+- CLI-1032: a Codex `uninstall` leaves the project's `.claude/` alone.
+- CLI-1024: a Codex project `uninstall` removes the project's trust from `$CODEX_HOME/config.toml`, and says so.
+- CLI-1025: a Claude `uninstall` deletes a `.claude/settings.json` left holding an empty plugin list.
+- CLI-1086: a project `uninstall` deletes a home config left listing nothing, and `~/.agents-inc/` once empty.
+- CLI-1033: `list`'s ⏏ eject mark stays beside the name at 80 columns.
+- CLI-1019: `share --stdin` refuses a carried skill whose id does not start with `external-`, before sending anything.
+- CLI-1023: `stacks.schema.json` lists the built-in categories.
+- CLI-1022: CI's CLI e2e job runs at a long `.claude` temp path, and the docs say `update` may be run again after exit 1.
+- CLI-1027: CI's CLI unit job runs at the same path.
+- CLI-1018: CI's CLI e2e job runs with a symlinked temp folder.
+- CLI-1021: specs pin the success lines withheld when a switched-off Codex plugin is left switched on.
+- CLI-1053: every plugin host must carry a take-back, by type and contract test.
+- CLI-1075: a stand-in Claude case covers the settings files a refused `init --from` empties.
+- CLI-1061: the journey page gains rows 86–99.
+- CLI-1034: journey rows and the docs match the tree.
+- CLI-1105: journey 13a's way out and journeys 2, 13, 38 and 51 are corrected.
+- CLI-1083: the journey page names the spec behind each changed row.
+- EDITOR-82: the Install dialog hands out `edit --from` for a link minted inside a project.
+- EDITOR-127: and for a link from the global installation, to run in your home folder.
+- EDITOR-88: step 02 no longer says it links plugins when there are none.
+- EDITOR-128: with no id, a project link's step 02 says the bare `init` shows the dashboard.
+- EDITOR-134: with no id elsewhere, it says the bare `init` opens the editor or shows the dashboard.
+- EDITOR-135: the Codex no-id note wraps only between its parts.
+- EDITOR-80: Tab onto the rail's buttons no longer scrolls the catalogue.
+- EDITOR-81: typing in the composer or the stuck search no longer scrolls it.
+- EDITOR-87: the docked composer sits on the bottom edge of a short page.
+- EDITOR-84: search takes a space and matches each word.
+- EDITOR-86: Enter in the Marketplace dialog loads the marketplace.
+- EDITOR-83: the rail's marketplace name lines up and shows in full on hover.
+- WWW-18: the docs site corrects three false claims about sub-agents, custom skills and `init`'s marketplace order.
+- REPO-55: shared code across the repository, and the fixes its rounds found: `1 skill`, no home folder in Codex's trusted projects, `eject skills` naming what it leaves.
+- REPO-50: comments added since 0.175.0 are trimmed, with no change in behaviour.
+- REPO-57: git ignores `bun/` and `workboard-export.json`.
+- REPO-60: the docs say when to raise `SEED_VERSION`; it stays 7.
+
+See [changelogs/0.177.0.md](./changelogs/0.177.0.md) for full details.
+
 ## [0.176.0] - 2026-10-31
 
 **`update` moves every installed plugin to its newest version, every command checks a saved marketplace copy with no version stamp and falls back to it with a warning when a download fails, `init --from` takes back the skills and plugins it installed when it cannot save its configuration, a skill carried in a shared link must be named `external-…`, and the docs site gains a Releases section**
