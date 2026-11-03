@@ -2,7 +2,7 @@ import { renderToString } from "ink";
 import { render } from "ink-testing-library";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SkillAgentSummary, type SkillAgentSummaryProps } from "./skill-agent-summary";
-import { MIN_TERMINAL_SIZE } from "../../consts";
+import { EJECT_SOURCE, MIN_TERMINAL_SIZE } from "../../consts";
 import { buildAgentConfigs } from "../../lib/__tests__/factories/config-factories";
 import { buildSkillConfigs } from "../../lib/__tests__/helpers/skill-config-builders";
 import { initializeMatrix } from "../../lib/matrix/matrix-provider";
@@ -105,6 +105,105 @@ describe("SkillAgentSummary component", () => {
       expect(output).toContain("+ Zustand");
       expect(output).toContain("+ api-developer");
       expect(output).not.toContain("Project");
+    });
+  });
+
+  /**
+   * At the width `list` gives the table on an 80-column terminal, a column inside each side, both
+   * halves hold 20 columns of name.
+   */
+  describe("beside a name whose line fills its half", () => {
+    const LIST_TABLE_AT_80_COLUMNS = MIN_TERMINAL_SIZE.COLS - 2;
+    const LIST_TABLE_AT_100_COLUMNS = 100 - 2;
+
+    const tableAt = (
+      columns: number,
+      skillConfigs: SkillConfig[],
+      agentConfigs = buildAgentConfigs(["web-developer"]),
+    ): string =>
+      renderToString(
+        <SkillAgentSummary
+          {...NOTHING_INSTALLED}
+          skillConfigs={skillConfigs}
+          agentConfigs={agentConfigs}
+        />,
+        { columns },
+      );
+
+    const twoNamesFillingTheirFirstLine = (origin: string): SkillConfig[] => [
+      ...buildSkillConfigs(["web-framework-react"], {
+        displayName: "Acme React Component Patterns For Teams",
+        origin,
+      }),
+      ...buildSkillConfigs(["web-state-zustand"], {
+        displayName: "Acme Release Process For Backend Teams",
+        origin,
+      }),
+    ];
+
+    it("wraps the rest of an ejected name under its first letter, with ⏏ after its last", () => {
+      expect(tableAt(LIST_TABLE_AT_80_COLUMNS, twoNamesFillingTheirFirstLine(EJECT_SOURCE)))
+        .toMatchInlineSnapshot(`
+        "Skills                                            │  Agents
+                                                          │
+         Project                                          │   Project
+        + Acme React Component   + Acme Release Process   │  + web-developer
+          Patterns For Teams ⏏     For Backend Teams ⏏    │"
+      `);
+    });
+
+    it("wraps the rest of a plugin's name under its first letter", () => {
+      expect(tableAt(LIST_TABLE_AT_80_COLUMNS, twoNamesFillingTheirFirstLine("agents-inc")))
+        .toMatchInlineSnapshot(`
+        "Skills                                            │  Agents
+                                                          │
+         Project                                          │   Project
+        + Acme React Component   + Acme Release Process   │  + web-developer
+          Patterns For Teams       For Backend Teams      │"
+      `);
+    });
+
+    it("puts ⏏ under the first letter of a name that fills its line whole", () => {
+      const frame = tableAt(LIST_TABLE_AT_80_COLUMNS, [
+        ...buildSkillConfigs(["web-framework-react"], { displayName: "Acme React Component" }),
+        ...buildSkillConfigs(["web-state-zustand"], { displayName: "Acme Release Process" }),
+      ]);
+
+      expect(frame).toMatchInlineSnapshot(`
+        "Skills                                            │  Agents
+                                                          │
+         Project                                          │   Project
+        + Acme React Component   + Acme Release Process   │  + web-developer
+          ⏏                        ⏏                      │"
+      `);
+    });
+
+    /**
+     * Here the half ends mid-column, so Yoga measures the name a line taller than Ink draws it
+     * (2026-10-22-ink-draws-a-text-up-to-two-columns-past-a-box-that-starts-or-ends-mid-column.md);
+     * the taller Agents column keeps that blank line beside the name.
+     */
+    it("wraps the rest of the name under its first letter at 100 columns", () => {
+      const frame = tableAt(
+        LIST_TABLE_AT_100_COLUMNS,
+        buildSkillConfigs(["web-framework-react"], {
+          displayName: "Acme Platform Release Notes Checklist For Every Squad",
+        }),
+        [
+          ...buildAgentConfigs(["web-developer"], { scope: "project" }),
+          ...buildAgentConfigs(["api-developer"], { scope: "global" }),
+        ],
+      );
+
+      expect(frame).toMatchInlineSnapshot(`
+        "Skills                                                         │  Agents
+                                                                       │
+         Project                                                       │   Project
+        + Acme Platform Release Notes                                  │  + web-developer
+          Checklist For Every Squad ⏏                                  │
+                                                                       │   Global
+                                                                       │  + api-developer"
+      `);
     });
   });
 

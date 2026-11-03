@@ -100,16 +100,22 @@ describe("edit --ui", () => {
   }
 
   describe("minting an id for the editor", () => {
-    it("posts this installation and names both ways to use the id it got back", async () => {
+    // `init --from` refuses over the installation the id was minted from.
+    it("posts this installation and names the edit --from that applies the id back here, and the editor", async () => {
       await installConfig(installedOverrides());
 
       const error = await runEditUi();
-      const output = stdoutChunks.join("");
 
       expect(error).toBeUndefined();
-      expect(output).toContain(STORED_ID);
-      expect(output).toContain(`${EDITOR_URL}/?fromId=${STORED_ID}`);
-      expect(output).toContain(`init --from ${STORED_ID}`);
+      expect(stdoutChunks.join("")).toBe(
+        [
+          "Opening 1 skill across 1 sub-agent...",
+          `✓ Shared as ${STORED_ID}`,
+          `  Apply it:    npx agents-inc edit --from ${STORED_ID}`,
+          `  Open it:     http://localhost:5173/editor/?fromId=${STORED_ID}`,
+          "",
+        ].join("\n"),
+      );
     });
 
     // The editor holds a project link's global entries, which a run in that project cannot change.
@@ -120,9 +126,10 @@ describe("edit --ui", () => {
 
       const posted: unknown = JSON.parse(await firstElement(worker.requests).text());
       expect(posted).toHaveProperty("fromProject", true);
+      expect(posted).not.toHaveProperty("fromGlobal");
     });
 
-    it("leaves the link it mints at HOME unmarked, since a run there changes the global install", async () => {
+    it("marks the link it mints at HOME as the global installation's, and names the edit --from that applies it back", async () => {
       await writeTestTsConfig(tempDir, buildProjectConfig(installedOverrides()));
       process.chdir(tempDir);
 
@@ -130,7 +137,17 @@ describe("edit --ui", () => {
 
       expect(error).toBeUndefined();
       const posted: unknown = JSON.parse(await firstElement(worker.requests).text());
+      expect(posted).toHaveProperty("fromGlobal", true);
       expect(posted).not.toHaveProperty("fromProject");
+      expect(stdoutChunks.join("")).toBe(
+        [
+          "Opening 1 skill across 1 sub-agent...",
+          `✓ Shared as ${STORED_ID}`,
+          `  Apply it:    npx agents-inc edit --from ${STORED_ID}`,
+          `  Open it:     http://localhost:5173/editor/?fromId=${STORED_ID}`,
+          "",
+        ].join("\n"),
+      );
     });
 
     it("never loads the catalogue, because there is no wizard to open it for", async () => {

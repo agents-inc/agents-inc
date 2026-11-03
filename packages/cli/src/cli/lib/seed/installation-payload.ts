@@ -27,8 +27,7 @@ import type { SeedPayload } from "@workspace/matrix/seed";
 /**
  * Counts come off the payload, not the config, so what is announced matches what is posted.
  * `leftBehind`: carried skills the payload's one marketplace does not serve. `namedBy`: the entries
- * the payload was drawn from, since a plugin's payload entry records no name. `inProject`: read
- * from a project's config rather than HOME's.
+ * the payload was drawn from, since a plugin's payload entry records no name.
  */
 export type InstallationPayload =
   | {
@@ -86,16 +85,24 @@ export async function seedPayloadForInstallation(projectDir: string): Promise<In
 }
 
 /**
- * Made in a project, the link says so: the editor holds its global entries, which a run there
- * cannot change. A share's recipient has a global install of their own, so `share` never marks.
+ * The link says which installation made it, so the editor hands out the `edit --from` that applies
+ * it back; a project's also has the editor hold its global entries, which a run there cannot
+ * change. A share's recipient installs fresh, so `share` never marks.
  */
 export async function editorPayloadForInstallation(
   projectDir: string,
 ): Promise<InstallationPayload> {
   const prepared = await seedPayloadForInstallation(projectDir);
-  if (!prepared.ok || !prepared.inProject) return prepared;
+  if (!prepared.ok) return prepared;
 
-  return { ...prepared, payload: { ...prepared.payload, fromProject: true } };
+  const mark = whichInstallationMadeIt(prepared.inProject);
+  return { ...prepared, payload: { ...prepared.payload, ...mark } };
+}
+
+function whichInstallationMadeIt(
+  inProject: boolean,
+): Pick<SeedPayload, "fromProject" | "fromGlobal"> {
+  return inProject ? { fromProject: true } : { fromGlobal: true };
 }
 
 /** An unloadable config, HOME's included, is reported as its own error, not "not installed". */

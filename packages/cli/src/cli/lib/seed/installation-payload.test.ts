@@ -104,14 +104,27 @@ describe("seedPayloadForInstallation", () => {
       const prepared = await editorPayloadForInstallation(projectDir);
 
       expect(prepared.ok && prepared.payload.fromProject).toBe(true);
+      expect(prepared.ok && prepared.payload).not.toHaveProperty("fromGlobal");
     });
 
-    it("leaves the link a bare edit opens at HOME unmarked, since a run there changes the global install", async () => {
+    // Not as a project's: the editor would hold every global entry, and at HOME a run changes them.
+    it("marks the link a bare edit opens at HOME as the global installation's, which edit --from applies back", async () => {
       await writeTestTsConfig(tempDir, buildProjectConfig(installedOverrides()));
 
       const prepared = await editorPayloadForInstallation(tempDir);
 
       expect(prepared.ok).toBe(true);
+      expect(prepared.ok && prepared.payload).toHaveProperty("fromGlobal", true);
+      expect(prepared.ok && prepared.payload).not.toHaveProperty("fromProject");
+    });
+
+    it("marks the link a bare edit opens in a folder with nothing of its own as the global installation's", async () => {
+      await writeTestTsConfig(tempDir, buildProjectConfig(installedOverrides()));
+
+      const prepared = await editorPayloadForInstallation(projectDir);
+
+      expect(prepared.ok).toBe(true);
+      expect(prepared.ok && prepared.payload).toHaveProperty("fromGlobal", true);
       expect(prepared.ok && prepared.payload).not.toHaveProperty("fromProject");
     });
 
@@ -121,6 +134,17 @@ describe("seedPayloadForInstallation", () => {
       const prepared = await seedPayloadForInstallation(projectDir);
 
       expect(prepared.ok).toBe(true);
+      expect(prepared.ok && prepared.payload).not.toHaveProperty("fromProject");
+      expect(prepared.ok && prepared.payload).not.toHaveProperty("fromGlobal");
+    });
+
+    it("leaves the link a share mints at HOME unmarked, since its recipient installs it fresh", async () => {
+      await writeTestTsConfig(tempDir, buildProjectConfig(installedOverrides()));
+
+      const prepared = await seedPayloadForInstallation(tempDir);
+
+      expect(prepared.ok).toBe(true);
+      expect(prepared.ok && prepared.payload).not.toHaveProperty("fromGlobal");
       expect(prepared.ok && prepared.payload).not.toHaveProperty("fromProject");
     });
 
@@ -132,6 +156,17 @@ describe("seedPayloadForInstallation", () => {
 
       expect(opened.ok && opened.payload).toStrictEqual(
         shared.ok && { ...shared.payload, fromProject: true },
+      );
+    });
+
+    it("says the same of the global installation either way, the mark aside", async () => {
+      await writeTestTsConfig(tempDir, buildProjectConfig(installedOverrides()));
+
+      const shared = await seedPayloadForInstallation(tempDir);
+      const opened = await editorPayloadForInstallation(tempDir);
+
+      expect(opened.ok && opened.payload).toStrictEqual(
+        shared.ok && { ...shared.payload, fromGlobal: true },
       );
     });
   });

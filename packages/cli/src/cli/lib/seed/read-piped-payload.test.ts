@@ -2,9 +2,14 @@ import { SEED_VERSION } from "@workspace/matrix/seed";
 import { describe, expect, it } from "vitest";
 
 import { NOTHING_PIPED, readPipedPayload, STDIN_IS_A_TERMINAL } from "./read-piped-payload.js";
-import { buildSeedPayload, buildSeedSkill } from "../__tests__/factories/seed-factories.js";
+import {
+  buildSeedExternalSkill,
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../__tests__/factories/seed-factories.js";
 
 import type { AgentName, SkillId } from "../../types/index.js";
+import type { SeedPayload } from "@workspace/matrix/seed";
 
 /** Twelve unwritable pairs: the small end of what a repository scan emits. */
 const UNWRITABLE_AT_SCALE = {
@@ -23,6 +28,16 @@ const ERASE_LINE = `${ESCAPE}[2K`;
 
 /** Naming all twelve pairs runs past 1,800 characters; naming four runs under 700. */
 const BOUNDED_REFUSAL_CEILING = 1_000;
+
+const CARRIED_ID = "external-web-framework-brainstorming";
+const HAND_NAMED_ID = "acme-web-framework-house-style";
+
+function carrying(id: string): SeedPayload {
+  return buildSeedPayload({
+    skills: { [id]: buildSeedSkill() },
+    external: { [id]: buildSeedExternalSkill() },
+  });
+}
 
 describe("reading a payload off a pipe", () => {
   it("accepts a payload the contract takes, and hands back the parsed value", () => {
@@ -172,6 +187,12 @@ describe("reading a payload off a pipe", () => {
     expect(readPipedPayload(JSON.stringify(stale)).ok).toBe(false);
   });
 
+  it("takes a carried skill under an id starting external-", () => {
+    const payload = carrying(CARRIED_ID);
+
+    expect(readPipedPayload(JSON.stringify(payload))).toStrictEqual({ ok: true, payload });
+  });
+
   /** Pipe something in vs stop typing: nothing else asserts the two differ. */
   it("keeps the empty-pipe and terminal refusals distinct", () => {
     expect(NOTHING_PIPED).not.toBe(STDIN_IS_A_TERMINAL);
@@ -205,6 +226,17 @@ describe("reading a payload off a pipe, word for word", () => {
         unwritable("web-testing-vitest", "web-developer"),
         unwritable("web-testing-vitest", "api-developer"),
       ].join("; ")}`,
+    });
+  });
+
+  it("refuses a carried skill whose id lacks external- in the words every install refuses it with", () => {
+    expect(readPipedPayload(JSON.stringify(carrying(HAND_NAMED_ID)))).toStrictEqual({
+      ok: false,
+      error: [
+        "This configuration cannot be installed: this skill travels inside it under an id that does not start with 'external-':",
+        `  ${HAND_NAMED_ID}`,
+        "A skill id is the directory the skill installs into, and no marketplace may publish under the name 'external', so an id starting 'external-' is the only kind that can never take the place of a marketplace's skill. Re-share it with the skill above added again, which mints such an id — 'external-<category>-<name>'.",
+      ].join("\n"),
     });
   });
 

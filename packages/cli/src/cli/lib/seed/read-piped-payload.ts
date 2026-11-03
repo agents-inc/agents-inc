@@ -1,5 +1,6 @@
 import { installableSeedPayloadSchema, type SeedPayload } from "@workspace/matrix/seed";
 
+import { externalIdsLackingThePrefix, lacksThePrefixError } from "./external-skills.js";
 import { formatZodErrors } from "../schema-validator.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import { stripTerminalControls, truncateText } from "../../utils/string.js";
@@ -25,7 +26,9 @@ const PROBLEMS_NAMED = 4;
 
 /**
  * Fails locally before a write is spent. Uses the installable schema the store's POST validates
- * with, not the lenient read schema, so nothing passes here and fails at the edge.
+ * with, not the lenient read schema, so nothing passes here and fails at the edge. The installer's
+ * id-prefix rule runs here rather than in that schema, every refusal of which the editor reports
+ * as an unwritable assignment.
  */
 export function readPipedPayload(body: string): PipedPayload {
   if (body.trim() === "") return { ok: false, error: NOTHING_PIPED };
@@ -37,6 +40,9 @@ export function readPipedPayload(body: string): PipedPayload {
   if (!result.success) {
     return { ok: false, error: refusedByContract(formatZodErrors(result.error)) };
   }
+
+  const unprefixed = externalIdsLackingThePrefix(result.data);
+  if (unprefixed.length > 0) return { ok: false, error: lacksThePrefixError(unprefixed) };
 
   return { ok: true, payload: result.data };
 }

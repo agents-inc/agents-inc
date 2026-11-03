@@ -8,12 +8,12 @@ import { carriedSkillAuthor, installedSkillTree } from "@workspace/compile/carri
 import { GITHUB_SOURCE, LOCAL_SKILLS_PATH, STANDARD_FILES } from "../../consts.js";
 import { resolveInstallPaths } from "../installation/install-base-dir.js";
 import { parseFrontmatter, readSkillMetadata } from "../loading/loader.js";
+import { CATALOGUE_SKILL_IDS } from "../loading/source-loader.js";
 import { getCategoryDomain } from "../matrix/matrix-provider.js";
 import { claimSlug } from "../matrix/skill-resolution.js";
 import { validateSkillPath } from "../skills/skill-copier.js";
 import { readForkedFromMetadata } from "../skills/skill-metadata.js";
 import { defaultUsageGuidance } from "../stacks/stacks-loader.js";
-import { BUILT_IN_MATRIX } from "../../types/generated/matrix.js";
 import { getCurrentDate } from "../versioning.js";
 import {
   copy,
@@ -24,7 +24,7 @@ import {
   remove,
   writeFile,
 } from "../../utils/fs.js";
-import { typedEntries, typedKeys } from "../../utils/typed-object.js";
+import { typedEntries } from "../../utils/typed-object.js";
 
 import type { SkillScope } from "../../types/config.js";
 import type { Domain, MergedSkillsMatrix, ResolvedSkill } from "../../types/matrix.js";
@@ -50,11 +50,22 @@ type SelectedExternal = { id: SkillId; skill: SeedExternalSkill; entry: SeedSkil
 
 /** No marketplace serves a carried skill, and coercing it to eject would defy the payload. */
 function pluginInstallError(ids: SkillId[]): string {
+  const [refused, reshared] =
+    ids.length === 1
+      ? [
+          "this skill travels inside it, so no marketplace serves it and it cannot be installed " +
+            "as a plugin",
+          "the skill above",
+        ]
+      : [
+          "these skills travel inside it, so no marketplace serves them and they cannot be " +
+            "installed as plugins",
+          "each skill above",
+        ];
   return [
-    "This configuration cannot be installed: these skills travel inside it, so no marketplace " +
-      "serves them and they cannot be installed as plugins:",
+    `This configuration cannot be installed: ${refused}:`,
     ...ids.map((id) => `  ${id}`),
-    "Re-share it with each skill above set to eject, which is the only way a carried skill installs.",
+    `Re-share it with ${reshared} set to eject, which is the only way a carried skill installs.`,
   ].join("\n");
 }
 
@@ -82,8 +93,6 @@ function claimingACatalogueId(
   return externals.filter(({ id }) => heldByEitherCatalogue(id, matrix)).map(({ id }) => id);
 }
 
-const CATALOGUE_SKILL_IDS: ReadonlySet<SkillId> = new Set(typedKeys(BUILT_IN_MATRIX.skills));
-
 function heldByEitherCatalogue(id: SkillId, matrix: MergedSkillsMatrix): boolean {
   return heldByLoadedCatalogue(matrix.skills[id]) || CATALOGUE_SKILL_IDS.has(id);
 }
@@ -97,13 +106,24 @@ function heldByLoadedCatalogue(incumbent: ResolvedSkill | undefined): boolean {
 }
 
 function catalogueIdCollisionError(ids: SkillId[]): string {
+  const [refused, overwritten, reshared] =
+    ids.length === 1
+      ? [
+          "this skill travels inside it under an id a catalogue already owns",
+          "it",
+          "the skill above",
+        ]
+      : [
+          "these skills travel inside it under ids a catalogue already owns",
+          "each",
+          "each skill above",
+        ];
   return [
-    "This configuration cannot be installed: these skills travel inside it under ids a " +
-      "catalogue already owns:",
+    `This configuration cannot be installed: ${refused}:`,
     ...ids.map((id) => `  ${id}`),
-    "A skill id is the directory the skill installs into, so each would be written over the " +
-      "catalogue's own copy of that skill. Re-share it with each skill above added again, which " +
-      "mints an id — 'external-<category>-<name>' — that no catalogue owns.",
+    `A skill id is the directory the skill installs into, so ${overwritten} would be written ` +
+      `over the catalogue's own copy of that skill. Re-share it with ${reshared} added again, ` +
+      "which mints an id — 'external-<category>-<name>' — that no catalogue owns.",
   ].join("\n");
 }
 
@@ -161,14 +181,23 @@ function seatExternalSkill(
 
 /** Quoted, so an empty id prints as something and an escape is spelled out rather than sent. */
 function notADirectoryNameError(ids: string[]): string {
+  const [refused, reshared] =
+    ids.length === 1
+      ? [
+          "this skill travels inside it under an id that is not a single directory name",
+          "the skill above",
+        ]
+      : [
+          "these skills travel inside it under ids that are not a single directory name",
+          "each skill above",
+        ];
   return [
-    "This configuration cannot be installed: these skills travel inside it under ids that are " +
-      "not a single directory name:",
+    `This configuration cannot be installed: ${refused}:`,
     ...ids.map((id) => `  ${JSON.stringify(id)}`),
     "A skill id is the directory the skill is written into, so an id holding a path separator, " +
       "or naming '.' or '..', would be written somewhere other than a directory of its own, " +
       "and one holding a control character would hand it to the terminal wherever that " +
-      "directory is named. Re-share it with each skill above added again, which mints an id — " +
+      `directory is named. Re-share it with ${reshared} added again, which mints an id — ` +
       "'external-<category>-<name>' — that names one directory.",
   ].join("\n");
 }
@@ -185,32 +214,52 @@ function externalIdsTooLongForADirectory(payload: SeedPayload): string[] {
 }
 
 function tooLongForADirectoryError(ids: string[]): string {
+  const [refused, unwritten, reshared] =
+    ids.length === 1
+      ? [
+          "this skill travels inside it under an id longer than a directory name may be",
+          "it could not be written",
+          "the skill above",
+        ]
+      : [
+          "these skills travel inside it under ids longer than a directory name may be",
+          "none of these could be written",
+          "each skill above",
+        ];
   return [
-    "This configuration cannot be installed: these skills travel inside it under ids longer " +
-      "than a directory name may be:",
+    `This configuration cannot be installed: ${refused}:`,
     ...ids.map((id) => `  ${JSON.stringify(id)}`),
     "A skill id is the directory the skill is written into, and a directory name may hold at " +
-      `most ${String(DIRECTORY_NAME_MAX_BYTES)} bytes, so none of these could be written. ` +
-      "Re-share it without each skill above.",
+      `most ${String(DIRECTORY_NAME_MAX_BYTES)} bytes, so ${unwritten}. ` +
+      `Re-share it without ${reshared}.`,
   ].join("\n");
 }
 
 /** `external` is a reserved marketplace name, so this prefix is no marketplace's namespace. */
 const CARRIED_ID_PREFIX = "external-";
 
-function externalIdsLackingThePrefix(payload: SeedPayload): string[] {
+export function externalIdsLackingThePrefix(payload: SeedPayload): string[] {
   return Object.keys(payload.external ?? {}).filter((id) => !id.startsWith(CARRIED_ID_PREFIX));
 }
 
-/** Unquoted: the directory-name check has already refused every id holding a control character. */
-function lacksThePrefixError(ids: string[]): string {
+/** Unquoted: every caller runs the directory-name check first, which refuses control characters. */
+export function lacksThePrefixError(ids: string[]): string {
+  const [refused, reshared] =
+    ids.length === 1
+      ? [
+          "this skill travels inside it under an id that does not start with 'external-'",
+          "the skill above",
+        ]
+      : [
+          "these skills travel inside it under ids that do not start with 'external-'",
+          "each skill above",
+        ];
   return [
-    "This configuration cannot be installed: these skills travel inside it under ids that do " +
-      "not start with 'external-':",
+    `This configuration cannot be installed: ${refused}:`,
     ...ids.map((id) => `  ${id}`),
     "A skill id is the directory the skill installs into, and no marketplace may publish under " +
       "the name 'external', so an id starting 'external-' is the only kind that can never take " +
-      "the place of a marketplace's skill. Re-share it with each skill above added again, which " +
+      `the place of a marketplace's skill. Re-share it with ${reshared} added again, which ` +
       "mints such an id — 'external-<category>-<name>'.",
   ].join("\n");
 }
@@ -327,8 +376,10 @@ async function treeAsInstalled(
   const recorded = (await readForkedFromMetadata(install.skillDir))?.date;
   if (recorded === undefined) return null;
 
-  const tree = await carriedTree(install, shipped, recorded);
-  const onDisk = await bytesOnDisk(path.join(install.skillDir, STANDARD_FILES.METADATA_YAML));
+  const [tree, onDisk] = await Promise.all([
+    carriedTree(install, shipped, recorded),
+    metadataOnDisk(install),
+  ]);
   return tree[STANDARD_FILES.METADATA_YAML] === onDisk ? tree : null;
 }
 
@@ -350,13 +401,17 @@ function carriedTree(
 async function withShippedMetadata(install: ExternalSkillInstall): Promise<SeedExternalSkill> {
   if (Object.hasOwn(install.skill.files, STANDARD_FILES.METADATA_YAML)) return install.skill;
 
-  const onDisk = await bytesOnDisk(path.join(install.skillDir, STANDARD_FILES.METADATA_YAML));
+  const onDisk = await metadataOnDisk(install);
   if (onDisk === null) return install.skill;
 
   return {
     ...install.skill,
     files: { ...install.skill.files, [STANDARD_FILES.METADATA_YAML]: onDisk },
   };
+}
+
+function metadataOnDisk(install: ExternalSkillInstall): Promise<string | null> {
+  return bytesOnDisk(path.join(install.skillDir, STANDARD_FILES.METADATA_YAML));
 }
 
 async function bytesOnDisk(filePath: string): Promise<string | null> {
@@ -390,14 +445,28 @@ async function judgeDestination(install: ExternalSkillInstall): Promise<BlockedD
 }
 
 function uncarriedDestinationError(blocked: BlockedDestination[]): string {
+  const [refused, overwritten, moved, reshared] =
+    blocked.length === 1
+      ? [
+          "this skill travels inside it under an id this installation already keeps a skill " +
+            "directory for, and no shared configuration put that directory there",
+          "it",
+          "the directory above",
+          "the skill",
+        ]
+      : [
+          "these skills travel inside it under ids this installation already keeps a skill " +
+            "directory for, and no shared configuration put those directories there",
+          "each",
+          "each directory above",
+          "each skill",
+        ];
   return [
-    "This configuration cannot be installed: these skills travel inside it under ids this " +
-      "installation already keeps a skill directory for, and no shared configuration put those " +
-      "directories there:",
+    `This configuration cannot be installed: ${refused}:`,
     ...blocked.map(({ id, skillDir }) => `  ${id}  ->  ${skillDir}`),
-    "A skill id is the directory the skill installs into, so each would be written over a skill " +
-      "written here by hand or ejected from a marketplace. Move or rename the directory above, " +
-      "or re-share the configuration with each skill added again, which mints an id — " +
+    `A skill id is the directory the skill installs into, so ${overwritten} would be written ` +
+      `over a skill written here by hand or ejected from a marketplace. Move or rename ${moved}, ` +
+      `or re-share the configuration with ${reshared} added again, which mints an id — ` +
       "'external-<category>-<name>' — that nothing here holds.",
   ].join("\n");
 }

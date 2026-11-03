@@ -238,6 +238,51 @@ describe("SummaryPanel component", () => {
     });
   });
 
+  /**
+   * At 80 columns the left half holds 19 columns of name and the right 20; the left name's first
+   * line fills its half, the right name's second. The halves end mid-column, so Yoga measures each
+   * name a line taller than Ink draws it
+   * (2026-10-22-ink-draws-a-text-up-to-two-columns-past-a-box-that-starts-or-ends-mid-column.md);
+   * the taller Agents column keeps that blank line beside the names.
+   */
+  it("wraps the rest of each name under its first letter, with ⏏ after its last, where a line fills its half", () => {
+    const text = summaryPanelText(
+      {
+        ...NOTHING_SELECTED,
+        skillConfigs: [
+          ...buildSkillConfigs(["web-framework-react"], {
+            displayName: "Acme Reactive Forms For Big Teams",
+          }),
+          ...buildSkillConfigs(["web-state-zustand"], {
+            displayName: "Acme Release Workflow For Backend Teams",
+          }),
+        ],
+        agentConfigs: [
+          ...buildAgentConfigs(["web-developer"], { scope: "project" }),
+          ...buildAgentConfigs(["api-developer"], { scope: "global" }),
+        ],
+      },
+      MIN_TERMINAL_SIZE.COLS,
+    );
+
+    expect(text).toMatchInlineSnapshot(`
+      "┌──────────────────────────────────────────────────────────────────────────────┐
+      │  Marketplace All skills ejected                                              │
+      │  Stack none                                                                  │
+      │                                                                              │
+      │  ──────────────────────────────────────────────────────────────────────────  │
+      │                                                                              │
+      │  Skills                                         │  Agents                    │
+      │                                                 │                            │
+      │   Project                                       │   Project                  │
+      │  + Acme Reactive Forms   + Acme Release         │  + web-developer           │
+      │    For Big Teams ⏏         Workflow For Backend │                            │
+      │                            Teams ⏏              │   Global                   │
+      │                                                 │  + api-developer           │
+      └──────────────────────────────────────────────────────────────────────────────┘"
+    `);
+  });
+
   describe("summary", () => {
     it("should render the skills and agents it is given", () => {
       const output = printedPanel({

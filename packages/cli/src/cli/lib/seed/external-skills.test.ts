@@ -55,6 +55,7 @@ const HAND_NAMED_ID = "acme-web-framework-house-style";
 /** A bare `startsWith("external")` would let this through. */
 const PREFIX_NEAR_MISS_ID = "externals-web-framework-brainstorming";
 const LACKS_EXTERNAL_PREFIX = "under ids that do not start with 'external-'";
+const ONE_LACKS_EXTERNAL_PREFIX = "under an id that does not start with 'external-'";
 
 /** Payload keys a hostile link can carry: one climbs out of the skills folder, one nests in it. */
 const PARENT_ESCAPING_ID = "../victim";
@@ -246,7 +247,7 @@ describe("registerExternalSkills", () => {
     ).toBeUndefined();
     expect(() => registerExternalSkills(payload, otherMarketplace, projectDir)).toThrow(
       new RegExp(
-        `${matchedAsWritten(LACKS_EXTERNAL_PREFIX)}[\\s\\S]*${matchedAsWritten(SKILLS.react.id)}`,
+        `${matchedAsWritten(ONE_LACKS_EXTERNAL_PREFIX)}[\\s\\S]*${matchedAsWritten(SKILLS.react.id)}`,
       ),
     );
     expect(otherMarketplace.skills[SKILLS.react.id]).toBeUndefined();
@@ -263,7 +264,7 @@ describe("registerExternalSkills", () => {
 
     expect(() => registerExternalSkills(payload, matrix, projectDir)).toThrow(
       new RegExp(
-        `${matchedAsWritten(LACKS_EXTERNAL_PREFIX)}[\\s\\S]*${matchedAsWritten(HAND_NAMED_ID)}`,
+        `${matchedAsWritten(ONE_LACKS_EXTERNAL_PREFIX)}[\\s\\S]*${matchedAsWritten(HAND_NAMED_ID)}`,
       ),
     );
     // The well-named one is refused with it, so nothing reaches the decode.
@@ -279,7 +280,7 @@ describe("registerExternalSkills", () => {
 
     expect(() => registerExternalSkills(payload, matrix, projectDir)).toThrow(
       new RegExp(
-        `${matchedAsWritten(LACKS_EXTERNAL_PREFIX)}[\\s\\S]*${matchedAsWritten(PREFIX_NEAR_MISS_ID)}`,
+        `${matchedAsWritten(ONE_LACKS_EXTERNAL_PREFIX)}[\\s\\S]*${matchedAsWritten(PREFIX_NEAR_MISS_ID)}`,
       ),
     );
     expect(matrix.skills).not.toHaveProperty([PREFIX_NEAR_MISS_ID]);
@@ -894,7 +895,7 @@ describe("carried skills — refusals, seats and reads", () => {
     return { id: EXTERNAL_ID, skillDir, provenance };
   }
 
-  it("refuses carried skills asked for as plugins in these words", () => {
+  it("refuses one carried skill asked for as a plugin in these words", () => {
     const payload = buildSeedPayload({
       skills: { [EXTERNAL_ID]: buildSeedSkill({ install: "plugin" }) },
       external: { [EXTERNAL_ID]: buildSeedExternalSkill() },
@@ -903,8 +904,32 @@ describe("carried skills — refusals, seats and reads", () => {
     expect(() => registerExternalSkills(payload, matrix, projectDir)).toThrow(
       new Error(
         [
+          "This configuration cannot be installed: this skill travels inside it, so no marketplace serves it and it cannot be installed as a plugin:",
+          `  ${EXTERNAL_ID}`,
+          "Re-share it with the skill above set to eject, which is the only way a carried skill installs.",
+        ].join("\n"),
+      ),
+    );
+  });
+
+  it("refuses several carried skills asked for as plugins in these words", () => {
+    const payload = buildSeedPayload({
+      skills: {
+        [EXTERNAL_ID]: buildSeedSkill({ install: "plugin" }),
+        [SECOND_EXTERNAL_ID]: buildSeedSkill({ install: "plugin" }),
+      },
+      external: {
+        [EXTERNAL_ID]: buildSeedExternalSkill(),
+        [SECOND_EXTERNAL_ID]: buildSeedExternalSkill(),
+      },
+    });
+
+    expect(() => registerExternalSkills(payload, matrix, projectDir)).toThrow(
+      new Error(
+        [
           "This configuration cannot be installed: these skills travel inside it, so no marketplace serves them and they cannot be installed as plugins:",
           `  ${EXTERNAL_ID}`,
+          `  ${SECOND_EXTERNAL_ID}`,
           "Re-share it with each skill above set to eject, which is the only way a carried skill installs.",
         ].join("\n"),
       ),
@@ -925,8 +950,39 @@ describe("carried skills — refusals, seats and reads", () => {
     expect(() => registerExternalSkills(payload, holding, projectDir)).toThrow(
       new Error(
         [
+          "This configuration cannot be installed: this skill travels inside it under an id a catalogue already owns:",
+          `  ${EXTERNAL_ID}`,
+          "A skill id is the directory the skill installs into, so it would be written over the catalogue's own copy of that skill. Re-share it with the skill above added again, which mints an id — 'external-<category>-<name>' — that no catalogue owns.",
+        ].join("\n"),
+      ),
+    );
+  });
+
+  it("refuses several ids the loaded catalogue holds in these words", () => {
+    // Boundary casts: a carried skill's slug is its id, as `externalSlug` makes it.
+    const holding = createMockMatrix(
+      createMockSkill(EXTERNAL_ID, { category: "web-framework", slug: EXTERNAL_ID as SkillSlug }),
+      createMockSkill(SECOND_EXTERNAL_ID, {
+        category: "web-framework",
+        slug: SECOND_EXTERNAL_ID as SkillSlug,
+      }),
+      { categories: buildCategoryMap({ "web-framework": TEST_CATEGORIES.framework }) },
+    );
+    initializeMatrix(holding);
+    const payload = buildSeedPayload({
+      skills: { [EXTERNAL_ID]: buildSeedSkill(), [SECOND_EXTERNAL_ID]: buildSeedSkill() },
+      external: {
+        [EXTERNAL_ID]: buildSeedExternalSkill(),
+        [SECOND_EXTERNAL_ID]: buildSeedExternalSkill(),
+      },
+    });
+
+    expect(() => registerExternalSkills(payload, holding, projectDir)).toThrow(
+      new Error(
+        [
           "This configuration cannot be installed: these skills travel inside it under ids a catalogue already owns:",
           `  ${EXTERNAL_ID}`,
+          `  ${SECOND_EXTERNAL_ID}`,
           "A skill id is the directory the skill installs into, so each would be written over the catalogue's own copy of that skill. Re-share it with each skill above added again, which mints an id — 'external-<category>-<name>' — that no catalogue owns.",
         ].join("\n"),
       ),
@@ -942,9 +998,68 @@ describe("carried skills — refusals, seats and reads", () => {
     expect(() => registerExternalSkills(payload, matrix, projectDir)).toThrow(
       new Error(
         [
+          "This configuration cannot be installed: this skill travels inside it under an id that is not a single directory name:",
+          '  "../victim"',
+          "A skill id is the directory the skill is written into, so an id holding a path separator, or naming '.' or '..', would be written somewhere other than a directory of its own, and one holding a control character would hand it to the terminal wherever that directory is named. Re-share it with the skill above added again, which mints an id — 'external-<category>-<name>' — that names one directory.",
+        ].join("\n"),
+      ),
+    );
+  });
+
+  it("refuses several ids naming no single directory in these words", () => {
+    const payload = buildSeedPayload({
+      skills: { [PARENT_ESCAPING_ID]: buildSeedSkill(), [NESTED_ID]: buildSeedSkill() },
+      external: {
+        [PARENT_ESCAPING_ID]: buildSeedExternalSkill(),
+        [NESTED_ID]: buildSeedExternalSkill(),
+      },
+    });
+
+    expect(() => registerExternalSkills(payload, matrix, projectDir)).toThrow(
+      new Error(
+        [
           "This configuration cannot be installed: these skills travel inside it under ids that are not a single directory name:",
           '  "../victim"',
+          '  "house/react"',
           "A skill id is the directory the skill is written into, so an id holding a path separator, or naming '.' or '..', would be written somewhere other than a directory of its own, and one holding a control character would hand it to the terminal wherever that directory is named. Re-share it with each skill above added again, which mints an id — 'external-<category>-<name>' — that names one directory.",
+        ].join("\n"),
+      ),
+    );
+  });
+
+  it("refuses an id longer than a directory name may be in these words", () => {
+    const payload = buildSeedPayload({
+      skills: { [OVERLONG_ID]: buildSeedSkill() },
+      external: { [OVERLONG_ID]: buildSeedExternalSkill() },
+    });
+
+    expect(() => registerExternalSkills(payload, matrix, projectDir)).toThrow(
+      new Error(
+        [
+          "This configuration cannot be installed: this skill travels inside it under an id longer than a directory name may be:",
+          `  "${OVERLONG_ID}"`,
+          "A skill id is the directory the skill is written into, and a directory name may hold at most 255 bytes, so it could not be written. Re-share it without the skill above.",
+        ].join("\n"),
+      ),
+    );
+  });
+
+  it("refuses several ids longer than a directory name may be in these words", () => {
+    const payload = buildSeedPayload({
+      skills: { [OVERLONG_ID]: buildSeedSkill(), [OVERLONG_TWO_BYTE_ID]: buildSeedSkill() },
+      external: {
+        [OVERLONG_ID]: buildSeedExternalSkill(),
+        [OVERLONG_TWO_BYTE_ID]: buildSeedExternalSkill(),
+      },
+    });
+
+    expect(() => registerExternalSkills(payload, matrix, projectDir)).toThrow(
+      new Error(
+        [
+          "This configuration cannot be installed: these skills travel inside it under ids longer than a directory name may be:",
+          `  "${OVERLONG_ID}"`,
+          `  "${OVERLONG_TWO_BYTE_ID}"`,
+          "A skill id is the directory the skill is written into, and a directory name may hold at most 255 bytes, so none of these could be written. Re-share it without each skill above.",
         ].join("\n"),
       ),
     );
@@ -959,8 +1074,29 @@ describe("carried skills — refusals, seats and reads", () => {
     expect(() => registerExternalSkills(payload, matrix, projectDir)).toThrow(
       new Error(
         [
+          "This configuration cannot be installed: this skill travels inside it under an id that does not start with 'external-':",
+          `  ${HAND_NAMED_ID}`,
+          "A skill id is the directory the skill installs into, and no marketplace may publish under the name 'external', so an id starting 'external-' is the only kind that can never take the place of a marketplace's skill. Re-share it with the skill above added again, which mints such an id — 'external-<category>-<name>'.",
+        ].join("\n"),
+      ),
+    );
+  });
+
+  it("refuses several ids without the external- prefix in these words", () => {
+    const payload = buildSeedPayload({
+      skills: { [HAND_NAMED_ID]: buildSeedSkill(), [PREFIX_NEAR_MISS_ID]: buildSeedSkill() },
+      external: {
+        [HAND_NAMED_ID]: buildSeedExternalSkill(),
+        [PREFIX_NEAR_MISS_ID]: buildSeedExternalSkill(),
+      },
+    });
+
+    expect(() => registerExternalSkills(payload, matrix, projectDir)).toThrow(
+      new Error(
+        [
           "This configuration cannot be installed: these skills travel inside it under ids that do not start with 'external-':",
           `  ${HAND_NAMED_ID}`,
+          `  ${PREFIX_NEAR_MISS_ID}`,
           "A skill id is the directory the skill installs into, and no marketplace may publish under the name 'external', so an id starting 'external-' is the only kind that can never take the place of a marketplace's skill. Re-share it with each skill above added again, which mints such an id — 'external-<category>-<name>'.",
         ].join("\n"),
       ),
@@ -982,9 +1118,46 @@ describe("carried skills — refusals, seats and reads", () => {
     await expect(writeExternalSkills(installsFor(buildSeedExternalSkill()))).rejects.toThrow(
       new Error(
         [
-          "This configuration cannot be installed: these skills travel inside it under ids this installation already keeps a skill directory for, and no shared configuration put those directories there:",
+          "This configuration cannot be installed: this skill travels inside it under an id this installation already keeps a skill directory for, and no shared configuration put that directory there:",
           `  ${EXTERNAL_ID}  ->  ${skillDir}`,
-          "A skill id is the directory the skill installs into, so each would be written over a skill written here by hand or ejected from a marketplace. Move or rename the directory above, or re-share the configuration with each skill added again, which mints an id — 'external-<category>-<name>' — that nothing here holds.",
+          "A skill id is the directory the skill installs into, so it would be written over a skill written here by hand or ejected from a marketplace. Move or rename the directory above, or re-share the configuration with the skill added again, which mints an id — 'external-<category>-<name>' — that nothing here holds.",
+        ].join("\n"),
+      ),
+    );
+  });
+
+  it("refuses several destinations no shared configuration carried, naming each and its directory", async () => {
+    const skillsDir = resolveInstallPaths(projectDir, "project").skillsDir;
+    const firstDir = path.join(skillsDir, EXTERNAL_ID);
+    const secondDir = path.join(skillsDir, SECOND_EXTERNAL_ID);
+    await Promise.all(
+      [EXTERNAL_ID, SECOND_EXTERNAL_ID].map(async (id) => {
+        await mkdir(path.join(skillsDir, id), { recursive: true });
+        await writeFile(path.join(skillsDir, id, STANDARD_FILES.SKILL_MD), renderSkillMd(id));
+      }),
+    );
+    const installs = registerExternalSkills(
+      buildSeedPayload({
+        skills: {
+          [EXTERNAL_ID]: buildSeedSkill({ scope: "project" }),
+          [SECOND_EXTERNAL_ID]: buildSeedSkill({ scope: "project" }),
+        },
+        external: {
+          [EXTERNAL_ID]: buildSeedExternalSkill(),
+          [SECOND_EXTERNAL_ID]: buildSeedExternalSkill(),
+        },
+      }),
+      matrix,
+      projectDir,
+    );
+
+    await expect(writeExternalSkills(installs)).rejects.toThrow(
+      new Error(
+        [
+          "This configuration cannot be installed: these skills travel inside it under ids this installation already keeps a skill directory for, and no shared configuration put those directories there:",
+          `  ${EXTERNAL_ID}  ->  ${firstDir}`,
+          `  ${SECOND_EXTERNAL_ID}  ->  ${secondDir}`,
+          "A skill id is the directory the skill installs into, so each would be written over a skill written here by hand or ejected from a marketplace. Move or rename each directory above, or re-share the configuration with each skill added again, which mints an id — 'external-<category>-<name>' — that nothing here holds.",
         ].join("\n"),
       ),
     );

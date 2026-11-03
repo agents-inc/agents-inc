@@ -172,7 +172,7 @@ describe("what edit --from says", () => {
         "  ~ web-developer (agent: defaults → model opus)",
         "  ~ web-developer (agent: skills reassigned)",
         "",
-        "Copied 1 local skill(s)",
+        "Copied 1 local skill",
         "1 agent rewritten, 0 unchanged",
         `Claude Code runs a project sub-agent's hooks only once you trust the folder: open Claude Code in ${projectDir} and accept the trust prompt. Until then, 1 sub-agent's hooks will not run, and nothing will say so.`,
         "",
@@ -336,7 +336,7 @@ describe("what edit --from says", () => {
 
     const { stderr } = await answered(["edit", "--from", "Next"], KEY_Y);
 
-    expect(flattenCliOutput(stderr)).toBe("Warning: Skipped 1 unknown sub-agent(s): no-such-agent");
+    expect(flattenCliOutput(stderr)).toBe("Warning: Skipped 1 unknown sub-agent: no-such-agent");
   });
 
   it("recompiles only the project when nothing global changed, beside a global installation", async () => {
@@ -380,9 +380,7 @@ describe("what edit --from says", () => {
     expect(
       flattenCliOutput(stderr),
       "web-developer carries a skill the catalogue knows, so the warning does not name it",
-    ).toBe(
-      "Warning: Skipped 1 skill(s) this catalog does not know: web-framework-angular-standalone",
-    );
+    ).toBe("Warning: Skipped 1 skill this catalog does not know: web-framework-angular-standalone");
   });
 
   it("names the sub-agents it installs without a skill the catalogue does not know, which carried only that skill", async () => {
@@ -402,8 +400,8 @@ describe("what edit --from says", () => {
     expect(flattenCliOutput(stderr)).toBe(
       flattenCliOutput(
         [
-          `Warning: Skipped 1 skill(s) this catalog does not know: ${unknown}`,
-          `  sub-agent(s) installed without ${unknown}, carrying nothing else this catalog knows: api-developer`,
+          `Warning: Skipped 1 skill this catalog does not know: ${unknown}`,
+          `  sub-agent installed without ${unknown}, carrying nothing else this catalog knows: api-developer`,
         ].join("\n"),
       ),
     );
@@ -763,7 +761,7 @@ describe("what edit --from says", () => {
         "  ~ React ([P] → [G])",
         "  ~ web-developer ([P] → [G])",
         "",
-        "1 agent rewritten, 0 unchanged",
+        "0 agents rewritten, 1 created, 0 unchanged",
         "",
         "✓ Done",
       ].join("\n"),
@@ -896,7 +894,7 @@ describe("what edit --from says", () => {
         "  + api-developer (agent)",
         "  + React [P]",
         "",
-        "1 agent rewritten, 0 unchanged",
+        "0 agents rewritten, 1 created, 0 unchanged",
       ].join("\n"),
     );
     expect(await readFile(globalConfigPath, "utf-8")).toBe(globalConfigBefore);
@@ -1295,7 +1293,7 @@ describe("what edit --from says", () => {
     expect(stdout).toContain("┘\n\nApply this configuration?\n");
     expect(stdout).toContain(
       [
-        "Wrote 1 skill(s) this configuration carries: Brainstorming",
+        "Wrote 1 skill this configuration carries: Brainstorming",
         "",
         "Changes:",
         "  ~ Brainstorming (skill: files rewritten)",
@@ -1467,8 +1465,8 @@ describe("what edit --from says", () => {
           [
             "0 agents rewritten, 0 unchanged (1 failed)",
             "",
-            "Completed with 2 failure(s) — the changes above landed, these did not:",
-            "  1 sub-agent(s) did not compile: api-developer",
+            "Completed with 2 failures — the changes above landed, these did not:",
+            "  1 sub-agent did not compile: api-developer",
             "    Run 'npx agents-inc compile' — the compiled agents on disk are stale until you do.",
             `  Could not remove agent file ${path.join(agentsDir, "web-developer.md")}: EACCES: permission denied, unlink '${path.join(agentsDir, "web-developer.md")}'`,
             "    Delete the file by hand — Claude Code loads a compiled sub-agent this project no longer configures.",
@@ -1664,7 +1662,7 @@ describe("what edit --from says", () => {
             [
               "You can manually recompile with 'npx agents-inc compile'.",
               "",
-              "Completed with 2 failure(s) — the changes above landed, these did not:",
+              "Completed with 2 failures — the changes above landed, these did not:",
               `  Agent recompilation failed: EACCES: permission denied, unlink '${staleAgent}'`,
               "    Run 'npx agents-inc compile' — the compiled agents on disk are stale until you do.",
             ].join("\n"),
@@ -1880,7 +1878,7 @@ describe("what edit says without a terminal", () => {
     );
   }
 
-  it("mints an id for this installation and names both ways to use it", async () => {
+  it("mints an id for this installation and names the edit --from that applies it back, and the editor", async () => {
     await installReact();
 
     const { stdout, error } = await runCliCommand(["edit"]);
@@ -1888,9 +1886,9 @@ describe("what edit says without a terminal", () => {
     expect(error).toBeUndefined();
     expect(stdout).toBe(
       [
-        "Opening 1 skill(s) across 1 sub-agent(s)...",
+        "Opening 1 skill across 1 sub-agent...",
         `✓ Shared as ${STORED_ID}`,
-        `  Install it:  npx agents-inc init --from ${STORED_ID}`,
+        `  Apply it:    npx agents-inc edit --from ${STORED_ID}`,
         `  Open it:     http://localhost:5173/editor/?fromId=${STORED_ID}`,
         "",
       ].join("\n"),

@@ -1,4 +1,3 @@
-import os from "os";
 import path from "path";
 
 import chalk from "chalk";
@@ -43,7 +42,6 @@ import {
   detectMigrations,
   ejectCopyFailureError,
   executeMigration,
-  holdsItsOwnInstallation,
   isHomeDirectory,
   resolveInstallPaths,
   INSTALL_MODE_DESCRIPTIONS,
@@ -78,7 +76,6 @@ import type {
   SkillConfig,
   AgentName,
   AgentScopeConfig,
-  MergedSkillsMatrix,
   ProjectConfig,
   SkillScope,
 } from "../types/index.js";
@@ -86,28 +83,23 @@ import {
   editorPayloadForInstallation,
   skillsAuthoredHere,
 } from "../lib/seed/installation-payload.js";
-import { publishSeedConfig } from "../lib/seed/publish-seed.js";
-import { fetchSeedConfig } from "../lib/seed/fetch-seed.js";
+import { carriedSkillsThatDiffer, type ExternalSkillInstall } from "../lib/seed/external-skills.js";
+import type { SeedMapping } from "../lib/seed/seed-to-selection.js";
 import {
-  carriedSkillsThatDiffer,
-  registerExternalSkills,
-  writeExternalSkills,
-  type ExternalSkillInstall,
-} from "../lib/seed/external-skills.js";
-import { seedToInstallSelection, type SeedMapping } from "../lib/seed/seed-to-selection.js";
-import {
-  installsAtHome,
   joinedStatement,
+  keptAsInstalledStatement,
   notInstalledGlobally,
   panelRowEntries,
   readInstalledGlobal,
   reconcileSharedConfig,
   restoreInstalledGlobal,
+  runFromHomeFor,
   sameAssignments,
   type HeldGlobal,
   type InstalledGlobal,
   type KeptFromRoundTrip,
   type ReconciledSharedConfig,
+  type RunFromHome,
   type UnassignedRow,
 } from "../lib/seed/seed-apply.js";
 import { Confirm } from "../components/common/confirm.js";
@@ -120,18 +112,11 @@ import {
   removeUnderFirstNameHeld,
 } from "../lib/operations/skills/uninstall-plugin-skills.js";
 import { hostCompileNotices } from "../lib/hosts/host-compile-notices.js";
-import { unofferablePlacementsFound } from "../lib/hosts/configured-placements.js";
 import { chooseProviderForThisRun, providerInUse } from "../lib/installation/install-layout.js";
-import {
-  installationToName,
-  providerFlag,
-  providerNamedBy,
-  refuseAnAmbiguousInstallation,
-} from "../lib/installation/provider-flag.js";
-import { initProviderToNameAt, providerToNameAt } from "../lib/installation/provider-to-name.js";
-import { openUrl } from "../utils/open-url.js";
+import { providerFlag, providerNamedBy } from "../lib/installation/provider-flag.js";
+import { initProviderToNameAt } from "../lib/installation/provider-to-name.js";
 import { getErrorMessage } from "../utils/errors.js";
-import { inertLine } from "../utils/string.js";
+import { inertLine, plural } from "../utils/string.js";
 import { type StartupMessage } from "../utils/logger.js";
 import {
   INCOMPLETE_WORK_RECOVERY,
@@ -140,18 +125,14 @@ import {
   SHARED_CONFIG_APPLY,
   STATUS_MESSAGES,
   agentsNotCompiled,
-  applySharedConfigHere,
   authoredHereKept,
-  carriedSkillsWritten,
   editorSkillMetadataUnusableError,
   idNamesAnotherMarketplace,
-  keptAsInstalledGlobally,
   keptUnassigned,
   localSkillsCopied,
   nothingInstalledToApplyTo,
   recompileSummary,
   registeredProjectsRecompiled,
-  sharedConfigDestinations,
   sharedConfigNeedsTerminal,
   subAgentChanged,
   unplaceableKept,
@@ -159,7 +140,6 @@ import {
 import {
   agentChangesAmong,
   formatScopeTag,
-  namedByActiveEntries,
   type AgentChange,
   type NamedBy,
 } from "../lib/configuration/scope-diff.js";
@@ -245,6 +225,10 @@ function installedEntryOf(skillId: SkillId, oldSkills: SkillConfig[]): SkillConf
   const entry = oldSkills.find((s) => s.id === skillId);
   if (entry === undefined) throw new Error(`Removed skill '${skillId}' has no installed entry`);
   return entry;
+}
+
+function addedSkillsOf(changes: ConfigChanges, selection: InstallSelection): SkillConfig[] {
+  return selection.skills.filter((skill) => changes.addedSkills.includes(skill.id));
 }
 
 /** Empty for an id the list does not hold. */
@@ -503,9 +487,6 @@ function unassignedStatement(unassigned: UnassignedRow[], namedBy: NamedBy): str
   return [unassigned.map((row) => keptUnassigned(row, namedBy)).join("\n")];
 }
 
-/** The run from home that changes what a project run keeps, where home would take it. */
-type RunFromHome = { id: string | undefined; provider: Provider | undefined };
-
 /** What the confirm says the run keeps, and the held global sub-agents it adds to. */
 function keptOnApply(
   reconciled: ReconciledSharedConfig,
@@ -519,26 +500,6 @@ function keptOnApply(
     ...unassignedStatement(reconciled.unassigned, namedBy),
     ...joinedStatement(held),
     ...keptAsInstalledStatement(held, revisedCarried, runFromHome),
-  ];
-}
-
-/** A revised carried skill is held whole, so the global install's entry names it. */
-function keptAsInstalledStatement(
-  held: HeldGlobal,
-  revisedCarried: SkillId[],
-  runFromHome: RunFromHome,
-): string[] {
-  const skillIds = [...held.keptAsInstalled.skillIds, ...revisedCarried];
-  const { agentNames } = held.keptAsInstalled;
-  if (skillIds.length === 0 && agentNames.length === 0) return [];
-  return [
-    keptAsInstalledGlobally(
-      skillIds,
-      agentNames,
-      runFromHome.id,
-      runFromHome.provider,
-      panelRowEntries(held),
-    ),
   ];
 }
 
@@ -665,24 +626,17 @@ export default class Edit extends BaseCommand {
       return this.openSharedInEditor(flags.from, cwd, namedProvider);
     }
 
-    await this.sayWhenTheGlobalInstallationStandsIn(namedProvider);
-    // Before anything is copied or installed.
-    await refuseAnAmbiguousInstallation(cwd, "edit", namedProvider, (message) =>
-      this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
-    );
-
-    // Before anything renders: an unreadable config is recreated, not edited.
-    await this.ensureConfigReadable(cwd);
-    await this.refuseUnofferablePlacements(cwd);
+    await this.checkTheInstallationBeforeActing(cwd, "edit", namedProvider);
 
     // A bare `edit` is `edit --ui`, and needs no source load.
-    if (flags.from === undefined) return this.openInEditor(cwd);
+    if (flags.from === undefined) return this.openInEditor(cwd, namedProvider);
 
     return this.applySharedConfig(flags.from, namedProvider);
   }
 
   private async applySharedConfig(id: string, namedProvider: Provider | undefined): Promise<void> {
-    const payload = await this.fetchSharedConfigOrFail(id, namedProvider);
+    await this.refuseWhenNothingIsInstalled(id, namedProvider);
+    const payload = await this.fetchSharedConfigOrFail(id);
     const context = await this.loadContextUnderSpinner();
     this.sayWhenItNamesAnotherMarketplace(payload, context.sourceResult);
     const editRoot = resolveEditRoot(context.installation);
@@ -777,10 +731,7 @@ export default class Edit extends BaseCommand {
     sayCapturedWarnings(context.startupMessages);
     this.warnOfSkippedEntries(mapping, context.sourceResult.unloadedSkillIds);
 
-    const runFromHome = {
-      id: installsAtHome(result) ? id : undefined,
-      provider: providerToNameAt(os.homedir(), providerInUse(editRoot.dir)),
-    };
+    const runFromHome = runFromHomeFor(result, id, editRoot.dir);
 
     return {
       result: held.result,
@@ -820,22 +771,14 @@ export default class Edit extends BaseCommand {
     }
   }
 
-  /** Refuses an empty directory before spending a round trip. */
-  private async fetchSharedConfigOrFail(
+  /** Before the fetch, so an empty directory spends no round trip. */
+  private async refuseWhenNothingIsInstalled(
     id: string,
     namedProvider: Provider | undefined,
-  ): Promise<SeedPayload> {
-    if (!(await detectProject())) {
-      this.error(nothingInstalledToApplyTo(id, namedProvider), { exit: EXIT_CODES.ERROR });
-    }
+  ): Promise<void> {
+    if (await detectProject()) return;
 
-    this.log(`Fetching configuration ${id}...`);
-    const fetched = await fetchSeedConfig(id);
-    if (!fetched.ok) {
-      this.error(fetched.error, { exit: EXIT_CODES.ERROR });
-    }
-
-    return fetched.payload;
+    this.error(nothingInstalledToApplyTo(id, namedProvider), { exit: EXIT_CODES.ERROR });
   }
 
   /** An apply always reads the installation's own marketplace; one an id names is never fetched. */
@@ -845,39 +788,6 @@ export default class Edit extends BaseCommand {
   ): void {
     if (named === undefined || named === used) return;
     this.log(idNamesAnotherMarketplace(named, used));
-  }
-
-  private decodeSeedOrFail(payload: SeedPayload, sourceMatrix: MergedSkillsMatrix): SeedMapping {
-    try {
-      return seedToInstallSelection(payload, sourceMatrix);
-    } catch (error) {
-      this.handleError(error);
-    }
-  }
-
-  private registerExternalSkillsOrFail(
-    payload: SeedPayload,
-    sourceMatrix: MergedSkillsMatrix,
-    projectDir: string,
-  ): ExternalSkillInstall[] {
-    try {
-      return registerExternalSkills(payload, sourceMatrix, projectDir);
-    } catch (error) {
-      this.handleError(error);
-    }
-  }
-
-  private async writeCarriedSkills(carried: ExternalSkillInstall[]): Promise<void> {
-    if (carried.length === 0) return;
-
-    await writeExternalSkills(carried);
-    const recorded = carried.map(({ id, skill }) => ({ id, displayName: skill.displayName }));
-    this.log(
-      carriedSkillsWritten(
-        carried.map(({ id }) => id),
-        namedByActiveEntries(recorded),
-      ),
-    );
   }
 
   /**
@@ -971,14 +881,11 @@ export default class Edit extends BaseCommand {
     this.exit(EXIT_CODES.CANCELLED);
   }
 
-  /** `edit` rewrites the file, so it must not let a user curate a roster no command acts on. */
-  private async refuseUnofferablePlacements(cwd: string): Promise<void> {
-    const [finding] = await unofferablePlacementsFound(cwd);
-    if (finding !== undefined) this.error(finding, { exit: EXIT_CODES.ERROR });
-  }
-
-  /** Mints what `share` mints, marked when made in a project. Touches nothing on disk. */
-  private async openInEditor(projectDir: string): Promise<void> {
+  /** Mints what `share` mints, marked with where it was made. Touches nothing on disk. */
+  private async openInEditor(
+    projectDir: string,
+    namedProvider: Provider | undefined,
+  ): Promise<void> {
     await this.ensureInstalledSkillsReadable(projectDir);
 
     const prepared = await editorPayloadForInstallation(projectDir);
@@ -986,14 +893,12 @@ export default class Edit extends BaseCommand {
       this.error(prepared.error, { exit: EXIT_CODES.ERROR });
     }
 
-    this.log(`Opening ${prepared.skills} skill(s) across ${prepared.agents} sub-agent(s)...`);
+    this.log(
+      `Opening ${plural(prepared.skills, "skill")} across ${plural(prepared.agents, "sub-agent")}...`,
+    );
 
-    const published = await publishSeedConfig(prepared.payload);
-    if (!published.ok) {
-      this.error(published.error, { exit: EXIT_CODES.ERROR });
-    }
-
-    await this.handToBrowser(published.id);
+    const id = await this.publishToApplyBackOrFail(prepared.payload, projectDir, namedProvider);
+    await this.openInBrowserAtATerminal(editorConfigUrl(id));
   }
 
   /**
@@ -1024,29 +929,11 @@ export default class Edit extends BaseCommand {
   ): Promise<void> {
     if (namedProvider !== undefined) chooseProviderForThisRun(namedProvider);
     const url = editorConfigUrl(id);
-    const installedHere = await holdsItsOwnInstallation(cwd);
-    const provider = installedHere ? await installationToName(cwd, namedProvider) : namedProvider;
+    const applyHere = await this.howToApplyItHere(id, cwd, namedProvider);
 
     this.log(`Open it at ${url}`);
-    this.log(applySharedConfigHere(id, installedHere, provider));
-
-    if (!process.stdin.isTTY) return;
-
-    const opened = await openUrl(url);
-    if (!opened.ok) this.warn(opened.error);
-  }
-
-  /** The link prints first: it works over a pipe, in CI and with no desktop. Opening is extra. */
-  private async handToBrowser(id: string): Promise<void> {
-    this.logSuccess(`Shared as ${id}`);
-    for (const destination of sharedConfigDestinations(id)) {
-      this.log(destination);
-    }
-
-    if (!process.stdin.isTTY) return;
-
-    const opened = await openUrl(editorConfigUrl(id));
-    if (!opened.ok) this.warn(opened.error);
+    this.log(applyHere);
+    await this.openInBrowserAtATerminal(url);
   }
 
   private async loadContextUnderSpinner(): Promise<EditContext> {
@@ -1166,7 +1053,9 @@ export default class Edit extends BaseCommand {
   }
 
   private logModeSwitch(count: number, modeDescription: string): void {
-    this.log(chalk.hex(CLI_COLORS.NEUTRAL)(`Switching ${count} skill(s) to ${modeDescription}`));
+    this.log(
+      chalk.hex(CLI_COLORS.NEUTRAL)(`Switching ${plural(count, "skill")} to ${modeDescription}`),
+    );
   }
 
   private logCopiesBesideGlobalPlugins(count: number): void {
@@ -1273,7 +1162,7 @@ export default class Edit extends BaseCommand {
       projectDir,
     );
     if (uninstalled.length > 0) {
-      this.log(chalk.hex(CLI_COLORS.NEUTRAL)(`Removed ${uninstalled.length} plugin(s)`));
+      this.log(chalk.hex(CLI_COLORS.NEUTRAL)(`Removed ${plural(uninstalled.length, "plugin")}`));
     }
     for (const item of failed) {
       this.warn(`Failed to uninstall plugin ${item.id}: ${item.error}`);
@@ -1287,13 +1176,11 @@ export default class Edit extends BaseCommand {
     context: EditContext,
     editRoot: EditRoot,
   ): Promise<void> {
-    const { addedSkills, removedSkills } = changes;
-
-    const addedPluginSkills = filteredResult.skills.filter(
-      (s) => addedSkills.includes(s.id) && s.origin !== EJECT_SOURCE,
+    const addedPluginSkills = addedSkillsOf(changes, filteredResult).filter(
+      (skill) => skill.origin !== EJECT_SOURCE,
     );
-    const removedPluginSkills = removedSkills.filter(
-      (id) => activeOldSkills.find((s) => s.id === id)?.origin !== EJECT_SOURCE,
+    const removedPluginSkills = changes.removedSkills.filter(
+      (id) => installedEntryOf(id, activeOldSkills).origin !== EJECT_SOURCE,
     );
 
     if (addedPluginSkills.length === 0 && removedPluginSkills.length === 0) return;
@@ -1329,10 +1216,8 @@ export default class Edit extends BaseCommand {
     context: EditContext,
     editRoot: EditRoot,
   ): Promise<void> {
-    const { addedSkills } = changes;
-
-    const addedLocalSkills = filteredResult.skills.filter(
-      (s) => addedSkills.includes(s.id) && s.origin === EJECT_SOURCE,
+    const addedLocalSkills = addedSkillsOf(changes, filteredResult).filter(
+      (skill) => skill.origin === EJECT_SOURCE,
     );
 
     if (addedLocalSkills.length > 0) {
@@ -1350,13 +1235,9 @@ export default class Edit extends BaseCommand {
     activeOldSkills: SkillConfig[],
     editRoot: EditRoot,
   ): Promise<void> {
-    const { removedSkills } = changes;
-
-    // A deselected eject skill is uninstalled at its scope; plugin removals belong to
-    // applyPluginChanges.
-    for (const skillId of removedSkills) {
-      const oldSkill = activeOldSkills.find((s) => s.id === skillId);
-      if (oldSkill?.origin !== EJECT_SOURCE) continue;
+    for (const skillId of changes.removedSkills) {
+      const oldSkill = installedEntryOf(skillId, activeOldSkills);
+      if (oldSkill.origin !== EJECT_SOURCE) continue;
 
       await deleteLocalSkill(editRoot.dir, skillId, oldSkill.scope);
     }
@@ -1433,12 +1314,9 @@ export default class Edit extends BaseCommand {
     }
   }
 
-  private reportRecompile({ compiled, rewritten, failed, warnings }: CompilationResult): void {
-    const summary = recompileSummary(
-      rewritten.length,
-      compiled.length - rewritten.length,
-      RECOMPILE_SUBJECT,
-    );
+  private reportRecompile(result: CompilationResult): void {
+    const { compiled, failed, warnings } = result;
+    const summary = recompileSummary(result, RECOMPILE_SUBJECT);
 
     if (failed.length > 0) {
       this.log(
@@ -1477,12 +1355,11 @@ export default class Edit extends BaseCommand {
   }
 
   /**
-   * The host notices `init` and `compile` print ({@link hostCompileNotices}), after
-   * {@link cleanupStaleAgentFiles} so a deleted file is not counted. Skipped on a run that owes
-   * work, whose tree may not be readable.
+   * After {@link cleanupStaleAgentFiles}, so a deleted file is not counted. Skipped on a run owing
+   * work besides a plugin's switch, whose tree may not be readable.
    */
   private async reportWhatThisHostCannotCarry(editRoot: EditRoot): Promise<void> {
-    if (this.hasIncompleteWork) return;
+    if (this.owesWorkBesidesPluginSwitches) return;
 
     for (const notice of await hostCompileNotices(providerInUse(editRoot.dir), editRoot.dir)) {
       this.log(notice);

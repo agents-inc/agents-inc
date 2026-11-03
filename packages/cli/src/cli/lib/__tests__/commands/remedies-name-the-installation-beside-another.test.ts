@@ -2,7 +2,7 @@ import path from "path";
 import { readdir, rm } from "fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { storedConfigHandlerFor } from "@workspace/api-mocks";
+import { STORED_ID, storedConfigHandlerFor } from "@workspace/api-mocks";
 import { configMockServer } from "@workspace/api-mocks/node";
 
 import { runCliCommand } from "../helpers/cli-runner.js";
@@ -149,6 +149,38 @@ describe("a remedy handed out over a project holding two installations", () => {
         `To apply it here instead, run 'npx agents-inc edit --from ${SHARED_ID} --provider codex'.\n`,
       );
       expect(stdout).not.toContain("<claude|codex>");
+    });
+  });
+
+  describe("minting an id from an installation for the editor", () => {
+    useMockWorker();
+
+    beforeEach(async () => {
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({ name: "installation" }),
+        CLAUDE_FOLDER,
+      );
+    });
+
+    it("edit --ui names the installation the run named in the edit --from it hands out", async () => {
+      const { stdout, error } = await runCliCommand(["edit", "--ui", "--provider", "claude"]);
+
+      expect(error).toBeUndefined();
+      expect(stdout).toContain(
+        `✓ Shared as ${STORED_ID}\n  Apply it:    npx agents-inc edit --from ${STORED_ID} --provider claude\n  Open it:`,
+      );
+    });
+
+    it("control: beside no other installation, edit --ui hands out the bare edit --from", async () => {
+      await rm(path.join(projectDir, CODEX_FOLDER), { recursive: true });
+
+      const { stdout, error } = await runCliCommand(["edit", "--ui"]);
+
+      expect(error).toBeUndefined();
+      expect(stdout).toContain(
+        `✓ Shared as ${STORED_ID}\n  Apply it:    npx agents-inc edit --from ${STORED_ID}\n  Open it:`,
+      );
     });
   });
 
