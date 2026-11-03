@@ -1,27 +1,19 @@
 import { createRoute, z } from "@hono/zod-openapi"
 import { sameStackName } from "@workspace/matrix"
+import { savedStackSchema } from "@workspace/matrix/worker-responses"
 import { and, eq, ne, notExists, sql } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/d1"
 import { alias } from "drizzle-orm/sqlite-core"
 
 import { UNAUTHORIZED, authenticated } from "./auth"
 import { savedStacks } from "./db/app.schema"
+import { errorResponse } from "./error-response"
 
 import type { RouteHandler } from "@hono/zod-openapi"
 import type { Context } from "hono"
+import type { WorkerEnv } from "./worker-env"
 
-type WorkerEnv = { Bindings: Env }
-
-// `configId` points into KV; the payload is fetched via `GET /configs/:id`.
-const savedStackSchema = z
-  .object({
-    id: z.string(),
-    name: z.string(),
-    configId: z.string(),
-    createdAt: z.string(),
-    updatedAt: z.string(),
-  })
-  .openapi("SavedStack")
+const stackResponseSchema = savedStackSchema.openapi("SavedStack")
 
 // Half of a surrogate pair: no character, and the store hands it back as other
 // text than was sent. `isWellFormed` is past this package's ES2023 lib.
@@ -38,7 +30,7 @@ const nameSchema = z
 
 const NAME_TAKEN_BODY = { error: "name taken" as const }
 
-// Owner ruling, 2026-10-24: refused from any caller, not only the editor.
+// Refused from any caller, not only the editor.
 const NAME_TAKEN = {
   409: {
     content: {
@@ -60,7 +52,7 @@ export const listStacksRoute = createRoute({
   path: "/stacks",
   responses: {
     200: {
-      content: { "application/json": { schema: z.array(savedStackSchema) } },
+      content: { "application/json": { schema: z.array(stackResponseSchema) } },
       description: "This person's saved stacks, newest first",
     },
     ...UNAUTHORIZED,
@@ -81,7 +73,7 @@ export const createStackRoute = createRoute({
   },
   responses: {
     201: {
-      content: { "application/json": { schema: savedStackSchema } },
+      content: { "application/json": { schema: stackResponseSchema } },
       description: "Saved",
     },
     ...NAME_TAKEN,
@@ -102,15 +94,10 @@ export const renameStackRoute = createRoute({
   },
   responses: {
     200: {
-      content: { "application/json": { schema: savedStackSchema } },
+      content: { "application/json": { schema: stackResponseSchema } },
       description: "Renamed",
     },
-    404: {
-      content: {
-        "application/json": { schema: z.object({ error: z.string() }) },
-      },
-      description: "No such stack belonging to this person",
-    },
+    404: errorResponse("No such stack belonging to this person"),
     ...NAME_TAKEN,
     ...UNAUTHORIZED,
   },
@@ -131,6 +118,9 @@ const withoutOwner = ({
   userId: _userId,
   ...stack
 }: typeof savedStacks.$inferSelect) => stack
+
+const newestFirst = (a: { updatedAt: string }, b: { updatedAt: string }) =>
+  b.updatedAt.localeCompare(a.updatedAt)
 
 // Scoping the mutation itself makes another person's id un-actionable.
 const ownedStack = (id: string, userId: string) =>
@@ -291,12 +281,7 @@ export const listStacks: RouteHandler<typeof listStacksRoute, WorkerEnv> =
       .where(eq(savedStacks.userId, session.user.id))
 
     // A person's own stacks are few; sorting here avoids an index.
-    return c.json(
-      rows
-        .map(withoutOwner)
-        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-      200
-    )
+    return c.json(rows.map(withoutOwner).sort(newestFirst), 200)
   })
 
 export const createStack: RouteHandler<typeof createStackRoute, WorkerEnv> =

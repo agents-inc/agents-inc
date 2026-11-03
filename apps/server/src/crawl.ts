@@ -1,6 +1,13 @@
+import {
+  GITHUB_API_ORIGIN,
+  GITHUB_RAW_ORIGIN,
+  blobsUnder,
+  gitTreeSchema,
+} from "@workspace/matrix/github-tree"
 import { parse as parseYaml } from "yaml"
 import { z } from "zod"
 
+import type { GitTreeEntry } from "@workspace/matrix/github-tree"
 import type { SkillIndex, SkillIndexEntry } from "@workspace/matrix/skill-index"
 
 // Runs in a scheduled GitHub Action (a Worker's subrequest budget is too
@@ -11,10 +18,6 @@ export const INDEXED_REPOS = [
   "anthropics/skills",
   "addyosmani/agent-skills",
 ] as const
-
-const GITHUB_API = "https://api.github.com"
-// Serves public files without spending the API's rate budget.
-const RAW_CONTENT = "https://raw.githubusercontent.com"
 
 // api.github.com answers 403 to a request with no User-Agent.
 const USER_AGENT = "agents-inc-skill-index"
@@ -27,20 +30,6 @@ const API_HEADERS = { ...BASE_HEADERS, accept: "application/vnd.github+json" }
 const CONCURRENT_READS = 6
 
 const SKILL_FILE_SUFFIX = "/SKILL.md"
-
-// `size` is absent for directories, so `type` tells file from directory.
-// apps/editor's skill-contents.ts narrows this endpoint the same way; keep them
-// in step.
-const treeSchema = z.object({
-  truncated: z.boolean(),
-  tree: z.array(
-    z.object({
-      path: z.string(),
-      type: z.string(),
-      size: z.number().optional(),
-    })
-  ),
-})
 
 const repoFactsSchema = z.object({
   stargazers_count: z.number(),
@@ -58,8 +47,6 @@ const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---/
 const FIRST_HEADING_PATTERN = /^#[ \t]+(\S.*)$/m
 
 type RepoFacts = { stars: number; defaultBranch: string }
-
-type TreeEntry = z.infer<typeof treeSchema>["tree"][number]
 
 type SkillDirectory = { path: string; bytes: number }
 
@@ -119,7 +106,7 @@ const fetchRepoFacts = async (
   headers: Headers
 ): Promise<RepoFacts> => {
   const facts = repoFactsSchema.parse(
-    await fetchJson(`${GITHUB_API}/repos/${repo}`, headers)
+    await fetchJson(`${GITHUB_API_ORIGIN}/repos/${repo}`, headers)
   )
   // A renamed default branch would otherwise 404 every file.
   return {
@@ -134,9 +121,9 @@ const fetchSkillDirectories = async (
   branch: string,
   headers: Headers
 ): Promise<SkillDirectory[]> => {
-  const tree = treeSchema.parse(
+  const tree = gitTreeSchema.parse(
     await fetchJson(
-      `${GITHUB_API}/repos/${repo}/git/trees/${branch}?recursive=1`,
+      `${GITHUB_API_ORIGIN}/repos/${repo}/git/trees/${branch}?recursive=1`,
       headers
     )
   )
@@ -150,7 +137,9 @@ const fetchSkillDirectories = async (
 }
 
 // The leading slash excludes a repository-root SKILL.md.
-const skillDirectoriesIn = (entries: readonly TreeEntry[]): SkillDirectory[] =>
+const skillDirectoriesIn = (
+  entries: readonly GitTreeEntry[]
+): SkillDirectory[] =>
   entries
     .filter((entry) => entry.path.endsWith(SKILL_FILE_SUFFIX))
     .map((entry) => directoryHolding(entry.path))
@@ -159,15 +148,8 @@ const skillDirectoriesIn = (entries: readonly TreeEntry[]): SkillDirectory[] =>
 const directoryHolding = (manifestPath: string) =>
   manifestPath.slice(0, -SKILL_FILE_SUFFIX.length)
 
-// The trailing separator keeps `skills/docx` from weighing `skills/docx-legacy`.
-// A missing size counts as zero, matching skill-contents.ts.
-const bytesUnder = (entries: readonly TreeEntry[], directory: string) =>
-  entries
-    .filter((entry) => isBlobUnder(entry, directory))
-    .reduce((total, entry) => total + (entry.size ?? 0), 0)
-
-const isBlobUnder = (entry: TreeEntry, directory: string) =>
-  entry.type === "blob" && entry.path.startsWith(`${directory}/`)
+const bytesUnder = (entries: readonly GitTreeEntry[], directory: string) =>
+  blobsUnder(entries, directory).reduce((total, blob) => total + blob.size, 0)
 
 const readSkills = async (
   repo: string,
@@ -211,7 +193,7 @@ const fetchManifest = async (
   branch: string,
   directory: SkillDirectory
 ): Promise<string | null> => {
-  const url = `${RAW_CONTENT}/${repo}/${branch}/${directory.path}${SKILL_FILE_SUFFIX}`
+  const url = `${GITHUB_RAW_ORIGIN}/${repo}/${branch}/${directory.path}${SKILL_FILE_SUFFIX}`
 
   try {
     const response = await fetch(url, { headers: BASE_HEADERS })

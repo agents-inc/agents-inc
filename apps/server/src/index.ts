@@ -9,6 +9,7 @@ import {
   skillIndexSchema,
 } from "@workspace/matrix/skill-index"
 import { cors } from "hono/cors"
+import { encodeBase64Url } from "hono/utils/encode"
 
 import { createAuth } from "./auth"
 import { compose, composeRoute } from "./compose"
@@ -28,8 +29,7 @@ import {
 import type { RouteHandler, RouteHook } from "@hono/zod-openapi"
 import type { SeedPayload } from "@workspace/matrix/seed"
 import type { Context } from "hono"
-
-type WorkerEnv = { Bindings: Env }
+import type { WorkerEnv } from "./worker-env"
 
 // External skills travel their whole directory inline; 1 MB holds about a dozen.
 const MAX_BODY_BYTES = 1_048_576
@@ -45,18 +45,13 @@ const CONFIG_WRITE_WINDOW_SECONDS = 60
 
 const RETRY_AFTER_HEADER = "retry-after"
 
-const base64UrlOf = (bytes: ArrayBuffer) =>
-  btoa(String.fromCharCode(...new Uint8Array(bytes)))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-
 // The id is the payload's hash, so a stored payload never changes under its id.
 const contentAddress = async (body: string) => {
   const digest = await crypto.subtle.digest(
     "SHA-256",
     new TextEncoder().encode(body)
   )
-  return base64UrlOf(digest).slice(0, ID_LENGTH)
+  return encodeBase64Url(digest).slice(0, ID_LENGTH)
 }
 
 const configIdSchema = z

@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { upstreamMock } from "../vitest.setup"
 import { seedSession } from "./db/seed-session"
+import { app } from "./index"
 
 import type { SeedPayload } from "@workspace/matrix/seed"
 import type { AppType } from "./index"
@@ -901,5 +902,42 @@ describe("POST /monitoring", () => {
     const response = await tunnel(envelope(`https://key@${INGEST}/${PROJECT}`))
 
     expect(response.status).toBe(429)
+  })
+})
+
+describe("the OpenAPI document", () => {
+  const METHODS = ["get", "post", "patch", "delete"] as const
+
+  const declaredResponses = () => {
+    const { paths = {} } = app.getOpenAPI31Document({
+      openapi: "3.1.0",
+      info: { title: "agents-inc", version: "0" },
+    })
+
+    return Object.entries(paths).flatMap(([path, item]) =>
+      METHODS.flatMap((method) =>
+        Object.entries(item[method]?.responses ?? {}).map(
+          ([status, response]: [string, { description?: unknown }]) => ({
+            at: `${method} ${path} ${status}`,
+            description: response.description,
+          })
+        )
+      )
+    )
+  }
+
+  // OpenAPI requires a description on every response.
+  it("describes every response it declares", () => {
+    const responses = declaredResponses()
+
+    expect(responses).not.toEqual([])
+    expect(
+      responses
+        .filter(
+          ({ description }) =>
+            typeof description !== "string" || description === ""
+        )
+        .map(({ at }) => at)
+    ).toEqual([])
   })
 })

@@ -1,3 +1,5 @@
+import { encodeBase64 } from "hono/utils/encode"
+
 import { createAuth } from "../auth"
 
 // A signed-in person for the suite (OAuth cannot run here). better-auth's own
@@ -26,7 +28,7 @@ const signatureOf = async (value: string, secret: string) => {
     new TextEncoder().encode(value)
   )
 
-  return btoa(String.fromCharCode(...new Uint8Array(signed)))
+  return encodeBase64(signed)
 }
 
 /** One `cookie` header value, in the spelling `better-call` reads back. */

@@ -2,22 +2,17 @@ import Anthropic from "@anthropic-ai/sdk"
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod"
 import { createRoute, z } from "@hono/zod-openapi"
 import { CATALOG } from "@workspace/matrix"
+import { proposalSchema } from "@workspace/matrix/worker-responses"
 
 import { messageOf } from "./log"
 import { UNAUTHORIZED, authenticated } from "./auth"
+import { errorResponse } from "./error-response"
 
 import type { RouteHandler } from "@hono/zod-openapi"
-
-type WorkerEnv = { Bindings: Env }
+import type { WorkerEnv } from "./worker-env"
 
 // Input tokens are billed; this caps what one caller can paste.
 const MAX_SENTENCE = 600
-
-// The model picks skill ids only; everything else derives from them.
-const proposalSchema = z.object({
-  skillIds: z.array(z.string()),
-  reason: z.string(),
-})
 
 // Rendered once and sorted: the cached prompt prefix must be byte-identical.
 const CATALOGUE_LINES = Object.values(CATALOG.skillsById)
@@ -95,25 +90,10 @@ export const composeRoute = createRoute({
       content: { "application/json": { schema: composeResponseSchema } },
       description: "Skill ids that suit the sentence",
     },
-    400: {
-      content: {
-        "application/json": { schema: z.object({ error: z.string() }) },
-      },
-      description: "Nothing worth sending",
-    },
+    400: errorResponse("Nothing worth sending"),
     ...UNAUTHORIZED,
-    429: {
-      content: {
-        "application/json": { schema: z.object({ error: z.string() }) },
-      },
-      description: "Too many in a minute",
-    },
-    502: {
-      content: {
-        "application/json": { schema: z.object({ error: z.string() }) },
-      },
-      description: "The model did not answer usefully",
-    },
+    429: errorResponse("Too many in a minute"),
+    502: errorResponse("The model did not answer usefully"),
   },
 })
 

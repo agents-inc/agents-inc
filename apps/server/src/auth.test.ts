@@ -349,10 +349,8 @@ describe("how long a sign-in lasts", () => {
     })
   })
 
-  // The owner's ruling, 2026-10-26: every signed-in action renews the sign-in,
-  // in the browser as well as in the worker. The worker writes the renewal
-  // before the action runs, so the action's own response is the only one that
-  // can hand the browser the cookie to match.
+  // The worker writes the renewal before the action runs, so the action's own
+  // response is the only one that can hand the browser the cookie to match.
   describe("every signed-in action", () => {
     const CONFIG_ID = "abcd1234"
     const STORED_NAME = "Stored before the action"
@@ -360,7 +358,6 @@ describe("how long a sign-in lasts", () => {
     const RENAMED_NAME = "Renamed by the action"
     const MESSAGES_URL = "https://api.anthropic.com/v1/messages"
 
-    /** Who calls: a cookie, or none, and the id of a stack they hold. */
     type Caller = { cookie?: string; stackId: string }
 
     const NOBODY: Caller = { stackId: "no-such-stack" }
@@ -414,7 +411,6 @@ describe("how long a sign-in lasts", () => {
         usage: { input_tokens: 1, output_tokens: 1 },
       })
 
-    // A stack as the routes answer it: every column but its owner.
     type StackAnswer = Record<
       Exclude<keyof typeof savedStacks.$inferSelect, "userId">,
       unknown
@@ -432,7 +428,6 @@ describe("how long a sign-in lasts", () => {
     type Action = {
       name: string
       perform: (caller: Caller) => Response | Promise<Response>
-      // What it answers someone signed in.
       answers: (caller: Caller) => { status: number; body: unknown }
     }
 
@@ -491,7 +486,6 @@ describe("how long a sign-in lasts", () => {
       },
     ]
 
-    // 204 carries no body.
     const bodyOf = async (response: Response): Promise<unknown> =>
       response.status === 204 ? null : response.json()
 
@@ -517,7 +511,6 @@ describe("how long a sign-in lasts", () => {
             await readSession(person.cookie)
           ).json<SessionRead>()
           expectLifetimeFrom(kept, { from, to })
-          // The browser's copy: a cookie lasting as long as the worker's.
           const renewed = sessionCookieOf(response)
           expect(renewed).toContain(RENEWED_MAX_AGE)
           const readWithRenewed = await (

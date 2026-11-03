@@ -6,11 +6,9 @@ import { drizzle } from "drizzle-orm/d1"
 
 import { schema } from "./db/schema"
 
-import type { Context } from "hono"
-
-type WorkerEnv = { Bindings: Env }
-
 import type { BetterAuthOptions } from "better-auth"
+import type { Context } from "hono"
+import type { WorkerEnv } from "./worker-env"
 
 type CloudflareOptions = Parameters<typeof withCloudflare>[0]
 

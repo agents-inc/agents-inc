@@ -24,6 +24,14 @@ afterEach(() => {
 const BASE = "https://api.test"
 const WEB_ORIGIN = "http://localhost:5173"
 
+// Read off the document the exported app generates, so a route or schema may
+// be declared anywhere.
+const openAPIDocument = () =>
+  app.getOpenAPI31Document({
+    openapi: "3.1.0",
+    info: { title: "agents-inc", version: "0" },
+  })
+
 const ask = (sentence: string, ip = "203.0.113.90") =>
   SELF.fetch(`${BASE}/compose`, {
     method: "POST",
@@ -354,13 +362,8 @@ describe("a request with no session", () => {
     { method: "delete", path: "/stacks/{id}" },
   ] as const
 
-  // Read off the document the exported app generates, so a route may be
-  // declared anywhere.
   const declaredRefusals = () => {
-    const { paths = {} } = app.getOpenAPI31Document({
-      openapi: "3.1.0",
-      info: { title: "agents-inc", version: "0" },
-    })
+    const { paths = {} } = openAPIDocument()
 
     return NEEDS_A_SESSION.map(
       ({ method, path }): unknown => paths[path]?.[method]?.responses?.["401"]
@@ -392,6 +395,18 @@ describe("a request with no session", () => {
   it("declares that body on every route that needs a session", () => {
     expect(declaredRefusals()).toStrictEqual(
       NEEDS_A_SESSION.map(() => REFUSAL_DECLARED)
+    )
+  })
+})
+
+describe("the OpenAPI document's shared schemas", () => {
+  const COMPONENT_NAMES = ["ConfigId", "Proposal", "SavedStack"]
+
+  it("are named ConfigId, Proposal and SavedStack", () => {
+    const { components = {} } = openAPIDocument()
+
+    expect(Object.keys(components.schemas ?? {}).toSorted()).toStrictEqual(
+      COMPONENT_NAMES
     )
   })
 })
