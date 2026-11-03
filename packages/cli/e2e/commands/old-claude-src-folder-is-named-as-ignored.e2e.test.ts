@@ -4,10 +4,14 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { expectOnlySourceFolder } from "../assertions/source-folder-assertions.js";
 import { CLI, type CLIResult } from "../fixtures/cli.js";
-import { runInitFromOnClaude, runInitFromOnCodex } from "../fixtures/codex-install.js";
+import { runInitFromOnCodex } from "../fixtures/codex-install.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
-import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
@@ -39,20 +43,17 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * CLI-931, owner 2026-10-24 (replacing 2026-10-23's "disregard old .claude-src folders"): every run
- * prints one line per root holding an old `.claude-src/`, HOME's first, saying it is ignored and
- * naming the folder agents-inc reads there, with or without an installation beside it. HOME is
- * written `~`, the project by its absolute path. The folder is left untouched, and the run is
- * otherwise the run without it.
+ * Every run prints one line per root holding an old `.claude-src/`, HOME's first, saying it is
+ * ignored and naming the folder agents-inc reads there, with or without an installation beside it.
+ * HOME is written `~`, the project by its absolute path. The folder is left untouched, and the run
+ * is otherwise the run without it.
  *
- * CLI-965, the same ruling ("name where it reads"): in a root holding a Codex installation agents-inc
- * reads `.agents-inc/codex/`, so that root's line names it. Those Codex roots hold no Claude folder.
- * CLI-967, the same ruling: on the `init --from --provider codex` run that creates that installation
- * in roots holding none, agents-inc reads `.agents-inc/codex/` there already, so that run's lines
- * name it; a bare `init --from` beside it names Claude's.
- * CLI-977, owner 2026-10-24 ("Follow the project's tool"): on a run naming no provider, HOME's line
- * names the folder in HOME for the project's tool, the one this run reads there, even where HOME
- * holds both installations.
+ * In a root holding a Codex installation agents-inc reads `.agents-inc/codex/`, so that root's line
+ * names it. An `init --from` run names the folder it creates in each root on that very run: Codex's
+ * with `--provider codex`, Claude's naming no provider, even under a HOME holding a Codex
+ * installation. With `--ui` it installs nothing, so HOME's line names HOME's own folder. On a run
+ * naming no provider, HOME's line names the folder in HOME for the project's tool, the one this run
+ * reads there, even where HOME holds both installations.
  *
  * Each spec runs one command over one installation twice, without the old folder and then with it.
  * The second run's stderr must be the line(s) and then the first run's stderr, whole, so a line
@@ -61,9 +62,8 @@ import {
  * and the control (it names no old folder). The line is asserted last, so a red on it says every
  * assertion before it held.
  *
- * The "left as they were" assertions are green before the fix too, since no release ever wrote into
- * the old folder; they were checked by mutating the fixture (a write into the old folder after the
- * snapshot), which reddens them and nothing else.
+ * No release writes into the old folder, so the "left as they were" assertions only redden when a
+ * write into it follows the snapshot.
  */
 
 type Roots = { project: string; home: string };
@@ -422,7 +422,7 @@ describe("an old .claude-src folder, in the project or in HOME", () => {
       };
       await mkdir(codex.project);
       publishOneInEachRoot();
-      const onClaude = await runInitFromOnClaude(
+      const onClaude = await runInitFrom(
         store,
         PAYLOAD_ID,
         { dir: claude.project, globalHome: claude.home },
@@ -506,7 +506,7 @@ describe("an old .claude-src folder, in the project or in HOME", () => {
       },
       {
         naming: "no provider",
-        install: runInitFromOnClaude,
+        install: runInitFrom,
         readFrom: DIRS.SOURCE_CLAUDE,
         sourceFolders: [DIRS.SOURCE_ROOT, DIRS.SOURCE_CLAUDE],
       },
@@ -555,5 +555,112 @@ describe("an old .claude-src folder, in the project or in HOME", () => {
         ]);
       },
     );
+
+    describe("naming no provider, in a project holding none under a HOME holding a Codex installation", () => {
+      /** Installed from a fresh sibling project, so the project under test holds nothing. */
+      async function underACodexHome({ project, home }: Roots): Promise<void> {
+        const codexProject = path.join(path.dirname(project), "codex-project");
+        await rm(codexProject, { recursive: true, force: true });
+        await mkdir(codexProject);
+        const installed = await runInitFromOnCodex(
+          store,
+          PAYLOAD_ID,
+          { dir: codexProject, globalHome: home },
+          E2E_SOURCE.sourceDir,
+        );
+        expect(installed.exitCode, flattenCliOutput(installed.output)).toBe(EXIT_CODES.SUCCESS);
+
+        expect(
+          await readTestFile(path.join(home, DIRS.SOURCE_CODEX, FILES.CONFIG_TS)),
+          "HOME's installation is on the Codex folder",
+        ).toContain(E2E_SKILL.react.id);
+        await expectOnlySourceFolder(home, [DIRS.SOURCE_ROOT], "HOME holds no Claude folder");
+        await expectOnlySourceFolder(project, [], "the project holds no installation");
+      }
+
+      function initFrom(roots: Roots): Promise<CLIResult> {
+        return runInitFrom(
+          store,
+          PAYLOAD_ID,
+          { dir: roots.project, globalHome: roots.home },
+          E2E_SOURCE.sourceDir,
+        );
+      }
+
+      it(
+        "is named in each root by the Claude folder the init --from run creates there, on that very run, HOME's line first",
+        { timeout: TIMEOUTS.LIFECYCLE },
+        async () => {
+          const roots = await installedInNeither();
+          publishOneInEachRoot();
+          await underACodexHome(roots);
+          const without = await initFrom(roots);
+          await emptied(roots);
+          await underACodexHome(roots);
+          const homeCodexConfig = await readTestFile(
+            path.join(roots.home, DIRS.SOURCE_CODEX, FILES.CONFIG_TS),
+          );
+          await writeRetiredSourceFolder(roots.home);
+          await writeRetiredSourceFolder(roots.project);
+          const oldFoldersBefore = await oldFoldersOf(roots);
+
+          const withOld = await initFrom(roots);
+
+          expect(without.exitCode, without.output).toBe(EXIT_CODES.SUCCESS);
+          expect(
+            await readTestFile(path.join(roots.home, DIRS.SOURCE_CLAUDE, FILES.CONFIG_TS)),
+            "subject guard: the run installed HOME on the Claude folder",
+          ).toContain(E2E_SKILL.react.id);
+          expect(
+            await readTestFile(path.join(roots.project, DIRS.SOURCE_CLAUDE, FILES.CONFIG_TS)),
+            "subject guard: the run installed the project on the Claude folder",
+          ).toContain(E2E_SKILL.hono.id);
+          expect(
+            await readTestFile(path.join(roots.home, DIRS.SOURCE_CODEX, FILES.CONFIG_TS)),
+            "HOME's Codex installation is left as it was",
+          ).toBe(homeCodexConfig);
+          expect(
+            await directoryExists(path.join(roots.project, DIRS.SOURCE_CODEX)),
+            "the project holds no Codex folder",
+          ).toBe(false);
+          expect(await oldFoldersOf(roots), "both old folders are left as they were").toStrictEqual(
+            oldFoldersBefore,
+          );
+          expectOnlyTheLines(without, withOld, [
+            oldSourceFolderIgnored(HOME_SHORTHAND, DIRS.SOURCE_CLAUDE),
+            oldSourceFolderIgnored(roots.project, DIRS.SOURCE_CLAUDE),
+          ]);
+        },
+      );
+
+      it(
+        "is named in HOME by HOME's own Codex folder on the --ui run, which installs nothing, and in the project by the folder a new installation takes",
+        { timeout: TIMEOUTS.LIFECYCLE },
+        async () => {
+          const roots = await installedInNeither();
+          publishOneInEachRoot();
+          await underACodexHome(roots);
+
+          const { without, withOld, before } = await withoutThenWith(
+            ["init", "--from", PAYLOAD_ID, "--marketplace", E2E_SOURCE.sourceDir, "--ui"],
+            roots,
+            [roots.project, roots.home],
+          );
+
+          expect(without.exitCode, without.output).toBe(EXIT_CODES.SUCCESS);
+          expect(without.stdout, "the run opened the editor on the id").toContain(PAYLOAD_ID);
+          await expectOnlySourceFolder(
+            roots.home,
+            [DIRS.SOURCE_ROOT],
+            "HOME gained no Claude folder",
+          );
+          await expectOnlySourceFolder(roots.project, [], "the project gained no installation");
+          await expectNamedAsIgnored(roots, before, without, withOld, [
+            oldSourceFolderIgnored(HOME_SHORTHAND, DIRS.SOURCE_CODEX),
+            oldSourceFolderIgnored(roots.project, DIRS.SOURCE_CLAUDE),
+          ]);
+        },
+      );
+    });
   });
 });

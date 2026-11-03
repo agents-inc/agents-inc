@@ -164,7 +164,7 @@ describe.skipIf(!claudeAvailable)(
         "a drop must not announce that the skill changed install mode — nothing was switched",
       ).not.toContain(`${CHANGED_MARKER} ${HONO.display}`);
       expect(output, "a drop must not announce a mode switch").not.toContain(
-        STEP_TEXT.SWITCHING_SKILLS_SUFFIX,
+        STEP_TEXT.SWITCHING_SKILLS_PREFIX,
       );
       expect(output, "a drop must not announce a copy").not.toContain(
         STEP_TEXT.COPIED_LOCAL_SKILLS_SUFFIX,

@@ -1,3 +1,4 @@
+import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   createE2EPluginSource,
@@ -57,6 +58,7 @@ describe.skipIf(!claudeAvailable)("edit --from — plugin mode migration", () =>
   let prompt: InteractivePrompt | undefined;
   /** The Claude CLI keeps plugin bookkeeping in HOME, and both applies must read the same one. */
   let sharedHome: string | undefined;
+  const tempDirs: string[] = [];
 
   beforeAll(async () => {
     fixture = await createE2EPluginSource();
@@ -77,16 +79,19 @@ describe.skipIf(!claudeAvailable)("edit --from — plugin mode migration", () =>
       await cleanupTempDir(sharedHome);
       sharedHome = undefined;
     }
+    await Promise.all(tempDirs.splice(0).map(cleanupTempDir));
   });
 
   async function ejectedProject(): Promise<ProjectHandle> {
-    return ProjectBuilder.localProjectWithMarketplace({
+    const project = await ProjectBuilder.localProjectWithMarketplace({
       marketplace: fixture.sourceDir,
       skills: [E2E_SKILL.react.id],
       marketplaceName: fixture.marketplaceName,
       agents: [...E2E_AGENTS.WEB],
       domains: ["web"],
     });
+    tempDirs.push(path.dirname(project.dir));
+    return project;
   }
 
   async function applyApproved(
@@ -119,7 +124,7 @@ describe.skipIf(!claudeAvailable)("edit --from — plugin mode migration", () =>
 
         // The whole line, count included: the bare verb cannot tell the two directions apart.
         expect(result.rawOutput).toContain(
-          `${STEP_TEXT.SWITCHING_SKILLS_PREFIX} 1 ${STEP_TEXT.SWITCHING_SKILLS_SUFFIX} ${STEP_TEXT.PLUGIN_NATIVE}`,
+          `${STEP_TEXT.SWITCHING_SKILLS_PREFIX} 1 ${STEP_TEXT.SWITCHING_ONE_SKILL_SUFFIX} ${STEP_TEXT.PLUGIN_NATIVE}`,
         );
         expect(result.rawOutput).not.toContain(STEP_TEXT.EJECT_LOCAL_COPY);
         expect(
@@ -166,7 +171,7 @@ describe.skipIf(!claudeAvailable)("edit --from — plugin mode migration", () =>
         const ejected = await applyApproved(AS_EJECT_ID, project, sharedHome);
         expect(ejected.exitCode, ejected.rawOutput).toBe(EXIT_CODES.SUCCESS);
         expect(ejected.rawOutput).toContain(
-          `${STEP_TEXT.SWITCHING_SKILLS_PREFIX} 1 ${STEP_TEXT.SWITCHING_SKILLS_SUFFIX} ${STEP_TEXT.EJECT_LOCAL_COPY}`,
+          `${STEP_TEXT.SWITCHING_SKILLS_PREFIX} 1 ${STEP_TEXT.SWITCHING_ONE_SKILL_SUFFIX} ${STEP_TEXT.EJECT_LOCAL_COPY}`,
         );
         expect(ejected.rawOutput).not.toContain(STEP_TEXT.PLUGIN_NATIVE);
 

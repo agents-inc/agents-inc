@@ -1,5 +1,4 @@
 import { mkdir, readFile, writeFile } from "fs/promises";
-import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -25,6 +24,7 @@ import {
   trustProjectInCodexGlobalConfig,
 } from "../fixtures/codex-agent-roles.js";
 import { runInitFromOnCodex } from "../fixtures/codex-install.js";
+import { codexConfigFile } from "../fixtures/codex-plugin-switch.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
@@ -46,15 +46,9 @@ const WEB_DEV = E2E_AGENT["web-developer"].name;
 // Pinned to the project so scope is not a second variable.
 const PINNED_TO_PROJECT = { scope: "project" } as const;
 
-const CODEX_CONFIG_TOML = "config.toml";
-
-function codexGlobalConfig(home: string): string {
-  return path.join(codexHome(home), CODEX_CONFIG_TOML);
-}
-
 async function writeCodexGlobalConfig(home: string, content: string): Promise<void> {
   await mkdir(codexHome(home), { recursive: true });
-  await writeFile(codexGlobalConfig(home), content, "utf-8");
+  await writeFile(codexConfigFile(home), content, "utf-8");
 }
 
 /** Irrelevant; the request body is the subject. */
@@ -255,7 +249,7 @@ describe("Codex reads the agent roles a Codex compile wrote", () => {
       expect(
         Object.keys(await readCodexAgentRoles(codexProjectAgentsDir(env.projectDir))),
       ).toStrictEqual([`${WEB_DEV}${FILES.CODEX_AGENT_EXTENSION}`]);
-      expect(await readFile(codexGlobalConfig(env.fakeHome), "utf-8")).toContain(
+      expect(await readFile(codexConfigFile(env.fakeHome), "utf-8")).toContain(
         `[projects."${env.projectDir}"]\ntrust_level = "trusted"`,
       );
 
@@ -286,8 +280,8 @@ describe("Codex reads the agent roles a Codex compile wrote", () => {
       const said = flattenCliOutput(output);
       expect(exitCode, said).toBe(EXIT_CODES.SUCCESS);
 
-      expect(await readFile(codexGlobalConfig(env.fakeHome), "utf-8")).toContain(theirAnswer);
-      expect(await readFile(codexGlobalConfig(env.fakeHome), "utf-8")).not.toContain(
+      expect(await readFile(codexConfigFile(env.fakeHome), "utf-8")).toContain(theirAnswer);
+      expect(await readFile(codexConfigFile(env.fakeHome), "utf-8")).not.toContain(
         'trust_level = "trusted"',
       );
       expect(said).toContain(STEP_TEXT.CODEX_PROJECT_TRUST_LEFT);
@@ -320,7 +314,7 @@ describe("Codex reads the agent roles a Codex compile wrote", () => {
       );
       expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
 
-      const written = await readFile(codexGlobalConfig(env.fakeHome), "utf-8");
+      const written = await readFile(codexConfigFile(env.fakeHome), "utf-8");
       expect(written.split(`[projects."${env.projectDir}"]`)).toHaveLength(2);
       expect(written).toContain('sandbox_mode = "read-only"');
 

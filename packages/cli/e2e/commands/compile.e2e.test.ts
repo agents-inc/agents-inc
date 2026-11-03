@@ -12,8 +12,10 @@ import {
   listFiles,
   loadConfigOrFail,
   readTestFile,
+  renderConfigTs,
   renderMetadataYaml,
   sourceFolderIn,
+  writeCorruptConfig,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import {
@@ -68,7 +70,7 @@ describe("compile command", () => {
     expect(output).toContain("Compiling global agents");
     expect(output).toContain("Discovered 1 local skill");
     expect(output).not.toContain("Discovered 1 local skills");
-    expect(output).toMatch(/\d+ global agents? rewritten, \d+ unchanged/);
+    expect(output).toMatch(/\d+ global agents? rewritten, \d+ created, \d+ unchanged/);
     expect(output).toContain("Global compile complete");
 
     await expect(project).toHaveCompiledAgentContent(E2E_AGENT["web-developer"].name, {
@@ -195,7 +197,7 @@ describe("compile command", () => {
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(output).toContain("Discovered 3 local skills");
-      expect(output).toMatch(/\d+ global agents? rewritten, \d+ unchanged/);
+      expect(output).toMatch(/\d+ global agents? rewritten, \d+ created, \d+ unchanged/);
 
       await expect({ dir: projectDir }).toHaveCompiledAgentContent(
         E2E_AGENT["web-developer"].name,
@@ -228,7 +230,7 @@ describe("compile command", () => {
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(output).toContain("Discovered 1 local skill");
       expect(output).not.toContain("Discovered 1 local skills");
-      expect(output).toMatch(/\d+ global agents? rewritten, \d+ unchanged/);
+      expect(output).toMatch(/\d+ global agents? rewritten, \d+ created, \d+ unchanged/);
       expect(output).toContain(`${STEP_TEXT.LOADED_SKILL} ${MINIMAL_PROJECT_SKILL_ID}`);
       expect(
         output,
@@ -335,6 +337,45 @@ describe("compile command", () => {
       expect(output).toContain("Discovered 1 local skill");
       expect(output).not.toContain(STEP_TEXT.INSTALLED_SKILL_METADATA_MISSING);
       await expect(project).toHaveCompiledAgentContent(WEB_DEV, { contains: [REGISTERED.id] });
+    });
+  });
+
+  describe("a config missing its name and its skills", () => {
+    it("says each field it defaulted once, however many times the run reads the config, and compiles", async () => {
+      tempDir = await createTempDir();
+      const project = {
+        dir: path.join(tempDir, "project"),
+        globalHome: path.join(tempDir, "home"),
+      };
+      await mkdir(project.globalHome, { recursive: true });
+      await writeCorruptConfig(
+        project.dir,
+        renderConfigTs({
+          agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
+        }),
+      );
+      const configPath = path.join(realpathSync(project.dir), DIRS.SOURCE_CLAUDE, FILES.CONFIG_TS);
+      const configBefore = await readTestFile(configPath);
+
+      const { exitCode, output, stderr } = await CLI.run(["compile"], project);
+
+      expect(exitCode, `compile failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
+      // execa strips the final newline, so it is put back for the line's end to be pinned.
+      const warned = `${stderr}\n`;
+      for (const defaulted of [
+        STEP_TEXT.CONFIG_NAME_DEFAULTED,
+        STEP_TEXT.CONFIG_SKILLS_DEFAULTED,
+      ]) {
+        const line = `'${configPath}' ${defaulted}\n`;
+        expect(warned).toContain(line);
+        expect(warned.indexOf(line), `said once, not once per read:\n${stderr}`).toBe(
+          warned.lastIndexOf(line),
+        );
+      }
+      await expect(project).toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
+      expect(await readTestFile(configPath), "the defaults are used, not written").toBe(
+        configBefore,
+      );
     });
   });
 
@@ -467,7 +508,7 @@ describe("compile command", () => {
       const { exitCode, output } = await CLI.run(["compile"], { dir: project.dir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(output).toMatch(/\d+ global agents? rewritten, \d+ unchanged/);
+      expect(output).toMatch(/\d+ global agents? rewritten, \d+ created, \d+ unchanged/);
 
       await expect({ dir: project.dir }).toHaveCompiledAgentContent(
         E2E_AGENT["web-developer"].name,
@@ -538,8 +579,8 @@ describe("compile command", () => {
       expect(
         output,
         "the marketplace came from the config the installation recorded — this run's cwd is its home root, so that config is the global one",
-      ).toContain("Marketplace: global");
-      expect(output).toMatch(/\d+ global agents? rewritten, \d+ unchanged/);
+      ).toContain(`${STEP_TEXT.COMPILE_MARKETPLACE_GLOBAL}\n`);
+      expect(output).toMatch(/\d+ global agents? rewritten, \d+ created, \d+ unchanged/);
 
       await expect({ dir: projectDir }).toHaveCompiledAgentContent(
         E2E_AGENT["web-developer"].name,
@@ -555,7 +596,7 @@ describe("compile command", () => {
       );
     });
 
-    it("should name the marketplace global when compiling at the home root", async () => {
+    it("says the marketplace setting came from the global config when compiling at the home root", async () => {
       tempDir = await createTempDir();
       const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
       sourceTempDir = srcTempDir;
@@ -597,7 +638,7 @@ describe("compile command", () => {
       expect(
         output,
         "the marketplace came from the global config — the home root has no project config to read",
-      ).toContain("Marketplace: global");
+      ).toContain(`${STEP_TEXT.COMPILE_MARKETPLACE_GLOBAL}\n`);
 
       await expect({ dir: globalHome }).toHaveCompiledAgentContent(
         E2E_AGENT["web-developer"].name,
@@ -650,7 +691,7 @@ describe("compile command", () => {
       ).not.toContain(`project config from ${globalHome}`);
     });
 
-    it("should name the marketplace project when the project is not the home root", async () => {
+    it("says the marketplace setting came from the project config when the project is not the home root", async () => {
       tempDir = await createTempDir();
       const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
       sourceTempDir = srcTempDir;
@@ -693,7 +734,7 @@ describe("compile command", () => {
       expect(
         output,
         "the marketplace came from the project's own config, whatever scope its entries carry",
-      ).toContain("Marketplace: project");
+      ).toContain(`${STEP_TEXT.COMPILE_MARKETPLACE_PROJECT}\n`);
 
       await expect({ dir: projectDir }).toHaveCompiledAgentContent(
         E2E_AGENT["web-developer"].name,

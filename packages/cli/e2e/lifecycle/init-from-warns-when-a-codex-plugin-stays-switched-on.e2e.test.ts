@@ -20,7 +20,12 @@ import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
-import { cleanupTempDir, flattenCliOutput, readTestFile } from "../helpers/test-utils.js";
+import {
+  cleanupTempDir,
+  flattenCliOutput,
+  readTestFile,
+  workOwedEntry,
+} from "../helpers/test-utils.js";
 import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
   buildSeedPayload,
@@ -28,10 +33,8 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * Codex holds a folder marketplace whose plugins it was given directly; `init --from` refreshes it
- * before installing, which adds each of them again and so switches each back on. A switch spelled
- * `[plugins.'<key>']` is one the CLI cannot restore; a config.toml that cannot be written is the
- * other, pinned in the unit suite since Codex replaces the file on every add.
+ * A switch spelled `[plugins.'<key>']` is one the CLI cannot restore; a config.toml that cannot be
+ * written is the other, pinned in the unit suite since Codex replaces the file on every add.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -56,7 +59,6 @@ type Arrival = {
   listedAfter: CodexRun;
 };
 
-/** Codex holds two of the marketplace's plugins, one switched off by `switchOff`. */
 async function initFromOverHeldPlugins(
   seedId: string,
   switchOff: (home: string, pluginKey: string) => Promise<void>,
@@ -201,13 +203,20 @@ describe("init --from over a folder marketplace Codex holds, with a plugin switc
     ).toContain(`[plugins.'${switchedOffKey}']\nenabled = false`);
   });
 
-  it("exits with an error, so a script running it sees a plugin was left switched on", () => {
-    const { initRun } = arrived();
+  it("exits 5, listing the plugin as what did not land with the line that switches it off", () => {
+    const { initRun, switchedOffKey } = arrived();
 
     expect(
       initRun.exitCode,
-      `a plugin the user switched off is running again; init must not report success: ${initRun.output}`,
-    ).toBe(EXIT_CODES.ERROR);
+      `everything else landed, so a script must see a run that completed with failures: ${initRun.output}`,
+    ).toBe(EXIT_CODES.COMPLETED_WITH_FAILURES);
+    expect(initRun.stdout).toMatch(workOwedEntry(1, switchedOffKey, "enabled = false"));
+    expect(flattenCliOutput(initRun.stderr), "the warning was read at all").toContain(
+      switchedOffKey,
+    );
+    expect(initRun.stderr, "nothing was refused, so nothing is framed as an error").not.toContain(
+      STEP_TEXT.ERROR_FRAMING,
+    );
   });
 
   it("warns naming the plugin it could not switch off, and the line to set in Codex's config.toml", () => {

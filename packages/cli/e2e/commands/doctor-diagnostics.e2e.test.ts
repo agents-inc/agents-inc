@@ -14,6 +14,7 @@ import {
   skillsPath,
   writeAgentFile,
   writeProjectConfig,
+  writeProjectConfigIn,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import {
@@ -23,6 +24,7 @@ import {
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { E2E_SKILL, E2E_SKILL_IDS } from "../fixtures/expected-values.js";
 import { CLI, type CLIResult } from "../fixtures/cli.js";
+import "../matchers/setup.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -47,6 +49,9 @@ const FOREIGN_SKILL_DIR = "context7-mcp";
 
 /** Carries no provenance marker, so it is the user's own file. */
 const FOREIGN_AGENT_NAME = "my-own-reviewer";
+
+/** No marketplace owns an `external-` id, so `eject skills` never brings it back. */
+const EDITOR_ADDED_SKILL_ID = "external-web-testing-brainstorming";
 
 describe("doctor diagnostics", () => {
   let tempDir: string;
@@ -486,7 +491,10 @@ describe("doctor diagnostics", () => {
      * half.
      */
     it("names every installed skill and agent when the project config is deleted", async () => {
-      const project = await ProjectBuilder.editable({ agents: ["web-developer"] });
+      const project = await ProjectBuilder.editable({
+        agents: ["web-developer"],
+        forkedFrom: true,
+      });
       tempDir = path.dirname(project.dir);
       const projectDir = project.dir;
       await writeAgentFile(projectDir, "web-developer", { frontmatter: true, provenance: true });
@@ -665,7 +673,7 @@ describe("doctor diagnostics", () => {
   });
 
   describe("tip discrimination by check kind", () => {
-    it("should emit re-eject tip when installed check warns", async () => {
+    it("names both ways out of a project skill missing from disk that the marketplace still publishes", async () => {
       const project = await ProjectBuilder.editable({
         agents: ["web-developer"],
       });
@@ -688,13 +696,336 @@ describe("doctor diagnostics", () => {
 
       await recordInstallSource([projectDir], source.sourceDir);
 
-      const { exitCode, stdout } = await CLI.run(["doctor"], { dir: projectDir });
+      // A home of its own: at HOME the project is the global installation, and the tip says so.
+      const home = path.join(tempDir, "home");
+      await mkdir(home, { recursive: true });
+
+      const { exitCode, stdout } = await CLI.run(
+        ["doctor"],
+        { dir: projectDir },
+        { env: { HOME: home } },
+      );
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).toContain(STEP_TEXT.DOCTOR_TIP_RE_EJECT);
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_TIP_BOTH_WAYS);
       // The skill resolves in the source and only its ejected copy is missing, so the skills tip
       // must not fire.
       expect(stdout).not.toContain(STEP_TEXT.DOCTOR_TIP_CHECK_SKILL_IDS);
+    });
+
+    it("names both ways out, run in the home folder, of a global skill missing, seen from a project", async () => {
+      tempDir = await createTempDir();
+      const home = path.join(tempDir, "home");
+      const projectDir = path.join(tempDir, "project");
+      await mkdir(projectDir, { recursive: true });
+
+      await writeProjectConfig(
+        home,
+        buildProjectConfig({
+          name: "global-skill-missing",
+          marketplace: source.sourceDir,
+          skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: "eject" }),
+          agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+        }),
+      );
+      await writeAgentFile(home, "web-developer", { frontmatter: true });
+
+      const { exitCode, stdout } = await CLI.run(
+        ["doctor"],
+        { dir: projectDir },
+        { env: { HOME: home } },
+      );
+
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_TIP_BOTH_WAYS_IN_THE_HOME_FOLDER);
+      expect(stdout).not.toContain(STEP_TEXT.DOCTOR_TIP_BOTH_WAYS);
+    });
+
+    it("names the installation in the home folder's tip where the home folder holds a Claude and a Codex installation, and the command it names runs there", async () => {
+      tempDir = await createTempDir();
+      const home = path.join(tempDir, "home");
+      const projectDir = path.join(tempDir, "project");
+      const globalSkills = buildSkillConfigs([E2E_SKILL.react.id], {
+        scope: "global",
+        origin: "eject",
+      });
+
+      await writeProjectConfig(
+        home,
+        buildProjectConfig({
+          name: "global-skill-missing",
+          marketplace: source.sourceDir,
+          skills: globalSkills,
+          agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+        }),
+      );
+      await writeAgentFile(home, "web-developer", { frontmatter: true });
+      await writeProjectConfigIn(
+        home,
+        DIRS.SOURCE_CODEX,
+        buildProjectConfig({
+          name: "codex-at-home",
+          marketplace: source.sourceDir,
+          skills: [],
+          agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+        }),
+      );
+      await writeProjectConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "claude-project",
+          marketplace: source.sourceDir,
+          skills: globalSkills,
+          agents: buildAgentConfigs(["web-tester"], { scope: "project" }),
+        }),
+      );
+      await writeAgentFile(projectDir, "web-tester", { frontmatter: true });
+
+      const doctor = await CLI.run(["doctor"], { dir: projectDir }, { env: { HOME: home } });
+
+      expect(doctor.exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(doctor.stdout).toContain(
+        `${STEP_TEXT.DOCTOR_TIP_BOTH_WAYS_IN_THE_HOME_FOLDER_NAMING_CLAUDE}\n`,
+      );
+
+      const eject = await CLI.run(
+        ["eject", "skills", "--provider", "claude"],
+        { dir: home },
+        { env: { HOME: home } },
+      );
+
+      expect(eject.exitCode, eject.output).toBe(EXIT_CODES.SUCCESS);
+      await expect({ dir: home }).toHaveSkillCopied(E2E_SKILL.react.id);
+
+      const doctorAfter = await CLI.run(["doctor"], { dir: projectDir }, { env: { HOME: home } });
+
+      expect(doctorAfter.stdout).toMatch(
+        doctorRow(STEP_TEXT.DOCTOR_ROW_SKILLS_INSTALLED, STEP_TEXT.DOCTOR_STATUS_PASS),
+      );
+    });
+
+    it("names only the way to take out a project skill whose copy the global installation holds", async () => {
+      const project = await ProjectBuilder.editable({ agents: ["web-developer"] });
+      tempDir = path.dirname(project.dir);
+      const home = path.join(tempDir, "home");
+
+      await rm(path.join(skillsPath(project.dir), E2E_SKILL.react.id), {
+        recursive: true,
+        force: true,
+      });
+      await createLocalSkill(home, E2E_SKILL.react.id, { metadata: FORKED_FROM_METADATA });
+      await writeAgentFile(project.dir, "web-developer", { frontmatter: true });
+      await recordInstallSource([project.dir], source.sourceDir);
+
+      const { exitCode, stdout } = await CLI.run(
+        ["doctor"],
+        { dir: project.dir },
+        { env: { HOME: home } },
+      );
+
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(stdout).toContain(`${STEP_TEXT.DOCTOR_TIP_TAKE_OUT_ONLY}\n`);
+      expect(stdout).not.toContain(STEP_TEXT.DOCTOR_TIP_BOTH_WAYS);
+    });
+
+    it("names only the way to take out an editor-added skill missing from the project", async () => {
+      tempDir = await createTempDir();
+      const home = path.join(tempDir, "home");
+      const projectDir = path.join(tempDir, "project");
+      await mkdir(home, { recursive: true });
+
+      await writeProjectConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "editor-added-skill-missing",
+          marketplace: source.sourceDir,
+          skills: buildSkillConfigs([EDITOR_ADDED_SKILL_ID], { scope: "project", origin: "eject" }),
+          agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+        }),
+      );
+      await writeAgentFile(projectDir, "web-developer", { frontmatter: true });
+
+      const { stdout } = await CLI.run(["doctor"], { dir: projectDir }, { env: { HOME: home } });
+
+      expect(stdout).toContain(`${STEP_TEXT.DOCTOR_TIP_TAKE_OUT_ONLY}\n`);
+      expect(stdout).not.toContain(STEP_TEXT.DOCTOR_TIP_BOTH_WAYS);
+    });
+
+    it("names the project's way out for its own skill and the home folder's for a global one, both missing", async () => {
+      tempDir = await createTempDir();
+      const home = path.join(tempDir, "home");
+      const projectDir = path.join(tempDir, "project");
+      const globalSkills = buildSkillConfigs([E2E_SKILL.react.id], {
+        scope: "global",
+        origin: "eject",
+      });
+
+      await writeProjectConfig(
+        home,
+        buildProjectConfig({
+          name: "global-skill-missing",
+          marketplace: source.sourceDir,
+          skills: globalSkills,
+          agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+        }),
+      );
+      await writeAgentFile(home, "web-developer", { frontmatter: true });
+      await writeProjectConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "project-skill-missing",
+          marketplace: source.sourceDir,
+          skills: [
+            ...globalSkills,
+            ...buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "project", origin: "eject" }),
+          ],
+          agents: buildAgentConfigs(["web-tester"], { scope: "project" }),
+        }),
+      );
+      await writeAgentFile(projectDir, "web-tester", { frontmatter: true });
+
+      const { exitCode, stdout } = await CLI.run(
+        ["doctor"],
+        { dir: projectDir },
+        { env: { HOME: home } },
+      );
+
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(stdout).toContain(`${STEP_TEXT.DOCTOR_TIP_BOTH_WAYS}\n`);
+      expect(stdout).toContain(`${STEP_TEXT.DOCTOR_TIP_BOTH_WAYS_IN_THE_HOME_FOLDER}\n`);
+    });
+
+    it("names only the way to take out a project skill the marketplace no longer publishes", async () => {
+      const project = await ProjectBuilder.editable({
+        agents: ["web-developer"],
+        unresolvableSkills: [UNKNOWN_SKILL_ID],
+      });
+      tempDir = path.dirname(project.dir);
+      const home = path.join(tempDir, "home");
+      await mkdir(home, { recursive: true });
+      await writeAgentFile(project.dir, "web-developer", { frontmatter: true });
+      await recordInstallSource([project.dir], source.sourceDir);
+
+      const { exitCode, stdout } = await CLI.run(
+        ["doctor"],
+        { dir: project.dir },
+        { env: { HOME: home } },
+      );
+
+      expect(exitCode).toBe(EXIT_CODES.ERROR);
+      expect(stdout, "Skills Resolved finds no such skill in the marketplace").toContain(
+        STEP_TEXT.DOCTOR_TIP_CHECK_SKILL_IDS,
+      );
+      expect(stdout).toContain(`${STEP_TEXT.DOCTOR_TIP_TAKE_OUT_ONLY}\n`);
+      expect(stdout).not.toContain(STEP_TEXT.DOCTOR_TIP_BOTH_WAYS);
+    });
+
+    async function installUnpublishedGlobalSkill(): Promise<{ home: string; projectDir: string }> {
+      tempDir = await createTempDir();
+      const home = path.join(tempDir, "home");
+      const projectDir = path.join(tempDir, "project");
+      await mkdir(projectDir, { recursive: true });
+
+      await writeProjectConfig(
+        home,
+        buildProjectConfig({
+          name: "unpublished-global-skill-missing",
+          marketplace: source.sourceDir,
+          skills: buildSkillConfigs([UNKNOWN_SKILL_ID], { scope: "global", origin: "eject" }),
+          agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+        }),
+      );
+      await writeAgentFile(home, "web-developer", { frontmatter: true });
+      return { home, projectDir };
+    }
+
+    it("names only the way to take out a global skill the marketplace no longer publishes, run at home", async () => {
+      const { home } = await installUnpublishedGlobalSkill();
+
+      const { exitCode, stdout } = await CLI.run(
+        ["doctor"],
+        { dir: home },
+        { env: { HOME: home } },
+      );
+
+      expect(exitCode).toBe(EXIT_CODES.ERROR);
+      expect(stdout, "Skills Resolved finds no such skill in the marketplace").toContain(
+        `- ${UNKNOWN_SKILL_ID} (not found)`,
+      );
+      expect(stdout).toContain(`${STEP_TEXT.DOCTOR_TIP_TAKE_OUT_ONLY}\n`);
+    });
+
+    it("names only the way to take out, run in the home folder, a global skill the marketplace no longer publishes, seen from a project", async () => {
+      const { home, projectDir } = await installUnpublishedGlobalSkill();
+
+      const { exitCode, stdout } = await CLI.run(
+        ["doctor"],
+        { dir: projectDir },
+        { env: { HOME: home } },
+      );
+
+      expect(exitCode).toBe(EXIT_CODES.ERROR);
+      expect(stdout).toContain(`${STEP_TEXT.DOCTOR_TIP_TAKE_OUT_ONLY_IN_THE_HOME_FOLDER}\n`);
+      expect(stdout).not.toContain(STEP_TEXT.DOCTOR_TIP_BOTH_WAYS_IN_THE_HOME_FOLDER);
+    });
+
+    it("names only the way to take out, run in the home folder, a global skill the marketplace no longer publishes, though the project holds a copy", async () => {
+      const { home, projectDir } = await installUnpublishedGlobalSkill();
+      await createLocalSkill(projectDir, UNKNOWN_SKILL_ID, { metadata: FORKED_FROM_METADATA });
+
+      const { exitCode, stdout } = await CLI.run(
+        ["doctor"],
+        { dir: projectDir },
+        { env: { HOME: home } },
+      );
+
+      expect(
+        stdout,
+        "the subject: the project's copy is in the list Skills Resolved reads",
+      ).toMatch(
+        doctorRow(
+          STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED,
+          STEP_TEXT.DOCTOR_STATUS_PASS,
+          "1/1 skill found\n",
+        ),
+      );
+      expect(stdout).toContain(`${STEP_TEXT.DOCTOR_TIP_TAKE_OUT_ONLY_IN_THE_HOME_FOLDER}\n`);
+      expect(stdout).not.toContain(STEP_TEXT.DOCTOR_TIP_BOTH_WAYS_IN_THE_HOME_FOLDER);
+      expect(exitCode, stdout).toBe(EXIT_CODES.SUCCESS);
+    });
+
+    it("names both ways out, run in the home folder, of a global skill the marketplace still publishes, though the project holds a copy", async () => {
+      tempDir = await createTempDir();
+      const home = path.join(tempDir, "home");
+      const projectDir = path.join(tempDir, "project");
+
+      await writeProjectConfig(
+        home,
+        buildProjectConfig({
+          name: "global-skill-missing",
+          marketplace: source.sourceDir,
+          skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: "eject" }),
+          agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+        }),
+      );
+      await writeAgentFile(home, "web-developer", { frontmatter: true });
+      await createLocalSkill(projectDir, E2E_SKILL.react.id, { metadata: FORKED_FROM_METADATA });
+
+      const { exitCode, stdout } = await CLI.run(
+        ["doctor"],
+        { dir: projectDir },
+        { env: { HOME: home } },
+      );
+
+      expect(stdout).toMatch(
+        doctorRow(
+          STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED,
+          STEP_TEXT.DOCTOR_STATUS_PASS,
+          "1/1 skill found\n",
+        ),
+      );
+      expect(stdout).toContain(`${STEP_TEXT.DOCTOR_TIP_BOTH_WAYS_IN_THE_HOME_FOLDER}\n`);
+      expect(exitCode, stdout).toBe(EXIT_CODES.SUCCESS);
     });
   });
 });

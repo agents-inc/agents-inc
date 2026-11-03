@@ -84,7 +84,7 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- per-skill switc
         // The direction and the count: a bare /switch/ matches either way, bulk or per-skill.
         const rawOutput = editResult.output;
         expect(rawOutput).toContain(
-          `${STEP_TEXT.SWITCHING_SKILLS_PREFIX} 1 ${STEP_TEXT.SWITCHING_SKILLS_SUFFIX} ${STEP_TEXT.PLUGIN_NATIVE}`,
+          `${STEP_TEXT.SWITCHING_SKILLS_PREFIX} 1 ${STEP_TEXT.SWITCHING_ONE_SKILL_SUFFIX} ${STEP_TEXT.PLUGIN_NATIVE}`,
         );
 
         // Structural: the config's `marketplace` field contains the name either way.

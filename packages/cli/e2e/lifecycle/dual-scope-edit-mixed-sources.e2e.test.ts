@@ -117,7 +117,7 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- mixed source coe
 
       // The direction of the switch: a switch back to eject would also match a bare /switch/.
       const { output } = result;
-      expect(output).toContain(STEP_TEXT.SWITCHING_SKILLS_SUFFIX);
+      expect(output).toContain(STEP_TEXT.SWITCHING_ONE_SKILL_SUFFIX);
       expect(output).toContain(STEP_TEXT.PLUGIN_NATIVE);
       expect(output).not.toContain(STEP_TEXT.EJECT_LOCAL_COPY);
 

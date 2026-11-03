@@ -128,6 +128,12 @@ describe("compile over an installation whose sub-agents carry no skills", () => 
       expect(output).toContain(STEP_TEXT.COMPILE_COMPLETE);
       expect(output).not.toContain(STEP_TEXT.COMPILE_NO_SKILLS_ERROR);
       expect(
+        output,
+        "the file written back was not there, so it is created, not rewritten",
+      ).toContain(
+        `\n0 project ${STEP_TEXT.AGENTS_REWRITTEN}, 1 ${STEP_TEXT.CREATED}, 1 ${STEP_TEXT.UNCHANGED}\n`,
+      );
+      expect(
         await readCompiledAgents(project.dir),
         "compile rendered the base agents differently from the init that installed them, or never wrote the deleted one back",
       ).toStrictEqual(installedAgents);
@@ -156,6 +162,9 @@ describe("compile over an installation whose sub-agents carry no skills", () => 
       const { exitCode, output } = await CLI.run(["compile"], project);
 
       expect(exitCode, `compile failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
+      expect(output, "a run that creates no file counts only rewritten and unchanged").toContain(
+        `\n1 project ${STEP_TEXT.AGENT_REWRITTEN}, 1 ${STEP_TEXT.UNCHANGED}\n`,
+      );
       expect(
         (await loadConfigOrFail(project.dir)).agents,
         "compile rewrote the hand-edited roster it was asked to compile",

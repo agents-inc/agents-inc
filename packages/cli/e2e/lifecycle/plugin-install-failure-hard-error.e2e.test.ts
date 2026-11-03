@@ -155,8 +155,7 @@ describe.skipIf(!claudeAvailable)(
           EXIT_CODES.ERROR,
         );
 
-        expect(output).toContain("Failed to install");
-        expect(output).toContain("plugin skill(s)");
+        expect(output).toContain("Failed to install 1 plugin skill.");
         expect(output).toContain("Plugin install intent could not be honored");
 
         const configAfter = await readTestFile(configPath);

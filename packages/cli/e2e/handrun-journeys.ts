@@ -37,6 +37,7 @@ import {
 } from "./helpers/create-e2e-plugin-source.js";
 import { setUpSharedSource } from "../src/cli/lib/__tests__/helpers/shared-source.js";
 import { claudePluginMarketplaceAdd } from "../src/cli/lib/hosts/claude-host.js";
+import { plural } from "../src/cli/utils/string.js";
 import {
   CLAUDE_SOURCE_REL,
   CODEX_SOURCE_REL,
@@ -45,6 +46,7 @@ import {
 } from "./fixtures/codex-install.js";
 import { installCodexOnPath } from "./fixtures/codex-on-path.js";
 import { isCodexCLIAvailable, runCodex } from "./fixtures/codex.js";
+import { codexConfigFile } from "./fixtures/codex-plugin-switch.js";
 import {
   codexDelegationScenario,
   everyRequestOf,
@@ -599,7 +601,7 @@ async function journeyOwnershipBoundary(store: SeedConfigStore): Promise<void> {
   // "not carried" vacuous.
   const posted = store.requests.filter((request) => request.method === "POST").slice(postsBefore);
   const carried = posted.some((request) => request.body.includes(path.basename(mine)));
-  note(`edit --ui exit ${shared.exitCode}`, `${posted.length} configuration(s) posted`);
+  note(`edit --ui exit ${shared.exitCode}`, `${plural(posted.length, "configuration")} posted`);
   note("does the payload mention it?", carried ? "YES — it should not" : "no, correctly");
   note("still on disk", existsSync(mine) ? "yes" : "GONE");
   verdict(
@@ -1131,7 +1133,7 @@ async function journeyCodexUninstallLeavesClaude(
  */
 async function withSharedFixtures(run: () => Promise<void>): Promise<void> {
   process.stdout.write("building the shared fixtures (plugin tree + plain tree)...\n");
-  await installCodexOnPath();
+  const removeCodexShim = await installCodexOnPath();
   const removeSharedSource = await setUpSharedSource(async (root) => {
     await buildPluginSourceInto(root);
     await buildSharedE2ESourceInto(root);
@@ -1141,6 +1143,7 @@ async function withSharedFixtures(run: () => Promise<void>): Promise<void> {
     await run();
   } finally {
     await removeSharedSource();
+    await removeCodexShim();
     process.stdout.write("shared fixtures removed\n");
   }
 }
@@ -1166,7 +1169,7 @@ async function journeyCodexProjectInstallTrustsItself(
     );
     note("what it said about project trust", firstLine(installed.output, /Trusted this project/));
 
-    const globalConfig = path.join(codexHome(home), "config.toml");
+    const globalConfig = codexConfigFile(home);
     const written = existsSync(globalConfig) ? readFileSync(globalConfig, "utf8") : "";
     const trustTables = written.split(`[projects."${project}"]`).length - 1;
     note("trust tables for this project in the global Codex config", String(trustTables));

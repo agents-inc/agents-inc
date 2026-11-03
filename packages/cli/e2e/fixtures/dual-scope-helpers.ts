@@ -1,7 +1,12 @@
 import { mkdir } from "fs/promises";
 import path from "path";
 import { expect } from "vitest";
-import { createPermissionsFile, createTempDir } from "../helpers/test-utils.js";
+import {
+  createPermissionsFile,
+  createTempDir,
+  readInstallTree,
+  type InstallTree,
+} from "../helpers/test-utils.js";
 import { loadInstalledConfig } from "../../src/cli/lib/configuration/project-config.js";
 import { activeAgentNames } from "../../src/cli/lib/configuration/scope-predicates.js";
 import type { AgentName, AgentScopeConfig, SkillConfig } from "../../src/cli/types/index.js";
@@ -22,11 +27,11 @@ export async function readSkillEntries(
   if (!loaded) return [];
   return loaded.config.skills
     .filter((sc) => sc.id === skillId)
-    .sort((a, b) => {
-      const aKey = `${a.scope}${a.excluded ? "-excluded" : ""}`;
-      const bKey = `${b.scope}${b.excluded ? "-excluded" : ""}`;
-      return aKey.localeCompare(bKey);
-    });
+    .sort((a, b) => scopeOrderKey(a).localeCompare(scopeOrderKey(b)));
+}
+
+function scopeOrderKey(entry: SkillConfig): string {
+  return `${entry.scope}${entry.excluded ? "-excluded" : ""}`;
 }
 
 export async function readAgentEntries(dir: string): Promise<AgentScopeConfig[]> {
@@ -74,4 +79,19 @@ export async function createTestEnvironment(options?: {
   }
 
   return { tempDir, fakeHome, projectDir };
+}
+
+/** Files and empty folders, so a folder a run made and left empty is seen. */
+export type HomeAndProjectTrees = { home: InstallTree; project: InstallTree };
+
+// The home's tree leaves the project, which sits inside it, to the project's.
+export async function homeAndProjectTrees(
+  environment: TestEnvironment,
+): Promise<HomeAndProjectTrees> {
+  return {
+    home: await readInstallTree(environment.fakeHome, {
+      skip: [path.relative(environment.fakeHome, environment.projectDir)],
+    }),
+    project: await readInstallTree(environment.projectDir),
+  };
 }

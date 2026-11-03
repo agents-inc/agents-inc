@@ -24,8 +24,9 @@ import {
   readPluginVersions,
   readTestFile,
   readTreeSnapshot,
+  workOwedEntry,
 } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
+import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
@@ -178,11 +179,19 @@ describe.each<MarketplaceKind>(["git", "local"])(
       ]);
     });
 
-    it("exits with an error, so a script running it sees a plugin was left switched on", () => {
+    it("exits 5, listing the plugin as what did not land with the line that switches it off", () => {
       expect(
         updateRun.exitCode,
-        `a plugin the user switched off is running again; update must not report success: ${updateRun.output}`,
-      ).toBe(EXIT_CODES.ERROR);
+        `everything else landed, so a script must see a run that completed with failures: ${updateRun.output}`,
+      ).toBe(EXIT_CODES.COMPLETED_WITH_FAILURES);
+      expect(updateRun.stdout).toMatch(workOwedEntry(1, unswitchableKey, "enabled = false"));
+      expect(flattenCliOutput(updateRun.stderr), "the warning was read at all").toContain(
+        unswitchableKey,
+      );
+      expect(
+        updateRun.stderr,
+        "nothing was refused, so nothing is framed as an error",
+      ).not.toContain(STEP_TEXT.ERROR_FRAMING);
     });
 
     it("warns naming the plugin it could not switch off, and the line to set in Codex's config.toml", () => {

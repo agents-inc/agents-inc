@@ -1,34 +1,84 @@
 import path from "path";
 import { realpathSync } from "fs";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { CLI } from "../fixtures/cli.js";
+import { CLI, type CLIResult } from "../fixtures/cli.js";
 import { expectCleanUninstall } from "../assertions/uninstall-assertions.js";
-import { createTestEnvironment, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
+import {
+  createTestEnvironment,
+  type DualScopeEnv,
+  type TestEnvironment,
+} from "../fixtures/dual-scope-helpers.js";
 import { createDualScopeEnvFromSeed, installE2EStackGlobally } from "../fixtures/e2e-stack-seed.js";
-import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
+import { pluginKeyFor, readPluginRegistrations } from "../fixtures/plugin-install-state.js";
+import {
+  createE2EPluginSource,
+  type E2EPluginSource,
+} from "../helpers/create-e2e-plugin-source.js";
+import "../matchers/setup.js";
 import {
   agentsPath,
+  claudePluginInstall,
+  cleanupFixture,
   cleanupTempDir,
   configTsPath,
   configTypesTsPath,
+  directoryExists,
   fileExists,
+  flattenCliOutput,
+  isClaudeCLIAvailable,
   listFiles,
   loadConfigOrFail,
   readCompiledAgents,
   readTestFile,
+  readTreeSnapshot,
   skillsPath,
   writeAgentFile,
   writeCorruptConfig,
 } from "../helpers/test-utils.js";
-import { EXIT_CODES, REMOVED_MARKER, STEP_TEXT, TIMEOUTS, panelRow } from "../pages/constants.js";
-import { E2E_STACK_AGENTS } from "../fixtures/expected-values.js";
+import {
+  DIRS,
+  EXIT_CODES,
+  REMOVED_MARKER,
+  STEP_TEXT,
+  TIMEOUTS,
+  panelRow,
+} from "../pages/constants.js";
+import { E2E_AGENT, E2E_SKILL, E2E_STACK_AGENTS } from "../fixtures/expected-values.js";
 import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /** The loader throws while evaluating this file. */
 const SYNTAX_ERROR = `export default {{{ not valid typescript`;
 
 /** Carries no provenance marker, so it is never this CLI's to delete. */
 const HAND_WRITTEN_AGENT = "my-custom-agent";
+
+const claudeAvailable = await isClaudeCLIAvailable();
+
+const ZUSTAND = E2E_SKILL.zustand;
+const WEB_DEV = E2E_AGENT["web-developer"].name;
+
+/** Zustand as a plugin on web-developer, both at `scope`. */
+function zustandPluginAt(scope: "global" | "project") {
+  return buildSeedPayload({
+    skills: {
+      [ZUSTAND.id]: buildSeedSkill({
+        install: "plugin",
+        scope,
+        assignments: { [WEB_DEV]: "lazy" },
+      }),
+    },
+    agents: { [WEB_DEV]: { scope } },
+  });
+}
 
 describe("uninstall removes a from-scratch install, scope by scope", () => {
   let store: SeedConfigStore;
@@ -194,6 +244,116 @@ describe("uninstall removes a from-scratch install, scope by scope", () => {
         "an unreadable config no longer strands the agents this CLI compiled, and never claimed the one it did not",
       ).toStrictEqual([`${HAND_WRITTEN_AGENT}.md`]);
       expect(await readTestFile(handWrittenFile)).toBe(handWrittenBefore);
+    },
+  );
+});
+
+describe.skipIf(!claudeAvailable)("a project uninstall and the plugins Claude holds", () => {
+  let source: E2EPluginSource;
+  let store: SeedConfigStore;
+  let env: TestEnvironment | undefined;
+
+  beforeAll(async () => {
+    source = await createE2EPluginSource();
+    store = await startSeedConfigStore();
+  }, TIMEOUTS.SETUP);
+
+  afterAll(async () => {
+    await store.close();
+    await cleanupFixture(source);
+  });
+
+  afterEach(async () => {
+    store.reset();
+    if (env) await cleanupTempDir(env.tempDir);
+    env = undefined;
+  });
+
+  function zustandKey(): string {
+    return pluginKeyFor(ZUSTAND.id, source.marketplaceName);
+  }
+
+  async function installZustandPlugin(
+    on: TestEnvironment,
+    id: string,
+    scope: "global" | "project",
+  ): Promise<void> {
+    store.publish(id, zustandPluginAt(scope));
+    const dir = scope === "global" ? on.fakeHome : on.projectDir;
+    const { exitCode, output } = await runInitFrom(
+      store,
+      id,
+      { dir, globalHome: on.fakeHome },
+      source.sourceDir,
+    );
+    expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
+  }
+
+  async function zustandRegisteredAt(on: TestEnvironment): Promise<string[]> {
+    const registrations = await readPluginRegistrations(on.fakeHome, zustandKey());
+    return registrations.map(({ scope }) => scope).sort();
+  }
+
+  function uninstallInTheProject(on: TestEnvironment): Promise<CLIResult> {
+    return CLI.run(["uninstall", "--yes"], { dir: on.projectDir, globalHome: on.fakeHome });
+  }
+
+  it(
+    "leaves the global installation's plugin registered and enabled",
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
+    async () => {
+      env = await createTestEnvironment({ permissions: false });
+      await installZustandPlugin(env, "ZusGlob1", "global");
+      await installZustandPlugin(env, "ZusProj1", "project");
+      expect(
+        await zustandRegisteredAt(env),
+        "held at both scopes, or the global registration surviving is vacuous",
+      ).toStrictEqual(["project", "user"]);
+
+      const { exitCode, output } = await uninstallInTheProject(env);
+
+      expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
+      expect(await zustandRegisteredAt(env)).toStrictEqual(["user"]);
+      await expect({ dir: env.fakeHome }).toHavePlugin(zustandKey());
+    },
+  );
+
+  it(
+    "still removes a registration at the user scope that no global installation holds",
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
+    async () => {
+      env = await createTestEnvironment({ permissions: false });
+      await installZustandPlugin(env, "ZusProj2", "project");
+      await claudePluginInstall(zustandKey(), "user", env.projectDir, {
+        configDir: path.join(env.fakeHome, DIRS.CLAUDE),
+      });
+      expect(await zustandRegisteredAt(env)).toStrictEqual(["project", "user"]);
+
+      const { exitCode, output } = await uninstallInTheProject(env);
+
+      expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
+      expect(await zustandRegisteredAt(env)).toStrictEqual([]);
+    },
+  );
+
+  it(
+    "takes away the .claude/ its plugin install left, once Claude has emptied its plugin list",
+    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
+    async () => {
+      env = await createTestEnvironment({ permissions: false });
+      await installZustandPlugin(env, "ZusProj3", "project");
+      await expect({ dir: env.projectDir }).toHavePlugin(zustandKey());
+
+      const { exitCode, output } = await uninstallInTheProject(env);
+      const said = flattenCliOutput(output);
+
+      expect(exitCode, said).toBe(EXIT_CODES.SUCCESS);
+      expect(
+        Object.keys(await readTreeSnapshot(path.join(env.projectDir, DIRS.CLAUDE))),
+      ).toStrictEqual([]);
+      expect(await directoryExists(path.join(env.projectDir, DIRS.CLAUDE))).toBe(false);
+      expect(said).toContain(STEP_TEXT.UNINSTALL_CLAUDE_DIR_REMOVED);
+      expect(said).not.toContain(STEP_TEXT.UNINSTALL_CLAUDE_DIR_KEPT);
     },
   );
 });

@@ -3,6 +3,7 @@ import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { runCodex, type CodexRun } from "../fixtures/codex.js";
+import { CODEX_AGENTS_LEFT_OUT, CODEX_UNEXPRESSIBLE } from "../fixtures/codex-agent-roles.js";
 import { runInitFromOnCodex } from "../fixtures/codex-install.js";
 import {
   codexConfigFile,
@@ -19,7 +20,12 @@ import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
-import { cleanupTempDir, flattenCliOutput, readTestFile } from "../helpers/test-utils.js";
+import {
+  cleanupTempDir,
+  flattenCliOutput,
+  readTestFile,
+  workOwedEntry,
+} from "../helpers/test-utils.js";
 import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import {
   buildSeedPayload,
@@ -28,11 +34,10 @@ import {
 import type { SeedPayload } from "@workspace/matrix/seed";
 
 /**
- * `edit --from` refreshes the folder marketplace the installation reads before applying, which adds
- * each plugin Codex holds again and so switches each back on. A switch spelled `[plugins.'<key>']`
- * is one the CLI cannot restore; a config.toml that cannot be written is the other, pinned in the
- * unit suite since Codex replaces the file on every add. Applied at home, where Codex plugins live,
- * and at a terminal, since `edit --from` applies nothing without one.
+ * A switch spelled `[plugins.'<key>']` is one the CLI cannot restore; a config.toml that cannot be
+ * written is the other, pinned in the unit suite since Codex replaces the file on every add.
+ * Applied at home, where Codex plugins live, and at a terminal, since `edit --from` applies nothing
+ * without one.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -70,7 +75,6 @@ type Arrival = {
   listedAfter: CodexRun;
 };
 
-/** Installed through `init --from` as a person would, before anything is switched off. */
 async function editFromOverAnInstallation(
   ids: { installed: string; applied: string },
   switchOff: (home: string, pluginKey: string) => Promise<void>,
@@ -200,13 +204,25 @@ describe("edit --from over a Codex installation with a plugin switched off under
     ).toContain(`[plugins.'${switchedOffKey}']\nenabled = false`);
   });
 
-  it("exits with an error, so a script running it sees a plugin was left switched on", () => {
-    const { exitCode, output } = arrived();
+  it("exits 5, listing the plugin as what did not land with the line that switches it off", () => {
+    const { exitCode, output, rawOutput, switchedOffKey } = arrived();
 
     expect(
       exitCode,
-      `a plugin the user switched off is running again; edit must not report success: ${output}`,
-    ).toBe(EXIT_CODES.ERROR);
+      `everything else landed, so a script must see a run that completed with failures: ${output}`,
+    ).toBe(EXIT_CODES.COMPLETED_WITH_FAILURES);
+    expect(rawOutput).toMatch(workOwedEntry(1, switchedOffKey, "enabled = false"));
+    expect(rawOutput, "nothing was refused, so nothing is framed as an error").not.toContain(
+      STEP_TEXT.ERROR_FRAMING,
+    );
+  });
+
+  it("still says which sub-agents Codex leaves out and what it cannot express", () => {
+    const { rawOutput } = arrived();
+
+    for (const named of [...CODEX_AGENTS_LEFT_OUT, ...CODEX_UNEXPRESSIBLE]) {
+      expect(rawOutput, "the notices every Codex compile prints").toContain(named);
+    }
   });
 
   it("warns naming the plugin it could not switch off, and the line to set in Codex's config.toml", () => {

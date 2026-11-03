@@ -5,9 +5,10 @@ import { CLI } from "../fixtures/cli.js";
 import { createTempDir, cleanupTempDir, flattenCliOutput } from "../helpers/test-utils.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 import {
+  buildSeedExternalSkill,
   buildSeedPayload,
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
@@ -28,6 +29,16 @@ const WEB_DEV = E2E_AGENT["web-developer"].name;
 const PINNED_TO_PROJECT = { scope: "project" } as const;
 
 const ASSIGNED_TO_WEB_DEV = { [WEB_DEV]: "lazy" } as const;
+
+const CARRIED_ID = "external-web-tooling-house-notes";
+const HAND_NAMED_ID = "acme-web-tooling-house-notes";
+
+function carrying(id: string): SeedPayload {
+  return buildSeedPayload({
+    skills: { [id]: buildSeedSkill() },
+    external: { [id]: buildSeedExternalSkill() },
+  });
+}
 
 describe("share --stdin", () => {
   let store: SeedConfigStore;
@@ -159,6 +170,44 @@ describe("share --stdin", () => {
     expect(output).toContain(`init --from ${firstElement(store.minted)}`);
     // The whole body: a guard that stripped the assignment would also exit 0.
     expect(JSON.parse(firstElement(store.requests).body)).toStrictEqual(writable);
+  });
+
+  /** Every install refuses this id, so minting it would hand out a link nothing can install. */
+  it("refuses a carried skill whose id lacks external- without spending a write", async () => {
+    tempDir = await createTempDir();
+
+    const { exitCode, output } = await CLI.run(
+      ["share", "--stdin"],
+      { dir: tempDir },
+      {
+        env: { AGENTS_INC_API_URL: store.url },
+        input: JSON.stringify(carrying(HAND_NAMED_ID)),
+      },
+    );
+
+    expect(exitCode).toBe(EXIT_CODES.ERROR);
+    expect(store.requests, "a link every install refuses must cost no write").toStrictEqual([]);
+    const said = flattenCliOutput(output);
+    expect(said).toContain(STEP_TEXT.SHARED_CONFIG_ID_LACKS_EXTERNAL_PREFIX);
+    expect(said).toContain(HAND_NAMED_ID);
+  });
+
+  it("shares that same carried skill under an id starting external-", async () => {
+    tempDir = await createTempDir();
+    const carried = carrying(CARRIED_ID);
+
+    const { exitCode, output } = await CLI.run(
+      ["share", "--stdin"],
+      { dir: tempDir },
+      {
+        env: { AGENTS_INC_API_URL: store.url },
+        input: JSON.stringify(carried),
+      },
+    );
+
+    expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+    expect(output).toContain(`init --from ${firstElement(store.minted)}`);
+    expect(JSON.parse(firstElement(store.requests).body)).toStrictEqual(carried);
   });
 
   it("refuses text that is not JSON at all", async () => {

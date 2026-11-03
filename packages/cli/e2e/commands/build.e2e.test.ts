@@ -92,13 +92,14 @@ describe("build commands", () => {
       await cleanupFixture(source);
     });
 
-    it("should display help text", async () => {
+    it("should display help text offering no agents directory", async () => {
       tempDir = await createTempDir();
 
       const { exitCode, stdout } = await CLI.run(["build", "plugins", "--help"], { dir: tempDir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout).toContain("Build skills and agents into standalone plugins");
+      expect(stdout).toContain("Build skills into standalone plugins");
+      expect(stdout, "build plugins builds skills alone").not.toContain("--agents-dir");
     });
 
     it("should complete with zero plugins when no source directory exists", async () => {

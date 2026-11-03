@@ -101,8 +101,9 @@ describe("minting an id in a project that inherits sub-agents from HOME", () => 
     ).toStrictEqual(skills);
   });
 
-  // The editor holds a project link's global entries, which a run in that project cannot change.
-  it("edit --ui marks the link it mints in a project, and not the one it mints at HOME", async () => {
+  // The editor holds a project link's global entries, which a run in that project cannot change;
+  // a link from HOME is the global installation's own, which a run there does change.
+  it("edit --ui marks the link it mints in a project as the project's, and the one it mints at HOME as the global installation's", async () => {
     store.publish(
       "Inherit3",
       buildSeedPayload({
@@ -122,6 +123,8 @@ describe("minting an id in a project that inherits sub-agents from HOME", () => 
     expect(atHome.exitCode, `edit --ui at HOME failed: ${atHome.output}`).toBe(EXIT_CODES.SUCCESS);
     const [mintedInProject, mintedAtHome] = postedBodies(store);
     expect(mintedInProject).toHaveProperty("fromProject", true);
+    expect(mintedInProject).not.toHaveProperty("fromGlobal");
+    expect(mintedAtHome).toHaveProperty("fromGlobal", true);
     expect(mintedAtHome).not.toHaveProperty("fromProject");
   });
 });
@@ -255,6 +258,7 @@ describe.skipIf(!claudeAvailable)("sharing a project that inherits sub-agents fr
       expect(opened.exitCode, `edit --ui failed: ${opened.output}`).toBe(EXIT_CODES.SUCCESS);
       const [mintedByShare, mintedByEdit] = postedBodies(store);
       expect(mintedByShare).not.toHaveProperty("fromProject");
+      expect(mintedByShare).not.toHaveProperty("fromGlobal");
       expect(mintedByEdit).toHaveProperty("fromProject", true);
     },
   );

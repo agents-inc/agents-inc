@@ -1,8 +1,6 @@
 import { execa } from "execa";
-import { realpathSync } from "fs";
 import { mkdir, readdir, readFile, realpath, stat, writeFile } from "fs/promises";
 import { stripVTControlCharacters } from "node:util";
-import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import { z } from "zod";
@@ -37,7 +35,9 @@ import {
 } from "../../src/cli/lib/__tests__/helpers/golden-tree.js";
 import { writeTestPluginManifest } from "../../src/cli/lib/__tests__/helpers/disk-writers.js";
 import { matchedAsWritten } from "../../src/cli/lib/__tests__/helpers/matched-as-written.js";
-import { compactCliOutput } from "../../src/cli/lib/__tests__/helpers/flatten-cli-output.js";
+import { otherThan } from "../../src/cli/lib/__tests__/helpers/other-providers.js";
+import { workOwedEntry } from "../../src/cli/lib/__tests__/helpers/work-owed-entry.js";
+import { toPosixPath } from "../../src/cli/utils/posix-path.js";
 import { buildClaudeTrustState } from "../../src/cli/lib/__tests__/factories/claude-settings-factories.js";
 import { buildProjectConfig } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import {
@@ -97,7 +97,7 @@ export const NO_LIVE_SEED_API = { AGENTS_INC_API_URL: "http://127.0.0.1:1" };
 export const REMOTE_SEED_API = { AGENTS_INC_API_URL: "https://api.agentsinc.invalid" };
 
 const E2E_TEMP_PREFIX = "ai-e2e-";
-const AUTO_HOME_PREFIX = "ai-e2e-home-";
+export const AUTO_HOME_PREFIX = "ai-e2e-home-";
 
 // The full field set, since doctor validates installed metadata.yaml against the strict schema.
 export const FORKED_FROM_METADATA = renderMetadataYaml({
@@ -185,6 +185,7 @@ export {
   matchedAsWritten,
   normalizeGlobalConfig,
   normalizeInstallTree,
+  otherThan,
   parseCompiledAgentSections,
   readInstallTree,
   renderAgentMd,
@@ -195,8 +196,10 @@ export {
   renderSkillMd,
   renderUnparseableMetadataYaml,
   renderUnparseableSkillMd,
+  toPosixPath,
   writeTestPackageJson,
   writeTestPluginManifest,
+  workOwedEntry,
 };
 
 // Records `source` as `init --marketplace` would, in the first config of `baseDirs` (resolution
@@ -315,16 +318,6 @@ export async function writeRetiredSourceFolder(root: string): Promise<void> {
 
 export function stripAnsi(text: string): string {
   return stripVTControlCharacters(text);
-}
-
-/**
- * Leaves out the temp folder, so a negative about a folder name reads only what the CLI named. Both
- * spellings, since not every fixture resolves a temp folder that is a link.
- */
-export function compactedWithoutTempFolder(output: string): string {
-  return compactCliOutput(output)
-    .replaceAll(compactCliOutput(realpathSync(os.tmpdir())), "<tmp>")
-    .replaceAll(compactCliOutput(os.tmpdir()), "<tmp>");
 }
 
 // HOME defaults to a fresh temp dir (removed after the run), never cwd, so a project command is not
@@ -487,9 +480,11 @@ export async function writeAgentFile(
 }
 
 export async function writeAgentStubs(projectDir: string, agents: string[]): Promise<void> {
-  for (const agent of agents) {
-    await writeAgentFile(projectDir, agent, { frontmatter: true, body: AGENT_STUB_BODY });
-  }
+  await Promise.all(
+    agents.map((agent) =>
+      writeAgentFile(projectDir, agent, { frontmatter: true, body: AGENT_STUB_BODY }),
+    ),
+  );
 }
 
 const DEFAULT_ALLOW_PERMISSION = "Read(*)";
@@ -639,6 +634,7 @@ export function getEjectedTemplatePath(projectDir: string): string {
 export { HANDED_OUT_INVOCATIONS } from "../../src/cli/lib/__tests__/helpers/handed-out-invocations.js";
 export {
   compactCliOutput,
+  compactedWithoutTempFolder,
   flattenCliOutput,
 } from "../../src/cli/lib/__tests__/helpers/flatten-cli-output.js";
 

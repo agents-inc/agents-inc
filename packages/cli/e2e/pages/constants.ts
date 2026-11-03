@@ -24,6 +24,9 @@ export const DIRS = {
   CODEX_PROJECT_SKILLS: ".agents/skills",
   // The Claude CLI's session-state backups under its config dir.
   CLAUDE_BACKUPS: "backups",
+  // Under a host's plugins folder: the copies it installed, and Claude's marketplace checkouts.
+  PLUGIN_CACHE: "cache",
+  CLAUDE_PLUGIN_MARKETPLACES: "marketplaces",
   /** Mirrors `cacheRoot()` under HOME: the CLI's saved copies, not giget's tarballs beside them. */
   SOURCE_CACHE: ".cache/agents-inc",
   /** One saved copy per marketplace, named by `sanitizeSourceForCache`. */
@@ -39,6 +42,7 @@ export const FILES = {
   METADATA_YAML: "metadata.yaml",
   SETTINGS_JSON: "settings.json",
   INSTALLED_PLUGINS_JSON: "installed_plugins.json",
+  KNOWN_MARKETPLACES_JSON: "known_marketplaces.json",
   IDENTITY_MD: "identity.md",
   PLAYBOOK_MD: "playbook.md",
   PLUGIN_JSON: "plugin.json",
@@ -48,6 +52,8 @@ export const FILES = {
   CATALOG_JSON: "catalog.json",
   PACKAGE_JSON: "package.json",
   CODEX_AGENT_EXTENSION: ".toml",
+  /** Mirrors `CODEX_CONFIG_FILE`. */
+  CODEX_CONFIG_TOML: "config.toml",
   // The Claude CLI's session record and lock; golden trees leave them unpinned.
   CLAUDE_SESSION_JSON: ".claude.json",
   CLAUDE_SESSION_LOCK: ".claude.json.lock",
@@ -55,6 +61,7 @@ export const FILES = {
 
 export const STEP_TEXT = {
   INIT_SUCCESS: "initialized successfully",
+  INIT_MERGED_WITH_EXISTING_CONFIG: "Merged with existing config at",
   EDIT_SUCCESS: "Done",
   EDIT_UNCHANGED: "No changes made",
   // Positive proof of changes; EDIT_UNCHANGED's absence is also true of a crashed run.
@@ -62,8 +69,9 @@ export const STEP_TEXT = {
   COMPLETED_WITH_FAILURES: "the changes above landed, these did not",
   COMPILE_SUCCESS: "Compiled",
   COMPILE_COMPLETE: "compile complete", // "Global/Project compile complete!"
-  // `Marketplace: ${sourceOrigin}` in commands/compile.ts.
-  COMPILE_MARKETPLACE_GLOBAL: "Marketplace: global",
+  // Where compile found the marketplace setting: `sourceOrigin` in commands/compile.ts.
+  COMPILE_MARKETPLACE_GLOBAL: "Marketplace setting from: global",
+  COMPILE_MARKETPLACE_PROJECT: "Marketplace setting from: project",
   CONFIG_LOAD_FAILED: "could not be loaded", // ConfigLoadError
   // Single unbroken tokens: oclif word-wraps error text at the terminal width.
   CONFIG_UNREADABLE_RECREATE: "recreate",
@@ -82,6 +90,10 @@ export const STEP_TEXT = {
   CONFIG_UNREADABLE_RECREATE_FROM: "'npx agents-inc uninstall' from",
   CONFIG_UNREADABLE_INSTALL_BY_ID: "'npx agents-inc init --from <id>'",
   EJECT_SUCCESS: "Eject complete!",
+  // `localCopyKept` in commands/eject.ts: `${PREFIX} <id>: ${AT} <folder> ${SUFFIX}`.
+  EJECT_LOCAL_COPY_KEPT_PREFIX: "Skipped",
+  EJECT_LOCAL_COPY_KEPT_AT: "its local copy at",
+  EJECT_LOCAL_COPY_KEPT_SUFFIX: "stays as it is, even with --force.",
   UNINSTALL_SUCCESS: "Uninstall complete!",
 
   LOADING_SKILLS: "Loading skills",
@@ -90,6 +102,10 @@ export const STEP_TEXT = {
   // "<n> agents rewritten, <m> unchanged".
   AGENTS_REWRITTEN: "agents rewritten",
   UNCHANGED: "unchanged",
+  // ", <k> created" before the unchanged count, only when the run wrote a file that was not there.
+  CREATED: "created",
+  // AGENTS_REWRITTEN at a count of one.
+  AGENT_REWRITTEN: "agent rewritten",
   AGENTS_NOT_COMPILED: "did not compile",
   RECOMPILATION_FAILED: "Agent recompilation failed",
   // The remedy's claim about disk, not its lead-in.
@@ -100,8 +116,15 @@ export const STEP_TEXT = {
   // Includes "agent": other lines also end in `(1 failed)`.
   COMPILED_WITH_FAILURES: "agent (1 failed)",
   COMPILE_GLOBAL_SCOPE_HINT: "global-scoped — run",
+  // `globalScopedAgentsHint` in utils/messages.ts, whole.
+  COMPILE_GLOBAL_SCOPE_HINT_ONE:
+    "1 agent is global-scoped — run 'npx agents-inc compile' from your home directory to recompile it.",
+  COMPILE_GLOBAL_SCOPE_HINT_TWO:
+    "2 agents are global-scoped — run 'npx agents-inc compile' from your home directory to recompile them.",
   CONFIG_TYPES_REFRESHED: "Refreshed config-types.ts",
   SKILL_NOT_FOUND_WARNING: "is configured but was not found",
+  SKILL_PLUGIN_SWITCHED_OFF_WARNING:
+    "is configured but its plugin is switched off — agents will be compiled without it.",
   // Suppressed in the unit suite, so only assertable here.
   STACK_SKILL_ABSENT_FROM_MATRIX: "not found in matrix",
   // The decision half, not the diagnosis; `withdrawnSkillsWarning` in lib/loading/source-loader.ts.
@@ -149,6 +172,9 @@ export const STEP_TEXT = {
   INSTALLED_SKILL_METADATA_MISSING: "registered with the CLI (no metadata.yaml).",
   // Assert through `flattenCliOutput`.
   METADATA_UNUSABLE_WAY_OUT: "Fix the file, or delete the skill directory",
+  // `warnOfDefaultedFields`, each composed as `Project config at '<config.ts path>' <text>`.
+  CONFIG_NAME_DEFAULTED: "is missing required 'name' field — defaulting to directory name",
+  CONFIG_SKILLS_DEFAULTED: "is missing 'skills' array — defaulting to empty",
   // Every project reached and recompiled, whether or not its files came out changed.
   PROPAGATED_RECOMPILE_ONE: "Registered projects: 1 recompiled",
   // `BaseCommand.reportPropagatedRecompile`.
@@ -162,12 +188,11 @@ export const STEP_TEXT = {
   PROVENANCE_MARKER: "<!-- Generated by agents-inc — do not edit; compile rewrites this file -->",
 
   // Short: oclif wraps warn/error text.
-  UPDATE_HELP_SUMMARY: "Refresh the marketplaces this installation uses",
+  UPDATE_HELP_SUMMARY: "Refresh the marketplaces and move every plugin to its newest version",
   EDIT_HELP_SUMMARY: "Open this installation in the editor, or apply a configuration with --from",
   UPDATE_EJECTED_OWNED: "Ejected skills are yours to own",
   UPDATE_NO_MARKETPLACES: "No plugin marketplaces are configured",
   UPDATE_MARKETPLACE_REFRESHED: "Updated marketplace",
-  UPDATE_COMPLETE: "Update complete!",
   UPDATE_NO_CLAUDE_CLI: "Claude CLI not found",
   // `ensureMarketplace`'s, when refreshing a marketplace the host already holds fails.
   MARKETPLACE_KEPT_CACHED: "continuing with cached version",
@@ -192,6 +217,8 @@ export const STEP_TEXT = {
   UNINSTALL_AGENTS_KEPT_REASON: "no agents-inc marker",
   UNINSTALL_SOURCE_ROOT_REMOVED: "Removed .agents-inc/",
   UNINSTALL_SOURCE_ROOT_KEPT: "Kept .agents-inc/ (contains user content)",
+  UNINSTALL_CLAUDE_DIR_REMOVED: "Removed .claude/",
+  UNINSTALL_CLAUDE_DIR_KEPT: "Kept .claude/ (contains user content)",
 
   // A project whose config declares nothing: each command's own line, first on stderr.
   DECLARES_NOTHING_OPENING: "This project's config declares nothing",
@@ -234,12 +261,20 @@ export const STEP_TEXT = {
   DOCTOR_STATUS_SKIP: "\u2013",
   /** Mirrors `UI_SYMBOLS.CROSS`. */
   DOCTOR_STATUS_FAIL: "\u2717",
+  /** Mirrors `UI_SYMBOLS.DISCOURAGED`. */
+  DOCTOR_STATUS_WARN: "!",
   DOCTOR_ROW_PLACEMENTS: "Placements Offered",
+  // `checkOfferedPlacements`' pass, which claims there are configured skills.
+  DOCTOR_EVERY_SKILL_PLACEABLE: "Every configured skill is placeable",
   DOCTOR_ROW_SKILLS_RESOLVED: "Skills Resolved",
   DOCTOR_ROW_AGENTS_COMPILED: "Agents Compiled",
   DOCTOR_ROW_NO_ORPHANS: "No Orphans",
   DOCTOR_ROW_SKILLS_INSTALLED: "Skills Installed",
   DOCTOR_ROW_PLUGINS_INSTALLED: "Plugins Installed",
+  DOCTOR_ONE_SKILL_NOT_INSTALLED_AS_A_PLUGIN: "1 skill not installed as a plugin",
+  DOCTOR_NO_ENABLED_PLUGIN_FOUND: "(no enabled plugin found)",
+  DOCTOR_ONE_PLUGIN_SWITCHED_OFF: "1 plugin switched off",
+  DOCTOR_PLUGIN_SWITCHED_OFF: "(plugin switched off)",
   DOCTOR_ROW_SOURCE_REACHABLE: "Marketplace Reachable",
   // `CONTENT_CHECKS` in commands/doctor.ts.
   DOCTOR_ROW_MARKETPLACES: "Marketplaces",
@@ -265,7 +300,17 @@ export const STEP_TEXT = {
   DOCTOR_TIP_COMPILE_AGENTS: "to generate missing agent files",
   DOCTOR_TIP_CHECK_SKILL_IDS: "Check skill IDs in config match available skills",
   // `TIPS` in commands/doctor.ts.
-  DOCTOR_TIP_RE_EJECT: "Re-eject the missing skills from the marketplace to restore their files",
+  DOCTOR_TIP_BOTH_WAYS:
+    "If you removed the missing skills on purpose, take them out with 'npx agents-inc edit'; to bring them back, run 'npx agents-inc eject skills', which also copies every other marketplace skill this project lacks",
+  DOCTOR_TIP_BOTH_WAYS_IN_THE_HOME_FOLDER:
+    "If you removed the missing skills on purpose, take them out with 'npx agents-inc edit' in your home folder; to bring them back, run 'npx agents-inc eject skills' in your home folder, which also copies every other marketplace skill the global installation lacks",
+  DOCTOR_TIP_BOTH_WAYS_IN_THE_HOME_FOLDER_NAMING_CLAUDE:
+    "If you removed the missing skills on purpose, take them out with 'npx agents-inc edit --provider claude' in your home folder; to bring them back, run 'npx agents-inc eject skills --provider claude' in your home folder, which also copies every other marketplace skill the global installation lacks",
+  // Also how `DOCTOR_TIP_BOTH_WAYS` starts, so assert it with the line's end.
+  DOCTOR_TIP_TAKE_OUT_ONLY:
+    "If you removed the missing skills on purpose, take them out with 'npx agents-inc edit'",
+  DOCTOR_TIP_TAKE_OUT_ONLY_IN_THE_HOME_FOLDER:
+    "If you removed the missing skills on purpose, take them out with 'npx agents-inc edit' in your home folder",
   DOCTOR_SUMMARY: "Summary:",
   DOCTOR_SKILLS_VALIDATED: "skills validated",
   DOCTOR_AGENTS_VALIDATED: "agents validated",
@@ -301,17 +346,28 @@ export const STEP_TEXT = {
   MARKETPLACE_OWN_CONFIG: "This is the marketplace's own config rather than an installation's",
 
   NO_INSTALLATION: "No installation found",
+  // `formatInstallationDisplay`'s, composed with the marketplace the config records.
+  LIST_MARKETPLACE_LINE: "  Marketplace: ",
 
+  // `announceArrivingSkills` in commands/init.tsx, whole.
+  INSTALLING_ONE_SKILL_ACROSS_ONE: "Installing 1 skill across 1 sub-agent",
+  INSTALLING_ONE_SKILL_ACROSS_TWO: "Installing 1 skill across 2 sub-agents",
+  // `reportCompilation` in commands/init.tsx, whole.
+  COMPILED_ONE_AGENT: "Compiled 1 agent",
+  COMPILED_TWO_AGENTS: "Compiled 2 agents",
+  // `skillsCopiedLine` in commands/init.tsx when every copy landed at one scope; the folder follows.
+  COPIED_ONE_SKILL_TO: "Copied 1 skill to",
   INSTALLING_PLUGINS: "Installing skill plugins",
   INSTALLING_PLUGINS_ELLIPSIS: "Installing skill plugins...",
   PLUGIN_NATIVE: "Plugin (native install)",
   EJECT_LOCAL_COPY: "Eject (local copy)",
-  // `logModeSwitch`: `${PREFIX} ${n} ${SUFFIX} ${MODE}`.
+  // `logModeSwitch`: `${PREFIX} ${n} ${SUFFIX} ${MODE}`, the ONE suffix when n is 1.
   SWITCHING_SKILLS_PREFIX: "Switching",
-  SWITCHING_SKILLS_SUFFIX: "skill(s) to",
-  // `copyNewLocalSkills`: "Copied <n> local skill(s)".
+  SWITCHING_SKILLS_SUFFIX: "skills to",
+  SWITCHING_ONE_SKILL_SUFFIX: "skill to",
+  // `localSkillsCopied`: "Copied 1 local skill", "Copied 2 local skills".
   COPIED_LOCAL_SKILLS_PREFIX: "Copied",
-  COPIED_LOCAL_SKILLS_SUFFIX: "local skill(s)",
+  COPIED_LOCAL_SKILLS_SUFFIX: "local skill",
   SKILLS_COPIED_TO: "Skills copied to:",
   AGENTS_COMPILED_TO: "Agents compiled to:",
   CONFIGURATION_LABEL: "Configuration:",
@@ -321,10 +377,21 @@ export const STEP_TEXT = {
   // `${PREFIX} <n> ${SUFFIX}`, after a refused save took back its copies.
   COPIES_REMOVED_PREFIX: "Removed the",
   COPIES_REMOVED_SUFFIX: "skills it copied, since the configuration could not be saved",
+  // `${PREFIX} "<marketplace>" ${SUFFIX}`, after a refused save took back its marketplace.
+  MARKETPLACE_REMOVED_PREFIX: "Removed the marketplace",
+  MARKETPLACE_REMOVED_SUFFIX: "it registered, since the configuration could not be saved",
+  // `${PREFIX} "<plugin>" ${SUFFIX}`, after a refused save kept a plugin it cannot tell was new.
+  PLUGIN_KEPT_PREFIX: "Kept the plugin",
+  PLUGIN_KEPT_SUFFIX:
+    "it installed, since it could not tell whether the plugin was there before this run",
+  // `${PREFIX} "<marketplace>"...`, when the run registers the marketplace with Claude.
+  MARKETPLACE_REGISTERING_PREFIX: "Registering marketplace",
   NO_SKILLS_FOUND: "No skills found",
   UNINSTALL_CANCELLED: "Uninstall cancelled",
   EDIT_CANCELLED: "Edit cancelled",
   RUN_CANCELLED: "Error: Cancelled",
+  // oclif's framing of a refusal; a run that completed with failures ends without it.
+  ERROR_FRAMING: "Error:",
   ROOT_HELP_USAGE: "$ agents-inc [COMMAND]",
 
   SHARED_CONFIG_EXISTING_INSTALL: "An installation already exists at",
@@ -334,9 +401,11 @@ export const STEP_TEXT = {
   SHARED_CONFIG_PROJECT_SCOPE_AT_HOME: "these project-scoped entries have nowhere to be written",
   SHARED_CONFIG_PROJECT_SCOPE_HINT: "Run this from inside a project directory",
   // Assert on flattened output.
-  SHARED_CONFIG_UNCARRIED_DESTINATION: "no shared configuration put those directories there",
+  SHARED_CONFIG_UNCARRIED_DESTINATION: "no shared configuration put that directory there",
   // Assert on flattened output.
-  SHARED_CONFIG_ID_NAMES_NO_DIRECTORY: "under ids that are not a single directory name",
+  SHARED_CONFIG_ID_NAMES_NO_DIRECTORY: "under an id that is not a single directory name",
+  // Assert on flattened output.
+  SHARED_CONFIG_ID_LACKS_EXTERNAL_PREFIX: "under an id that does not start with 'external-'",
   SHARED_CONFIG_NOTHING_INSTALLABLE: "contains no skills this catalog can install",
   // Stops short of the ref, which oclif may wrap.
   SHARED_CONFIG_STACK_NOT_OFFERED: "is not a stack the source",
@@ -344,6 +413,12 @@ export const STEP_TEXT = {
   SHARED_CONFIG_STACKS_SHIPPED: "the default public marketplace alone. It ships:",
   SHARED_CONFIG_WRONG_VERSION: "is not in a format this version of the CLI can install",
   SHARED_CONFIG_RESHARE: "re-share the configuration",
+  // The block under a minted id, each line ending in the id: `SHARED_AS`, one of the two
+  // `MINTED_*_IT` commands, then `MINTED_OPEN_IT`.
+  SHARED_AS: "✓ Shared as",
+  MINTED_APPLY_IT: "  Apply it:    npx agents-inc edit --from",
+  MINTED_INSTALL_IT: "  Install it:  npx agents-inc init --from",
+  MINTED_OPEN_IT: "  Open it:     http://localhost:5173/editor/?fromId=",
   CODEX_MODEL_NOT_OFFERED:
     "which this version of the CLI does not offer, so it runs on the session's model. Offered: gpt-6-astra, gpt-5.6-sol, gpt-5.6-terra and gpt-5.6-luna.",
   // Compare with spaces removed: oclif may break the list mid-token.
@@ -407,6 +482,7 @@ export const STEP_TEXT = {
   // `codexProjectTrustMessage`.
   CODEX_PROJECT_TRUSTED: "Trusted this project in your Codex configuration",
   CODEX_PROJECT_TRUST_LEFT: "Left as you set it",
+  CODEX_PROJECT_TRUST_REMOVED: "Removed this project's trust from your Codex configuration",
   // `claudeProjectNeedsTrustMessage`.
   CLAUDE_FOLDER_UNTRUSTED: "only once you trust the folder",
   CLAUDE_TRUST_PROMPT_REMEDY: "accept the trust prompt",
@@ -442,7 +518,8 @@ export function panelRow(marker: string, name: string): string {
  */
 export function doctorRow(
   name: string,
-  status: (typeof STEP_TEXT)["DOCTOR_STATUS_PASS" | "DOCTOR_STATUS_FAIL" | "DOCTOR_STATUS_SKIP"],
+  status: (typeof STEP_TEXT)[
+    "DOCTOR_STATUS_PASS" | "DOCTOR_STATUS_FAIL" | "DOCTOR_STATUS_SKIP" | "DOCTOR_STATUS_WARN"],
   message = "",
 ): RegExp {
   return new RegExp(
@@ -466,7 +543,7 @@ export function idNamesAnotherMarketplace(named: string, used: string): string {
   return `This id names the marketplace ${named}; ${STEP_TEXT.SHARED_CONFIG_MARKETPLACE_USED}, ${used}.`;
 }
 
-/** Mirrors `CLI_INVOKE_COMMAND` in `src/cli/consts.ts`. */
+/** Mirrors `CLI_INVOKE_COMMAND`. */
 export const CLI_INVOKE_COMMAND = "npx agents-inc";
 
 // `DEFAULT_NAME` mirrors `DEFAULT_BRANDING.NAME`; the white-label names share no substring with it.
@@ -513,7 +590,7 @@ export const INTERNAL_RETRIES = {
   INTERVAL_MS: 3_000,
 } as const;
 
-// A superset of src/cli/lib/exit-codes.ts: 127 is the shell's status when `dist/` is absent.
+// A superset of src/cli/lib/exit-codes.ts: 127 is oclif's exit for an unknown command.
 export const EXIT_CODES = {
   SUCCESS: 0,
   ERROR: 1,
@@ -569,4 +646,4 @@ export const TERMINAL_SIZE = {
   NARROWEST: { rows: 40, cols: 80 },
   /** Between the narrowest and the PTY default, where a name that fits at 120 still overruns. */
   MIDDLE: { rows: 40, cols: 100 },
-} as const;
+} as const satisfies Record<string, { rows: number; cols: number }>;

@@ -41,21 +41,11 @@ import {
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
 /**
- * At a terminal, `list` names each skill as its install recorded it — the `displayName` CLI-963
- * writes on each config.ts entry — though no catalogue the CLI ships lists the fixture's namespaced
- * ids, as `init --from` printed the same two skills a moment earlier.
- *
- * Its control is the same installation under a config.ts written before names were recorded: it
- * draws exactly what 0.173.0 draws, ids, though each copy's metadata.yaml still names it, because
- * one record names every summary and no copy is read for a name. Each screen is pinned whole at
- * `MIDDLE`'s 100 columns, so a line drawn under the last row fails it; the sub-agent rows are the
- * subject guard in each. The piped half is
- * `commands/list-prints-paths-beside-recorded-names`.
+ * Each screen is pinned whole at its width, so a line drawn under the last row fails it; the
+ * sub-agent rows are the subject guard in each.
  *
  * A plugin leaves no copy, and its marketplace folder is moved away before the run, so the name its
- * install recorded is the only thing left that names it. That spec was written after the product
- * already passed it, so it was checked by deleting the plugin's recorded name from the project's
- * config.ts before the run: its row went to the wrapped id.
+ * install recorded is the only thing left that names it.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
@@ -65,6 +55,10 @@ const API_DEV = E2E_AGENT["api-developer"].name;
 
 const BOTH_SCOPES_ID = "ListName1";
 const PLUGIN_ID = "ListNamePlugin1";
+
+/** Its first line fills its half at 80 columns. */
+const FILLS_ITS_FIRST_LINE_AT_80 = "Acme React Component Patterns For Teams";
+const FILLS_NO_LINE_AT_80 = "Acme Platform Release Notes Checklist For Every Squad";
 
 /** The rows as drawn; the head compacted, as a Marketplace path that outruns its line wraps. */
 function expectListScreen(
@@ -128,7 +122,10 @@ describe("list at a terminal over skills the built-in catalogue does not list", 
   }
 
   /** Runs `list` at the terminal and holds that it wrote nothing at either scope. */
-  async function listAtATerminal(installation: TestEnvironment): Promise<string> {
+  async function listAtATerminal(
+    installation: TestEnvironment,
+    size: { cols: number; rows: number },
+  ): Promise<string> {
     // Not HOME whole: the project sits inside it.
     const installSurfaces = [
       installation.projectDir,
@@ -142,7 +139,7 @@ describe("list at a terminal over skills the built-in catalogue does not list", 
     ).toStrictEqual([true, true, true]);
 
     prompt = new InteractivePrompt(["list"], installation.projectDir, {
-      ...TERMINAL_SIZE.MIDDLE,
+      ...size,
       env: { HOME: installation.fakeHome },
     });
     expect(await prompt.waitForExit(TIMEOUTS.EXIT), prompt.getOutput()).toBe(EXIT_CODES.SUCCESS);
@@ -159,7 +156,7 @@ describe("list at a terminal over skills the built-in catalogue does not list", 
     async () => {
       const installation = await installBothScopes();
 
-      const screen = await listAtATerminal(installation);
+      const screen = await listAtATerminal(installation, TERMINAL_SIZE.MIDDLE);
 
       expectListScreen(
         screen,
@@ -212,7 +209,7 @@ describe("list at a terminal over skills the built-in catalogue does not list", 
         "the global copy names itself, so an id row means list read no copy",
       ).toContain(`displayName: ${E2E_SKILL.react.display}\n`);
 
-      const screen = await listAtATerminal(installation);
+      const screen = await listAtATerminal(installation, TERMINAL_SIZE.MIDDLE);
 
       expectListScreen(
         screen,
@@ -229,6 +226,56 @@ describe("list at a terminal over skills the built-in catalogue does not list", 
           "   ork-react ⏏                                                  │",
         ],
         "an unrecorded row falls back to the built-in catalogue, then the id, never to its copy",
+      );
+    },
+  );
+
+  it(
+    "keeps the rest of a recorded name under its first letter and ⏏ after its last where its first line fills its half at 80 columns",
+    { timeout: TIMEOUTS.INTERACTIVE },
+    async () => {
+      const installation = await installBothScopes();
+      await writeProjectConfig(
+        installation.projectDir,
+        buildProjectConfig({
+          name: "project",
+          marketplace: E2E_SOURCE.sourceDir,
+          skills: [
+            ...buildSkillConfigs([E2E_SKILL.hono.id], {
+              scope: "project",
+              displayName: FILLS_ITS_FIRST_LINE_AT_80,
+            }),
+            ...buildSkillConfigs([E2E_SKILL.react.id], {
+              scope: "global",
+              displayName: FILLS_NO_LINE_AT_80,
+            }),
+          ],
+          agents: [
+            ...buildAgentConfigs([API_DEV], { scope: "project" }),
+            ...buildAgentConfigs([WEB_DEV], { scope: "global" }),
+          ],
+        }),
+      );
+
+      const screen = await listAtATerminal(installation, TERMINAL_SIZE.NARROWEST);
+
+      expectListScreen(
+        screen,
+        [" Mode Eject", ` Marketplace ${E2E_SOURCE.sourceDir}`],
+        [
+          " Skills                                            │  Agents",
+          "                                                   │",
+          "  Project                                          │   Project",
+          " • Acme React Component                            │  • api-developer",
+          "   Patterns For Teams ⏏                            │",
+          "                                                   │   Global",
+          "  Global                                           │  • web-developer",
+          " • Acme Platform                                   │",
+          "   Release Notes                                   │",
+          "   Checklist For Every                             │",
+          "   Squad ⏏                                         │",
+        ],
+        "a name whose first line fills its half wraps under its first letter, ⏏ after its last, as one that fills none does",
       );
     },
   );
@@ -294,7 +341,7 @@ describe("list at a terminal over skills the built-in catalogue does not list", 
         const installation = await installWithAPlugin();
         await moveTheMarketplaceAway();
 
-        const screen = await listAtATerminal(installation);
+        const screen = await listAtATerminal(installation, TERMINAL_SIZE.MIDDLE);
 
         expectListScreen(
           screen,

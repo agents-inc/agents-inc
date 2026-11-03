@@ -1,3 +1,4 @@
+import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
@@ -26,12 +27,14 @@ import {
   type InstallTree,
   normalizeInstallTree,
   readInstallTree,
+  readTreeSnapshot,
+  toPosixPath,
 } from "../helpers/test-utils.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
-import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
+import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
 /** Every payload ejects, so no host binary is involved. */
 
@@ -58,6 +61,9 @@ const LATER_COMMANDS = [
 
 /** oclif's refusal for an undeclared flag: what a half-built provider looks like. */
 const UNKNOWN_FLAG = "Nonexistent flag";
+
+/** As Claude's own `plugin uninstall --scope project` leaves it. */
+const EMPTIED_PLUGIN_LIST = '{\n  "enabledPlugins": {}\n}\n';
 
 /**
  * Both scopes stated: a project skill on a global sub-agent, or any project-scoped entry at home,
@@ -239,6 +245,50 @@ describe("a Codex install and the Claude side of the machine", () => {
       ).toBe(false);
     },
   );
+
+  it.each([
+    { holding: "nothing", files: {} },
+    {
+      holding: "only the empty plugin list",
+      files: { [FILES.SETTINGS_JSON]: EMPTIED_PLUGIN_LIST },
+    },
+  ])(
+    "uninstall leaves a .claude/ the user made in the project, holding $holding, and says nothing of it",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async ({ files }: { files: Record<string, string> }) => {
+      env = await createTestEnvironment({ permissions: false });
+      const claudeFolder = path.join(env.projectDir, DIRS.CLAUDE);
+      await mkdir(claudeFolder, { recursive: true });
+      for (const [name, content] of Object.entries(files)) {
+        await writeFile(path.join(claudeFolder, name), content);
+      }
+      store.publish("CdxUsr01", ejected("project", "project"));
+      const codexInstall = await runInitFromOnCodex(
+        store,
+        "CdxUsr01",
+        { dir: env.projectDir, globalHome: env.fakeHome },
+        source.sourceDir,
+      );
+      expect(codexInstall.exitCode, flattenCliOutput(codexInstall.output)).toBe(EXIT_CODES.SUCCESS);
+      const before = await readTreeSnapshot(claudeFolder);
+
+      const run = await CLI.run(["uninstall", "--yes"], {
+        dir: env.projectDir,
+        globalHome: env.fakeHome,
+      });
+      const said = flattenCliOutput(run.output);
+
+      expect(run.exitCode, said).toBe(EXIT_CODES.SUCCESS);
+      expect(
+        await directoryExists(path.join(env.projectDir, CODEX_SOURCE_REL)),
+        "the Codex installation was uninstalled",
+      ).toBe(false);
+      expect(await directoryExists(claudeFolder), "the user's .claude/ is still there").toBe(true);
+      expect(await readTreeSnapshot(claudeFolder)).toStrictEqual(before);
+      expect(said).not.toContain(STEP_TEXT.UNINSTALL_CLAUDE_DIR_REMOVED);
+      expect(said).not.toContain(STEP_TEXT.UNINSTALL_CLAUDE_DIR_KEPT);
+    },
+  );
 });
 
 /** `.agents` whole: uninstall leaves the emptied parent behind, which is still the Codex side. */
@@ -257,7 +307,7 @@ type ClaudeSide = { home: InstallTree; project: InstallTree };
  */
 async function claudeSideOf(env: TestEnvironment): Promise<ClaudeSide> {
   const context = { roots: { home: [env.fakeHome] }, cliVersion: await cliVersionUnderTest() };
-  const projectUnderHome = path.relative(env.fakeHome, env.projectDir).split(path.sep).join("/");
+  const projectUnderHome = toPosixPath(path.relative(env.fakeHome, env.projectDir));
 
   const home = await readInstallTree(env.fakeHome, {
     skip: [...CLAUDE_SESSION_STATE, ...CODEX_SIDE_OF_A_SCOPE, projectUnderHome],

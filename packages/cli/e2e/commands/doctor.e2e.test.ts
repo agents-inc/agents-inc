@@ -1,4 +1,5 @@
 import path from "path";
+import { realpathSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import { describe, it, expect, afterEach } from "vitest";
 import { DIRS, doctorRow, EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
@@ -187,7 +188,45 @@ describe("doctor command", () => {
           doctorRow(row, STEP_TEXT.DOCTOR_STATUS_SKIP, STEP_TEXT.DOCTOR_SKIPPED_CONFIG_INVALID),
         );
       }
-      expect(stdout).toContain(`${STEP_TEXT.DOCTOR_SUMMARY} 8 passed, 0 warnings, 1 error`);
+      expect(stdout).toContain(`${STEP_TEXT.DOCTOR_SUMMARY} 7 passed, 0 warnings, 1 error`);
+    });
+  });
+
+  describe("a config missing its name and its skills", () => {
+    it("should say each field it defaulted once, however many times the run reads the config", async () => {
+      tempDir = await createTempDir();
+      const project = {
+        dir: path.join(tempDir, "project"),
+        globalHome: path.join(tempDir, "home"),
+      };
+      await mkdir(project.globalHome, { recursive: true });
+      await writeCorruptConfig(
+        project.dir,
+        renderConfigTs({ agents: buildAgentConfigs(["web-developer"], { scope: "project" }) }),
+      );
+
+      const { stdout, stderr } = await CLI.run(["doctor"], project);
+
+      expect(stdout, "the config loaded with its defaults").toContain(
+        STEP_TEXT.DOCTOR_CONFIG_IS_VALID,
+      );
+      expect(stdout, "no row skipped reading the config").not.toContain(
+        STEP_TEXT.DOCTOR_SKIPPED_CONFIG_INVALID,
+      );
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_SUMMARY);
+      const configPath = path.join(realpathSync(project.dir), DIRS.SOURCE_CLAUDE, FILES.CONFIG_TS);
+      // execa strips the final newline, so it is put back for the line's end to be pinned.
+      const warned = `${stderr}\n`;
+      for (const defaulted of [
+        STEP_TEXT.CONFIG_NAME_DEFAULTED,
+        STEP_TEXT.CONFIG_SKILLS_DEFAULTED,
+      ]) {
+        const line = `'${configPath}' ${defaulted}\n`;
+        expect(warned).toContain(line);
+        expect(warned.indexOf(line), `said once, not once per read:\n${stderr}`).toBe(
+          warned.lastIndexOf(line),
+        );
+      }
     });
   });
 

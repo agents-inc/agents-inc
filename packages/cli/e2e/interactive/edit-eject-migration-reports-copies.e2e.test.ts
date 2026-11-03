@@ -1,10 +1,11 @@
+import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { E2E_AGENT, E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
-import { cleanupFixture } from "../helpers/test-utils.js";
+import { cleanupFixture, cleanupTempDir } from "../helpers/test-utils.js";
 import {
   E2E_MARKETPLACE_NAME,
   EXIT_CODES,
@@ -30,6 +31,7 @@ describe("switching a skill to eject mode reports the copies it made", () => {
   let source: E2ESource;
   let store: SeedConfigStore;
   let prompt: InteractivePrompt | undefined;
+  const tempDirs: string[] = [];
 
   beforeAll(async () => {
     source = await createE2ESource();
@@ -57,6 +59,7 @@ describe("switching a skill to eject mode reports the copies it made", () => {
   afterEach(async () => {
     await prompt?.destroy();
     prompt = undefined;
+    await Promise.all(tempDirs.splice(0).map(cleanupTempDir));
   });
 
   it(
@@ -71,6 +74,7 @@ describe("switching a skill to eject mode reports the copies it made", () => {
         agents: [...E2E_AGENTS.WEB],
         domains: ["web"],
       });
+      tempDirs.push(path.dirname(project.dir));
 
       prompt = new InteractivePrompt(["edit", "--from", EJECTED_ID], project.dir, {
         ...TERMINAL_SIZE.TALL,
@@ -85,7 +89,7 @@ describe("switching a skill to eject mode reports the copies it made", () => {
 
       // Proof the migration ran, eject direction, one skill.
       expect(rawOutput).toContain(
-        `${STEP_TEXT.SWITCHING_SKILLS_PREFIX} 1 ${STEP_TEXT.SWITCHING_SKILLS_SUFFIX} ${STEP_TEXT.EJECT_LOCAL_COPY}`,
+        `${STEP_TEXT.SWITCHING_SKILLS_PREFIX} 1 ${STEP_TEXT.SWITCHING_ONE_SKILL_SUFFIX} ${STEP_TEXT.EJECT_LOCAL_COPY}`,
       );
       // No destination path: copies split between project and HOME by each skill's scope.
       expect(rawOutput).toContain(

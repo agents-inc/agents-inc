@@ -1,5 +1,5 @@
 import path from "path";
-import { mkdir } from "fs/promises";
+import { mkdir, writeFile } from "fs/promises";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { matrixSchema } from "@workspace/matrix/matrix-schema";
 import { CLI } from "../fixtures/cli.js";
@@ -15,11 +15,15 @@ import {
   readCompiledAgents,
   readMarketplaceJson,
   readTestFile,
+  readTreeSnapshot,
+  renderAgentMd,
   skillsPath,
   writeTestPackageJson,
+  writeTestPluginManifest,
 } from "../helpers/test-utils.js";
 import {
   CLI_INVOKE_COMMAND,
+  DIRS,
   E2E_MARKETPLACE_PREFIX,
   EXIT_CODES,
   FILES,
@@ -38,6 +42,7 @@ import {
   buildSeedPayload,
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
+import { parseRefusal } from "../../src/cli/lib/__tests__/helpers/cli-runner.js";
 
 /**
  * `new marketplace`'s arc: the scaffold must pass `doctor`, build, publish and install via `init
@@ -70,6 +75,11 @@ const PROMISED_FILES = [
   path.join(SOURCE_PATHS.SKILLS_DIR, EXAMPLE_SKILL_ID, FILES.SKILL_MD),
   path.join(SOURCE_PATHS.SKILLS_DIR, EXAMPLE_SKILL_ID, FILES.METADATA_YAML),
 ] as const;
+
+const WEB_DEVELOPER = E2E_AGENT["web-developer"].name;
+
+/** The folder an earlier CLI's `build plugins --agents-dir` built for one sub-agent. */
+const EARLIER_AGENT_PLUGIN = `agent-${WEB_DEVELOPER}`;
 
 /** Their loader unwraps a default export and nothing else. */
 const CONFIG_FILES = [
@@ -376,6 +386,75 @@ describe("new marketplace — round trip through the commands downstream", () =>
       expect(Object.keys(await readCompiledAgents(env.fakeHome))).toStrictEqual([
         `${webDeveloper}.md`,
       ]);
+    },
+  );
+});
+
+/**
+ * `build plugins` builds skills alone: an agents directory is refused like any option it lacks, and
+ * an agent plugin an earlier CLI built is pruned as stale.
+ */
+describe("new marketplace — build plugins builds skills alone", () => {
+  let tempDir: string;
+  let marketplaceDir: string;
+  let agentsDir: string;
+
+  beforeAll(async () => {
+    tempDir = await createTempDir();
+    marketplaceDir = path.join(tempDir, MARKETPLACE_NAME);
+    const scaffold = await CLI.run(["new", "marketplace", MARKETPLACE_NAME], { dir: tempDir });
+    expect(scaffold.exitCode, scaffold.output).toBe(EXIT_CODES.SUCCESS);
+    agentsDir = path.join(tempDir, DIRS.AGENTS);
+    await mkdir(agentsDir, { recursive: true });
+    await writeFile(path.join(agentsDir, `${WEB_DEVELOPER}.md`), renderAgentMd(WEB_DEVELOPER));
+  }, TIMEOUTS.SETUP);
+
+  afterAll(async () => {
+    if (tempDir) await cleanupTempDir(tempDir);
+  });
+
+  it.each(["--agents-dir", "-a"])(
+    "refuses %s as an option it does not have, and writes nothing",
+    async (option) => {
+      const before = await readTreeSnapshot(marketplaceDir);
+
+      const { exitCode, output } = await CLI.run(["build", "plugins", option, agentsDir], {
+        dir: marketplaceDir,
+      });
+
+      expect(exitCode, output).toBe(EXIT_CODES.INVALID_ARGS);
+      expect(output).toContain(parseRefusal(option));
+      expect(
+        await readTreeSnapshot(marketplaceDir),
+        "a refused build writes nothing",
+      ).toStrictEqual(before);
+    },
+  );
+
+  it(
+    "prunes an agent plugin an earlier build left, so the marketplace builds",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async () => {
+      const pluginsDir = path.join(marketplaceDir, SOURCE_PATHS.PLUGINS_DIST);
+      await writeTestPluginManifest(path.join(pluginsDir, EARLIER_AGENT_PLUGIN), {
+        name: EARLIER_AGENT_PLUGIN,
+        version: "1.0.0",
+        agents: "./agents/",
+      });
+
+      const buildPlugins = await CLI.run(["build", "plugins"], { dir: marketplaceDir });
+      expect(buildPlugins.exitCode, buildPlugins.output).toBe(EXIT_CODES.SUCCESS);
+      expect(
+        await listFiles(pluginsDir),
+        "a plugin no skill builds is stale, whatever its manifest declares",
+      ).toStrictEqual([EXAMPLE_SKILL_ID]);
+
+      const buildMarketplace = await CLI.run(["build", "marketplace"], { dir: marketplaceDir });
+      expect(buildMarketplace.exitCode, buildMarketplace.output).toBe(EXIT_CODES.SUCCESS);
+      const marketplace = await readMarketplaceJson(
+        path.join(marketplaceDir, SOURCE_PATHS.PLUGIN_MANIFEST_DIR, FILES.MARKETPLACE_JSON),
+      );
+      expect(marketplace.plugins.map((plugin) => plugin.name)).toStrictEqual([EXAMPLE_SKILL_ID]);
     },
   );
 });
