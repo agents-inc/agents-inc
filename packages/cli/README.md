@@ -106,7 +106,7 @@ Each subagent is composed from modular partials (role, workflow, output format) 
 | `init`    | Build a configuration in agentsinc.sh/editor, or install one by id with `--from`                  |
 | `edit`    | Open this installation in agentsinc.sh/editor, or apply a configuration built there with `--from` |
 | `compile` | Recompile subagents after changes                                                                 |
-| `update`  | Refresh the marketplaces this installation uses (ejected skills are yours)                        |
+| `update`  | Refresh the marketplaces and move every plugin to its newest version (ejected skills are yours)   |
 | `search`  | Search this installation's marketplace and your local skills                                      |
 | `share`   | Share this installation as an id anyone can install                                               |
 
@@ -121,7 +121,7 @@ Each subagent is composed from modular partials (role, workflow, output format) 
 | Command             | Description                                    |
 | ------------------- | ---------------------------------------------- |
 | `build marketplace` | Generate `marketplace.json` from built plugins |
-| `build plugins`     | Build skill and agent plugins for distribution |
+| `build plugins`     | Build skill plugins for distribution           |
 | `new marketplace`   | Scaffold a marketplace of your own             |
 
 ### Diagnostics

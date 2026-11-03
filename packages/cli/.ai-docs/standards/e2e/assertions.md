@@ -768,9 +768,9 @@ Clearing the minimum-size gate is not evidence the content is visible.
 
 ## A counter is not its content
 
-**Where a message reports a PARTITION, a spec asking "how many did this reach" asserts every operand.** A leading count can be narrower than the question. `recompileSummary` (`src/cli/utils/messages.ts`), printed by `reportRecompile` in `commands/compile.ts` and in `commands/edit.tsx`, reads `<n> agents rewritten, <m> unchanged`, with `compile`'s pass label before `agents`: the first number counts the agents this pass wrote, and an agent that compiled to the bytes already on disk is in `unchanged` (`rewritten: false` in `write-compiled-agents.ts`). Agents reached is the SUM. A spec asserting the leading count alone is green only while its fixture lands in that arm, and turns misleading when a later change moves the population into the other.
+**Where a message reports a PARTITION, a spec asking "how many did this reach" asserts every operand.** A leading count can be narrower than the question. `recompileSummary` (`src/cli/utils/messages.ts`), printed by `reportRecompile` in `commands/compile.ts` and in `commands/edit.tsx`, reads `<n> agents rewritten, <m> unchanged`, with `compile`'s pass label before `agents` and `, <k> created` before `unchanged` when the pass wrote a file that was not there: `rewritten` counts files that were there and moved, `created` files that were not, and an agent that compiled to the bytes already on disk is in `unchanged` (`file: "unchanged"` in `write-compiled-agents.ts`). Agents reached is the SUM of the three. A spec asserting the leading count alone is green only while its fixture lands in that arm, and turns misleading when a later change moves the population into the other.
 
-**Instead:** assert the whole pair. `recompile-summary-honesty.e2e.test.ts` and `compile.e2e.test.ts` assert `<n> … rewritten, <m> unchanged` whole. The census lists only the mirror in `e2e/pages/constants.ts`:
+**Instead:** assert the whole pair. `recompile-summary-honesty.e2e.test.ts` and `compile.e2e.test.ts` assert `<n> … rewritten[, <k> created], <m> unchanged` whole. The census lists only the mirror in `e2e/pages/constants.ts`:
 
 ```
 grep -rn 'AGENTS_REWRITTEN' e2e --include='*.ts' | grep -v UNCHANGED

@@ -9,18 +9,18 @@ what generates and gates the code. Working rules: [`CLAUDE.md`](../CLAUDE.md). R
 `workspaces` in the root `package.json` is `apps/*` and `packages/*`. Bun is the only package
 manager (one `bun.lock`) and turbo runs every task. Only `packages/cli` publishes.
 
-| Workspace                                             | Package                | What it is                                                                                                                                                                                                               |
-| ----------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `packages/cli`                                        | `agents-inc`           | The CLI: oclif commands, Ink UI. tsup bundles `@workspace/{matrix,compile,api}` (`noExternal` in `tsup.config.ts`), so those three stay private                                                                          |
-| `packages/matrix`                                     | `@workspace/matrix`    | The browser-safe skill catalogue, plus the wire contracts: `seed.ts` (a share id's payload), `matrix-schema.ts` (a marketplace's `catalog.json`), `skill-index.ts` (`GET /skills`)                                       |
-| `packages/compile`                                    | `@workspace/compile`   | The pure renderers: `config.ts` and `config-types.ts` source, agent bodies, the Liquid engine, seed → config, and the vendored agent corpus. Node-free (`node-free.test.ts`), so the editor previews what the CLI writes |
-| `packages/api`                                        | `@workspace/api`       | `createApiClient`: `hc<AppType>`, `AppType` imported from `server`. Sends cookies by default; the CLI passes `credentials: "omit"`                                                                                       |
-| `packages/api-mocks`                                  | `@workspace/api-mocks` | One MSW description of the worker and of the GitHub hosts the editor reads. The CLI, editor and server suites all resolve against it                                                                                     |
-| `packages/ui`                                         | `@workspace/ui`        | The design system: tokens and components, consumed as source                                                                                                                                                             |
-| `packages/{eslint,prettier,typescript,vitest}-config` | `@workspace/*-config`  | Shared configs. `bun run deps:check` fails a workspace that stops extending one without a `//no-shared-*` reason in its `package.json`                                                                                   |
-| `apps/editor`                                         | `editor`               | The editor at `agentsinc.sh/editor`: Vite, React, TanStack Router, zustand stores persisted to localStorage. Deployed as Cloudflare static assets                                                                        |
-| `apps/server`                                         | `server`               | The API worker at `api.agentsinc.sh`: Hono with `@hono/zod-openapi`, KV `CONFIGS`, D1 through drizzle, better-auth (GitHub)                                                                                              |
-| `apps/www`                                            | `www`                  | Astro and Starlight at `agentsinc.sh`: `/` redirects to the editor (`public/_redirects`), user docs at `/docs` from `apps/www/src/content/docs/docs/` and the CLI's `changelogs/`. It has no React integration, on purpose (see `astro.config.ts`)     |
+| Workspace                                             | Package                | What it is                                                                                                                                                                                                                                         |
+| ----------------------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/cli`                                        | `agents-inc`           | The CLI: oclif commands, Ink UI. tsup bundles `@workspace/{matrix,compile,api}` (`noExternal` in `tsup.config.ts`), so those three stay private                                                                                                    |
+| `packages/matrix`                                     | `@workspace/matrix`    | The browser-safe skill catalogue, plus the wire contracts more than one workspace reads; its `README.md` lists them                                                                                                                                |
+| `packages/compile`                                    | `@workspace/compile`   | The pure renderers: `config.ts` and `config-types.ts` source, agent bodies, the Liquid engine, seed → config, and the vendored agent corpus. Node-free (`node-free.test.ts`), so the editor previews what the CLI writes                           |
+| `packages/api`                                        | `@workspace/api`       | `createApiClient`: `hc<AppType>`, `AppType` imported from `server`. Sends cookies by default; the CLI passes `credentials: "omit"`                                                                                                                 |
+| `packages/api-mocks`                                  | `@workspace/api-mocks` | One MSW description of the worker and of the GitHub hosts the editor reads. The CLI, editor and server suites all resolve against it                                                                                                               |
+| `packages/ui`                                         | `@workspace/ui`        | The design system: tokens and components, consumed as source                                                                                                                                                                                       |
+| `packages/{eslint,prettier,typescript,vitest}-config` | `@workspace/*-config`  | Shared configs. `bun run deps:check` fails a workspace that stops extending one without a `//no-shared-*` reason in its `package.json`                                                                                                             |
+| `apps/editor`                                         | `editor`               | The editor at `agentsinc.sh/editor`: Vite, React, TanStack Router, zustand stores persisted to localStorage. Deployed as Cloudflare static assets                                                                                                  |
+| `apps/server`                                         | `server`               | The API worker at `api.agentsinc.sh`: Hono with `@hono/zod-openapi`, KV `CONFIGS`, D1 through drizzle, better-auth (GitHub)                                                                                                                        |
+| `apps/www`                                            | `www`                  | Astro and Starlight at `agentsinc.sh`: `/` redirects to the editor (`public/_redirects`), user docs at `/docs` from `apps/www/src/content/docs/docs/` and the CLI's `changelogs/`. It has no React integration, on purpose (see `astro.config.ts`) |
 
 Skill content lives in the separate [`agents-inc/skills`](https://github.com/agents-inc/skills)
 repository. It is the CLI's default marketplace (`DEFAULT_SOURCE` in `packages/compile/src/paths.ts`),
@@ -58,9 +58,11 @@ toSeedPayload ──POST /configs──▶  validate, hash, KV  ──id──�
 
 1. **Editor.** The selection lives in `stores/config-store.ts`, judged against whichever catalogue
    is seated in `stores/catalog-store.ts`. Share and install call `createSharedConfig`, which POSTs
-   `toSeedPayload(config)`. The install dialog prints `npx agents-inc init --from <id>`, and adds
-   `--provider codex` only for Codex (`use-install-command.ts`). `/?fromId=<id>` opens a shared
-   configuration without writing over the visitor's own (`use-catalog-first.ts`).
+   `toSeedPayload(config)`. The install dialog prints `npx agents-inc init --from <id>`, or
+   `edit --from <id>` for a link a bare `edit` minted inside a project or from the global
+   installation, and adds `--provider codex` only for Codex (`use-install-command.ts`).
+   `/?fromId=<id>` opens a shared configuration without writing over the visitor's own
+   (`use-catalog-first.ts`).
 2. **Worker.** It stores the validated, re-serialised payload under its own hash, so the same
    configuration always gets the same id. The id is immutable.
 3. **CLI.** `init --from` (`selectionFromSharedConfig` in `commands/init.tsx`) fetches the payload
@@ -80,11 +82,12 @@ toSeedPayload ──POST /configs──▶  validate, hash, KV  ──id──�
    `packages/compile/src/providers/codex/agent-role-toml.ts`).
 
 **The contract is `packages/matrix/src/seed.ts`.** Every consumer imports it: the editor, the
-worker, the CLI and the api-mocks fixtures. Changing the payload's shape means bumping
-`SEED_VERSION`. The schema accepts exactly one version, with no migration, so old ids and saves
-stop installing and must be re-shared. Then update `toSeedPayload` and `fromSeedPayload` in the
-editor, `configToSeedPayload` on the CLI side, `seedToInstallSelection` in `@workspace/compile`,
-and the fixtures in `packages/api-mocks/src/fixtures.ts`.
+worker, the CLI and the api-mocks fixtures. Raise `SEED_VERSION` when an older reader would
+refuse or misread a link; an optional mark it can drop needs none. The schema accepts exactly one
+version, with no migration, so old ids and saves stop installing and must be re-shared. Then update
+`toSeedPayload` and `fromSeedPayload` in the editor, `configToSeedPayload` on the CLI side,
+`seedToInstallSelection` in `@workspace/compile`, and the fixtures in
+`packages/api-mocks/src/fixtures.ts`.
 
 **The preview and the install share their renderers.** The editor's output preview renders with
 `@workspace/compile` and the vendored corpus, so it draws the bytes `init --from` writes.
@@ -115,8 +118,7 @@ entry carries its own `scope`.
   them.
 - `AGENTS_NOT_ON_CODEX` (`packages/compile/src/providers/codex/roster.ts`) lists the sub-agents
   Codex does not compile. A project-scope Codex role only loads when the user's global
-  `config.toml` trusts that project. `lib/hosts/codex-project-trust.ts` detects that entry and
-  never writes it.
+  `config.toml` trusts that project.
 
 **Plugin or eject, per skill.** A skill's `origin` in `config.ts` is either `"eject"`
 (`EJECT_SOURCE`), meaning it is copied into the skills directory, or a marketplace name, meaning it
@@ -154,7 +156,7 @@ output; regenerate it and commit everything the generator wrote.
 | `apps/editor`                   | Vitest with the node preset. MSW refuses any unhandled request                                                                                                              | Playwright (`playwright.config.ts`). `test:visual`: Argos captures (`playwright.visual.config.ts`)                                                                 |
 | `apps/server`                   | Vitest inside workerd (`@cloudflare/vitest-pool-workers`), with the D1 migrations applied                                                                                   | `vitest.e2e.config.ts`: processes a developer runs, such as `bun run dev`                                                                                          |
 | `packages/ui`                   | Every story runs as a test in real Chromium, with axe at `error`                                                                                                            | `chromatic`: appearance baselines, light and dark                                                                                                                  |
-| `apps/www`                      | The `scripts/check-*.ts` content checks                                                                                                                                     |                                                                                                                                                                    |
+| `apps/www`                      | The `scripts/` checks its `test` script runs                                                                                                                                |                                                                                                                                                                    |
 | matrix, compile, api, api-mocks | Vitest                                                                                                                                                                      |                                                                                                                                                                    |
 
 There is no correct root Vitest run, so the root `vitest.config.mjs` throws. Run suites through
