@@ -1,9 +1,9 @@
 import { execa } from "execa";
 import { mkdir, rm } from "fs/promises";
-import { createRequire } from "node:module";
-import path from "path";
 import { z } from "zod";
 import { cleanupTempDir, codexHome, createTempDir } from "../helpers/test-utils.js";
+import { PINNED_CODEX } from "./codex-on-path.js";
+import { codexConfigFile } from "./codex-plugin-switch.js";
 
 /**
  * Runs the PINNED `@openai/codex`, never one off PATH, so a format change fails on the day the pin
@@ -15,18 +15,6 @@ const JSON_FLAG = "--json";
 
 /** `e` is `exec`'s alias. */
 const EVENT_STREAM_SUBCOMMANDS = ["exec", "e"];
-
-const codexManifestSchema = z.object({
-  version: z.string().min(1),
-  bin: z.object({ codex: z.string().min(1) }),
-});
-
-const requireFromHere = createRequire(import.meta.url);
-const CODEX_MANIFEST_PATH = requireFromHere.resolve("@openai/codex/package.json");
-const CODEX_MANIFEST = codexManifestSchema.parse(requireFromHere(CODEX_MANIFEST_PATH));
-
-/** Run with this process's Node rather than a `node` off PATH. */
-const CODEX_ENTRY = path.join(path.dirname(CODEX_MANIFEST_PATH), CODEX_MANIFEST.bin.codex);
 
 export type CodexRun = {
   exitCode: number;
@@ -44,7 +32,7 @@ export async function isCodexCLIAvailable(): Promise<boolean> {
   const home = await createTempDir();
   try {
     const result = await startPinned(home, ["--version"], home);
-    return result.exitCode === 0 && result.stdout.includes(CODEX_MANIFEST.version);
+    return result.exitCode === 0 && result.stdout.includes(PINNED_CODEX.version);
   } finally {
     await cleanupTempDir(home);
   }
@@ -108,7 +96,7 @@ export async function readCodexBundledModels(home: string): Promise<CodexBundled
  * changes what later runs read. Marketplaces and plugin switches live here too and are reset.
  */
 export async function resetCodexGlobalConfig(home: string): Promise<void> {
-  await rm(path.join(codexHome(home), "config.toml"), { force: true });
+  await rm(codexConfigFile(home), { force: true });
 }
 
 /**
@@ -123,12 +111,16 @@ async function startPinned(
   const stateDir = codexHome(home);
   await mkdir(stateDir, { recursive: true });
 
-  const { exitCode, stdout, stderr } = await execa(process.execPath, [CODEX_ENTRY, ...args], {
-    cwd,
-    reject: false,
-    stdin: "ignore",
-    env: { HOME: home, CODEX_HOME: stateDir },
-  });
+  const { exitCode, stdout, stderr } = await execa(
+    process.execPath,
+    [PINNED_CODEX.entry, ...args],
+    {
+      cwd,
+      reject: false,
+      stdin: "ignore",
+      env: { HOME: home, CODEX_HOME: stateDir },
+    },
+  );
 
   // No exit code means a signal killed it.
   return { exitCode: exitCode ?? 1, stdout, stderr };

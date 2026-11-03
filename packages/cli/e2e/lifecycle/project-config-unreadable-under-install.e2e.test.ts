@@ -21,6 +21,10 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
+import {
   compactCliOutput,
   configTsPath,
   flattenCliOutput,
@@ -30,11 +34,17 @@ import {
 } from "../helpers/test-utils.js";
 import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
+type RecordedOverABrokenConfig = RunsOverABrokenConfig & {
+  pipedShare: ConfigReaderRun & { minted: string[] };
+};
+
+const PIPED_PAYLOAD = buildSeedPayload({ skills: { [E2E_SKILL.react.id]: buildSeedSkill() } });
+
 describe("a real project whose own config.ts cannot be loaded, under a readable global one", () => {
   let env: DualScopeEnv;
   let store: SeedConfigStore;
   let projectConfig: string;
-  const broken = new Map<string, RunsOverABrokenConfig>();
+  const broken = new Map<string, RecordedOverABrokenConfig>();
   let uninstall: CLIResult;
   let globalClaudeBefore: Record<string, TreeSnapshotEntry>;
   let globalClaudeAfter: Record<string, TreeSnapshotEntry>;
@@ -47,7 +57,15 @@ describe("a real project whose own config.ts cannot be loaded, under a readable 
 
     for (const { shape, body } of UNREADABLE_CONFIG_SHAPES) {
       await restoreInstallation();
-      broken.set(shape, await runEveryReaderOverABrokenConfig(env, env.projectDir, body, store));
+      const runs = await runEveryReaderOverABrokenConfig(env, env.projectDir, body, store);
+      store.reset();
+      const { exitCode, output } = await CLI.run(
+        ["share", "--stdin"],
+        { dir: env.projectDir, globalHome: env.fakeHome },
+        { env: { AGENTS_INC_API_URL: store.url }, input: JSON.stringify(PIPED_PAYLOAD) },
+      );
+      broken.set(shape, { ...runs, pipedShare: { exitCode, output, minted: [...store.minted] } });
+      store.reset();
     }
 
     await restoreInstallation();
@@ -67,7 +85,7 @@ describe("a real project whose own config.ts cannot be loaded, under a readable 
     await env.destroy();
   });
 
-  function brokenBy(shape: string): RunsOverABrokenConfig {
+  function brokenBy(shape: string): RecordedOverABrokenConfig {
     const runs = broken.get(shape);
     if (!runs) throw new Error(`nothing was recorded for a project config that ${shape}`);
     return runs;
@@ -119,6 +137,12 @@ describe("a real project whose own config.ts cannot be loaded, under a readable 
 
     it("sends nothing to the config store when share refuses", () => {
       expect(brokenBy(shape).shareRequests).toStrictEqual([]);
+    });
+
+    it("still publishes a configuration piped to share, which reads no installation", () => {
+      const { exitCode, output, minted } = brokenBy(shape).pipedShare;
+      expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+      expect(output).toContain(`init --from ${firstElement(minted)}`);
     });
 
     it("leaves the installation, both scopes of it, byte-identical", () => {

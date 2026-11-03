@@ -149,7 +149,6 @@ describe("compile against a marketplace it cannot reach", () => {
   });
 });
 
-/** How a project names the marketplace the server serves, and what sends giget's download there. */
 type Naming = {
   naming: string;
   marketplaceOn: (server: TarballSourceServer) => string;
@@ -165,12 +164,7 @@ const NAMINGS: Naming[] = [
   },
 ];
 
-/**
- * The saved copy lost the record beside it and the marketplace is closed for good: the next load
- * reads what the earlier download left, for a git source as for a URL, and says the marketplace
- * could not be reached. `search` stands for the load here, since what it lists is what the
- * catalogue it read holds.
- */
+/** `search` stands for the load here, since what it lists is what the catalogue it read holds. */
 describe.each(NAMINGS)(
   "a load over a saved copy that lost its record, against a marketplace named $naming it cannot reach",
   ({ marketplaceOn, envFor }) => {

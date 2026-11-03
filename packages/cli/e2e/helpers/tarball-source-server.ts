@@ -1,9 +1,13 @@
 import { createHash } from "node:crypto";
 import { createServer, type ServerResponse } from "node:http";
-import type { AddressInfo } from "node:net";
 import path from "path";
 
 import { execa } from "execa";
+
+import {
+  closeServer,
+  listenOnLoopback,
+} from "../../src/cli/lib/__tests__/helpers/loopback-server.js";
 
 /**
  * A cached remote source whose ETag moves only on `publish` (local sources are never cached).
@@ -76,7 +80,7 @@ export async function startTarballSourceServer(sourceDir: string): Promise<Tarba
       return;
     }
 
-    const status = statusFor(request.method, request.headers["if-none-match"], etag);
+    const status = statusFor(request.headers["if-none-match"], etag);
     requests.push(`${request.method ?? "?"} ${status}`);
 
     response.setHeader("etag", etag);
@@ -87,14 +91,13 @@ export async function startTarballSourceServer(sourceDir: string): Promise<Tarba
       holdHalfway(response);
       return;
     }
-    response.end(status === 200 && request.method === "GET" ? body : undefined);
+    response.end(status === OK && request.method === "GET" ? body : undefined);
   });
 
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = await listenOnLoopback(server);
 
   return {
-    // A TCP listener's address() is always an AddressInfo.
-    url: `http://localhost:${(server.address() as AddressInfo).port}/${TARBALL_NAME}`,
+    url: `http://localhost:${port}/${TARBALL_NAME}`,
     requests,
     publish: async (nextSourceDir: string) => {
       body = await packDirectory(nextSourceDir);
@@ -110,18 +113,18 @@ export async function startTarballSourceServer(sourceDir: string): Promise<Tarba
     stallOnce: (passing = 0) => {
       oneOff = { method: "GET", answer: STALL, passing };
     },
-    close: () =>
-      new Promise<void>((resolve) => {
-        for (const response of held) response.destroy();
-        server.close(() => resolve());
-      }),
+    close: () => {
+      for (const response of held) response.destroy();
+      return closeServer(server);
+    },
   };
 }
 
 const NOT_MODIFIED = 304;
 const OK = 200;
 
-function statusFor(method: string | undefined, ifNoneMatch: string | undefined, etag: string) {
+// A conditional GET is a revalidation the CLI may switch to; the log must read it as no download.
+function statusFor(ifNoneMatch: string | undefined, etag: string) {
   if (ifNoneMatch === etag) return NOT_MODIFIED;
   return OK;
 }

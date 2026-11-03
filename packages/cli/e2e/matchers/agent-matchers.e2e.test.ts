@@ -3,12 +3,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import "./setup.js";
 import { CLI } from "../fixtures/cli.js";
-import { E2E_AGENT } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_BUILTIN_AGENT } from "../fixtures/expected-values.js";
 import { MINIMAL_PROJECT_AGENT_NAMES, ProjectBuilder } from "../fixtures/project-builder.js";
 import type { ProjectHandle } from "../fixtures/project-handle.js";
 import { DECLARED_STOP_HOOK_LINE, declareAStopHook } from "../helpers/declared-stop-hook.js";
 import { cleanupTempDir, loadConfigOrFail, readCompiledAgents } from "../helpers/test-utils.js";
-import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { DIRS, EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 
 /**
@@ -22,6 +22,8 @@ const WEB_DEVELOPER = E2E_AGENT["web-developer"].name;
 const WEB_DEVELOPER_TOOLS = ["Read", "Write", "Edit", "Grep", "Glob", "Bash", "Skill"];
 
 const UNGRANTED_TOOL = "WebFetch";
+
+const NEVER_COMPILED = E2E_BUILTIN_AGENT["cli-developer"].name;
 
 const CONFIGURED_AGENTS = buildAgentConfigs([...MINIMAL_PROJECT_AGENT_NAMES], { scope: "project" });
 
@@ -61,6 +63,14 @@ describe("toHaveAgentFrontmatter tools", () => {
       }),
     ).rejects.toThrow(
       `Expected agent frontmatter tools to contain "${UNGRANTED_TOOL}" but found: "${WEB_DEVELOPER_TOOLS.join(", ")}"`,
+    );
+  });
+
+  it("rejects a sub-agent compile never wrote, naming the path it looked for", async () => {
+    const agentPath = path.join(project.dir, DIRS.CLAUDE, DIRS.AGENTS, `${NEVER_COMPILED}.md`);
+
+    await expect(expect(project).toHaveAgentFrontmatter(NEVER_COMPILED, {})).rejects.toThrow(
+      `Expected compiled agent at ${agentPath} but it does not exist`,
     );
   });
 });

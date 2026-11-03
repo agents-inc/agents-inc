@@ -6,6 +6,7 @@ import pty from "@lydell/node-pty";
 import { Terminal } from "@xterm/headless";
 import treeKill from "tree-kill";
 import {
+  AUTO_HOME_PREFIX,
   BIN_RUN,
   NO_BACKGROUND_VERSION_CHECK,
   NO_LIVE_SEED_API,
@@ -19,7 +20,6 @@ import { TIMEOUTS } from "../pages/constants.js";
 
 const DEFAULT_COLS = 120;
 const DEFAULT_ROWS = 40;
-const AUTO_HOME_PREFIX = "ai-e2e-home-";
 
 function isDefinedEntry(entry: [string, string | undefined]): entry is [string, string] {
   return entry[1] !== undefined;

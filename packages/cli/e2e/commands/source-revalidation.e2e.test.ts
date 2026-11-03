@@ -154,11 +154,6 @@ describe("remote source revalidation", () => {
   });
 });
 
-/**
- * A server error on the check right after a download saves the copy without a version stamp. Every
- * later command still asks about that copy, so what the source publishes next is offered, and a
- * source that cannot be reached is said as it is for any saved copy.
- */
 describe("a copy saved without a version stamp", () => {
   let before: E2ESource;
   let after: E2ESource;

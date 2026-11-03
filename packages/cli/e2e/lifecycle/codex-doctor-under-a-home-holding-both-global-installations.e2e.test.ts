@@ -4,9 +4,10 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { CLI } from "../fixtures/cli.js";
 import {
-  codexGlobalSkillsDir,
-  runInitFromOnClaude,
-  runInitFromOnCodex,
+  configIn,
+  GLOBAL_SKILLS_DIR,
+  INSTALL_WITH,
+  SOURCE_FOLDER,
 } from "../fixtures/codex-install.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
@@ -20,11 +21,10 @@ import {
   directoryExists,
   fileExists,
   flattenCliOutput,
+  otherThan,
   readTestFile,
-  skillsPath,
 } from "../helpers/test-utils.js";
 import {
-  DIRS,
   doctorRow,
   EXIT_CODES,
   FILES,
@@ -45,11 +45,6 @@ import {
  * skill no marketplace offers: doctor checks the project beside the global installation of its own
  * provider, the one it inherits, so it finds that installation's carried skill where it was copied.
  * Claude is the control, being also the provider a home holding both would otherwise be read as.
- * Once `uninstall --provider` at home removes the project's own provider's global, doctor checks
- * the project with no global installation, and names nothing of the other provider's. Nor does it
- * read the other's global config: doctor goes on where that config cannot load, naming it nowhere.
- *
- * CLI-991.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -83,21 +78,6 @@ const GLOBAL_SEED_ID = {
 
 const PROJECT_SEED_ID = "BothHmPj";
 
-const INSTALL_WITH = {
-  claude: runInitFromOnClaude,
-  codex: runInitFromOnCodex,
-} as const satisfies Record<Provider, typeof runInitFromOnClaude>;
-
-const GLOBAL_SKILLS_DIR = {
-  claude: skillsPath,
-  codex: codexGlobalSkillsDir,
-} as const satisfies Record<Provider, (home: string) => string>;
-
-const SOURCE_FOLDER = {
-  claude: DIRS.SOURCE_CLAUDE,
-  codex: DIRS.SOURCE_CODEX,
-} as const satisfies Record<Provider, string>;
-
 const DOCTOR_RUNS = [
   {
     at: "with no terminal",
@@ -122,14 +102,6 @@ const DOCTOR_RUNS = [
 const EACH_PROVIDER_AT_EACH_TERMINAL = PROVIDERS.flatMap((provider) =>
   DOCTOR_RUNS.map((run) => ({ provider, ...run })),
 );
-
-function otherThan(provider: Provider): Provider[] {
-  return PROVIDERS.filter((candidate) => candidate !== provider);
-}
-
-function configIn(root: string, provider: Provider): string {
-  return path.join(root, SOURCE_FOLDER[provider], FILES.CONFIG_TS);
-}
 
 describe("doctor in a project under a home holding a Claude and a Codex global installation", () => {
   let store: SeedConfigStore;
@@ -222,9 +194,7 @@ describe("doctor in a project under a home holding a Claude and a Codex global i
         ).toBe(false);
       }
     }
-    const projectConfig = await readTestFile(
-      path.join(project.dir, SOURCE_FOLDER[provider], FILES.CONFIG_TS),
-    );
+    const projectConfig = await readTestFile(configIn(project.dir, provider));
     expect(projectConfig, `the ${provider} project carries its own provider's global`).toContain(
       CARRIED[provider].id,
     );
@@ -242,7 +212,6 @@ describe("doctor in a project under a home holding a Claude and a Codex global i
     return project;
   }
 
-  /** As a user removes one provider's global installation: `uninstall --provider` at home. */
   async function uninstallTheGlobalOf(provider: Provider): Promise<void> {
     if (!env) throw new Error("no test environment: install one first");
     const home = env.fakeHome;
@@ -254,12 +223,12 @@ describe("doctor in a project under a home holding a Claude and a Codex global i
 
     // Subject guards: the home now holds the other provider's global installation alone.
     expect(
-      await fileExists(path.join(home, SOURCE_FOLDER[provider], FILES.CONFIG_TS)),
+      await fileExists(configIn(home, provider)),
       `the ${provider} global installation is gone`,
     ).toBe(false);
     for (const other of otherThan(provider)) {
       expect(
-        await fileExists(path.join(home, SOURCE_FOLDER[other], FILES.CONFIG_TS)),
+        await fileExists(configIn(home, other)),
         `the ${other} global installation stays`,
       ).toBe(true);
     }

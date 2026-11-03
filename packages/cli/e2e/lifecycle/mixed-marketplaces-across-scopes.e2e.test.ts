@@ -101,7 +101,6 @@ const UNASSIGNED_PROJECT_CONFIGURATION = buildSeedPayload({
   agents: { [API_DEV]: { on: true, scope: "project" } },
 });
 
-/** Constrained to `SkillId`, so retiring either from the public catalogue reddens this line. */
 const PUBLIC_SKILL = "web-framework-react" as const satisfies SkillId;
 const PUBLIC_PLUGIN_SKILL = "web-testing-vitest" as const satisfies SkillId;
 
@@ -471,7 +470,6 @@ describe("a global installation from one marketplace under a project from anothe
       return environment;
     }
 
-    /** No `--marketplace`: what the id carries decides the marketplace. */
     function initFromWithoutTheFlag(environment: TestEnvironment, id: string): Promise<CLIResult> {
       return CLI.run(
         ["init", "--from", id],
@@ -696,7 +694,7 @@ describe("a global installation from one marketplace under a project from anothe
       env = undefined;
     });
 
-    /** No global installation yet; the seeded checkout keeps installing from the public catalogue offline. */
+    /** The seeded checkout keeps installing from the public catalogue offline. */
     async function takeEnvironmentWithPublicProject(): Promise<TestEnvironment> {
       const environment = await createTestEnvironment({ permissions: false });
       await seedDefaultSourceCache(environment.fakeHome, { omitting: NOT_IN_THE_CHECKOUT });

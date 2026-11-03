@@ -28,7 +28,7 @@ import {
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
 import { applyEditFrom } from "../fixtures/e2e-stack-seed.js";
-import { runInitFromOnCodex } from "../fixtures/codex-install.js";
+import { codexGlobalSkillsDir, runInitFromOnCodex } from "../fixtures/codex-install.js";
 import { flattenCliOutput } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
@@ -57,6 +57,7 @@ import { entryAt, firstElement } from "../../src/cli/lib/__tests__/helpers/eleme
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
+const API_DEV = E2E_AGENT["api-developer"].name;
 
 /**
  * Non-exclusive on purpose: an exclusive category would make these specs about the one-skill rule.
@@ -152,9 +153,7 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
     // Carries the red: reported as unknown while its content sat unread in the payload.
     expect(flattenCliOutput(output)).not.toContain("does not know");
     expect(stdout).toContain(panelRow(ADDED_MARKER, EXTERNAL_DISPLAY));
-    expect(stdout).toContain(
-      `\nWrote 1 skill(s) this configuration carries: ${EXTERNAL_DISPLAY}\n`,
-    );
+    expect(stdout).toContain(`\nWrote 1 skill this configuration carries: ${EXTERNAL_DISPLAY}\n`);
 
     // "eject" is the only origin an added skill can have.
     const config = await loadConfigOrFail(env.projectDir);
@@ -440,28 +439,30 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
     },
   );
 
+  /** The carried skill at global scope, for a sub-agent pinned to the project. */
+  function carryingExternalGlobally() {
+    return buildSeedPayload({
+      skills: {
+        [EXTERNAL_ID]: buildSeedSkill({
+          install: "eject",
+          scope: "global",
+          assignments: { [WEB_DEV]: "lazy" },
+        }),
+      },
+      external: {
+        [EXTERNAL_ID]: buildSeedExternalSkill({
+          categoryId: EXTERNAL_CATEGORY,
+          repo: EXTERNAL_REPO,
+          files: EXTERNAL_FILES,
+        }),
+      },
+      agents: { [WEB_DEV]: PINNED_TO_PROJECT },
+    });
+  }
+
   it("routes a carried skill to the scope its own entry names", async () => {
     env = await createTestEnvironment({ permissions: false });
-    store.publish(
-      "External2",
-      buildSeedPayload({
-        skills: {
-          [EXTERNAL_ID]: buildSeedSkill({
-            install: "eject",
-            scope: "global",
-            assignments: { [WEB_DEV]: "lazy" },
-          }),
-        },
-        external: {
-          [EXTERNAL_ID]: buildSeedExternalSkill({
-            categoryId: EXTERNAL_CATEGORY,
-            repo: EXTERNAL_REPO,
-            files: EXTERNAL_FILES,
-          }),
-        },
-        agents: { [WEB_DEV]: PINNED_TO_PROJECT },
-      }),
-    );
+    store.publish("External2", carryingExternalGlobally());
 
     const { exitCode, output } = await runInitFrom(
       store,
@@ -479,6 +480,51 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
     await expectFourSurfaces(env.projectDir, { globalHome: env.fakeHome });
     await expectFourSurfaces(env.fakeHome);
   });
+
+  it(
+    "copies a carried global skill where a Claude project's own provider reads it, under a Codex home",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async () => {
+      env = await createTestEnvironment({ permissions: false });
+      store.publish(
+        "CdxHome1",
+        buildSeedPayload({
+          skills: {
+            [E2E_SKILL.hono.id]: buildSeedSkill({
+              scope: "global",
+              assignments: { [API_DEV]: "preloaded" },
+            }),
+          },
+          agents: { [API_DEV]: { scope: "global" } },
+        }),
+      );
+      const atHome = await runInitFromOnCodex(
+        store,
+        "CdxHome1",
+        { dir: env.fakeHome, globalHome: env.fakeHome },
+        sourceDir,
+      );
+      expect(atHome.exitCode, flattenCliOutput(atHome.output)).toBe(EXIT_CODES.SUCCESS);
+      store.publish("ExtUnder", carryingExternalGlobally());
+
+      const { exitCode, output } = await runInitFrom(
+        store,
+        "ExtUnder",
+        { dir: env.projectDir, globalHome: env.fakeHome },
+        sourceDir,
+      );
+      expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
+
+      expect(await listFiles(skillsPath(env.fakeHome))).toStrictEqual([EXTERNAL_ID]);
+      expect(
+        await fileExists(path.join(skillsPath(env.fakeHome), EXTERNAL_ID, FILES.SKILL_MD)),
+      ).toBe(true);
+      expect(
+        await listFiles(codexGlobalSkillsDir(env.fakeHome)),
+        "Codex's global folder keeps only the home's own skill",
+      ).toStrictEqual([E2E_SKILL.hono.id]);
+    },
+  );
 
   it("refuses to install a carried skill as a plugin, and writes nothing", async () => {
     env = await createTestEnvironment({ permissions: false });
@@ -557,13 +603,11 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
       sourceDir,
     );
 
-    // Unguarded, the impostor installs and exits 0; refused only as a collision, the reason
-    // assertion below is the one that fails.
     expect(exitCode).toBe(EXIT_CODES.ERROR);
     // Named: the sharer has to re-mint this id.
     expect(flattenCliOutput(output)).toContain(E2E_SKILL.react.id);
     // For the right reason: the name, not the collision it would cause.
-    expect(flattenCliOutput(output)).toContain("under ids that do not start with 'external-'");
+    expect(flattenCliOutput(output)).toContain("under an id that does not start with 'external-'");
     expect(flattenCliOutput(output)).not.toContain("does not know");
 
     // Content and mtime under both scopes: a refusal owes every surface. Watched go red by flipping
@@ -608,10 +652,9 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
       { env: { AGENTS_INC_API_URL: store.url } },
     );
 
-    // Carries the red: no catalogue the receiver can see owns the id, so it installs.
     expect(exitCode, `the bypass installed: ${output}`).toBe(EXIT_CODES.ERROR);
     expect(flattenCliOutput(output)).toContain(ANOTHER_MARKETPLACES_ID);
-    expect(flattenCliOutput(output)).toContain("under ids that do not start with 'external-'");
+    expect(flattenCliOutput(output)).toContain("under an id that does not start with 'external-'");
     // For the right reason: an id the loaded marketplace lacks is also skipped by name.
     expect(flattenCliOutput(output)).not.toContain("does not know");
     expect(await readTreeSnapshot(env.fakeHome)).toStrictEqual(homeBefore);

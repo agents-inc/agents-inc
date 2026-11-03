@@ -25,16 +25,12 @@ import {
  * Codex has no update verb, so `update` adds each plugin again, and Codex switches a plugin back on
  * whenever it is added. A git marketplace is refreshed with `marketplace upgrade`, a local folder by
  * adding every plugin of it again, so the two reach that add by different routes.
- *
- * Mutation-checked through the fixture: switching the switched-on plugin off after the update, and
- * skipping the git serving, each reddened the assertion that names it.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
 const SWITCHED_OFF_PLUGIN = E2E_SKILL.react.id;
 const SWITCHED_ON_PLUGIN = E2E_SKILL.hono.id;
-/** Added straight through Codex from the same marketplace; the project's config does not name it. */
 const UNCONFIGURED_PLUGIN = E2E_SKILL.vitest.id;
 
 const SEED_IDS = { git: "UpdOffGt", local: "UpdOffLc" } as const;

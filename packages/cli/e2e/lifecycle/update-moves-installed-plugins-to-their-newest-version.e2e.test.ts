@@ -1,5 +1,4 @@
 import path from "path";
-import { appendFile } from "fs/promises";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { CLI, type CLIResult } from "../fixtures/cli.js";
@@ -7,6 +6,7 @@ import { runCodex, type CodexRun } from "../fixtures/codex.js";
 import { codexProjectSkillsDir, runInitFromOnCodex } from "../fixtures/codex-install.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
+import { offerANewVersionOf, SOURCE_EDIT } from "../fixtures/marketplace-moves-on.js";
 import { pluginKeyFor } from "../fixtures/plugin-install-state.js";
 import {
   runInitFrom,
@@ -49,28 +49,6 @@ const CODEX_SEED_ID = "UpdPlgCx";
 /** What a first build gives every plugin, and what a build after a content change gives it. */
 const INSTALLED_VERSION = "1.0.0";
 const OFFERED_VERSION = "2.0.0";
-
-const SOURCE_EDIT = "## A section added to the marketplace after installation";
-
-/** Edits every named skill in the source, then rebuilds, so the marketplace offers a new version. */
-async function offerANewVersionOf(
-  fixture: E2EPluginSource,
-  skillIds: readonly string[],
-): Promise<void> {
-  for (const skillId of skillIds) {
-    await appendFile(
-      path.join(fixture.sourceDir, SOURCE_PATHS.SKILLS_DIR, skillId, FILES.SKILL_MD),
-      `\n\n${SOURCE_EDIT}\n`,
-    );
-  }
-  for (const build of [
-    ["build", "plugins"],
-    ["build", "marketplace"],
-  ]) {
-    const built = await CLI.run(build, { dir: fixture.sourceDir });
-    expect(built.exitCode, `${build.join(" ")} failed: ${built.output}`).toBe(EXIT_CODES.SUCCESS);
-  }
-}
 
 async function registeredPlugins(home: string): Promise<Record<string, unknown[]>> {
   const registryPath = path.join(home, DIRS.CLAUDE, DIRS.PLUGINS, FILES.INSTALLED_PLUGINS_JSON);

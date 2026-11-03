@@ -21,12 +21,6 @@ import {
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
-/**
- * `init --from` at a terminal whose configuration cannot be saved: it has said "Copied 2 skills
- * (1 project, 1 global)", then takes both copies back, so after the error one line says so and
- * nothing follows it. The save is refused by a read-only source folder in the project.
- */
-
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const API_DEV = E2E_AGENT["api-developer"].name;
 const SEED_ID = "CopiesBk1";
@@ -79,7 +73,6 @@ describe.skipIf(process.getuid?.() === 0)("init --from <id> at a terminal: a ref
     env = undefined;
   });
 
-  /** Exit code, and everything the terminal showed with oclif's wrapping undone. */
   async function installApproved(
     environment: TestEnvironment,
   ): Promise<{ exitCode: number; said: string }> {

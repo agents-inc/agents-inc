@@ -3,36 +3,22 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
 import { CLI } from "../fixtures/cli.js";
-import { runInitFromOnClaude, runInitFromOnCodex } from "../fixtures/codex-install.js";
+import { INSTALL_WITH, SOURCE_FOLDER } from "../fixtures/codex-install.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
 import type { ProjectHandle } from "../fixtures/project-handle.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { cleanupTempDir, directoryExists, flattenCliOutput } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
-import type { Provider } from "../../src/cli/consts.js";
+import { EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
+import { PROVIDERS, type Provider } from "../../src/cli/consts.js";
 
 /**
  * `list` from a folder holding no installation, under a HOME whose global installations it shows.
  * The user docs say `list` names both installations above the one it is showing only "when one
- * scope holds both" (configuration/providers.md). CLI-969: measured against the built CLI, a HOME
- * holding only a Codex installation printed "holds 1 installations — codex — and this is the claude
- * one" above the listing of that Codex installation. Claude is the control, being also the provider
- * a folder holding nothing would otherwise be read as.
+ * scope holds both" (configuration/providers.md). Claude is the control, being also the provider a
+ * folder holding nothing would otherwise be read as.
  */
-
-const EVERY_PROVIDER = ["claude", "codex"] as const satisfies readonly Provider[];
-
-const SOURCE_FOLDER = {
-  claude: DIRS.SOURCE_CLAUDE,
-  codex: DIRS.SOURCE_CODEX,
-} as const satisfies Record<Provider, string>;
-
-const INSTALL_WITH = {
-  claude: runInitFromOnClaude,
-  codex: runInitFromOnCodex,
-} as const satisfies Record<Provider, typeof runInitFromOnClaude>;
 
 const SEED_ID = "ListInhr";
 
@@ -76,16 +62,16 @@ describe("list in a folder holding no installation, under a HOME holding global 
     // folder list runs in holds none of its own.
     expect(
       await Promise.all(
-        EVERY_PROVIDER.map((provider) => directoryExists(path.join(home, SOURCE_FOLDER[provider]))),
+        PROVIDERS.map((provider) => directoryExists(path.join(home, SOURCE_FOLDER[provider]))),
       ),
       `HOME holds a source folder for ${providers.join(" and ")} and no other, in roster order`,
-    ).toStrictEqual(EVERY_PROVIDER.map((provider) => providers.includes(provider)));
+    ).toStrictEqual(PROVIDERS.map((provider) => providers.includes(provider)));
     await expectNoSourceFolder(env.projectDir, "the folder list runs in holds no installation");
 
     return { home, project: { dir: env.projectDir, globalHome: home } };
   }
 
-  it.each(EVERY_PROVIDER)(
+  it.each(PROVIDERS)(
     "lists a HOME's lone %s installation with no line naming another above it",
     { timeout: TIMEOUTS.LIFECYCLE },
     async (provider) => {
@@ -108,7 +94,7 @@ describe("list in a folder holding no installation, under a HOME holding global 
     "names both of a HOME's installations above the Claude one it lists, and the flag that shows the other",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      const { home, project } = await installAtHome(EVERY_PROVIDER);
+      const { home, project } = await installAtHome(PROVIDERS);
 
       const { exitCode, stdout } = await CLI.run(["list"], project);
 

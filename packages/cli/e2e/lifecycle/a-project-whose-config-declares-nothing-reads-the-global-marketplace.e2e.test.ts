@@ -3,14 +3,17 @@ import { mkdir, readFile } from "fs/promises";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { CLI } from "../fixtures/cli.js";
-import { runInitFromOnClaude } from "../fixtures/codex-install.js";
 import { setAsideInstallation } from "../fixtures/config-reading-commands.js";
 import { seedDefaultSourceCache } from "../fixtures/default-source-cache.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
 import { E2E_SKILL, E2E_SKILL_IDS, E2E_STACK_AGENTS } from "../fixtures/expected-values.js";
 import type { ProjectHandle } from "../fixtures/project-handle.js";
-import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
@@ -27,12 +30,6 @@ import {
 } from "../helpers/test-utils.js";
 import { doctorRow, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import type { SkillId } from "../../src/cli/types/index.js";
-
-/**
- * A project whose config declares no skill and no sub-agent counts exactly like no config, so it
- * reads the marketplace HOME's installation came from, as a project with no config does. Each
- * command runs in both projects under the same HOME, and the project with no config is the control.
- */
 
 const SEED_ID = "DeclMkt";
 
@@ -57,7 +54,7 @@ describe("a project whose config declares nothing, under a HOME installed from a
     noConfig = { dir: path.join(home, "holds-no-config"), globalHome: home };
     await mkdir(noConfig.dir);
 
-    const installed = await runInitFromOnClaude(
+    const installed = await runInitFrom(
       store,
       SEED_ID,
       { dir: home, globalHome: home },

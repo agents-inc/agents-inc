@@ -25,6 +25,7 @@ import {
 import { buildClaudeSettings } from "../../src/cli/lib/__tests__/factories/claude-settings-factories.js";
 import { createMockSkill, sa } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
 import { buildProjectTypesExtras } from "../../src/cli/lib/config-gate/propagate.js";
+import { toPosixPath } from "../../src/cli/utils/posix-path.js";
 import {
   generateConfigTypesSource,
   generateProjectConfigTypesSource,
@@ -189,6 +190,32 @@ export function metadataFieldsFor(skillId: string): SkillIdentityFields {
   return entry;
 }
 
+function e2eSkillMetadataYaml(skillId: string, contentHash: string): string {
+  return renderMetadataYaml({
+    ...metadataFieldsFor(skillId),
+    cliDescription: "E2E test skill",
+    usageGuidance: "Use when testing E2E scenarios",
+    contentHash,
+  });
+}
+
+async function createLocalSkillsHashedById(
+  projectDir: string,
+  skills: readonly string[],
+): Promise<void> {
+  await Promise.all(
+    skills.map(async (skillId) =>
+      createLocalSkill(projectDir, skillId, {
+        description: "Test skill",
+        metadata: renderMetadataYaml({
+          ...metadataFieldsFor(skillId),
+          contentHash: `e2e-hash-${skillId}`,
+        }),
+      }),
+    ),
+  );
+}
+
 // The only file `toHavePlugin` reads. Writes rather than merges: the directory is freshly created.
 async function writePluginInstallSettings(
   projectDir: string,
@@ -211,7 +238,6 @@ export const MINIMAL_PROJECT_AGENT_NAMES = [
 // Deliberately outside the `SkillId` union.
 export const CUSTOM_PROJECT_SKILL_ID = "web-custom-e2e-widget";
 
-/** The built-in catalogue, with the custom skill seated as compile seats it from its metadata. */
 function catalogueSeatingTheCustomSkill(): MergedSkillsMatrix {
   // Boundary casts: a custom skill's id and slug are outside the generated unions.
   const customSkill = createMockSkill(CUSTOM_PROJECT_SKILL_ID as SkillId, {
@@ -222,7 +248,6 @@ function catalogueSeatingTheCustomSkill(): MergedSkillsMatrix {
   return { ...matrix, skills: { ...matrix.skills, [customSkill.id]: customSkill } };
 }
 
-/** As compile writes them at home: narrowed to the config, with no extras. */
 async function writeGlobalConfigTypes(globalHome: string): Promise<void> {
   const config = await loadConfigOrFail(globalHome);
   await writeFile(
@@ -231,7 +256,6 @@ async function writeGlobalConfigTypes(globalHome: string): Promise<void> {
   );
 }
 
-/** As compile writes them in a project whose HOME holds no global config-types.ts. */
 async function writeStandaloneProjectConfigTypes(
   projectDir: string,
   catalogue: MergedSkillsMatrix,
@@ -249,7 +273,6 @@ async function writeStandaloneProjectConfigTypes(
   );
 }
 
-/** As compile writes them in a project whose HOME is `globalHome`: each union extends the global's. */
 async function writeProjectConfigTypesExtendingGlobal(
   projectDir: string,
   globalHome: string,
@@ -273,7 +296,7 @@ async function writeProjectConfigTypesExtendingGlobal(
 
 // An import specifier, so `/` on every platform.
 function posixPathFrom(fromDir: string, toDir: string): string {
-  return path.relative(fromDir, toDir).split(path.sep).join("/");
+  return toPosixPath(path.relative(fromDir, toDir));
 }
 
 export class ProjectBuilder {
@@ -284,12 +307,7 @@ export class ProjectBuilder {
     await createLocalSkill(projectDir, MINIMAL_PROJECT_SKILL_ID, {
       description: "E2E test skill for compile verification",
       body: "# Test E2E Skill\n\nThis skill exists solely for E2E testing of the compile command.",
-      metadata: renderMetadataYaml({
-        ...metadataFieldsFor(MINIMAL_PROJECT_SKILL_ID),
-        cliDescription: "E2E test skill",
-        usageGuidance: "Use when testing E2E scenarios",
-        contentHash: "a1b2c3d",
-      }),
+      metadata: e2eSkillMetadataYaml(MINIMAL_PROJECT_SKILL_ID, "a1b2c3d"),
     });
 
     await writeProjectConfig(
@@ -344,20 +362,17 @@ export class ProjectBuilder {
       }),
     );
 
-    for (const skillId of skills) {
-      await createLocalSkill(projectDir, skillId, {
-        description: "Test skill for E2E",
-        body: `# ${skillId}\n\nTest content.`,
-        metadata: options?.forkedFrom
-          ? FORKED_FROM_METADATA
-          : renderMetadataYaml({
-              ...metadataFieldsFor(skillId),
-              cliDescription: "E2E test skill",
-              usageGuidance: "Use when testing E2E scenarios",
-              contentHash: "b2c3d4e",
-            }),
-      });
-    }
+    await Promise.all(
+      skills.map(async (skillId) =>
+        createLocalSkill(projectDir, skillId, {
+          description: "Test skill for E2E",
+          body: `# ${skillId}\n\nTest content.`,
+          metadata: options?.forkedFrom
+            ? FORKED_FROM_METADATA
+            : e2eSkillMetadataYaml(skillId, "b2c3d4e"),
+        }),
+      ),
+    );
 
     return { dir: projectDir };
   }
@@ -389,12 +404,7 @@ export class ProjectBuilder {
       description: options?.globalSkill?.description ?? "Global E2E skill for dual-scope testing",
       metadata:
         options?.globalSkill?.metadata ??
-        renderMetadataYaml({
-          ...metadataFieldsFor("web-testing-cypress-e2e"),
-          cliDescription: "E2E test skill",
-          usageGuidance: "Use when testing E2E scenarios",
-          contentHash: "c3d4e5f",
-        }),
+        e2eSkillMetadataYaml("web-testing-cypress-e2e", "c3d4e5f"),
     });
 
     await writeProjectConfig(
@@ -420,14 +430,7 @@ export class ProjectBuilder {
     await createLocalSkill(projectDir, "web-mocks-msw", {
       description:
         options?.projectSkill?.description ?? "Project-local E2E skill for dual-scope testing",
-      metadata:
-        options?.projectSkill?.metadata ??
-        renderMetadataYaml({
-          ...metadataFieldsFor("web-mocks-msw"),
-          cliDescription: "E2E test skill",
-          usageGuidance: "Use when testing E2E scenarios",
-          contentHash: "d4e5f6a",
-        }),
+      metadata: options?.projectSkill?.metadata ?? e2eSkillMetadataYaml("web-mocks-msw", "d4e5f6a"),
     });
 
     return {
@@ -569,15 +572,7 @@ export class ProjectBuilder {
       }),
     );
 
-    for (const skillId of skills) {
-      await createLocalSkill(projectDir, skillId, {
-        description: "Test skill",
-        metadata: renderMetadataYaml({
-          ...metadataFieldsFor(skillId),
-          contentHash: `e2e-hash-${skillId}`,
-        }),
-      });
-    }
+    await createLocalSkillsHashedById(projectDir, skills);
 
     await writeAgentStubs(projectDir, agents);
 
@@ -608,15 +603,7 @@ export class ProjectBuilder {
       }),
     );
 
-    for (const skillId of skills) {
-      await createLocalSkill(projectDir, skillId, {
-        description: "Test skill",
-        metadata: renderMetadataYaml({
-          ...metadataFieldsFor(skillId),
-          contentHash: `e2e-hash-${skillId}`,
-        }),
-      });
-    }
+    await createLocalSkillsHashedById(projectDir, skills);
 
     await writeAgentStubs(projectDir, agents);
 

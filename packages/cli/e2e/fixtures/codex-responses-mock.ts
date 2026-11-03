@@ -1,5 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import type { AddressInfo } from "node:net";
+import { buffer } from "node:stream/consumers";
+
+import { listenOnLoopback } from "../../src/cli/lib/__tests__/helpers/loopback-server.js";
 
 // A scripted OpenAI Responses API, so the real pinned Codex binary runs offline with only the model's
 // turns scripted. Every POST is kept, in order, on `requests`.
@@ -22,7 +24,6 @@ export type CodexResponsesMock = {
 
 const RESPONSES_PATH = "/responses";
 const API_PREFIX = "/v1";
-const LOOPBACK = "127.0.0.1";
 
 // Answers the `/models` probe Codex opens with.
 const EMPTY_MODEL_LISTING = JSON.stringify({ object: "list", data: [], models: [] });
@@ -33,12 +34,10 @@ export async function startCodexResponsesMock(scenario: Scenario): Promise<Codex
     void answer(request, response, scenario, requests);
   });
 
-  await new Promise<void>((resolve) => server.listen(0, LOOPBACK, resolve));
-  // A TCP listener reports AddressInfo; only a pipe or closed server reports otherwise.
-  const { port } = server.address() as AddressInfo;
+  const { origin } = await listenOnLoopback(server);
 
   return {
-    baseUrl: `http://${LOOPBACK}:${port}${API_PREFIX}`,
+    baseUrl: `${origin}${API_PREFIX}`,
     requests,
     close: () =>
       new Promise<void>((resolve, reject) => {
@@ -60,7 +59,7 @@ async function answer(
   }
 
   const path = request.url ?? "";
-  const body = parseBody(await readBody(request));
+  const body = parseBody((await buffer(request)).toString("utf-8"));
   requests.push({ path, body });
 
   if (!path.endsWith(RESPONSES_PATH)) {
@@ -75,14 +74,6 @@ async function answer(
       "content-length": Buffer.byteLength(payload),
     })
     .end(payload);
-}
-
-async function readBody(request: IncomingMessage): Promise<string> {
-  const chunks: Buffer[] = [];
-  // The stream yields `any`; without setEncoding each chunk is bytes.
-  for await (const chunk of request) chunks.push(Buffer.from(chunk as Uint8Array));
-
-  return Buffer.concat(chunks).toString("utf-8");
 }
 
 function parseBody(raw: string): ResponsesRequestBody {

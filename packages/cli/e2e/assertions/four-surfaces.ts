@@ -13,7 +13,7 @@ import {
   probeConfigTypesNarrowing,
 } from "../helpers/type-check-probe.js";
 import { EJECT_SOURCE } from "../../src/cli/consts.js";
-import { buildSkillRefsFromConfig } from "../../src/cli/lib/resolver.js";
+import { resolveAgentConfigToSkills } from "../../src/cli/lib/stacks/stacks-loader.js";
 import {
   activeAgentScopeMap,
   effectivelyExcludedSkillIds,
@@ -228,7 +228,7 @@ function expectedPlacements(
 
   return agentNames.flatMap((name) => {
     const seesGlobalOnly = scopeByAgent.get(name) === "global";
-    return buildSkillRefsFromConfig(config.stack?.[name] ?? {})
+    return resolveAgentConfigToSkills(config.stack?.[name] ?? {})
       .filter((ref) => !excludedIds.has(ref.id) && (!seesGlobalOnly || globalIds.has(ref.id)))
       .map((ref) => placementFor(String(name), ref, originById.get(ref.id)));
   });

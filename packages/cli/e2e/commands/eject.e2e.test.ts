@@ -33,12 +33,15 @@ import {
   codexProjectSkillsDir,
   PROVIDER_CLAUDE,
   PROVIDER_CODEX,
-  runInitFromOnClaude,
   runInitFromOnCodex,
 } from "../fixtures/codex-install.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import type { ProjectHandle } from "../fixtures/project-handle.js";
-import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
 import { E2E_AGENT, E2E_SKILL, E2E_SKILL_IDS } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
 import { buildProjectConfig } from "../../src/cli/lib/__tests__/factories/config-factories.js";
@@ -720,7 +723,7 @@ describe("eject command", () => {
         const project = { dir: env.projectDir, globalHome: env.fakeHome };
         store.publish("BthEjCl1", skillLess("project"));
         store.publish("BthEjCd1", skillLess("project"));
-        const claude = await runInitFromOnClaude(store, "BthEjCl1", project, sourceDir);
+        const claude = await runInitFrom(store, "BthEjCl1", project, sourceDir);
         expect(claude.exitCode, flattenCliOutput(claude.output)).toBe(EXIT_CODES.SUCCESS);
         const codex = await runInitFromOnCodex(store, "BthEjCd1", project, sourceDir);
         expect(codex.exitCode, flattenCliOutput(codex.output)).toBe(EXIT_CODES.SUCCESS);
@@ -771,7 +774,7 @@ describe("eject command", () => {
         const env = await freshEnvironment();
         const project = { dir: env.projectDir, globalHome: env.fakeHome };
         store.publish("ClaEjCp1", reactEjectedGlobally());
-        const installed = await runInitFromOnClaude(store, "ClaEjCp1", project, sourceDir);
+        const installed = await runInitFrom(store, "ClaEjCp1", project, sourceDir);
         expect(installed.exitCode, flattenCliOutput(installed.output)).toBe(EXIT_CODES.SUCCESS);
 
         const { exitCode, output } = await CLI.run(["eject", "skills"], project);

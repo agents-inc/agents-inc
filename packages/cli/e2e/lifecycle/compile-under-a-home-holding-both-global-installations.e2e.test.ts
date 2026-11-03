@@ -4,9 +4,10 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { CLI } from "../fixtures/cli.js";
 import {
-  codexGlobalSkillsDir,
-  runInitFromOnClaude,
-  runInitFromOnCodex,
+  configIn,
+  GLOBAL_SKILLS_DIR,
+  INSTALL_WITH,
+  SOURCE_FOLDER,
 } from "../fixtures/codex-install.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
@@ -18,10 +19,10 @@ import {
   directoryExists,
   fileExists,
   flattenCliOutput,
+  otherThan,
   readTestFile,
-  skillsPath,
 } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { PROVIDERS, type Provider } from "../../src/cli/consts.js";
 import { renderUnparseableMetadataYaml } from "../../src/cli/lib/__tests__/content-generators.js";
 import {
@@ -35,11 +36,7 @@ import {
  * skill no marketplace offers: `compile` reads the global installation the project inherits, its
  * own provider's, and nothing of the other. So a skill whose metadata describes nothing stops the
  * project's compile when it sits in that installation, and not when it sits in the other. Claude
- * is the control, being also the provider a home holding both would otherwise be read as. Once
- * `uninstall --provider` at home removes the project's own provider's global, the project inherits
- * no global installation, and the other provider's is still never read.
- *
- * CLI-984, CLI-991.
+ * is the control, being also the provider a home holding both would otherwise be read as.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -76,28 +73,9 @@ const GLOBAL_SEED_ID = {
 
 const PROJECT_SEED_ID = "BothCmPj";
 
-const INSTALL_WITH = {
-  claude: runInitFromOnClaude,
-  codex: runInitFromOnCodex,
-} as const satisfies Record<Provider, typeof runInitFromOnClaude>;
-
-const GLOBAL_SKILLS_DIR = {
-  claude: skillsPath,
-  codex: codexGlobalSkillsDir,
-} as const satisfies Record<Provider, (home: string) => string>;
-
-const SOURCE_FOLDER = {
-  claude: DIRS.SOURCE_CLAUDE,
-  codex: DIRS.SOURCE_CODEX,
-} as const satisfies Record<Provider, string>;
-
 /** Mirrors the verbose line `compile` writes for the global copied-in scope it discovered. */
 function globalSkillsReadFrom(dir: string): string {
   return `global local skills from ${dir}`;
-}
-
-function otherThan(provider: Provider): Provider[] {
-  return PROVIDERS.filter((candidate) => candidate !== provider);
 }
 
 describe("compile in a project under a home holding a Claude and a Codex global installation", () => {
@@ -190,9 +168,7 @@ describe("compile in a project under a home holding a Claude and a Codex global 
         ).toBe(false);
       }
     }
-    const projectConfig = await readTestFile(
-      path.join(project.dir, SOURCE_FOLDER[provider], FILES.CONFIG_TS),
-    );
+    const projectConfig = await readTestFile(configIn(project.dir, provider));
     expect(projectConfig, `the ${provider} project carries its own provider's global`).toContain(
       CARRIED[provider].id,
     );
@@ -224,7 +200,6 @@ describe("compile in a project under a home holding a Claude and a Codex global 
     await writeFile(carriedMetadataPath(atHome), renderUnparseableMetadataYaml());
   }
 
-  /** As a user removes one provider's global installation: `uninstall --provider` at home. */
   async function uninstallTheGlobalOf(provider: Provider, home: string): Promise<void> {
     const uninstalled = await CLI.run(["uninstall", "--yes", "--provider", provider], {
       dir: home,
@@ -234,7 +209,7 @@ describe("compile in a project under a home holding a Claude and a Codex global 
 
     // Subject guards: the home now holds the other provider's global installation alone.
     expect(
-      await fileExists(path.join(home, SOURCE_FOLDER[provider], FILES.CONFIG_TS)),
+      await fileExists(configIn(home, provider)),
       `the ${provider} global installation is gone`,
     ).toBe(false);
     for (const other of otherThan(provider)) {

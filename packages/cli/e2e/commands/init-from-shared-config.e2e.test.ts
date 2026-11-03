@@ -80,7 +80,7 @@ describe("init --from <id>", () => {
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     // No wizard: this must work over a pipe and in CI.
     expect(output).toContain("Fetching configuration Ab3xY9_Q");
-    expect(output).toContain("Installing 2 skill(s)");
+    expect(output).toContain("Installing 2 skills across 1 sub-agent\n");
 
     // Structural: `toContain` cannot say which skill carries which scope.
     const config = await loadConfigOrFail(tempDir);
@@ -115,7 +115,7 @@ describe("init --from <id>", () => {
     );
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(output).toContain("Installing 1 skill(s)");
+    expect(output).toContain("Installing 1 skill across 1 sub-agent\n");
 
     const config = await loadConfigOrFail(tempDir);
     expect(config.skills.map((skill) => skill.id)).toStrictEqual([E2E_SKILL.react.id]);
@@ -207,7 +207,7 @@ describe("init --from <id>", () => {
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(flattenCliOutput(output)).toContain("web-framework-does-not-exist");
-    expect(output).toContain("Installing 1 skill(s)");
+    expect(output).toContain("Installing 1 skill across 1 sub-agent\n");
 
     const config = await readFile(configTsPath(tempDir), "utf8");
     expect(config).toContain(E2E_SKILL.react.id);

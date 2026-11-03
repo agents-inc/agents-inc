@@ -4,6 +4,7 @@ import path from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { isCodexCLIAvailable, runCodex } from "../fixtures/codex.js";
+import { codexConfigFile } from "../fixtures/codex-plugin-switch.js";
 import {
   assistantMessage,
   mockProviderConfig,
@@ -105,7 +106,7 @@ describe("the Codex test lane against the pinned binary", () => {
     expect(mock.requests.flatMap((request) => userTextsIn(request.body))).toContain("say hello");
 
     // Codex persists the project's trust entry, and nothing pointing at the mock.
-    const persisted = await readFile(path.join(codexHome(home), "config.toml"), "utf-8");
+    const persisted = await readFile(codexConfigFile(home), "utf-8");
     expect(persisted).toContain(`[projects."${project}"]`);
     expect(persisted).not.toContain("model_providers");
   });

@@ -21,7 +21,7 @@ export default async function setup() {
   await assertDistIsFresh(CLI_ROOT);
 
   // The `codex` every spawned CLI resolves by name.
-  await installCodexOnPath();
+  const removeCodexShim = await installCodexOnPath();
 
   // Built once per run, in a folder of its own, and frozen read-only, so a spec writing into a
   // shared source fails at the write.
@@ -32,6 +32,7 @@ export default async function setup() {
 
   return async () => {
     await removeSharedSource();
+    await removeCodexShim();
 
     let marketplaces;
     try {

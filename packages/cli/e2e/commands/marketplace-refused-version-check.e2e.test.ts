@@ -120,7 +120,6 @@ describe("init --from and edit --from against a marketplace that refuses its ver
     return `${server.url} ${STEP_TEXT.MARKETPLACE_REFUSED_CACHED} (${status}) — ${STEP_TEXT.SOURCE_UNREACHABLE_CACHED}`;
   }
 
-  /** Leaves the saved copy as all a load has: its record and giget's tarball are removed. */
   async function loseTheRecordAndGigetsTarball(): Promise<void> {
     const copy = path.join(
       env.fakeHome,
@@ -437,10 +436,6 @@ describe("init --from and edit --from against a marketplace that refuses its ver
     },
   );
 
-  /**
-   * With the saved copy's record lost and giget's tarball gone, giget's refused download is the only
-   * answer a load gets, and it is taken as a refused version check is.
-   */
   describe.each(REFUSALS)(
     "once the marketplace answers $status over a saved copy that lost its record, with no tarball of giget's left",
     ({ status, refusal }) => {

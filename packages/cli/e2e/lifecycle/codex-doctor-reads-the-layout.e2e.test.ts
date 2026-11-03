@@ -7,12 +7,12 @@ import {
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { codexProjectSkillsDir, runInitFromOnCodex } from "../fixtures/codex-install.js";
 import {
-  codexProjectSkillsDir,
-  runInitFromOnClaude,
-  runInitFromOnCodex,
-} from "../fixtures/codex-install.js";
-import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
 import { CLI } from "../fixtures/cli.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
@@ -190,7 +190,7 @@ describe("doctor over a project holding a Claude and a Codex installation", () =
         agents: { [WEB_DEV]: PINNED_TO_PROJECT },
       }),
     );
-    for (const install of [runInitFromOnClaude, runInitFromOnCodex]) {
+    for (const install of [runInitFrom, runInitFromOnCodex]) {
       const { exitCode, output } = await install(store, sharedId, project, fixture.sourceDir);
       expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
     }

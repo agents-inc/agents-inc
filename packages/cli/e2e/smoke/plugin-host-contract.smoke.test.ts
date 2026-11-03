@@ -1,11 +1,11 @@
-import { appendFile, mkdir } from "fs/promises";
+import { mkdir } from "fs/promises";
 import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { hostFor } from "../../src/cli/lib/hosts/host-for.js";
 import type { HostCallOptions, PluginHost } from "../../src/cli/lib/hosts/plugin-host.js";
-import { CLI } from "../fixtures/cli.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { offerANewVersionOf } from "../fixtures/marketplace-moves-on.js";
 import {
   createE2EPluginSource,
   type E2EPluginSource,
@@ -19,7 +19,7 @@ import {
   createTempDir,
   type IsolatedClaudeHome,
 } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, FILES, SOURCE_PATHS, TIMEOUTS } from "../pages/constants.js";
+import { DIRS, TIMEOUTS } from "../pages/constants.js";
 
 // The plugin-host contract against the real `claude` binary: the only layer that notices when Claude
 // rewords the not-found message `uninstallPlugin` classifies. Skipped where `claude` is absent. The
@@ -32,23 +32,6 @@ const UPDATED_SKILL = E2E_SKILL.react.id;
 /** What a first build gives a plugin, and what a build after a content change gives it. */
 const INSTALLED_VERSION = "1.0.0";
 const OFFERED_VERSION = "2.0.0";
-
-const SOURCE_EDIT = "## A section added to the marketplace after installation";
-
-/** Edits the skill in the source, then rebuilds, so the marketplace offers its next version. */
-async function offerANewVersionOf(fixture: E2EPluginSource, skillId: string): Promise<void> {
-  await appendFile(
-    path.join(fixture.sourceDir, SOURCE_PATHS.SKILLS_DIR, skillId, FILES.SKILL_MD),
-    `\n\n${SOURCE_EDIT}\n`,
-  );
-  for (const build of [
-    ["build", "plugins"],
-    ["build", "marketplace"],
-  ]) {
-    const built = await CLI.run(build, { dir: fixture.sourceDir });
-    expect(built.exitCode, `${build.join(" ")} failed: ${built.output}`).toBe(EXIT_CODES.SUCCESS);
-  }
-}
 
 const host: PluginHost = hostFor("claude");
 const claudeAvailable = await host.isAvailable();
@@ -197,7 +180,7 @@ describe.skipIf(!claudeAvailable)(
 
       await host.addMarketplace(fixture.sourceDir, pinned);
       await host.installPlugin(pluginRef, "project", projectDir, pinned);
-      await offerANewVersionOf(fixture, UPDATED_SKILL);
+      await offerANewVersionOf(fixture, [UPDATED_SKILL]);
     }, TIMEOUTS.SETUP);
 
     afterAll(async () => {
@@ -260,7 +243,7 @@ describe("the Codex host updating a plugin against the pinned binary", () => {
 
     await codex.addMarketplace(fixture.sourceDir, pinned);
     await codex.installPlugin(pluginRef, "global", projectDir, pinned);
-    await offerANewVersionOf(fixture, UPDATED_SKILL);
+    await offerANewVersionOf(fixture, [UPDATED_SKILL]);
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {

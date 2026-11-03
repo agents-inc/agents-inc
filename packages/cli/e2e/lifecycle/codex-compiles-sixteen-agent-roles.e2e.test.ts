@@ -12,8 +12,12 @@ import {
   codexProjectAgentsDir,
   readCodexAgentRoles,
 } from "../fixtures/codex-agent-roles.js";
-import { runInitFromOnClaude, runInitFromOnCodex } from "../fixtures/codex-install.js";
-import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { runInitFromOnCodex } from "../fixtures/codex-install.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   agentsPath,
@@ -129,7 +133,7 @@ describe("a Codex compile writes sixteen of the eighteen sub-agents", () => {
       env = await createTestEnvironment({ permissions: false });
       publishThreeAgents("CdxRoles2");
 
-      const { exitCode, output } = await runInitFromOnClaude(
+      const { exitCode, output } = await runInitFrom(
         store,
         "CdxRoles2",
         { dir: env.projectDir, globalHome: env.fakeHome },
@@ -186,7 +190,7 @@ describe("a Codex compile writes sixteen of the eighteen sub-agents", () => {
       env = await createTestEnvironment({ permissions: false });
       publishThreeAgents("CdxRoles4");
 
-      const { exitCode, output } = await runInitFromOnClaude(
+      const { exitCode, output } = await runInitFrom(
         store,
         "CdxRoles4",
         { dir: env.projectDir, globalHome: env.fakeHome },
@@ -326,7 +330,7 @@ describe("a Codex compile writes sixteen of the eighteen sub-agents", () => {
         }),
       );
 
-      const { exitCode, output } = await runInitFromOnClaude(
+      const { exitCode, output } = await runInitFrom(
         store,
         "CdxRoles8",
         { dir: env.projectDir, globalHome: env.fakeHome },
@@ -379,7 +383,7 @@ describe("a Codex compile writes sixteen of the eighteen sub-agents", () => {
       env = await createTestEnvironment({ permissions: false });
       publishWithAModel("CdxRoles10");
 
-      const { exitCode, output } = await runInitFromOnClaude(
+      const { exitCode, output } = await runInitFrom(
         store,
         "CdxRoles10",
         { dir: env.projectDir, globalHome: env.fakeHome },

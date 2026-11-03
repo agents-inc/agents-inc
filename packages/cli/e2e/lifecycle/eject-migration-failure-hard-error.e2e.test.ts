@@ -43,6 +43,7 @@ describe("an eject migration that could not do its work must not report success"
   let source: E2ESource;
   let store: SeedConfigStore;
   let lockedDirs: string[] = [];
+  const tempDirs: string[] = [];
   let nodeLinkRoot: string;
   /**
    * PATH with node and system bins but no `claude`, so `claudePluginUninstall` fails with ENOENT.
@@ -82,6 +83,7 @@ describe("an eject migration that could not do its work must not report success"
       await chmod(dir, WRITABLE_DIR);
     }
     lockedDirs = [];
+    await Promise.all(tempDirs.splice(0).map(cleanupTempDir));
   });
 
   /**
@@ -96,6 +98,7 @@ describe("an eject migration that could not do its work must not report success"
       agents: [...E2E_AGENTS.WEB],
       domains: ["web"],
     });
+    tempDirs.push(path.dirname(project.dir));
     await rm(path.join(skillsPath(project.dir), E2E_SKILL.react.id), { recursive: true });
     return project;
   }

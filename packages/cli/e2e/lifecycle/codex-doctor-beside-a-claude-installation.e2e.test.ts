@@ -2,16 +2,16 @@ import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { CLI } from "../fixtures/cli.js";
-import {
-  codexProjectSkillsDir,
-  runInitFromOnClaude,
-  runInitFromOnCodex,
-} from "../fixtures/codex-install.js";
+import { codexProjectSkillsDir, runInitFromOnCodex } from "../fixtures/codex-install.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
 import type { ProjectHandle } from "../fixtures/project-handle.js";
-import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
@@ -111,7 +111,7 @@ describe("doctor over a Claude installation and a Codex one carrying a long-name
       }),
     );
 
-    const claude = await runInitFromOnClaude(store, "ClaudeHf", project, sourceDir);
+    const claude = await runInitFrom(store, "ClaudeHf", project, sourceDir);
     expect(claude.exitCode, flattenCliOutput(claude.output)).toBe(EXIT_CODES.SUCCESS);
     const codex = await runInitFromOnCodex(store, "CodexLng", project, sourceDir);
     expect(codex.exitCode, flattenCliOutput(codex.output)).toBe(EXIT_CODES.SUCCESS);

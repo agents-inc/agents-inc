@@ -26,7 +26,7 @@ import {
   isClaudeCLIAvailable,
   readTreeSnapshot,
 } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
@@ -34,13 +34,12 @@ import {
 
 /**
  * Over a pipe `list` names each skill as its install recorded it, one line under the `Skills:`
- * count with its scope (CLI-978, owner 2026-10-24: "Yes: list them by display name in plain text"),
+ * count with its scope (owner 2026-10-24: "Yes: list them by display name in plain text"),
  * though no catalogue the CLI ships lists the fixture's namespaced ids; and every path line stays a
  * file or folder a user can open — the filesystem-block rule in packages/cli/CLAUDE.md. Its
  * installations are the ones `interactive/list-names-skills-by-display-name` draws at a terminal,
  * where the panel shows the same rows. The output is held whole (the runner drops its final
- * newline), so a line printed anywhere in it fails. The path lines were checked by removing the
- * global sub-agent's file before the run, which reddened it on the `Agents:` lines alone.
+ * newline), so a line printed anywhere in it fails.
  *
  * A plugin leaves no copy, and its marketplace folder is moved away before the run, so the name its
  * install recorded is the only thing left that names it.
@@ -137,6 +136,7 @@ describe("list over a pipe beside skills whose install records their names", () 
           "",
           "Installation: project",
           "  Mode:    Eject",
+          `${STEP_TEXT.LIST_MARKETPLACE_LINE}${E2E_SOURCE.sourceDir}`,
           "  Skills:  2",
           "    E2E Hono (project)",
           "    E2E React (global)",
@@ -216,6 +216,7 @@ describe("list over a pipe beside skills whose install records their names", () 
             "",
             "Installation: project",
             "  Mode:    Plugin",
+            `${STEP_TEXT.LIST_MARKETPLACE_LINE}${fixture.sourceDir}`,
             "  Skills:  2",
             "    E2E Hono (project)",
             "    E2E React (global)",

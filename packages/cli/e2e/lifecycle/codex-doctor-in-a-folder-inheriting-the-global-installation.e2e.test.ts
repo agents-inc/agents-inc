@@ -2,11 +2,7 @@ import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { CLI } from "../fixtures/cli.js";
-import {
-  codexGlobalSkillsDir,
-  runInitFromOnClaude,
-  runInitFromOnCodex,
-} from "../fixtures/codex-install.js";
+import { GLOBAL_SKILLS_DIR, INSTALL_WITH } from "../fixtures/codex-install.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
@@ -19,7 +15,7 @@ import {
   directoryExists,
   fileExists,
   flattenCliOutput,
-  skillsPath,
+  otherThan,
 } from "../helpers/test-utils.js";
 import {
   DIRS,
@@ -62,16 +58,6 @@ const CARRIED_NAME = "release-notes";
 const CARRIED_ID = "external-web-tooling-release-notes";
 
 const SEED_ID = "InhrtGlb";
-
-const INSTALL_AT_HOME = {
-  claude: runInitFromOnClaude,
-  codex: runInitFromOnCodex,
-} as const satisfies Record<Provider, typeof runInitFromOnClaude>;
-
-const GLOBAL_SKILLS_DIR = {
-  claude: skillsPath,
-  codex: codexGlobalSkillsDir,
-} as const satisfies Record<Provider, (home: string) => string>;
 
 const DOCTOR_RUNS = [
   {
@@ -140,7 +126,7 @@ describe("doctor in a folder holding no installation, under a global one carryin
       }),
     );
 
-    const installed = await INSTALL_AT_HOME[provider](store, SEED_ID, home, E2E_SOURCE.sourceDir);
+    const installed = await INSTALL_WITH[provider](store, SEED_ID, home, E2E_SOURCE.sourceDir);
     expect(installed.exitCode, flattenCliOutput(installed.output)).toBe(EXIT_CODES.SUCCESS);
 
     // Subject guards: the carried skill is only where this provider copied it, and the folder
@@ -151,7 +137,7 @@ describe("doctor in a folder holding no installation, under a global one carryin
       ),
       `the ${provider} installation copied the carried skill into its own global folder`,
     ).toBe(true);
-    for (const other of PROVIDERS.filter((candidate) => candidate !== provider)) {
+    for (const other of otherThan(provider)) {
       expect(
         await directoryExists(path.join(GLOBAL_SKILLS_DIR[other](env.fakeHome), CARRIED_ID)),
         `no ${other} folder holds a copy of the carried skill`,

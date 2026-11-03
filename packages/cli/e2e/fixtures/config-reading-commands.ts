@@ -2,6 +2,7 @@ import { cp, rm } from "fs/promises";
 
 import { CLI, type CLIResult } from "./cli.js";
 import { E2E_SKILL } from "./expected-values.js";
+import type { ProjectHandle } from "./project-handle.js";
 import { InteractivePrompt } from "./interactive-prompt.js";
 import { runShare, type SeedConfigRequest, type SeedConfigStore } from "./seed-config-store.js";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
@@ -98,15 +99,22 @@ async function runConfigReaders(
     runs.push({ name, exitCode, output });
   }
 
-  store.reset();
-  const share = await runShare(store, project);
-  const shareRequests = [...store.requests];
-  store.reset();
-
+  const share = await runShareRecordingRequests(store, project);
   return {
     runs: [...runs, { name: "share", exitCode: share.exitCode, output: share.output }],
-    shareRequests,
+    shareRequests: share.requests,
   };
+}
+
+async function runShareRecordingRequests(
+  store: SeedConfigStore,
+  project: ProjectHandle,
+): Promise<ConfigReaderRun & { requests: SeedConfigRequest[] }> {
+  store.reset();
+  const { exitCode, output } = await runShare(store, project);
+  const requests = [...store.requests];
+  store.reset();
+  return { exitCode, output, requests };
 }
 
 // Only for runs that end on their own (a refusal); one that opens its dashboard times out here.
@@ -146,40 +154,45 @@ export async function runEveryReaderOverABrokenConfig(
   return { runs, shareRequests, terminal: { init, edit }, doctor, treeBefore, treeAfter };
 }
 
-// `init` is cancelled at its dashboard so it writes nothing; `edit` without a TTY mints an id only.
 export async function runEveryReaderOverReadableConfigs(
   installation: Installation,
   store: SeedConfigStore,
 ): Promise<RunsOverReadableConfigs> {
-  const { fakeHome, projectDir } = installation;
   const { runs } = await runConfigReaders(installation, store);
-  const templateEjected = await fileExists(getEjectedTemplatePath(projectDir));
+  const templateEjected = await fileExists(getEjectedTemplatePath(installation.projectDir));
+  const dashboardScreen = await initDashboardScreen(installation);
+  const edit = await runEditRecordingMintedIds(installation, store);
 
+  return { runs, templateEjected, dashboardScreen, edit };
+}
+
+// Cancelled at the dashboard, so `init` writes nothing.
+async function initDashboardScreen({ fakeHome, projectDir }: Installation): Promise<string> {
   const dashboard = new InteractivePrompt(["init"], projectDir, { env: { HOME: fakeHome } });
-  let dashboardScreen: string;
   try {
     await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_LOAD);
-    dashboardScreen = dashboard.getScreen();
+    const screen = dashboard.getScreen();
     await dashboard.ctrlC();
+    return screen;
   } finally {
     await dashboard.destroy();
   }
+}
 
+// Without a TTY, `edit` only mints an id.
+async function runEditRecordingMintedIds(
+  { fakeHome, projectDir }: Installation,
+  store: SeedConfigStore,
+): Promise<RunsOverReadableConfigs["edit"]> {
   store.reset();
-  const edit = await CLI.run(
+  const { exitCode, output } = await CLI.run(
     ["edit"],
     { dir: projectDir, globalHome: fakeHome },
     { env: { AGENTS_INC_API_URL: store.url } },
   );
   const minted = [...store.minted];
   store.reset();
-
-  return {
-    runs,
-    templateEjected,
-    dashboardScreen,
-    edit: { exitCode: edit.exitCode, output: edit.output, minted },
-  };
+  return { exitCode, output, minted };
 }
 
 export function runOf(runs: readonly NamedRun[], name: ConfigReaderName): ConfigReaderRun {

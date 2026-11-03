@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import http from "node:http";
+import { buffer } from "node:stream/consumers";
 
 import {
   CONFIGS_URL,
@@ -12,6 +13,10 @@ import { installableSeedPayloadSchema } from "@workspace/matrix/seed";
 import { HttpResponse, http as route } from "msw";
 
 import { CLI, type CLIResult } from "./cli.js";
+import {
+  closeServer,
+  listenOnLoopback,
+} from "../../src/cli/lib/__tests__/helpers/loopback-server.js";
 
 import type { ProjectHandle } from "./project-handle.js";
 import type { MockedAnswer } from "@workspace/api-mocks";
@@ -39,8 +44,6 @@ export type SeedConfigStore = {
   close(): Promise<void>;
 };
 
-const LOOPBACK = "127.0.0.1";
-const ANY_PORT = 0;
 const ID_LENGTH = 8;
 const CREATED = 201;
 // Not 404, which would read as "id not held" rather than "route not described".
@@ -56,14 +59,6 @@ function contentAddress(body: string): string {
     .slice(0, ID_LENGTH);
 }
 
-function readBody(req: http.IncomingMessage): Promise<string> {
-  return new Promise((resolve) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (chunk: Buffer) => chunks.push(chunk));
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-  });
-}
-
 // Serves stored bytes as-is, unlike api-mocks' `storedConfigHandlerFor`, which JSON-encodes a value.
 const heldBytesHandler = (id: string, bytes: string): RequestHandler =>
   route.get(
@@ -72,6 +67,19 @@ const heldBytesHandler = (id: string, bytes: string): RequestHandler =>
   );
 
 const isMint = (req: http.IncomingMessage): boolean => req.method === "POST";
+
+// An uninstallable body is left unfiled, so `configHandlers` answers it with the worker's 400.
+function isInstallable(body: string): boolean {
+  try {
+    return installableSeedPayloadSchema.safeParse(JSON.parse(body)).success;
+  } catch {
+    return false;
+  }
+}
+
+function requestRecordOf(req: http.IncomingMessage, body: string): SeedConfigRequest {
+  return { url: req.url ?? "", userAgent: req.headers["user-agent"], method: req.method, body };
+}
 
 function sendAnswer(res: http.ServerResponse, answer: ServedAnswer): void {
   res.writeHead(answer.status, answer.headers);
@@ -85,6 +93,16 @@ function sendNotModelled(
 ): void {
   res.writeHead(NOT_MODELLED, { "content-type": "text/plain" });
   res.end(`No mocked answer for ${req.method ?? "GET"} ${req.url ?? "/"} (${reason})`);
+}
+
+// Unanswered, the spawned CLI would wait on an open socket until the spec times out.
+function sendResolverFailure(res: http.ServerResponse, error: unknown): void {
+  if (res.headersSent) {
+    res.end();
+    return;
+  }
+  res.writeHead(RESOLVER_FAILED, { "content-type": "text/plain" });
+  res.end(String(error));
 }
 
 // `configHandlers` mints one fixed id; a store must return the id it filed the body under.
@@ -107,15 +125,6 @@ export async function startSeedConfigStore(): Promise<SeedConfigStore> {
     ...configHandlers,
   ];
 
-  // An uninstallable body is left unfiled, so `configHandlers` answers it with the worker's 400.
-  const isInstallable = (body: string): boolean => {
-    try {
-      return installableSeedPayloadSchema.safeParse(JSON.parse(body)).success;
-    } catch {
-      return false;
-    }
-  };
-
   const file = (body: string): string => {
     const id = contentAddress(body);
     held.set(id, body);
@@ -123,18 +132,9 @@ export async function startSeedConfigStore(): Promise<SeedConfigStore> {
     return id;
   };
 
-  const record = (req: http.IncomingMessage, body: string): void => {
-    requests.push({
-      url: req.url ?? "",
-      userAgent: req.headers["user-agent"],
-      method: req.method,
-      body,
-    });
-  };
-
   async function serve(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    const body = await readBody(req);
-    record(req, body);
+    const body = (await buffer(req)).toString("utf8");
+    requests.push(requestRecordOf(req, body));
 
     const mintedId = isMint(req) && !mintsLimited && isInstallable(body) ? file(body) : undefined;
     const answer = await answerFor(handlersNow(mintedId), workerRequestFrom(req, body));
@@ -148,26 +148,12 @@ export async function startSeedConfigStore(): Promise<SeedConfigStore> {
   }
 
   const server = http.createServer((req, res) => {
-    // A throw here would leave the spawned CLI waiting on an open socket until the spec times out.
-    void serve(req, res).catch((error: unknown) => {
-      if (res.headersSent) {
-        res.end();
-        return;
-      }
-      res.writeHead(RESOLVER_FAILED, { "content-type": "text/plain" });
-      res.end(String(error));
-    });
+    void serve(req, res).catch((error: unknown) => sendResolverFailure(res, error));
   });
-
-  await new Promise<void>((resolve) => server.listen(ANY_PORT, LOOPBACK, resolve));
-
-  const address = server.address();
-  if (address === null || typeof address === "string") {
-    throw new Error("seed config store did not bind to a port");
-  }
+  const { origin } = await listenOnLoopback(server);
 
   return {
-    url: `http://${LOOPBACK}:${address.port}`,
+    url: origin,
     requests,
     minted,
     publish: (id, payload) => {
@@ -182,7 +168,7 @@ export async function startSeedConfigStore(): Promise<SeedConfigStore> {
       minted.length = 0;
       mintsLimited = false;
     },
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    close: () => closeServer(server),
   };
 }
 

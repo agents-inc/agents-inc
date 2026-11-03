@@ -47,7 +47,7 @@ const UNLOADED = E2E_SKILL["visual-regression"].id;
 const HONO = E2E_SKILL.hono.id;
 
 const UNWRITABLE_PAIR = `${UNLOADED} -> ${WEB_DEV}`;
-const SKIPPED_WITHOUT_IT = `${STEP_TEXT.CATALOG_COULD_NOT_LOAD} ${UNLOADED} sub-agent(s) installed without ${UNLOADED}, ${STEP_TEXT.INSTALLED_WITHOUT_THE_SKILL} ${WEB_DEV}`;
+const SKIPPED_WITHOUT_IT = `${STEP_TEXT.CATALOG_COULD_NOT_LOAD} ${UNLOADED} sub-agent installed without ${UNLOADED}, ${STEP_TEXT.INSTALLED_WITHOUT_THE_SKILL} ${WEB_DEV}`;
 
 const PAIRED_ID = "Unpaired01";
 const PINNED_ID = "Pinned0001";

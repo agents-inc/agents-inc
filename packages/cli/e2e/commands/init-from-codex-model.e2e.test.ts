@@ -5,8 +5,9 @@ import "../matchers/setup.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { codexProjectAgentsDir, readCodexAgentRoles } from "../fixtures/codex-agent-roles.js";
-import { runInitFromOnClaude, runInitFromOnCodex } from "../fixtures/codex-install.js";
+import { runInitFromOnCodex } from "../fixtures/codex-install.js";
 import {
+  runInitFrom,
   runShare,
   startSeedConfigStore,
   type SeedConfigStore,
@@ -163,7 +164,7 @@ describe("init --from <id>: a sub-agent's Codex model", () => {
       payloadWith({ [WEB_DEV]: { model: "haiku", codexModel: PINNED_CODEX_MODEL } }),
     );
 
-    const installed = await runInitFromOnClaude(
+    const installed = await runInitFrom(
       store,
       "CdxModl3",
       { dir: env.projectDir, globalHome: env.fakeHome },

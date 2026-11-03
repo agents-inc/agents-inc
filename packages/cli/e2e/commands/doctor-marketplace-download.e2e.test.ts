@@ -388,10 +388,6 @@ describe("a marketplace whose download fails once after it withdrew a skill", ()
     });
   });
 
-  /**
-   * Every load outside doctor falls back on what the earlier download saved, for a git source as
-   * for a URL, and says the update it announced could not be fetched.
-   */
   describe.each(NAMINGS)(
     "met by a load outside doctor, named $naming",
     ({ marketplaceOn, envFor }) => {

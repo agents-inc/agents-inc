@@ -4,11 +4,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { CLI } from "../fixtures/cli.js";
 import {
-  codexGlobalSkillsDir,
-  runInitFromOnClaude,
-  runInitFromOnCodex,
+  configIn,
+  GLOBAL_AGENTS_DIR,
+  GLOBAL_SKILLS_DIR,
+  INSTALL_WITH,
+  SOURCE_FOLDER,
 } from "../fixtures/codex-install.js";
-import { codexGlobalAgentsDir } from "../fixtures/codex-agent-roles.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
@@ -16,15 +17,14 @@ import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-con
 import { ejectedGlobalSkill } from "../fixtures/seed-wire-contract.js";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
-  agentsPath,
   claudeConfigDir,
   cleanupTempDir,
   codexHome,
   fileExists,
   flattenCliOutput,
+  otherThan,
   readTestFile,
   readTreeSnapshot,
-  skillsPath,
   type TreeSnapshotEntry,
 } from "../helpers/test-utils.js";
 import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
@@ -42,11 +42,7 @@ import { sa } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
  * the configuration adds an ejected skill to the global sub-agent the project inherits: the skill is
  * copied into, recorded in and compiled for the project's own provider's global installation, and
  * the other installation is left exactly as it was. Claude is the control, being also the provider
- * a home holding both would otherwise be read as. Once `uninstall --provider` at home removes the
- * project's own provider's global, the same edit creates that provider's global installation and
- * still leaves the other's exactly as it was.
- *
- * CLI-984, CLI-991.
+ * a home holding both would otherwise be read as.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -88,32 +84,11 @@ const EDITED_SEED_ID = "BothEdEd";
 /** The skill the edit adds to the inherited global sub-agent. */
 const JOINING = E2E_SKILL.zustand.id;
 
-const INSTALL_WITH = {
-  claude: runInitFromOnClaude,
-  codex: runInitFromOnCodex,
-} as const satisfies Record<Provider, typeof runInitFromOnClaude>;
-
-const SOURCE_FOLDER = {
-  claude: DIRS.SOURCE_CLAUDE,
-  codex: DIRS.SOURCE_CODEX,
-} as const satisfies Record<Provider, string>;
-
-const GLOBAL_SKILLS_DIR = {
-  claude: skillsPath,
-  codex: codexGlobalSkillsDir,
-} as const satisfies Record<Provider, (home: string) => string>;
-
-const GLOBAL_AGENTS_DIR = {
-  claude: agentsPath,
-  codex: codexGlobalAgentsDir,
-} as const satisfies Record<Provider, (home: string) => string>;
-
 const ROLE_FILE = {
   claude: `${WEB_DEV}.md`,
   codex: `${WEB_DEV}${FILES.CODEX_AGENT_EXTENSION}`,
 } as const satisfies Record<Provider, string>;
 
-/** Where each provider's host keeps everything of a global installation but its source folder. */
 const HOST_ROOT = {
   claude: claudeConfigDir,
   codex: codexHome,
@@ -127,13 +102,12 @@ type GlobalOnDisk = {
 
 async function readGlobalOnDisk(home: string, atHome: Provider): Promise<GlobalOnDisk> {
   return {
-    config: await readTestFile(path.join(home, SOURCE_FOLDER[atHome], FILES.CONFIG_TS)),
+    config: await readTestFile(configIn(home, atHome)),
     skills: await readTreeSnapshot(GLOBAL_SKILLS_DIR[atHome](home)),
     agents: await readTreeSnapshot(GLOBAL_AGENTS_DIR[atHome](home)),
   };
 }
 
-/** Every file of one provider's global installation: its source folder and its host's root. */
 type GlobalFootprint = {
   source: Record<string, TreeSnapshotEntry>;
   host: Record<string, TreeSnapshotEntry>;
@@ -146,11 +120,6 @@ async function readGlobalFootprint(home: string, atHome: Provider): Promise<Glob
   };
 }
 
-function otherThan(provider: Provider): Provider[] {
-  return PROVIDERS.filter((candidate) => candidate !== provider);
-}
-
-/** Both global installations at home, the project on `provider`, and the edit it is handed. */
 async function installBothAtHomeThenTheProjectOn(
   store: SeedConfigStore,
   env: TestEnvironment,
@@ -205,7 +174,6 @@ async function installBothAtHomeThenTheProjectOn(
   );
   expect(installed.exitCode, flattenCliOutput(installed.output)).toBe(EXIT_CODES.SUCCESS);
 
-  // The project's own skills, with the joining skill added to a global sub-agent.
   store.publish(
     EDITED_SEED_ID,
     buildSeedPayload({
@@ -218,7 +186,6 @@ async function installBothAtHomeThenTheProjectOn(
   );
 }
 
-/** As a user removes one provider's global installation: `uninstall --provider` at home. */
 async function uninstallTheGlobalOf(provider: Provider, home: string): Promise<void> {
   const uninstalled = await CLI.run(["uninstall", "--yes", "--provider", provider], {
     dir: home,
@@ -226,12 +193,11 @@ async function uninstallTheGlobalOf(provider: Provider, home: string): Promise<v
   });
   expect(uninstalled.exitCode, flattenCliOutput(uninstalled.output)).toBe(EXIT_CODES.SUCCESS);
   expect(
-    await fileExists(path.join(home, SOURCE_FOLDER[provider], FILES.CONFIG_TS)),
+    await fileExists(configIn(home, provider)),
     `subject guard: the ${provider} global installation is gone`,
   ).toBe(false);
 }
 
-/** `edit --from` at a terminal in the project, confirming the configuration it is asked about. */
 async function editFromAtATerminal(
   store: SeedConfigStore,
   env: TestEnvironment,

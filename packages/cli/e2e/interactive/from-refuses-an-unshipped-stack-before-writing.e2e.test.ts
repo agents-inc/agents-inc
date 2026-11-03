@@ -37,12 +37,6 @@ import {
 import type { TreeSnapshotEntry } from "../helpers/test-utils.js";
 import type { SeedPayload, SeedSkill } from "@workspace/matrix/seed";
 
-/**
- * A configuration naming a stack its marketplace does not ship is refused before anything is
- * written, by `init --from` and `edit --from`, naming the stacks the marketplace does ship. Each
- * refusal is paired with the shipped stack installing or asking.
- */
-
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
 /** Composed from the shipped id, so the two cannot coincide. */

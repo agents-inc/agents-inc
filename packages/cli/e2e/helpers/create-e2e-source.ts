@@ -220,18 +220,15 @@ export async function createE2ESource(options?: E2ESourceOptions): Promise<E2ESo
   const sourceDir = path.join(tempDir, "fixture");
 
   const omitted = new Set<string>(options?.withoutSkills ?? []);
-  await writeSkills(
-    sourceDir,
-    E2E_SKILLS.filter((skill) => !omitted.has(skill.id)),
-  );
-  if (!options?.withoutStacks) {
-    await writeStacks(sourceDir);
-  }
-  await writeAgents(sourceDir);
-
-  if (options?.relationships) {
-    await writeSkillRules(sourceDir, options.relationships);
-  }
+  await Promise.all([
+    writeSkills(
+      sourceDir,
+      E2E_SKILLS.filter((skill) => !omitted.has(skill.id)),
+    ),
+    options?.withoutStacks ? undefined : writeStacks(sourceDir),
+    writeAgents(sourceDir),
+    options?.relationships ? writeSkillRules(sourceDir, options.relationships) : undefined,
+  ]);
 
   if (!options?.unbuilt) {
     await publishE2EMarketplace(sourceDir, options?.marketplaceName ?? E2E_MARKETPLACE_NAME);
@@ -241,9 +238,11 @@ export async function createE2ESource(options?: E2ESourceOptions): Promise<E2ESo
 }
 
 async function writeE2ESourceInto(sourceDir: string): Promise<void> {
-  await writeSkills(sourceDir, E2E_SKILLS);
-  await writeStacks(sourceDir);
-  await writeAgents(sourceDir);
+  await Promise.all([
+    writeSkills(sourceDir, E2E_SKILLS),
+    writeStacks(sourceDir),
+    writeAgents(sourceDir),
+  ]);
 }
 
 export async function buildE2EMarketplaceInto(sourceDir: string): Promise<void> {
@@ -288,16 +287,19 @@ export async function buildSharedE2ESourceInto(root: string): Promise<void> {
 }
 
 async function writeSkills(sourceDir: string, skills: readonly E2ESkillEntry[]): Promise<void> {
-  for (const skill of skills) {
-    const skillDir = path.join(sourceDir, SKILLS_DIR_PATH, skill.id);
-    await mkdir(skillDir, { recursive: true });
+  await Promise.all(skills.map((skill) => writeSkill(sourceDir, skill)));
+}
 
-    await writeFile(
+async function writeSkill(sourceDir: string, skill: E2ESkillEntry): Promise<void> {
+  const skillDir = path.join(sourceDir, SKILLS_DIR_PATH, skill.id);
+  await mkdir(skillDir, { recursive: true });
+
+  await Promise.all([
+    writeFile(
       path.join(skillDir, STANDARD_FILES.SKILL_MD),
       renderSkillMd(skill.id, skill.description),
-    );
-
-    await writeFile(
+    ),
+    writeFile(
       path.join(skillDir, STANDARD_FILES.METADATA_YAML),
       renderMetadataYaml({
         author: "@agents-inc",
@@ -309,8 +311,8 @@ async function writeSkills(sourceDir: string, skills: readonly E2ESkillEntry[]):
         usageGuidance: "Use when testing E2E scenarios",
         contentHash: "a1b2c3d",
       }),
-    );
-  }
+    ),
+  ]);
 }
 
 async function writeStacks(sourceDir: string): Promise<void> {
@@ -339,45 +341,38 @@ async function writeSkillRules(
   );
 }
 
-// No `_templates/agent.liquid`: template resolution never looks in a marketplace.
+type FixtureAgent = { name: AgentName; title: string; description: string };
+
+const FIXTURE_AGENTS: readonly FixtureAgent[] = [
+  {
+    name: "web-developer",
+    title: E2E_AGENT_TITLES["web-developer"],
+    description: "Full-stack web development specialist",
+  },
+  {
+    name: "api-developer",
+    title: E2E_AGENT_TITLES["api-developer"],
+    description: "Backend API development specialist",
+  },
+];
+
+// Metadata only: compile never reads a marketplace's sub-agent bodies or `_templates/agent.liquid`.
 async function writeAgents(sourceDir: string): Promise<void> {
   const agentsDir = path.join(sourceDir, DIRS.agents);
+  await Promise.all(FIXTURE_AGENTS.map((agent) => writeAgent(agentsDir, agent)));
+}
 
-  const agents: Array<{ name: AgentName; title: string; description: string }> = [
-    {
-      name: "web-developer",
-      title: E2E_AGENT_TITLES["web-developer"],
-      description: "Full-stack web development specialist",
-    },
-    {
-      name: "api-developer",
-      title: E2E_AGENT_TITLES["api-developer"],
-      description: "Backend API development specialist",
-    },
-  ];
+async function writeAgent(agentsDir: string, agent: FixtureAgent): Promise<void> {
+  const agentDir = path.join(agentsDir, agent.name);
+  await mkdir(agentDir, { recursive: true });
 
-  for (const agent of agents) {
-    const agentDir = path.join(agentsDir, agent.name);
-    await mkdir(agentDir, { recursive: true });
-
-    await writeFile(
-      path.join(agentDir, STANDARD_FILES.AGENT_METADATA_YAML),
-      renderAgentYaml(agent.name, agent.description, {
-        title: agent.title,
-        tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash"],
-        model: "opus",
-        permissionMode: "default",
-      }) + "\n",
-    );
-
-    await writeFile(
-      path.join(agentDir, STANDARD_FILES.IDENTITY_MD),
-      `# ${agent.title}\n\n${agent.description}\n`,
-    );
-
-    await writeFile(
-      path.join(agentDir, STANDARD_FILES.PLAYBOOK_MD),
-      `## Workflow\n\n1. Analyze requirements\n2. Implement solution\n`,
-    );
-  }
+  await writeFile(
+    path.join(agentDir, STANDARD_FILES.AGENT_METADATA_YAML),
+    renderAgentYaml(agent.name, agent.description, {
+      title: agent.title,
+      tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash"],
+      model: "opus",
+      permissionMode: "default",
+    }) + "\n",
+  );
 }

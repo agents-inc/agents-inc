@@ -2,10 +2,11 @@ import { writeFile } from "fs/promises";
 import path from "path";
 
 import { codexHome, readTestFile } from "../helpers/test-utils.js";
+import { FILES } from "../pages/constants.js";
 
 /**
  * Codex has no verb to switch a plugin off; the switch is the table `plugin add` writes to
- * `config.toml`. Throws when that table is not there, rather than leaving the plugin on.
+ * `config.toml`.
  */
 export async function switchOffCodexPlugin(home: string, pluginKey: string): Promise<void> {
   await rewriteTheSwitchedOnTable(home, pluginKey, `[plugins."${pluginKey}"]\nenabled = false`);
@@ -23,7 +24,7 @@ export async function switchOffCodexPluginInSingleQuotes(
 }
 
 export function codexConfigFile(home: string): string {
-  return path.join(codexHome(home), "config.toml");
+  return path.join(codexHome(home), FILES.CODEX_CONFIG_TOML);
 }
 
 async function rewriteTheSwitchedOnTable(

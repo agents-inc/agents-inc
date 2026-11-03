@@ -28,12 +28,22 @@ import {
 } from "../helpers/test-utils.js";
 import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
+
+type RecordedOverABrokenConfig = RunsOverABrokenConfig & {
+  pipedShare: ConfigReaderRun & { minted: string[] };
+};
+
+const PIPED_PAYLOAD = buildSeedPayload({ skills: { [E2E_SKILL.react.id]: buildSeedSkill() } });
 
 describe("a real installation whose GLOBAL config.ts cannot be loaded, seen from its project", () => {
   let env: TestEnvironment;
   let store: SeedConfigStore;
   let globalConfig: string;
-  const broken = new Map<string, RunsOverABrokenConfig>();
+  const broken = new Map<string, RecordedOverABrokenConfig>();
   let uninstall: CLIResult;
 
   beforeAll(async () => {
@@ -44,7 +54,15 @@ describe("a real installation whose GLOBAL config.ts cannot be loaded, seen from
 
     for (const { shape, body } of UNREADABLE_CONFIG_SHAPES) {
       await restoreInstallation();
-      broken.set(shape, await runEveryReaderOverABrokenConfig(env, env.fakeHome, body, store));
+      const runs = await runEveryReaderOverABrokenConfig(env, env.fakeHome, body, store);
+      store.reset();
+      const { exitCode, output } = await CLI.run(
+        ["share", "--stdin"],
+        { dir: env.projectDir, globalHome: env.fakeHome },
+        { env: { AGENTS_INC_API_URL: store.url }, input: JSON.stringify(PIPED_PAYLOAD) },
+      );
+      broken.set(shape, { ...runs, pipedShare: { exitCode, output, minted: [...store.minted] } });
+      store.reset();
     }
 
     await restoreInstallation();
@@ -61,7 +79,7 @@ describe("a real installation whose GLOBAL config.ts cannot be loaded, seen from
     await cleanupTempDir(env.tempDir);
   });
 
-  function brokenBy(shape: string): RunsOverABrokenConfig {
+  function brokenBy(shape: string): RecordedOverABrokenConfig {
     const runs = broken.get(shape);
     if (!runs) throw new Error(`nothing was recorded for a global config that ${shape}`);
     return runs;
@@ -114,6 +132,12 @@ describe("a real installation whose GLOBAL config.ts cannot be loaded, seen from
 
     it("sends nothing to the config store when share refuses", () => {
       expect(brokenBy(shape).shareRequests).toStrictEqual([]);
+    });
+
+    it("still publishes a configuration piped to share, which reads no installation", () => {
+      const { exitCode, output, minted } = brokenBy(shape).pipedShare;
+      expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+      expect(output).toContain(`init --from ${firstElement(minted)}`);
     });
 
     it("leaves the installation, both scopes of it, byte-identical", () => {

@@ -9,17 +9,18 @@ import { EXIT_CODES, FILES, SOURCE_PATHS } from "../pages/constants.js";
 
 export const SOURCE_EDIT = "## A section added to the marketplace after installation";
 
-/** Edits every named skill in the source, then rebuilds, so the marketplace offers a new version. */
 export async function offerANewVersionOf(
   fixture: E2EPluginSource,
   skillIds: readonly string[],
 ): Promise<void> {
-  for (const skillId of skillIds) {
-    await appendFile(
-      path.join(fixture.sourceDir, SOURCE_PATHS.SKILLS_DIR, skillId, FILES.SKILL_MD),
-      `\n\n${SOURCE_EDIT}\n`,
-    );
-  }
+  await Promise.all(
+    skillIds.map((skillId) =>
+      appendFile(
+        path.join(fixture.sourceDir, SOURCE_PATHS.SKILLS_DIR, skillId, FILES.SKILL_MD),
+        `\n\n${SOURCE_EDIT}\n`,
+      ),
+    ),
+  );
   for (const build of [
     ["build", "plugins"],
     ["build", "marketplace"],
@@ -47,7 +48,6 @@ const COMMITTER = [
 
 export type GitMarketplace = {
   url: string;
-  /** Commits whatever the source folder holds now and pushes it where the next fetch reads. */
   publish: () => Promise<void>;
 };
 

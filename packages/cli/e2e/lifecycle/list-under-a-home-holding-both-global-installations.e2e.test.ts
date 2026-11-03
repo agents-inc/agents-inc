@@ -1,10 +1,9 @@
-import path from "path";
 import { writeFile } from "fs/promises";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { CLI } from "../fixtures/cli.js";
-import { codexGlobalAgentsDir, codexProjectAgentsDir } from "../fixtures/codex-agent-roles.js";
-import { runInitFromOnClaude, runInitFromOnCodex } from "../fixtures/codex-install.js";
+import { codexProjectAgentsDir } from "../fixtures/codex-agent-roles.js";
+import { configIn, GLOBAL_AGENTS_DIR, INSTALL_WITH } from "../fixtures/codex-install.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import type { ProjectHandle } from "../fixtures/project-handle.js";
@@ -18,9 +17,10 @@ import {
   fileExists,
   flattenCliOutput,
   listFiles,
+  otherThan,
 } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
-import type { Provider } from "../../src/cli/consts.js";
+import { EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { PROVIDERS, type Provider } from "../../src/cli/consts.js";
 import { renderUnparseableConfigTs } from "../../src/cli/lib/__tests__/factories/unloadable-config-factories.js";
 import {
   buildSeedPayload,
@@ -33,32 +33,11 @@ import {
  * provider's format and names the global agents folder of the installation the project inherits,
  * its own provider's. The config check `list` runs first reads that same global config: it refuses
  * when that one does not load, and lists when only the other provider's does not. Claude is the
- * control, being also the provider a home holding both would otherwise be read as. Once
- * `uninstall --provider` at home removes the project's own provider's global, the project inherits
- * no global installation: the other provider's is neither listed nor read.
- *
- * CLI-991.
+ * control, being also the provider a home holding both would otherwise be read as.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const API_DEV = E2E_AGENT["api-developer"].name;
-
-const EVERY_PROVIDER = ["claude", "codex"] as const satisfies readonly Provider[];
-
-const INSTALL_WITH = {
-  claude: runInitFromOnClaude,
-  codex: runInitFromOnCodex,
-} as const satisfies Record<Provider, typeof runInitFromOnClaude>;
-
-const SOURCE_FOLDER = {
-  claude: DIRS.SOURCE_CLAUDE,
-  codex: DIRS.SOURCE_CODEX,
-} as const satisfies Record<Provider, string>;
-
-const GLOBAL_AGENTS_DIR = {
-  claude: agentsPath,
-  codex: codexGlobalAgentsDir,
-} as const satisfies Record<Provider, (home: string) => string>;
 
 const PROJECT_AGENTS_DIR = {
   claude: agentsPath,
@@ -82,19 +61,10 @@ const EJECTED_INTO_THE_PROJECT = {
 /** One sub-agent at each scope, so a listing reading one folder too few or too many miscounts. */
 const AGENTS_IN_THE_LISTING = 2;
 
-/** The project's own sub-agent, once no global installation of its provider holds one. */
 const AGENTS_IN_THE_PROJECT_ALONE = 1;
-
-function otherThan(provider: Provider): Provider[] {
-  return EVERY_PROVIDER.filter((candidate) => candidate !== provider);
-}
 
 function agentFile(agent: string, provider: Provider): string {
   return `${agent}${AGENT_FILE_EXTENSION[provider]}`;
-}
-
-function configIn(root: string, provider: Provider): string {
-  return path.join(root, SOURCE_FOLDER[provider], FILES.CONFIG_TS);
 }
 
 describe("list in a project under a home holding a Claude and a Codex global installation", () => {
@@ -135,7 +105,7 @@ describe("list in a project under a home holding a Claude and a Codex global ins
     const home = env.fakeHome;
     const project = { dir: env.projectDir, globalHome: home };
 
-    for (const atHome of EVERY_PROVIDER) {
+    for (const atHome of PROVIDERS) {
       const installed = await INSTALL_WITH[atHome](
         store,
         GLOBAL_SEED_ID,
@@ -154,7 +124,7 @@ describe("list in a project under a home holding a Claude and a Codex global ins
 
     // Subject guards: each global holds its sub-agent in its own provider's format alone, and the
     // project holds its own in its provider's.
-    for (const atHome of EVERY_PROVIDER) {
+    for (const atHome of PROVIDERS) {
       expect(
         await listFiles(GLOBAL_AGENTS_DIR[atHome](home)),
         `the ${atHome} global installation compiled its sub-agent in its own format`,
@@ -173,7 +143,6 @@ describe("list in a project under a home holding a Claude and a Codex global ins
     await writeFile(configIn(home, provider), renderUnparseableConfigTs());
   }
 
-  /** As a user removes one provider's global installation: `uninstall --provider` at home. */
   async function uninstallTheGlobalOf(provider: Provider, home: string): Promise<void> {
     const uninstalled = await CLI.run(["uninstall", "--yes", "--provider", provider], {
       dir: home,
@@ -194,7 +163,7 @@ describe("list in a project under a home holding a Claude and a Codex global ins
     }
   }
 
-  it.each(EVERY_PROVIDER)(
+  it.each(PROVIDERS)(
     "counts the %s project's sub-agents and names its own provider's global agents folder, not the other's",
     { timeout: TIMEOUTS.LIFECYCLE },
     async (provider) => {
@@ -227,7 +196,7 @@ describe("list in a project under a home holding a Claude and a Codex global ins
     },
   );
 
-  it.each(EVERY_PROVIDER)(
+  it.each(PROVIDERS)(
     "lists the %s project although the other provider's global config does not load",
     { timeout: TIMEOUTS.LIFECYCLE },
     async (provider) => {
@@ -249,7 +218,7 @@ describe("list in a project under a home holding a Claude and a Codex global ins
     },
   );
 
-  it.each(EVERY_PROVIDER)(
+  it.each(PROVIDERS)(
     "refuses to list the %s project when its own provider's global config does not load",
     { timeout: TIMEOUTS.LIFECYCLE },
     async (provider) => {
@@ -269,7 +238,7 @@ describe("list in a project under a home holding a Claude and a Codex global ins
     },
   );
 
-  it.each(EVERY_PROVIDER)(
+  it.each(PROVIDERS)(
     "counts only the %s project's own sub-agent once its provider's global installation is uninstalled, naming nothing of the other's",
     { timeout: TIMEOUTS.LIFECYCLE },
     async (provider) => {
@@ -297,7 +266,7 @@ describe("list in a project under a home holding a Claude and a Codex global ins
     },
   );
 
-  it.each(EVERY_PROVIDER)(
+  it.each(PROVIDERS)(
     "lists the %s project although the other provider's global config does not load, once its own provider's global installation is uninstalled",
     { timeout: TIMEOUTS.LIFECYCLE },
     async (provider) => {

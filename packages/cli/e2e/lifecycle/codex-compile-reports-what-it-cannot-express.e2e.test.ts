@@ -10,8 +10,12 @@ import {
   codexProjectAgentsDir,
   readCodexAgentRoles,
 } from "../fixtures/codex-agent-roles.js";
-import { runInitFromOnClaude, runInitFromOnCodex } from "../fixtures/codex-install.js";
-import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { runInitFromOnCodex } from "../fixtures/codex-install.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { CLI } from "../fixtures/cli.js";
 import { cleanupFixture, cleanupTempDir, flattenCliOutput } from "../helpers/test-utils.js";
@@ -131,7 +135,7 @@ describe("a Codex compile reports what Codex cannot express", () => {
       env = await createTestEnvironment({ permissions: false });
       publishOneAgent("CdxExpr3");
 
-      const { exitCode, output } = await runInitFromOnClaude(
+      const { exitCode, output } = await runInitFrom(
         store,
         "CdxExpr3",
         { dir: env.projectDir, globalHome: env.fakeHome },

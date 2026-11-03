@@ -9,6 +9,7 @@ import {
 } from "../helpers/create-e2e-plugin-source.js";
 import { readCodexPrompt, resetCodexGlobalConfig, runCodex } from "../fixtures/codex.js";
 import { codexGlobalSkillsDir, codexProjectSkillsDir } from "../fixtures/codex-install.js";
+import { codexConfigFile } from "../fixtures/codex-plugin-switch.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   cleanupFixture,
@@ -109,7 +110,7 @@ describe("the surfaces a Codex install writes to, measured on the pinned binary"
     const insideTheRepo = await readCodexPrompt(home, project);
     expect(insideTheRepo).toContain(availableSkillLine(EJECTED_SKILL_NAME));
 
-    expect(await fileExists(path.join(codexHome(home), "config.toml"))).toBe(false);
+    expect(await fileExists(codexConfigFile(home))).toBe(false);
 
     const outsideTheRepo = await readCodexPrompt(home, home);
     expect(outsideTheRepo).not.toContain(availableSkillLine(EJECTED_SKILL_NAME));

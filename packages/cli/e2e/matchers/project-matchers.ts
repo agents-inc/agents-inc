@@ -1,5 +1,6 @@
 import path from "path";
 import { readFile, readdir } from "fs/promises";
+import { readCompiledAgent } from "./agent-matchers.js";
 import { DIRS, FILES } from "../pages/constants.js";
 import {
   configTsPath,
@@ -182,17 +183,10 @@ export const projectMatchers = {
   },
 
   async toHaveCompiledAgent(received: { dir: string }, agentName: string) {
-    const agentPath = path.join(received.dir, DIRS.CLAUDE, DIRS.AGENTS, `${agentName}.md`);
-    const exists = await fileExists(agentPath);
+    const agent = await readCompiledAgent(received.dir, agentName);
+    if (!agent.found) return agent.failure;
 
-    if (!exists) {
-      return {
-        pass: false,
-        message: () => `Expected compiled agent at ${agentPath} but it does not exist`,
-      };
-    }
-
-    const content = await readFile(agentPath, "utf-8");
+    const { path: agentPath, content } = agent;
     if (!content.startsWith("---")) {
       return {
         pass: false,
@@ -350,18 +344,10 @@ export const projectMatchers = {
     agentName: string,
     expectations: AgentContentExpectations,
   ) {
-    const agentPath = path.join(received.dir, DIRS.CLAUDE, DIRS.AGENTS, `${agentName}.md`);
-    const exists = await fileExists(agentPath);
+    const agent = await readCompiledAgent(received.dir, agentName);
+    if (!agent.found) return agent.failure;
 
-    if (!exists) {
-      return {
-        pass: false,
-        message: () => `Expected compiled agent at ${agentPath} but it does not exist`,
-      };
-    }
-
-    const content = await readFile(agentPath, "utf-8");
-
+    const { content } = agent;
     const missingText = expectations.contains?.find((text) => !content.includes(text));
     if (missingText) {
       return {

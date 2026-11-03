@@ -1,13 +1,13 @@
 import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 
+import { codexConfigFile } from "./codex-plugin-switch.js";
 import { mockProviderConfig, type CodexResponsesMock } from "./codex-responses-mock.js";
 import { codexHome, listFiles } from "../helpers/test-utils.js";
 import { DIRS, FILES } from "../pages/constants.js";
+import type { AgentName, CodexModelName } from "../../src/cli/types/index.js";
 
 // Registration shows only as `spawn_agent`'s `agent_type` parameter, absent with no role registered.
-
-const CODEX_CONFIG_TOML = "config.toml";
 
 export function codexProjectAgentsDir(projectDir: string): string {
   return path.join(projectDir, DIRS.CODEX, DIRS.AGENTS);
@@ -33,7 +33,10 @@ export const ROSTER_HEADING = "Available roles:";
 export const ROSTER_PARAMETER = "agent_type";
 
 /** Mirrored rather than imported, so the roster cannot move both sides at once. */
-export const CODEX_AGENTS_LEFT_OUT = ["agent-summoner", "skill-summoner"] as const;
+export const CODEX_AGENTS_LEFT_OUT = [
+  "agent-summoner",
+  "skill-summoner",
+] as const satisfies readonly AgentName[];
 
 /** Mirrored rather than imported. */
 export const CODEX_UNEXPRESSIBLE = [
@@ -51,7 +54,7 @@ export const CODEX_OFFERED_MODELS = [
   "gpt-5.6-sol",
   "gpt-5.6-terra",
   "gpt-5.6-luna",
-] as const;
+] as const satisfies readonly CodexModelName[];
 
 export const ROLE_MODEL_LEAD = "This role's model is set to";
 
@@ -66,7 +69,7 @@ export async function trustProjectInCodexGlobalConfig(
 ): Promise<void> {
   await mkdir(codexHome(home), { recursive: true });
   await writeFile(
-    path.join(codexHome(home), CODEX_CONFIG_TOML),
+    codexConfigFile(home),
     `[projects."${projectDir}"]\ntrust_level = "trusted"\n`,
     "utf-8",
   );

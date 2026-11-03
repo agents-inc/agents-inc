@@ -25,6 +25,28 @@ function grantedTools(value: unknown): string[] {
   return typeof value === "string" ? value.split(",").map((tool) => tool.trim()) : [];
 }
 
+type CompiledAgentRead =
+  | { found: true; path: string; content: string }
+  | { found: false; failure: { pass: false; message: () => string } };
+
+export async function readCompiledAgent(
+  dir: string,
+  agentName: string,
+): Promise<CompiledAgentRead> {
+  const agentPath = path.join(dir, DIRS.CLAUDE, DIRS.AGENTS, `${agentName}.md`);
+  if (!(await fileExists(agentPath))) {
+    return {
+      found: false,
+      failure: {
+        pass: false,
+        message: () => `Expected compiled agent at ${agentPath} but it does not exist`,
+      },
+    };
+  }
+
+  return { found: true, path: agentPath, content: await readFile(agentPath, "utf-8") };
+}
+
 const STOP_HOOK_EVENTS = ["Stop", "SubagentStop"] as const;
 
 function carriesAStopHook(hooks: unknown): boolean {
@@ -70,18 +92,10 @@ export const agentMatchers = {
     agentName: string,
     expectations: AgentFrontmatterExpectations,
   ) {
-    const agentPath = path.join(received.dir, DIRS.CLAUDE, DIRS.AGENTS, `${agentName}.md`);
-    const exists = await fileExists(agentPath);
+    const agent = await readCompiledAgent(received.dir, agentName);
+    if (!agent.found) return agent.failure;
 
-    if (!exists) {
-      return {
-        pass: false,
-        message: () => `Expected compiled agent at ${agentPath} but it does not exist`,
-      };
-    }
-
-    const content = await readFile(agentPath, "utf-8");
-    const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    const fmMatch = agent.content.match(/^---\n([\s\S]*?)\n---/);
     if (!fmMatch) {
       return {
         pass: false,
@@ -196,18 +210,10 @@ export const agentMatchers = {
     agentName: string,
     expectations: AgentDynamicSkillsExpectations,
   ) {
-    const agentPath = path.join(received.dir, DIRS.CLAUDE, DIRS.AGENTS, `${agentName}.md`);
-    const exists = await fileExists(agentPath);
+    const agent = await readCompiledAgent(received.dir, agentName);
+    if (!agent.found) return agent.failure;
 
-    if (!exists) {
-      return {
-        pass: false,
-        message: () => `Expected compiled agent at ${agentPath} but it does not exist`,
-      };
-    }
-
-    const content = await readFile(agentPath, "utf-8");
-    const { preloadedRefs, dynamicEntries } = parseCompiledAgentSections(content);
+    const { preloadedRefs, dynamicEntries } = parseCompiledAgentSections(agent.content);
     const dynamicIds = dynamicEntries.map((entry) => entry.id);
 
     const missingId = expectations.skillIds?.find((id) => !dynamicIds.includes(id));

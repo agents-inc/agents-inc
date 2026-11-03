@@ -11,6 +11,7 @@ import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-con
 import { E2E_AGENT, E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   cleanupFixture,
+  cleanupTempDir,
   configTsPath,
   flattenCliOutput,
   isClaudeCLIAvailable,
@@ -57,6 +58,7 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
     let unbuilt: E2ESource;
     let store: SeedConfigStore;
     let prompt: InteractivePrompt | undefined;
+    const tempDirs: string[] = [];
 
     beforeAll(async () => {
       // Supplies the plugin-sourced skill ids the seeded config uses.
@@ -87,6 +89,7 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
     afterEach(async () => {
       await prompt?.destroy();
       prompt = undefined;
+      await Promise.all(tempDirs.splice(0).map(cleanupTempDir));
     });
 
     it(
@@ -101,6 +104,7 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
           domains: ["web"],
           omitMarketplaceField: true,
         });
+        tempDirs.push(path.dirname(project.dir));
 
         const configPath = configTsPath(project.dir);
         const settingsPath = path.join(project.dir, DIRS.CLAUDE, FILES.SETTINGS_JSON);

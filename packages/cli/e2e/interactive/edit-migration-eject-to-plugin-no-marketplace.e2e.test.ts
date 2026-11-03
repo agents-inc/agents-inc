@@ -7,6 +7,7 @@ import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-con
 import { E2E_AGENT, E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   cleanupFixture,
+  cleanupTempDir,
   configTsPath,
   flattenCliOutput,
   isClaudeCLIAvailable,
@@ -42,6 +43,7 @@ describe.skipIf(!claudeAvailable)("edit: eject -> plugin migration without a mar
   let unbuilt: E2ESource;
   let store: SeedConfigStore;
   let prompt: InteractivePrompt | undefined;
+  const tempDirs: string[] = [];
 
   beforeAll(async () => {
     // A source with no marketplace.json: the marketplace the load refuses.
@@ -70,6 +72,7 @@ describe.skipIf(!claudeAvailable)("edit: eject -> plugin migration without a mar
   afterEach(async () => {
     await prompt?.destroy();
     prompt = undefined;
+    await Promise.all(tempDirs.splice(0).map(cleanupTempDir));
   });
 
   it(
@@ -82,6 +85,7 @@ describe.skipIf(!claudeAvailable)("edit: eject -> plugin migration without a mar
         agents: [...E2E_AGENTS.WEB],
         domains: ["web"],
       });
+      tempDirs.push(path.dirname(project.dir));
 
       const configPath = configTsPath(project.dir);
       const skillMdPath = path.join(skillsPath(project.dir), E2E_SKILL.react.id, FILES.SKILL_MD);

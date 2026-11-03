@@ -37,13 +37,9 @@ import {
 import { buildSkillConfig } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
 /**
- * A global installation made from one marketplace, and a project made from another: a skill id
- * belongs to the marketplace its name begins with, so the project shows the global installation's
- * skills from the marketplace they came from. `edit --from` in the project takes one of them into
- * the project and sends the project's own skill out to the global installation. The user docs say
- * a skill whose `origin` names a marketplace "is installed as a Claude Code plugin under that
- * marketplace name" (configuration/config-reference.md), so each lands at its new scope under the
- * marketplace its entry names, and the global plugin stays for the other projects.
+ * The user docs say a skill whose `origin` names a marketplace "is installed as a Claude Code
+ * plugin under that marketplace name" (configuration/config-reference.md). The global plugin stays
+ * for the other projects.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();

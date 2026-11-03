@@ -4,18 +4,17 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { CLI, type CLIResult } from "../fixtures/cli.js";
 import { codexGlobalAgentsDir } from "../fixtures/codex-agent-roles.js";
-import {
-  PROVIDER_CLAUDE,
-  PROVIDER_CODEX,
-  runInitFromOnClaude,
-  runInitFromOnCodex,
-} from "../fixtures/codex-install.js";
+import { PROVIDER_CLAUDE, PROVIDER_CODEX, runInitFromOnCodex } from "../fixtures/codex-install.js";
 import { setAsideInstallation } from "../fixtures/config-reading-commands.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import type { ProjectHandle } from "../fixtures/project-handle.js";
-import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   agentsPath,
@@ -36,15 +35,8 @@ import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/projec
  * (configuration/providers.md). The state is reached through real commands only: `eject` writes
  * exactly this config into a project with no installation of its own.
  *
- * A project holding nothing at all, under the same HOME, is refused by each of them; each refusal
- * is paired with the same command under `--provider`, which must not be refused.
- *
- * Owner 2026-10-24 ("Never count it, and say so"): such a config is never the project's
- * installation, and a command run there first prints one line saying so, on stderr as the
- * old-`.claude-src/` line is. Owner 2026-10-26 ("A line worded for each"): `uninstall`, `eject`,
- * `init` and `search` print a line of their own in its place, true for each; `uninstall`'s says
- * there is nothing to remove, so only a run finding nothing prints it. Under the refusal, which
- * comes first, no line is pinned.
+ * `uninstall`'s own line says there is nothing to remove, so only a run finding nothing prints it;
+ * under its refusal no line is pinned.
  */
 
 const SEED_ID = "DeclNone";
@@ -78,7 +70,7 @@ describe("a folder whose config declares nothing, under a HOME holding a Claude 
     project = { dir: env.projectDir, globalHome: home };
     const atHome: ProjectHandle = { dir: home, globalHome: home };
 
-    const claude = await runInitFromOnClaude(store, SEED_ID, atHome, E2E_SOURCE.sourceDir);
+    const claude = await runInitFrom(store, SEED_ID, atHome, E2E_SOURCE.sourceDir);
     expect(claude.exitCode, flattenCliOutput(claude.output)).toBe(EXIT_CODES.SUCCESS);
     // Before Codex arrives: under a HOME holding both, eject in an empty project is refused.
     const ejected = await CLI.run(["eject", "agent-partials"], project);

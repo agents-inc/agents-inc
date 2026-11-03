@@ -133,7 +133,7 @@ describe("doctor's Config Valid row under a live global installation", () => {
       ).toBe(true);
       expect(deleted.stdout, deleted.output).toContain(
         [
-          "    No Orphans              ✗  1 agent installed here, and no configuration declares them",
+          "    No Orphans              ✗  1 agent installed here, and no configuration declares it",
           `                               - ${inTheProject(DIRS.CLAUDE, DIRS.AGENTS, `${E2E_AGENT["api-developer"].name}.md`)}`,
           "    Skills Installed",
         ].join("\n"),

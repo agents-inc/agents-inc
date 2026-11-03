@@ -37,15 +37,15 @@ import {
 import { buildSkillConfig } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
 /**
- * CLI-979. A global installation made from one marketplace, and a project, made from another, that
+ * A global installation made from one marketplace, and a project, made from another, that
  * leaves a plugin at global scope: a project install "only adds to the global one"
  * (guides/global-first-setup.md), so the plugin is installed under the project's marketplace and
  * the global config records it with that `origin` beside its own `marketplaceName`. The user docs
  * say such an entry "is installed as a Claude Code plugin under that marketplace name"
  * (configuration/config-reference.md). `edit --from` at home then applies a configuration that
- * leaves out that plugin and one of its own marketplace's. Both leave the config and the real
- * `claude`: the other marketplace's plugin is removed under the name its install recorded,
- * `<id>@<origin>`, since the host holds nothing under `<id>@<marketplaceName>`.
+ * leaves out that plugin and one of its own marketplace's. The other marketplace's plugin is
+ * removed under the name its install recorded, `<id>@<origin>`, since the host holds nothing
+ * under `<id>@<marketplaceName>`.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();

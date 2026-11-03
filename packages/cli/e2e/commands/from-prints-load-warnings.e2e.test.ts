@@ -228,7 +228,7 @@ describe("--from runs say what the marketplace load raised", () => {
         flattenCliOutput(stderr),
         "web-developer carries React too, so only the other two are named under the skipped skill",
       ).toContain(
-        `${EFFECT} sub-agent(s) installed without ${BROKEN_SKILL_ID}, ${STEP_TEXT.INSTALLED_WITHOUT_THE_SKILL} ${API_DEV}, ${WEB_TESTER}`,
+        `${EFFECT} sub-agents installed without ${BROKEN_SKILL_ID}, ${STEP_TEXT.INSTALLED_WITHOUT_THE_SKILL} ${API_DEV}, ${WEB_TESTER}`,
       );
       expect(
         (await loadConfigOrFail(tempDir)).agents.map((agent) => agent.name).sort(),
@@ -267,7 +267,7 @@ describe("--from runs say what the marketplace load raised", () => {
 
       expect(exitCode, `init --from output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
       expect(flattenCliOutput(stderr)).toContain(
-        `${EFFECT} sub-agent(s) installed without ${BROKEN_SKILL_ID}, ${STEP_TEXT.INSTALLED_WITHOUT_THE_SKILL} ${WEB_DEV}, ${API_DEV}`,
+        `${EFFECT} sub-agents installed without ${BROKEN_SKILL_ID}, ${STEP_TEXT.INSTALLED_WITHOUT_THE_SKILL} ${WEB_DEV}, ${API_DEV}`,
       );
       expect(output).toContain(STEP_TEXT.INIT_SUCCESS);
       const config = await loadConfigOrFail(tempDir);
@@ -343,7 +343,7 @@ describe("--from runs say what the marketplace load raised", () => {
       expect(exitCode, `init --from output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
       const said = flattenCliOutput(stderr);
       expect(said).toContain(
-        `${STEP_TEXT.CATALOG_COULD_NOT_LOAD} ${NAMELESS_SKILL_ID} sub-agent(s) installed without ${NAMELESS_SKILL_ID}, ${STEP_TEXT.INSTALLED_WITHOUT_THE_SKILL} ${WEB_DEV}, ${API_DEV}`,
+        `${STEP_TEXT.CATALOG_COULD_NOT_LOAD} ${NAMELESS_SKILL_ID} sub-agents installed without ${NAMELESS_SKILL_ID}, ${STEP_TEXT.INSTALLED_WITHOUT_THE_SKILL} ${WEB_DEV}, ${API_DEV}`,
       );
       expect(
         said,
