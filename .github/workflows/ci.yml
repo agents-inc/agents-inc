@@ -121,10 +121,12 @@ jobs:
       - run: bun run typecheck --filter=agents-inc
       - run: bun run lint --filter=agents-inc
 
-      - name: Reach the temp folder through a symlink, as on a Mac
+      # Long and inside a `.claude` folder, so a spec that passes only on a short temp path fails here.
+      - name: Reach a long temp folder inside a .claude folder through a symlink
         run: |
-          mkdir "$RUNNER_TEMP/tmp-real"
-          ln -s "$RUNNER_TEMP/tmp-real" "$RUNNER_TEMP/tmp-link"
+          real="$RUNNER_TEMP/.claude/projects/a-project-folder-with-a-long-name/a-session-folder-with-a-long-name-too/tmp-real"
+          mkdir -p "$real"
+          ln -s "$real" "$RUNNER_TEMP/tmp-link"
       # Loose, because turbo's default strict mode drops TMPDIR before vitest sees it.
       - run: bun run test --filter=agents-inc --env-mode=loose
         env:
@@ -156,7 +158,16 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      - run: bun run test:e2e --filter=agents-inc -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+      # Long and inside a `.claude` folder, so a spec that passes only on a short temp path fails here.
+      - name: Reach a long temp folder inside a .claude folder through a symlink
+        run: |
+          real="$RUNNER_TEMP/.claude/projects/a-project-folder-with-a-long-name/a-session-folder-with-a-long-name-too/tmp-real"
+          mkdir -p "$real"
+          ln -s "$real" "$RUNNER_TEMP/tmp-link"
+      # Loose, because turbo's default strict mode drops TMPDIR before vitest sees it.
+      - run: bun run test:e2e --filter=agents-inc --env-mode=loose -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+        env:
+          TMPDIR: ${{ runner.temp }}/tmp-link
 
   # Chromatic baseline diffs for packages/ui. Own job: needs full history, and an outage
   # should not block the type check. Does not gate deploy.

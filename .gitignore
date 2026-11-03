@@ -95,3 +95,7 @@ packages/cli/e2e/helpers/handrun.gen.mjs
 # StrykerJS (mutation testing)
 .stryker-tmp/
 /reports/
+
+# Local leftovers: bun's transpiler cache and the workboard's export.
+bun/
+workboard-export.json
