@@ -19,13 +19,14 @@ const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../
 const EDIT = "src/cli/commands/edit.tsx";
 const INIT = "src/cli/commands/init.tsx";
 const EJECT = "src/cli/commands/eject.ts";
+const UPDATE = "src/cli/commands/update.ts";
 const BASE_COMMAND = "src/cli/base-command.ts";
 
 const WARN_CALL = "this.warn(";
 const RECOVERY_CONSTANT = "INCOMPLETE_WORK_RECOVERY";
 
 /** Commands whose ending the recorded-work list decides, in directory order. */
-const COMMANDS_WITH_A_THIRD_ENDING = [EDIT, EJECT, INIT] as const;
+const COMMANDS_WITH_A_THIRD_ENDING = [EDIT, EJECT, INIT, UPDATE] as const;
 
 /**
  * `this.warn` alone exits 0; `reportIncompleteWork` warns and records. A failure warn looks like an
@@ -41,14 +42,6 @@ const EDIT_ADVISORY_WARNS = [
     line:
       "this.warn(`Could not tell which skills were written here: " + "${getErrorMessage(error)}`);",
     why: "A degraded READ, and one that only ever protects: an unanswered question makes the entry the CLI's own, which is what every other command already assumes. Its consequence is a removal the user is then shown and asked to approve.",
-  },
-  {
-    line: "if (!opened.ok) this.warn(opened.error);",
-    why: "`openSharedInEditor`'s half of the same site — the one that opens an id `--from` named rather than this installation. Identical reasoning and identical line, which is why the roster carries it twice: the scan reads source order, and two paths each print a link before trying to open one.",
-  },
-  {
-    line: "if (!opened.ok) this.warn(opened.error);",
-    why: "The URL is the deliverable and was printed above this; opening a browser is the convenience on top. Non-zero here would fail `--ui` on every headless machine that still has a TTY.",
   },
   {
     line: "this.warn(warning);",
@@ -72,19 +65,15 @@ const EDIT_ADVISORY_WARNS = [
   },
 ] as const satisfies readonly AdvisoryWarn[];
 
-/** `init`'s warn-only sites, and the one that is detail beside a recorded failure. */
+/** `init`'s one warn site is detail beside a recorded failure. */
 const INIT_ADVISORY_WARNS = [
-  {
-    line: "if (!opened.ok) this.warn(opened.error);",
-    why: "The browser is the convenience, not the work. `init --ui` prints the editor's address BEFORE it tries to open one, precisely because there is no browser to be anybody's over a pipe, in CI, or on a machine with no desktop session — so a failed launch leaves the link on screen and nothing this run promised is missing. The same site and the same reason as `edit --ui`'s.",
-  },
   {
     line: "this.warn(warning);",
     why: "The compiler's own reason per failed sub-agent, printed where it is explicable. The FAILURE is recorded one statement below off `failed`, for the reason `edit` records off `failed`: `warnings` also carries entries that are not failures.",
   },
 ] as const satisfies readonly AdvisoryWarn[];
 
-/** An occupied destination without `--force`: nothing attempted, and the remedy is a flag. */
+/** What an eject leaves as it was: nothing attempted failed, so the exit code stays at 0. */
 const EJECT_ADVISORY_WARNS = [
   {
     line: "this.warn(result.skipReason);",
@@ -99,12 +88,32 @@ const EJECT_ADVISORY_WARNS = [
     why: "Agent templates already on disk during a full `agent-partials` eject. The partials around them ARE written, so this is a partial eject by design — existing templates are preserved deliberately, and `--force` is the way to replace them.",
   },
   {
-    line: "this.warn(result.skipReason);",
-    why: "The skills half of the same decline: a populated destination without `--force`, or a marketplace carrying no non-local skill to eject.",
+    line: 'this.warn("No skills found in the marketplace to eject.");',
+    why: "The marketplace this installation reads carries no skill, so there was nothing to copy and nothing was attempted that failed.",
   },
   {
-    line: "this.warn(skillsAlreadyThere(destinationDir, result.skippedSkillCount));",
-    why: "The skills half of the partial skip: an occupied destination without `--force`, so the skills already there are left as they were and counted, not named, while the rest are copied. Nothing of the user's was overwritten, and the remedy is the flag the warning names.",
+    line: "this.warn(warning);",
+    why: "`skillsLeftWarnings`: the skills left as they were, while the rest are copied. Those already in the destination without `--force` are counted, and the remedy is the flag the warning names; each with a local copy elsewhere is named with its folder, since that copy is the user's own and no flag replaces it. Nothing of the user's was overwritten.",
+  },
+] as const satisfies readonly AdvisoryWarn[];
+
+/** `update`'s failures refuse, except a switch left on, which is recorded after its warning. */
+const UPDATE_ADVISORY_WARNS = [
+  {
+    line: "this.warn(ERROR_MESSAGES.NO_INSTALLATION);",
+    why: "Nothing is installed here, so there is nothing to refresh and no work was attempted that could fail. The warning names the command that makes an installation, and `update` has always exited 0 past it.",
+  },
+  {
+    line: "this.warn(marketplaceRefreshFailed(marketplace, outcome.reason));",
+    why: "Detail beside a refusal — `refreshMarketplaces` hard-errors on the same `failed` once every marketplace has been tried, so one failure cannot hide the rest.",
+  },
+  {
+    line: "this.warn(pluginUpdateFailed(ref, outcome.reason));",
+    why: "Detail beside a refusal — `failUnlessEveryPluginUpdated` hard-errors on the same `failed` once every plugin has been tried.",
+  },
+  {
+    line: "this.warn(codexPluginLeftSwitchedOn(pluginKey, configFile, reason));",
+    why: "`warnOfSwitchesLeftOn`, the warn half of a plugin Codex switched back on: the same list reaches `recordPluginsLeftSwitchedOn` in `run`, or is named in the refusal when a refresh or an update failed beside it.",
   },
 ] as const satisfies readonly AdvisoryWarn[];
 
@@ -151,6 +160,10 @@ const BASE_COMMAND_ADVISORY_WARNS = [
     why: "The sub-agent half of the same fact. A name this catalogue carries no definition for describes no work that could have been done.",
   },
   {
+    line: "if (!opened.ok) this.warn(opened.error);",
+    why: "`openInBrowserAtATerminal`, which `init` and `edit` reach to open the editor. Every caller prints the link before it, because there is no browser to open over a pipe, in CI or with no desktop session, so a failed launch leaves the link on screen and nothing this run promised is missing. Non-zero here would fail `--ui` on every headless machine that still has a TTY.",
+  },
+  {
     line: "this.warn(what);",
     why: "`reportIncompleteWork` itself: the warn half of the call every failure site makes. It is the only warn-only line in these files that is not a decision about a failure — it IS the recording route, and it moved here when a second and third command needed it.",
   },
@@ -193,6 +206,7 @@ const WARN_ROSTERS = [
   { file: EDIT, warns: EDIT_ADVISORY_WARNS },
   { file: INIT, warns: INIT_ADVISORY_WARNS },
   { file: EJECT, warns: EJECT_ADVISORY_WARNS },
+  { file: UPDATE, warns: UPDATE_ADVISORY_WARNS },
   { file: BASE_COMMAND, warns: BASE_COMMAND_ADVISORY_WARNS },
 ] as const;
 
@@ -200,10 +214,11 @@ const WARN_ROSTERS = [
 const RECORDING_CALLS = [
   "this.reportIncompleteWork(",
   "this.recordIncompleteWork(",
+  "this.recordPluginsLeftSwitchedOn(",
   "this.requireMarketplaceOrExit(",
 ];
 const ANSWERING_CALL = "this.exitIfWorkIncomplete()";
-const RECORDED_LISTS = ["this.incompleteWork.push(", "this.switchesLeftOn.push("];
+const RECORDED_LISTS = ["this.incompleteWork.push("];
 
 /** Derived from the directory, so a new command cannot sit outside the gate. */
 const EVERY_COMMAND = "src/cli/commands/**/*.{ts,tsx}";
@@ -283,7 +298,16 @@ describe("a failure a command reports must say whether it changes the exit code"
     ).toStrictEqual([]);
   });
 
-  /** Equal sets mean the roster is closed: a method calling a recorder is a recorder too. */
+  it("rosters the warn-only sites of every command whose ending the recorded work decides", () => {
+    const rostered = new Set<string>(WARN_ROSTERS.map(({ file }) => file));
+
+    expect(
+      COMMANDS_WITH_A_THIRD_ENDING.filter((file) => !rostered.has(file)),
+      "a command that can exit COMPLETED_WITH_FAILURES with no warn roster leaves every " +
+        "failure it only warns of unclassified",
+    ).toStrictEqual([]);
+  });
+
   it(`rosters every ${BASE_COMMAND} method that records, or calls one that does`, async () => {
     const source = await sourceOf(BASE_COMMAND);
     const sites = [...RECORDED_LISTS, ...RECORDING_CALLS].map((call) => ({

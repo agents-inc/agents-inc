@@ -1,6 +1,7 @@
 import os from "os";
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
+import { Errors } from "@oclif/core";
 import { captureOutput } from "@oclif/test";
 import { seatCatalog, seatedCatalog } from "@workspace/compile";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
@@ -14,6 +15,7 @@ import { writeRawTestConfig, writeTestTsConfig } from "./lib/__tests__/helpers/c
 import { createMockPluginHost } from "./lib/__tests__/helpers/mock-plugin-host";
 import { buildSkillConfig } from "./lib/__tests__/helpers/index";
 import { compactCliOutput, flattenCliOutput } from "./lib/__tests__/helpers/flatten-cli-output";
+import { workOwedEntry } from "./lib/__tests__/helpers/work-owed-entry";
 import {
   buildAgentConfigs,
   buildInstallSelection,
@@ -320,7 +322,7 @@ describe("BaseCommand", () => {
         "Warning: Failed to install plugin web-framework-react: not in the marketplace",
       );
       expect(error?.message).toBe(
-        "Failed to install 1 plugin skill(s). Plugin install intent could not be honored. Verify the skill id matches the marketplace, run 'npx agents-inc update' to refresh the marketplace, or switch affected skills to eject mode.",
+        "Failed to install 1 plugin skill. Plugin install intent could not be honored. Verify the skill id matches the marketplace, run 'npx agents-inc update' to refresh the marketplace, or switch affected skills to eject mode.",
       );
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
     });
@@ -659,7 +661,6 @@ describe("BaseCommand", () => {
 
   describe("naming each skill it warns of or refuses: the name its entry recorded, else the catalogue's, else its id", () => {
     const RECORDED_NAME = "Acme React";
-    /** In no catalogue seated here, so only its id can name it. */
     const UNSEATED = SKILLS.vitest.id;
     let callersCatalogue: MergedSkillsMatrix;
     let compilesCatalogue: ReturnType<typeof seatedCatalog>;
@@ -910,7 +911,7 @@ describe("BaseCommand", () => {
       expect(stdout).toBe(
         [
           "",
-          "Completed with 2 failure(s) — the changes above landed, these did not:",
+          "Completed with 2 failures — the changes above landed, these did not:",
           "  Could not compile web-developer",
           "    Run compile again",
           "  Could not copy react",
@@ -955,42 +956,36 @@ describe("BaseCommand", () => {
           () => undefined,
         );
 
-      it("finishes, then fails naming the plugin", async () => {
+      it("finishes, lists the plugin as what did not land with the line that switches it off, and exits 5", async () => {
         let answered = "";
 
-        const { error } = await runProbe(async (probe) => {
+        const { stdout, error } = await runProbe(async (probe) => {
           answered = await refreshed(probe);
           probe.endOfRun();
         });
 
         expect(answered, "the refresh still answers the marketplace to install from").toBe("acme");
-        expect(error?.message).toBe(
-          `1 plugin you had switched off is switched on again: ${SWITCHED_OFF_PLUGIN}`,
-        );
-        expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+        expect(stdout).toMatch(workOwedEntry(1, SWITCHED_OFF_PLUGIN, "enabled = false"));
+        expect(
+          error,
+          "everything else landed, so the run ends as one with failures, not as an error",
+        ).toBeInstanceOf(Errors.ExitError);
+        expect(error?.oclif?.exit).toBe(EXIT_CODES.COMPLETED_WITH_FAILURES);
       });
 
-      it("still lists the work owed, then fails naming the plugin", async () => {
+      it("lists the plugin beside the other work owed, and exits 5", async () => {
         const { stdout, error } = await runProbe(async (probe) => {
           await refreshed(probe);
           probe.recorded("Could not compile web-developer", "Run compile again");
           probe.endOfRun();
         });
 
-        expect(stdout).toBe(
-          [
-            "",
-            "Completed with 1 failure(s) — the changes above landed, these did not:",
-            "  Could not compile web-developer",
-            "    Run compile again",
-            "",
-            "",
-          ].join("\n"),
+        expect(stdout).toMatch(
+          workOwedEntry(2, "Could not compile web-developer", "Run compile again"),
         );
-        expect(error?.message).toBe(
-          `1 plugin you had switched off is switched on again: ${SWITCHED_OFF_PLUGIN}`,
-        );
-        expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+        expect(stdout).toMatch(workOwedEntry(2, SWITCHED_OFF_PLUGIN, "enabled = false"));
+        expect(error).toBeInstanceOf(Errors.ExitError);
+        expect(error?.oclif?.exit).toBe(EXIT_CODES.COMPLETED_WITH_FAILURES);
       });
     });
   });

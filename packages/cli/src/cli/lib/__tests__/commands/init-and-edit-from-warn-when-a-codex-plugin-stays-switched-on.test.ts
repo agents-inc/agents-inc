@@ -2,6 +2,7 @@ import { chmodSync, readFileSync, writeFileSync } from "fs";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 import ansis from "ansis";
+import { Errors } from "@oclif/core";
 import { storedConfigHandlerFor } from "@workspace/api-mocks";
 import { configMockServer } from "@workspace/api-mocks/node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,6 +13,7 @@ import { useMockWorker } from "../helpers/mock-worker.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { standAtTerminal } from "../helpers/terminal-input.js";
 import { compactCliOutput, flattenCliOutput } from "../helpers/flatten-cli-output.js";
+import { workOwedEntry } from "../helpers/work-owed-entry.js";
 import { readTestTsConfig } from "../helpers/config-io.js";
 import type { FixtureProjectConfig } from "../helpers/skill-config-builders.js";
 import { buildSeedPayload, buildSeedSkill } from "../factories/seed-factories.js";
@@ -34,11 +36,8 @@ import {
 } from "../../hosts/__tests__/helpers/fake-child-process.js";
 
 /**
- * Both commands over the real Codex host, with `codex` replaced by a fake that, like Codex,
- * switches a plugin on in `config.toml` whenever it adds it, keeping the table's spelling. Before
- * installing, each refreshes the folder marketplace Codex already holds, which adds every plugin
- * of it again. The e2e twins run the real binary over the single-quoted spelling; a config.toml
- * that cannot be written is only stageable here, as the real Codex replaces it on every add.
+ * A config.toml that cannot be written is only stageable here, as the real Codex replaces it on
+ * every add.
  */
 
 vi.mock("child_process", async (importOriginal) => {
@@ -53,9 +52,11 @@ const { default: Edit } = await import("../../../commands/edit.js");
 const REACT = testMarketplaceSkillId("web-framework-react");
 const HONO = testMarketplaceSkillId("api-framework-hono");
 const VITEST = testMarketplaceSkillId("web-testing-vitest");
+const ZUSTAND = testMarketplaceSkillId("web-state-zustand");
 
 /** Written out: a test building the reference with the product's own helper would move with it. */
 const SWITCHED_OFF_PLUGIN = `${REACT}@${TEST_MARKETPLACE_NAME}`;
+const ALSO_SWITCHED_OFF_PLUGIN = `${ZUSTAND}@${TEST_MARKETPLACE_NAME}`;
 const SWITCHED_ON_PLUGIN = `${HONO}@${TEST_MARKETPLACE_NAME}`;
 const PLUGIN_THE_RUN_ADDS = `${VITEST}@${TEST_MARKETPLACE_NAME}`;
 
@@ -63,7 +64,6 @@ const PLUGIN_THE_RUN_ADDS = `${VITEST}@${TEST_MARKETPLACE_NAME}`;
 const CODEX_FOLDER = ".agents-inc/codex";
 const CODEX_STATE = ".codex";
 
-/** What the CLI says for a refresh it could not finish. */
 const CONTINUING_WITH_CACHED = "Could not update marketplace — continuing with cached version";
 
 /** What Codex says when a marketplace's new version dropped a plugin it is asked to add. */
@@ -88,10 +88,7 @@ type FakeCodex = {
   configDir: string;
   sourceDir: string;
   held: string[];
-  /**
-   * Leaves config.toml read-only after each add, as a file the user's tooling locks would be; the
-   * folder stays writable, since `init` still creates the sub-agent folder beside it.
-   */
+  /** The folder stays writable: `init` still creates the sub-agent folder beside it. */
   locksTheConfigAfterEachAdd: boolean;
   refusesToAdd: string | undefined;
   added: string[];
@@ -208,19 +205,16 @@ describe.skipIf(process.getuid?.() === 0)(
       configMockServer.use(storedConfigHandlerFor(id, payload));
     }
 
-    /**
-     * Codex holds the marketplace's React, switched off by the user, and Hono, left on. It trusts
-     * the home folder already: there, Codex's project sub-agent folder is its global one, so
-     * `edit` would otherwise write that trust into a file a case locks.
-     */
-    async function codexHoldsTheMarketplace(spelling: Spelling): Promise<void> {
-      codex.held = [SWITCHED_OFF_PLUGIN, SWITCHED_ON_PLUGIN];
+    async function codexHoldsTheMarketplace(
+      spelling: Spelling,
+      switchedOff: readonly string[] = [SWITCHED_OFF_PLUGIN],
+    ): Promise<void> {
+      codex.held = [...switchedOff, SWITCHED_ON_PLUGIN];
       await writeFile(
         configFileOf(codex),
         [
-          `[projects."${path.resolve(fakeHome)}"]\ntrust_level = "trusted"\n`,
           `[marketplaces.${TEST_MARKETPLACE_NAME}]\nsource_type = "local"\nsource = "${dirs.sourceDir}"\n`,
-          switchTable(SWITCHED_OFF_PLUGIN, false, spelling),
+          ...switchedOff.map((pluginRef) => switchTable(pluginRef, false, spelling)),
           switchTable(SWITCHED_ON_PLUGIN, true),
         ].join("\n"),
       );
@@ -255,10 +249,7 @@ describe.skipIf(process.getuid?.() === 0)(
       error: (Error & { oclif?: { exit?: number } }) | undefined;
     };
 
-    /**
-     * Captures both streams, answering the write callbacks Ink waits on, which `captureOutput`
-     * drops, and answers the confirm each command asks at a terminal.
-     */
+    /** Answers the write callbacks Ink waits on, which `captureOutput` drops. */
     async function answered(run: () => Promise<unknown>): Promise<RunOutcome> {
       const printed = { stdout: [] as string[], stderr: [] as string[] };
       const capture = (stream: keyof typeof printed) =>
@@ -295,11 +286,12 @@ describe.skipIf(process.getuid?.() === 0)(
     const agentFile = () => path.join(codex.configDir, "agents", "web-developer.toml");
 
     /**
-     * Vitest is the one plugin each run asks for that Codex does not already hold. `edit` keeps the
-     * sub-agent file `init` wrote, so only `init`'s proves a step after the refresh ran.
+     * `edit` keeps the sub-agent file `init` wrote, so only `init`'s proves a step after the refresh
+     * ran.
      */
     const RUNS = {
       "init --from": {
+        succeeded: "Agents Inc. initialized successfully!",
         setUp(): Promise<void> {
           serve(SEED_ID, onWebDeveloper([VITEST]));
           return Promise.resolve();
@@ -310,7 +302,7 @@ describe.skipIf(process.getuid?.() === 0)(
         },
       },
       "edit --from": {
-        /** Installed through `init --from` as a person would, Hono alone, before anything breaks. */
+        succeeded: "✓ Done",
         async setUp(): Promise<void> {
           serve(INSTALL_ID, onWebDeveloper([HONO]));
           const { error } = await answered(initFrom(INSTALL_ID));
@@ -327,10 +319,14 @@ describe.skipIf(process.getuid?.() === 0)(
     describe.each(Object.keys(RUNS) as (keyof typeof RUNS)[])("%s", (command) => {
       const subject = RUNS[command];
 
-      async function runOver(spelling: Spelling, behaviour: Partial<CodexBehaviour> = {}) {
+      async function runOver(
+        spelling: Spelling,
+        behaviour: Partial<CodexBehaviour> = {},
+        switchedOff?: readonly string[],
+      ) {
         await codexHoldsTheMarketplace("double");
         await subject.setUp();
-        await codexHoldsTheMarketplace(spelling);
+        await codexHoldsTheMarketplace(spelling, switchedOff);
         behaveAs(behaviour);
         return subject.run();
       }
@@ -364,6 +360,13 @@ describe.skipIf(process.getuid?.() === 0)(
         await expectTheRestRan();
       });
 
+      it("says the run succeeded when the switch is restored", async () => {
+        const { stdout, error } = await runOver("double");
+
+        expect(error).toBeUndefined();
+        expect(stdout).toContain(subject.succeeded);
+      });
+
       describe.each<{ cause: string; spelling: Spelling; behaviour: Partial<CodexBehaviour> }>([
         {
           cause: "config.toml cannot be written",
@@ -376,7 +379,7 @@ describe.skipIf(process.getuid?.() === 0)(
           behaviour: {},
         },
       ])("when $cause", ({ spelling, behaviour }) => {
-        it("warns naming the plugin and the line to set, still installs, and exits with an error", async () => {
+        it("warns naming the plugin and the line to set, still installs, and exits 5 listing the plugin as what did not land", async () => {
           const { stdout, stderr, error } = await runOver(spelling, behaviour);
           const warnings = flattenCliOutput(stderr);
 
@@ -386,8 +389,12 @@ describe.skipIf(process.getuid?.() === 0)(
           ).toContain(SWITCHED_OFF_PLUGIN);
           expect(
             error?.oclif?.exit,
-            "a plugin the user switched off is running again, so a script must see the run fail",
-          ).toBe(EXIT_CODES.ERROR);
+            "everything else landed, so a script must see a run that completed with failures",
+          ).toBe(EXIT_CODES.COMPLETED_WITH_FAILURES);
+          expect(
+            error,
+            "oclif frames every error but an exit as one, and nothing here was refused",
+          ).toBeInstanceOf(Errors.ExitError);
           expect(warnings, "the warning names the plugin that is now switched on").toContain(
             SWITCHED_OFF_PLUGIN,
           );
@@ -405,11 +412,33 @@ describe.skipIf(process.getuid?.() === 0)(
             flattenCliOutput(`${stdout}\n${stderr}`),
             "the refresh did update the plugins, so saying it kept the cached version is untrue",
           ).not.toContain(CONTINUING_WITH_CACHED);
-          expect(error?.message, "the run's last word names the plugin left switched on").toContain(
-            SWITCHED_OFF_PLUGIN,
-          );
+          expect(
+            stdout,
+            "the run's last word lists the plugin left switched on, with the line that switches it off",
+          ).toMatch(workOwedEntry(1, SWITCHED_OFF_PLUGIN, "enabled = false"));
           await expectTheRestRan();
         });
+
+        it("does not say the run succeeded", async () => {
+          const { stdout, error } = await runOver(spelling, behaviour);
+
+          expect(error?.oclif?.exit).toBe(EXIT_CODES.COMPLETED_WITH_FAILURES);
+          expect(stdout, "a run that owes work must not claim success").not.toContain(
+            subject.succeeded,
+          );
+        });
+      });
+
+      it("lists each plugin left switched on as its own entry, under a heading counting them all", async () => {
+        const { stdout, error } = await runOver("double", { locksTheConfigAfterEachAdd: true }, [
+          SWITCHED_OFF_PLUGIN,
+          ALSO_SWITCHED_OFF_PLUGIN,
+        ]);
+
+        expect(error?.oclif?.exit).toBe(EXIT_CODES.COMPLETED_WITH_FAILURES);
+        expect(stdout).toMatch(workOwedEntry(2, SWITCHED_OFF_PLUGIN, "enabled = false"));
+        expect(stdout).toMatch(workOwedEntry(2, ALSO_SWITCHED_OFF_PLUGIN, "enabled = false"));
+        await expectTheRestRan();
       });
 
       it("keeps today's warning and exits 0 when Codex refuses an add during the refresh, and the switch is restored", async () => {
@@ -428,7 +457,7 @@ describe.skipIf(process.getuid?.() === 0)(
         await expectTheRestRan();
       });
 
-      it("keeps today's warning, names the plugin and the line to set, and exits with an error when Codex refuses an add and the switch cannot be restored either", async () => {
+      it("keeps today's warning, names the plugin and the line to set, and exits 5 listing the plugin when Codex refuses an add and the switch cannot be restored either", async () => {
         const { stdout, stderr, error } = await runOver("double", {
           locksTheConfigAfterEachAdd: true,
           refusesToAdd: SWITCHED_ON_PLUGIN,
@@ -439,9 +468,11 @@ describe.skipIf(process.getuid?.() === 0)(
           codex.added,
           "the plugin is added again before the refusal, which is what switches it on",
         ).toContain(SWITCHED_OFF_PLUGIN);
-        expect(error?.oclif?.exit, "a plugin the user switched off is running again").toBe(
-          EXIT_CODES.ERROR,
-        );
+        expect(
+          error?.oclif?.exit,
+          "a refresh that kept the cached version is no failure, so only the plugin left on is owed",
+        ).toBe(EXIT_CODES.COMPLETED_WITH_FAILURES);
+        expect(error).toBeInstanceOf(Errors.ExitError);
         expect(
           flattenCliOutput(`${stdout}\n${stderr}`),
           "the refresh really failed, so the warning it has always given stays",
@@ -450,9 +481,10 @@ describe.skipIf(process.getuid?.() === 0)(
           SWITCHED_OFF_PLUGIN,
         );
         expect(warnings, "the warning names the line to set by hand").toContain("enabled = false");
-        expect(error?.message, "the run's last word names the plugin left switched on").toContain(
-          SWITCHED_OFF_PLUGIN,
-        );
+        expect(
+          stdout,
+          "the run's last word lists the plugin left switched on, with the line that switches it off",
+        ).toMatch(workOwedEntry(1, SWITCHED_OFF_PLUGIN, "enabled = false"));
         await expectTheRestRan();
       });
     });

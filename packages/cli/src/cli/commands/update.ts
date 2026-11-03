@@ -5,12 +5,7 @@ import { EJECT_SOURCE } from "../consts.js";
 import { EXIT_CODES } from "../lib/exit-codes.js";
 import { loadConfigInPlay, type LoadedProjectConfig } from "../lib/configuration/index.js";
 import { hostFor } from "../lib/hosts/host-for.js";
-import {
-  providerFlag,
-  providerNamedBy,
-  refuseAnAmbiguousInstallation,
-} from "../lib/installation/provider-flag.js";
-import { unofferablePlacementsFound } from "../lib/hosts/configured-placements.js";
+import { providerFlag, providerNamedBy } from "../lib/installation/provider-flag.js";
 import type { PluginHost } from "../lib/hosts/plugin-host.js";
 import {
   FailedLeavingPluginsSwitchedOnError,
@@ -92,10 +87,10 @@ function refreshedAndUpdated(marketplaceCount: number, pluginCount: number): str
 }
 
 export default class Update extends BaseCommand {
-  static summary = "Refresh the marketplaces this installation uses";
+  static summary = "Refresh the marketplaces and move every plugin to its newest version";
 
   static description =
-    "Runs Claude's own marketplace update for every marketplace this installation's config names. Ejected skills are copies you own and are never touched.";
+    "Refreshes the listing of every marketplace this installation's config names, then moves every installed plugin to its newest version. Ejected skills are copies you own and are never touched.";
 
   static flags = { provider: providerFlag() };
 
@@ -105,13 +100,7 @@ export default class Update extends BaseCommand {
     const { flags } = await this.parse(Update);
     const namedProvider = providerNamedBy(flags.provider);
 
-    await this.sayWhenTheGlobalInstallationStandsIn(namedProvider);
-    // Before the config is loaded: loading it already picks a provider by roster order.
-    await refuseAnAmbiguousInstallation(process.cwd(), "update", namedProvider, (message) =>
-      this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
-    );
-    await this.ensureConfigReadable(process.cwd());
-    await this.refuseUnofferablePlacements(process.cwd());
+    await this.checkTheInstallationBeforeActing(process.cwd(), "update", namedProvider);
     const installed = await this.loadInstalledConfig(process.cwd());
     if (!installed) {
       this.warn(ERROR_MESSAGES.NO_INSTALLATION);
@@ -134,13 +123,13 @@ export default class Update extends BaseCommand {
     // Every listing first: a plugin updated against a stale listing stays where it is.
     const leftOnByRefresh = await this.refreshMarketplaces(marketplaces, host);
     const updated = await this.updatePlugins(plugins.map(installedPlugin), host);
-    this.failUnlessEveryPluginLanded(updated.failed, [...leftOnByRefresh, ...updated.leftOn]);
-    this.logSuccess(refreshedAndUpdated(marketplaces.length, plugins.length));
-  }
-
-  private async refuseUnofferablePlacements(projectDir: string): Promise<void> {
-    const [finding] = await unofferablePlacementsFound(projectDir);
-    if (finding !== undefined) this.error(finding, { exit: EXIT_CODES.ERROR });
+    const leftOn = [...leftOnByRefresh, ...updated.leftOn];
+    this.failUnlessEveryPluginUpdated(updated.failed, leftOn);
+    this.recordPluginsLeftSwitchedOn(leftOn);
+    if (!this.hasIncompleteWork) {
+      this.logSuccess(refreshedAndUpdated(marketplaces.length, plugins.length));
+    }
+    this.exitIfWorkIncomplete();
   }
 
   /** ABORT on an unreadable config: a fault, not "not installed". */
@@ -162,10 +151,7 @@ export default class Update extends BaseCommand {
     this.error(hostCliNotFound(host.provider), { exit: EXIT_CODES.ERROR });
   }
 
-  /**
-   * Sequential, as they share one registry; failures are collected so one cannot hide the rest.
-   * Answers the plugins a refresh left switched on, which do not stop the updates.
-   */
+  /** Sequential, as they share one registry; failures are collected so one cannot hide the rest. */
   private async refreshMarketplaces(
     marketplaces: string[],
     host: PluginHost,
@@ -224,11 +210,14 @@ export default class Update extends BaseCommand {
     }
   }
 
-  private failUnlessEveryPluginLanded(failed: string[], leftOn: PluginLeftSwitchedOn[]): void {
-    const shortfalls = [
-      ...(failed.length > 0 ? [pluginsUpdateFailed(failed)] : []),
-      ...switchedOnAgain(leftOn),
-    ];
-    if (shortfalls.length > 0) this.error(shortfalls.join("\n"), { exit: EXIT_CODES.ERROR });
+  private failUnlessEveryPluginUpdated(
+    failed: string[],
+    leftOn: readonly PluginLeftSwitchedOn[],
+  ): void {
+    if (failed.length === 0) return;
+
+    this.error([pluginsUpdateFailed(failed), ...switchedOnAgain(leftOn)].join("\n"), {
+      exit: EXIT_CODES.ERROR,
+    });
   }
 }

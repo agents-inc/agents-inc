@@ -1,6 +1,7 @@
 import { chmodSync, readFileSync, writeFileSync } from "fs";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
+import { Errors } from "@oclif/core";
 import { captureOutput } from "@oclif/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,6 +10,7 @@ import { cleanupTempDir, createTempDir } from "../test-fs-utils";
 import { buildSkillConfig } from "../helpers/index.js";
 import { writeTestTsConfig } from "../helpers/config-io.js";
 import { flattenCliOutput } from "../helpers/flatten-cli-output.js";
+import { workOwedEntry } from "../helpers/work-owed-entry.js";
 import { buildProjectConfig } from "../factories/config-factories.js";
 import { EXIT_CODES } from "../../exit-codes";
 import {
@@ -17,10 +19,8 @@ import {
 } from "../../hosts/__tests__/helpers/fake-child-process.js";
 
 /**
- * The real command over the real Codex host, with `codex` replaced by a fake that, like Codex,
- * switches a plugin on in `config.toml` whenever it adds it. The e2e twin covers a switch spelled
- * so update cannot find it; a file that cannot be written is only stageable here, because the
- * real Codex replaces config.toml (mode 600) on every add.
+ * A file that cannot be written is only stageable here, because the real Codex replaces
+ * config.toml (mode 600) on every add.
  */
 
 vi.mock("child_process", async (importOriginal) => {
@@ -42,6 +42,10 @@ const INSTALLED_PLUGINS = [
   { pluginId: SWITCHED_ON_PLUGIN, name: "api-framework-hono" },
 ];
 
+const EVERY_PLUGIN = INSTALLED_PLUGINS.map(({ pluginId }) => pluginId);
+
+const REFRESHED_AND_UPDATED = "✓ Refreshed 1 marketplace listing and updated 2 installed plugins.";
+
 /** A literal: a test reading the folder off the product would move with it. */
 const CODEX_FOLDER = ".agents-inc/codex";
 
@@ -59,18 +63,19 @@ function switchTable(pluginRef: string, enabled: boolean): string {
   return `[plugins."${pluginRef}"]\nenabled = ${String(enabled)}\n`;
 }
 
-function configAsTheUserLeftIt(kind: MarketplaceKind): string {
+function configAsTheUserLeftIt(
+  kind: MarketplaceKind,
+  switchedOff: readonly string[] = [SWITCHED_OFF_PLUGIN],
+): string {
   return [
     `[marketplaces.${MARKETPLACE}]\nsource_type = "${kind}"\nsource = "/a-marketplace"\n`,
-    switchTable(SWITCHED_OFF_PLUGIN, false),
-    switchTable(SWITCHED_ON_PLUGIN, true),
+    ...EVERY_PLUGIN.map((pluginId) => switchTable(pluginId, !switchedOff.includes(pluginId))),
   ].join("\n");
 }
 
 type FakeCodex = {
   kind: MarketplaceKind;
   configDir: string;
-  /** Leaves config.toml unwritable after each add, as a file the user's tooling locks would be. */
   locksTheConfigAfterEachAdd: boolean;
   refusesToAdd: string | undefined;
   added: string[];
@@ -149,7 +154,11 @@ describe.skipIf(process.getuid?.() === 0)(
     let originalCwd: string;
     let codex: FakeCodex;
 
-    async function runUpdateOver(kind: MarketplaceKind, behaviour: Partial<CodexBehaviour> = {}) {
+    async function runUpdateOver(
+      kind: MarketplaceKind,
+      behaviour: Partial<CodexBehaviour> = {},
+      switchedOff?: readonly string[],
+    ) {
       codex = {
         kind,
         configDir: codex.configDir,
@@ -158,7 +167,7 @@ describe.skipIf(process.getuid?.() === 0)(
         ...behaviour,
         added: [],
       };
-      await writeFile(configFileOf(codex), configAsTheUserLeftIt(kind));
+      await writeFile(configFileOf(codex), configAsTheUserLeftIt(kind, switchedOff));
       vi.mocked(spawn).mockImplementation((_command, args) =>
         fakeChildProcess(codexAnswers(codex, args)),
       );
@@ -219,7 +228,7 @@ describe.skipIf(process.getuid?.() === 0)(
         ).toBe(configAsTheUserLeftIt(kind));
       });
 
-      it("warns naming the plugin and the line to set when config.toml cannot be written, updates the rest, and exits with an error", async () => {
+      it("warns naming the plugin and the line to set when config.toml cannot be written, updates the rest, and exits 5 listing the plugin as what did not land", async () => {
         const { stdout, stderr, error } = await runUpdateOver(kind, {
           locksTheConfigAfterEachAdd: true,
         });
@@ -227,8 +236,16 @@ describe.skipIf(process.getuid?.() === 0)(
 
         expect(
           error?.oclif?.exit,
-          "a plugin the user switched off is running again, so a script must see the run fail",
-        ).toBe(EXIT_CODES.ERROR);
+          "everything else landed, so a script must see a run that completed with failures",
+        ).toBe(EXIT_CODES.COMPLETED_WITH_FAILURES);
+        expect(
+          error,
+          "oclif frames every error but an exit as one, and nothing here was refused",
+        ).toBeInstanceOf(Errors.ExitError);
+        expect(
+          stdout,
+          "the run's last word lists the plugin left switched on, with the line that switches it off",
+        ).toMatch(workOwedEntry(1, SWITCHED_OFF_PLUGIN, "enabled = false"));
         expect(warnings, "the warning names the plugin that is now switched on").toContain(
           SWITCHED_OFF_PLUGIN,
         );
@@ -241,6 +258,35 @@ describe.skipIf(process.getuid?.() === 0)(
           stdout,
           "one plugin whose switch could not be restored must not stop the others updating",
         ).toContain(`Updated plugin ${SWITCHED_ON_PLUGIN}`);
+      });
+
+      it("says it refreshed the listing and updated every plugin when every switch is restored", async () => {
+        const { stdout, error } = await runUpdateOver(kind);
+
+        expect(error).toBeUndefined();
+        expect(stdout).toContain(REFRESHED_AND_UPDATED);
+      });
+
+      it("does not say it refreshed and updated everything when a plugin is left switched on", async () => {
+        const { stdout, error } = await runUpdateOver(kind, { locksTheConfigAfterEachAdd: true });
+
+        expect(error?.oclif?.exit).toBe(EXIT_CODES.COMPLETED_WITH_FAILURES);
+        expect(stdout, "a run that owes work must not claim success").not.toContain(
+          REFRESHED_AND_UPDATED,
+        );
+      });
+
+      it("lists each plugin left switched on as its own entry, under a heading counting them all", async () => {
+        const { stdout, error } = await runUpdateOver(
+          kind,
+          { locksTheConfigAfterEachAdd: true },
+          EVERY_PLUGIN,
+        );
+
+        expect(error?.oclif?.exit).toBe(EXIT_CODES.COMPLETED_WITH_FAILURES);
+        for (const plugin of EVERY_PLUGIN) {
+          expect(stdout).toMatch(workOwedEntry(2, plugin, "enabled = false"));
+        }
       });
 
       it("switches back off the plugins it added before Codex refused one, and still exits with the refusal", async () => {

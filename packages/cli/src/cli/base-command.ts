@@ -8,25 +8,31 @@ import { getErrorMessage } from "./utils/errors.js";
 import { inertLine, stripTerminalControls } from "./utils/string.js";
 import { verbose } from "./utils/logger.js";
 import {
+  appliedBackDestinations,
+  applySharedConfigHere,
+  carriedSkillsWritten,
   completedWithFailures,
   INFO_MESSAGES,
   installationConfigsUnreadable,
   type IncompleteWork,
+  pluginNotSwitchedBackOff,
   pluginsInstalled,
-  pluginsLeftSwitchedOn,
   propagatedRecompileSummary,
   registeredProjectConfigUnreadable,
   registeredProjectGone,
   registeredProjectOnAnotherProvider,
   savedSkillMetadataUnusableError,
   scopeBlockedStackAssignment,
+  sharedConfigDestinations,
   sharedConfigProjectScopeAtHome,
   skillAssignedToNoAgent,
   skillMetadataUnusableDetail,
   skippedUnknownAgents,
   skippedSkills,
   STATUS_MESSAGES,
+  switchItOffIn,
 } from "./utils/messages.js";
+import { openUrl } from "./utils/open-url.js";
 import {
   clearTerminalScreen,
   formatTerminalTooSmallMessage,
@@ -36,11 +42,17 @@ import { EXIT_CODES } from "./lib/exit-codes.js";
 import { isActiveAt } from "./lib/configuration/scope-predicates.js";
 import { namedByActiveEntries } from "./lib/configuration/scope-diff.js";
 import { resolveBranding } from "./lib/configuration/config.js";
-import { isHomeDirectory, refuseUnofferedStack } from "./lib/installation/index.js";
+import {
+  holdsItsOwnInstallation,
+  isHomeDirectory,
+  refuseUnofferedStack,
+} from "./lib/installation/index.js";
 import { providerInUse } from "./lib/installation/install-layout.js";
 import {
   holdsOnlyAConfigDeclaringNothing,
   homeHoldsAnInstallationFor,
+  installationToName,
+  refuseAnAmbiguousInstallation,
 } from "./lib/installation/provider-flag.js";
 import { providerToNameAt } from "./lib/installation/provider-to-name.js";
 import type { InstallSelection } from "@workspace/compile/seed-to-config";
@@ -59,12 +71,18 @@ import type { PluginHost } from "./lib/hosts/plugin-host.js";
 import type { PluginLeftSwitchedOn } from "./lib/hosts/codex-plugin-switch.js";
 import { hostAt } from "./lib/hosts/host-for.js";
 import { refuseUnofferedPlacements } from "./lib/hosts/offered-placements.js";
+import { unofferablePlacementsFound } from "./lib/hosts/configured-placements.js";
+import { fetchSeedConfig } from "./lib/seed/fetch-seed.js";
+import { publishSeedConfig } from "./lib/seed/publish-seed.js";
 import {
   refuseUncarriedDestinations,
+  registerExternalSkills,
+  writeExternalSkills,
   type ExternalSkillInstall,
 } from "./lib/seed/external-skills.js";
 import { installsAtHome, projectScopedContent } from "./lib/seed/seed-apply.js";
-import type { SeedMapping } from "./lib/seed/seed-to-selection.js";
+import { seedToInstallSelection, type SeedMapping } from "./lib/seed/seed-to-selection.js";
+import type { SeedPayload } from "@workspace/matrix/seed";
 import { refuseUnwritableStack } from "@workspace/compile/config-source";
 import { requireMarketplace } from "./lib/operations/source/require-marketplace.js";
 import {
@@ -87,7 +105,7 @@ const terminalColumns = (): number => process.stdout.columns ?? MIN_TERMINAL_SIZ
 // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- @types/node declares this as `number`; it is undefined whenever stdout is not a TTY
 const terminalRows = (): number => process.stdout.rows ?? MIN_TERMINAL_SIZE.ROWS;
 
-/** On stderr, as the init hook's old-folder lines are, so piped output is unchanged. */
+/** On stderr, so piped output is unchanged. */
 function sayFirst(line: string): void {
   process.stderr.write(`${line}\n`);
 }
@@ -110,6 +128,17 @@ function waitForTerminal(isSatisfied: () => boolean): Promise<void> {
 }
 
 type UnassignedSkill = { skillId: SkillId; blockedBy: AgentName[] };
+
+/** A plugin's switch is owed without touching any file the run wrote. */
+type WorkOwed = IncompleteWork & { readonly pluginSwitch: boolean };
+
+function switchOwed({ pluginKey, configFile }: PluginLeftSwitchedOn): WorkOwed {
+  return {
+    what: pluginNotSwitchedBackOff(pluginKey),
+    recovery: switchItOffIn(configFile),
+    pluginSwitch: true,
+  };
+}
 
 /**
  * Only the selection is judged: inherited global skills are absent from this stack without being
@@ -144,20 +173,13 @@ function hasActiveProjectEntry(skills: readonly SkillConfig[], skillId: SkillId)
 
 export abstract class BaseCommand extends Command {
   /** Non-empty decides the exit code; see {@link exitIfWorkIncomplete}. */
-  private readonly incompleteWork: IncompleteWork[] = [];
-
-  /** Warned of by the refresh that left them; non-empty fails the run, as in `update`. */
-  private readonly switchesLeftOn: PluginLeftSwitchedOn[] = [];
+  private readonly incompleteWork: WorkOwed[] = [];
 
   async init(): Promise<void> {
     await super.init();
     await this.ensureTerminalSize();
   }
 
-  /**
-   * Called first where a command starts work on the installation in play, which for a project whose
-   * config declares nothing is the global one, or none where HOME holds none the run could work on.
-   */
   protected async sayWhenTheGlobalInstallationStandsIn(named: Provider | undefined): Promise<void> {
     if (!(await holdsOnlyAConfigDeclaringNothing(process.cwd()))) return;
 
@@ -169,7 +191,6 @@ export abstract class BaseCommand extends Command {
     );
   }
 
-  /** For a command that never works on the global installation: `line` says what it does instead. */
   protected async sayWhenTheProjectsConfigDeclaresNothing(line: string): Promise<void> {
     if (await holdsOnlyAConfigDeclaringNothing(process.cwd())) sayFirst(line);
   }
@@ -217,7 +238,7 @@ export abstract class BaseCommand extends Command {
     if (!required.ok) {
       this.error(required.error, { exit: EXIT_CODES.ERROR });
     }
-    this.switchesLeftOn.push(...required.leftOn);
+    this.recordPluginsLeftSwitchedOn(required.leftOn);
     if (required.registered) {
       onRegistered?.(required.marketplace);
     }
@@ -304,6 +325,16 @@ export abstract class BaseCommand extends Command {
     }
   }
 
+  protected async refuseAnAmbiguousInstallation(
+    cwd: string,
+    command: string,
+    named: Provider | undefined,
+  ): Promise<void> {
+    await refuseAnAmbiguousInstallation(cwd, command, named, (message) =>
+      this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
+    );
+  }
+
   /**
    * Aborts up front when the project or global config exists but cannot be loaded, so nothing is
    * installed before the config write fails. A missing config passes.
@@ -313,6 +344,27 @@ export abstract class BaseCommand extends Command {
     if (failures.length > 0) {
       this.error(installationConfigsUnreadable(failures), { exit: EXIT_CODES.ERROR });
     }
+  }
+
+  /**
+   * Over the configs on disk: config.ts names no provider, so a copied installation folder can hold
+   * a configuration its host never vetted at install.
+   */
+  protected async refuseUnofferablePlacements(cwd: string): Promise<void> {
+    const [finding] = await unofferablePlacementsFound(cwd);
+    if (finding !== undefined) this.error(finding, { exit: EXIT_CODES.ERROR });
+  }
+
+  /** Ambiguity is refused first: loading a config already picks a provider by roster order. */
+  protected async checkTheInstallationBeforeActing(
+    cwd: string,
+    command: string,
+    named: Provider | undefined,
+  ): Promise<void> {
+    await this.sayWhenTheGlobalInstallationStandsIn(named);
+    await this.refuseAnAmbiguousInstallation(cwd, command, named);
+    await this.ensureConfigReadable(cwd);
+    await this.refuseUnofferablePlacements(cwd);
   }
 
   /** Only entries the catalogue lacks are checked; one whose files are gone is not refused. */
@@ -337,7 +389,14 @@ export abstract class BaseCommand extends Command {
     const unusable = await findUnusableSavedSkillMetadata(savedSkills, projectDir);
     if (unusable.length === 0) return;
 
-    // Logged, not raised: oclif hard-wraps error text, which breaks copyable paths.
+    this.refuseUnusableSkillMetadata(unusable, refusal);
+  }
+
+  /** Detail is logged, not raised: oclif hard-wraps error text, which breaks copyable paths. */
+  protected refuseUnusableSkillMetadata(
+    unusable: UnusableSkillMetadata[],
+    refusal: (unusable: UnusableSkillMetadata[]) => string,
+  ): never {
     for (const entry of unusable) {
       this.log(skillMetadataUnusableDetail(entry));
     }
@@ -376,6 +435,98 @@ export abstract class BaseCommand extends Command {
       this.warn(skippedSkills(skippedSkillIds, agentsOnlySkippedSkillsCarried, unloadedSkillIds));
     }
     if (skippedAgentNames.length > 0) this.warn(skippedUnknownAgents(skippedAgentNames));
+  }
+
+  protected async fetchSharedConfigOrFail(id: string): Promise<SeedPayload> {
+    this.log(`Fetching configuration ${id}...`);
+    const fetched = await fetchSeedConfig(id);
+    if (!fetched.ok) {
+      this.error(fetched.error, { exit: EXIT_CODES.ERROR });
+    }
+    return fetched.payload;
+  }
+
+  /** Prints the id it was given, with where to install or open it. */
+  protected async publishSharedConfigOrFail(payload: SeedPayload): Promise<string> {
+    return this.publishOrFail(payload, sharedConfigDestinations);
+  }
+
+  /** For an id minted from the installation in play, which `edit --from` applies it back to. */
+  protected async publishToApplyBackOrFail(
+    payload: SeedPayload,
+    cwd: string,
+    named: Provider | undefined,
+  ): Promise<string> {
+    const toName = await installationToName(cwd, named);
+    return this.publishOrFail(payload, (id) => appliedBackDestinations(id, toName));
+  }
+
+  private async publishOrFail(
+    payload: SeedPayload,
+    destinations: (id: string) => string[],
+  ): Promise<string> {
+    const published = await publishSeedConfig(payload);
+    if (!published.ok) {
+      this.error(published.error, { exit: EXIT_CODES.ERROR });
+    }
+
+    this.logSuccess(`Shared as ${published.id}`);
+    for (const destination of destinations(published.id)) {
+      this.log(destination);
+    }
+    return published.id;
+  }
+
+  /** The line naming the `--from` command that applies a shared configuration here. */
+  protected async howToApplyItHere(
+    id: string | undefined,
+    dir: string,
+    named: Provider | undefined,
+  ): Promise<string> {
+    const installedHere = await holdsItsOwnInstallation(dir);
+    const toName = installedHere ? await installationToName(dir, named) : named;
+    return applySharedConfigHere(id, installedHere, toName);
+  }
+
+  /** Extra to the printed link, which works over a pipe, in CI and with no desktop. */
+  protected async openInBrowserAtATerminal(url: string): Promise<void> {
+    if (!process.stdin.isTTY) return;
+
+    const opened = await openUrl(url);
+    if (!opened.ok) this.warn(opened.error);
+  }
+
+  protected decodeSeedOrFail(payload: SeedPayload, matrix: MergedSkillsMatrix): SeedMapping {
+    try {
+      return seedToInstallSelection(payload, matrix);
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  protected registerExternalSkillsOrFail(
+    payload: SeedPayload,
+    matrix: MergedSkillsMatrix,
+    projectDir: string,
+  ): ExternalSkillInstall[] {
+    try {
+      return registerExternalSkills(payload, matrix, projectDir);
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  protected async writeCarriedSkills(carried: ExternalSkillInstall[]): Promise<void> {
+    if (carried.length === 0) return;
+
+    await writeExternalSkills(carried);
+    const recorded = carried.map(({ id, skill }) => ({ id, displayName: skill.displayName }));
+    this.log(
+      carriedSkillsWritten(
+        carried.map(({ id }) => id),
+        namedByActiveEntries(recorded),
+      ),
+    );
   }
 
   /** For the panel's header; `undefined` for a configuration built from no stack. */
@@ -426,6 +577,10 @@ export abstract class BaseCommand extends Command {
     return this.incompleteWork.length > 0;
   }
 
+  protected get owesWorkBesidesPluginSwitches(): boolean {
+    return this.incompleteWork.some(({ pluginSwitch }) => !pluginSwitch);
+  }
+
   /** Never aborts: every caller is past a mutation that has already landed. */
   protected reportIncompleteWork(what: string, recovery: string): void {
     this.warn(what);
@@ -434,26 +589,23 @@ export abstract class BaseCommand extends Command {
 
   /** For a caller that has already warned. */
   protected recordIncompleteWork(what: string, recovery: string): void {
-    this.incompleteWork.push({ what, recovery });
+    this.incompleteWork.push({ what, recovery, pluginSwitch: false });
+  }
+
+  /** For a caller that has already warned. */
+  protected recordPluginsLeftSwitchedOn(leftOn: readonly PluginLeftSwitchedOn[]): void {
+    this.incompleteWork.push(...leftOn.map(switchOwed));
   }
 
   /** Every command that records must call this; `this.exit` skips the `Error:` framing. */
   protected exitIfWorkIncomplete(): void {
+    if (!this.hasIncompleteWork) return;
+
     this.listIncompleteWork();
-    this.failIfPluginsLeftSwitchedOn();
-    if (this.hasIncompleteWork) this.exit(EXIT_CODES.COMPLETED_WITH_FAILURES);
+    this.exit(EXIT_CODES.COMPLETED_WITH_FAILURES);
   }
 
   private listIncompleteWork(): void {
-    if (!this.hasIncompleteWork) return;
-
     this.log(`\n${chalk.hex(CLI_COLORS.WARNING)(completedWithFailures(this.incompleteWork))}\n`);
-  }
-
-  private failIfPluginsLeftSwitchedOn(): void {
-    if (this.switchesLeftOn.length === 0) return;
-
-    const pluginKeys = this.switchesLeftOn.map(({ pluginKey }) => pluginKey);
-    this.error(pluginsLeftSwitchedOn(pluginKeys), { exit: EXIT_CODES.ERROR });
   }
 }
