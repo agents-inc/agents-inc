@@ -1846,8 +1846,10 @@ describe("what uninstall says", () => {
           const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
 
           expect(error, stderr).toBeUndefined();
-          expect(flattenCliOutput(stderr)).toContain(
-            `Warning: Could not remove ${codexConfig}, which now holds nothing: EACCES`,
+          expect(compactCliOutput(stderr)).toContain(
+            compactCliOutput(
+              `Warning: Could not remove ${codexConfig}, which now holds nothing: EACCES`,
+            ),
           );
           expect(stdout).toContain("✓ Uninstall complete!\n");
           expect(await readFile(codexConfig, "utf-8")).toBe("");
