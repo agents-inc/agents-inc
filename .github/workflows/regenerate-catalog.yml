@@ -38,11 +38,11 @@ jobs:
           PAYLOAD_SHA: ${{ github.event.client_payload.sha }}
         run: echo "ref=${PAYLOAD_SHA:-main}" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # generate:types reads the marketplace. No token needed while agents-inc/skills is public.
       - name: Check out the skills marketplace
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           repository: agents-inc/skills
           ref: ${{ steps.trigger.outputs.ref }}
@@ -74,7 +74,7 @@ jobs:
       # Pinned to a SHA: it holds a token that can write to the default branch.
       - name: Open or update the regeneration pull request
         id: regen
-        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        uses: peter-evans/create-pull-request@3ffccacd46053766916f087ce41d627c0b8cf2d1 # v8.1.3
         with:
           # PRs opened with GITHUB_TOKEN trigger no CI; set REGEN_PR_TOKEN (a PAT) to get checks.
           token: ${{ secrets.REGEN_PR_TOKEN || github.token }}
